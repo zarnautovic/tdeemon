@@ -1,0 +1,32 @@
+# Runtime data — never commit databases, backups or uploads
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+
+# Personal fixtures and eval sets (real health data stays out of git)
+/testdata/private/
+/private/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Go
+/bin/
+/dist/
+coverage.out
+*.test
+
+# Web
+node_modules/
+/web/dist/
+/web/coverage/
+*.tsbuildinfo
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
