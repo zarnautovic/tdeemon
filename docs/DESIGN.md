@@ -365,8 +365,10 @@ the first spec.
   through the same channels.
 - **Deploy:**
   - Docker image with one volume, `/data`.
-  - Env: `BASE_URL`, `SECRET_KEY`, optional `OIDC_*`,
-    `TELEGRAM_BOT_TOKEN`.
+  - Env, all prefixed `TDEEMON_`: `BASE_URL`, `SECRET_KEY`, `LISTEN`,
+    `DATA_DIR`, `LOG_LEVEL`, `LOG_FORMAT`, later optional `OIDC_*` and
+    `TELEGRAM_BOT_TOKEN`; plus the standard `TZ`. The README has the
+    current table.
   - Ships a `docker-compose.yml`; the homelab gets its own manifests.
 - **Backup:** a built-in nightly `VACUUM INTO` snapshot with retention,
   and documented Litestream for continuous replication to S3/B2. Never
