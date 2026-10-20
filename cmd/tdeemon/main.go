@@ -67,11 +67,16 @@ func run(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error 
 		return fmt.Errorf("database: %w", err)
 	}
 
+	handler, err := api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: version})
+	if err != nil {
+		return fmt.Errorf("api: %w", err)
+	}
+
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Listen, err)
 	}
-	return server.Run(ctx, ln, api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: version}), logger)
+	return server.Run(ctx, ln, handler, logger)
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

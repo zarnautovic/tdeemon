@@ -15,9 +15,13 @@ var testInfo = api.ServerInfo{Name: "tdeemon", Version: "v9.9.9"}
 func serve(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	h, err := api.NewHandler(testInfo)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
 	req := httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	rec := httptest.NewRecorder()
-	api.NewHandler(testInfo).ServeHTTP(rec, req)
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -39,6 +43,9 @@ func TestRoutes(t *testing.T) {
 		// Both would serve huma's extras that are switched off on purpose.
 		{name: "no docs page", method: http.MethodGet, path: "/docs", wantStatus: http.StatusNotFound},
 		{name: "no schemas route", method: http.MethodGet, path: "/schemas/ServerInfo.json", wantStatus: http.StatusNotFound},
+		// One document, the committed one: no unchecked variants.
+		{name: "no YAML document", method: http.MethodGet, path: "/api/v1/openapi.yaml", wantStatus: http.StatusNotFound},
+		{name: "no OpenAPI 3.0 document", method: http.MethodGet, path: "/api/v1/openapi-3.0.json", wantStatus: http.StatusNotFound},
 		{name: "unknown query parameter", method: http.MethodGet, path: "/api/v1/info?verbose=1", wantStatus: http.StatusUnprocessableEntity},
 	}
 	for _, tt := range tests {

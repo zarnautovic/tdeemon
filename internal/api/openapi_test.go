@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"flag"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
@@ -48,20 +49,38 @@ func TestServedSpecIsTheCommittedOne(t *testing.T) {
 	t.Parallel()
 
 	rec := serve(t, http.MethodGet, "/api/v1/openapi.json")
+	if got := rec.Header().Get("Content-Type"); got != "application/openapi+json" {
+		t.Errorf("Content-Type = %q, want application/openapi+json", got)
+	}
 	spec, err := api.Spec()
 	if err != nil {
 		t.Fatalf("Spec: %v", err)
 	}
-	var served, committed any
-	if err := json.Unmarshal(rec.Body.Bytes(), &served); err != nil {
-		t.Fatalf("decode served document: %v", err)
+	if !bytes.Equal(rec.Body.Bytes(), spec) {
+		t.Error("the served OpenAPI document differs from Spec(), which the committed file must equal")
 	}
-	if err := json.Unmarshal(spec, &committed); err != nil {
-		t.Fatalf("decode Spec: %v", err)
+}
+
+// TestSpecServesConcurrently matters under -race: concurrent first
+// requests for the document on one handler must not race.
+func TestSpecServesConcurrently(t *testing.T) {
+	t.Parallel()
+
+	h, err := api.NewHandler(testInfo)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
 	}
-	if !reflect.DeepEqual(served, committed) {
-		t.Error("the served OpenAPI document differs from Spec()")
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/openapi.json", nil))
+			if rec.Code != http.StatusOK {
+				t.Errorf("status = %d, want 200", rec.Code)
+			}
+		})
 	}
+	wg.Wait()
 }
 
 func TestSpecDescribesTheAPI(t *testing.T) {

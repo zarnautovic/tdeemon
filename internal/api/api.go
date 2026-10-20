@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -31,11 +32,25 @@ type ServerInfo struct {
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
-func NewHandler(info ServerInfo) http.Handler {
+func NewHandler(info ServerInfo) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	register(newAPI(mux), info)
-	return withAPIErrors(mux)
+	a := newAPI(mux)
+	register(a, info)
+
+	// The document is served from bytes computed once, the same ones Spec
+	// returns. huma's own route marshals it lazily without a lock, a data
+	// race on concurrent first requests, and adds YAML and OpenAPI 3.0
+	// variants that nothing checks.
+	spec, err := marshalSpec(a)
+	if err != nil {
+		return nil, fmt.Errorf("openapi document: %w", err)
+	}
+	mux.HandleFunc("GET "+Prefix+"/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/openapi+json")
+		_, _ = w.Write(spec)
+	})
+	return withAPIErrors(mux), nil
 }
 
 // apiMethods are the methods withAPIErrors probes for an Allow header.
@@ -99,12 +114,15 @@ func writeProblem(w http.ResponseWriter, status int, detail string) {
 }
 
 // Spec returns the OpenAPI document of the API, indented and with a
-// trailing newline, exactly as committed in api/openapi.json. It does not
-// depend on the running server, so the served and the committed document
-// are the same.
+// trailing newline, exactly as committed in api/openapi.json and served at
+// /api/v1/openapi.json. It does not depend on the running server.
 func Spec() ([]byte, error) {
 	a := newAPI(http.NewServeMux())
 	register(a, ServerInfo{})
+	return marshalSpec(a)
+}
+
+func marshalSpec(a huma.API) ([]byte, error) {
 	b, err := json.MarshalIndent(a.OpenAPI(), "", "  ")
 	if err != nil {
 		return nil, err
@@ -114,7 +132,8 @@ func Spec() ([]byte, error) {
 
 func newAPI(mux *http.ServeMux) huma.API {
 	cfg := huma.DefaultConfig("tdeemon API", Version)
-	cfg.OpenAPIPath = Prefix + "/openapi"
+	// NewHandler serves the document itself.
+	cfg.OpenAPIPath = ""
 	// No docs page: huma's loads its JavaScript from a CDN, and a
 	// self-hosted app with health data should not call out on page load.
 	cfg.DocsPath = ""
