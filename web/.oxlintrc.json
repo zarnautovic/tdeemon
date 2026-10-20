@@ -30,8 +30,9 @@
   // dependency, which takes minutes and gigabytes.
   "ignorePatterns": ["**/node_modules/**", "dist/**", "coverage/**", "src/api/schema.d.ts"],
   "rules": {
-    // typescript-eslint's strict-type-checked set, beyond the categories.
-    "typescript/ban-ts-comment": "error",
+    // typescript-eslint's strict-type-checked set, beyond the categories,
+    // with that set's options where they differ from oxlint's defaults.
+    "typescript/ban-ts-comment": ["error", { "minimumDescriptionLength": 10 }],
     "typescript/no-confusing-void-expression": "error",
     "typescript/no-deprecated": "error",
     "typescript/no-dynamic-delete": "error",
@@ -57,20 +58,44 @@
     "typescript/prefer-promise-reject-errors": "error",
     "typescript/related-getter-setter-pairs": "error",
     "typescript/require-await": "error",
-    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-plus-operands": [
+      "error",
+      {
+        "allowAny": false,
+        "allowBoolean": false,
+        "allowNullish": false,
+        "allowNumberAndString": false,
+        "allowRegExp": false
+      }
+    ],
+    "typescript/restrict-template-expressions": [
+      "error",
+      {
+        "allowAny": false,
+        "allowBoolean": false,
+        "allowNever": false,
+        "allowNullish": false,
+        "allowNumber": false,
+        "allowRegExp": false
+      }
+    ],
     "typescript/return-await": "error",
     "typescript/switch-exhaustiveness-check": "error",
+    "typescript/unified-signatures": "error",
     "typescript/use-unknown-in-catch-callback-variable": "error",
 
     // typescript-eslint's stylistic-type-checked set.
     "typescript/adjacent-overload-signatures": "error",
     "typescript/array-type": "error",
+    "typescript/ban-tslint-comment": "error",
+    "typescript/class-literal-property-style": "error",
     "typescript/consistent-generic-constructors": "error",
     "typescript/consistent-indexed-object-style": "error",
     "typescript/consistent-type-assertions": "error",
     "typescript/consistent-type-definitions": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/dot-notation": "error",
+    "eslint/no-empty-function": "error",
     "typescript/no-inferrable-types": "error",
     "typescript/non-nullable-type-assertion-style": "error",
     "typescript/prefer-find": "error",
@@ -100,6 +125,11 @@
     "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }]
   },
   "overrides": [
+    {
+      // Within src, other directories are reached through @/, not ../.
+      "files": ["src/**"],
+      "rules": { "import/no-relative-parent-imports": "error" }
+    },
     {
       // Components from the shadcn registry export their variants next to
       // the component, by design.

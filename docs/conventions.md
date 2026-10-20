@@ -144,7 +144,9 @@ npm test               # Vitest
   eslint, typescript, unicorn, oxc, react, jsx-a11y, import, vitest and
   promise plugins.
 - **TypeScript:** on top of those, typescript-eslint's strict-type-checked
-  and stylistic-type-checked sets. Among them:
+  and stylistic-type-checked sets, with the options of strict-type-checked
+  (template literals and `+` take strings only, a `@ts-expect-error` needs
+  a reason of ten characters). Among them:
   - no `any`, and no unsafe use of an `any` value;
   - no floating or misused promises;
   - no non-null assertions;
@@ -173,7 +175,8 @@ npm test               # Vitest
 Prettier, with no semicolons, single quotes and 100 columns. Imports are
 sorted in groups, with a blank line between groups: Node built-ins and
 packages, then `@/`, then relative imports. Tailwind classes are kept in
-Tailwind's order. The generated `src/api/schema.d.ts` is left as the
+Tailwind's order, in `className` and in the strings given to `cva` and
+`cn`. The generated `src/api/schema.d.ts` is left as the
 generator writes it.
 
 ### Code
@@ -187,8 +190,10 @@ generator writes it.
   `src/api/client.ts`, which is typed from the OpenAPI spec. Components do
   not call `fetch`, and do not copy server data into `useState`.
 - **Types:** `unknown` and narrowing instead of `any`.
-- **One exported component per file**, kept small. Imports from `src` go
-  through `@/`.
+- **One exported component per file**, kept small.
+- **Imports** from another directory of `src` go through `@/`, never
+  `../` (`import/no-relative-parent-imports`). `./` is for a neighbour in
+  the same directory, such as `./schema` in `src/api`.
 - **Text:** user-facing text goes through i18n once it is set up.
 
 ### Tests
