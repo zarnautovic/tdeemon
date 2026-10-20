@@ -141,8 +141,9 @@ A change is done when:
 
 - **Renovate** (`.github/renovate.json5`, once its GitHub App is
   installed) keeps every pinned version current: Go modules and the Go
-  version, npm packages, the tools in `mise.toml`, the Docker base images
-  by digest and the GitHub Actions by commit SHA.
+  version, npm packages, the tools in `mise.toml` and `mise.lock`, the
+  Docker base images by digest, the GitHub Actions by commit SHA, and
+  mise and BuildKit in the workflows.
   - One batch a week; a new npm release waits a few days first (only
     npm: the other sources are taken the day they appear).
   - Minor, patch and digest updates merge themselves once CI is green;
@@ -150,9 +151,11 @@ A change is done when:
   - The Go version moves in one pull request, in `go.mod`, `mise.toml`
     and the build image; so does Node's, in `mise.toml` and the web build
     image.
-  - Titles are `fix(deps)` for what ships (the Go and npm dependencies,
-    the Go toolchain and the runtime image), so it makes a release, and
-    `chore(deps)` for the rest.
+  - Titles are `fix(deps)`, which makes a release, for the Go modules,
+    the npm `dependencies`, the Go version and the runtime image.
+    Everything else is `chore(deps)`, also the npm devDependencies and
+    lock file maintenance, although the build tools among them shape the
+    bundle: their changes ship with the next release.
   - Pins that must not move have a rule with the reason: TypeScript 5 in
     `web/codegen`, Python below 3.15 for the tools.
   - mise itself, in the workflows, moves with its checksum.
@@ -165,7 +168,10 @@ A change is done when:
   osv-scanner checks only licences here (`osv-scanner-licenses.toml`);
   known vulnerabilities are left to `make audit`.
 - **Secrets:** gitleaks scans the staged changes in the pre-commit hook
-  and the whole history in CI (`make secrets`).
+  and the whole history in CI (`make secrets`). A finding anywhere in the
+  history fails every pull request: rotate the secret if it was real,
+  then list the finding's fingerprint, which gitleaks prints with the
+  secret redacted, in `.gitleaksignore`.
 - **CodeQL** scans Go, the TypeScript and the workflows on every pull
   request and weekly; the ruleset blocks merging a new error or a
   high-severity alert.

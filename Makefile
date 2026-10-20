@@ -83,7 +83,7 @@ licenses: ## every Go and npm dependency has an allowed licence (LICENSES)
 		-L go.mod -L web/package-lock.json -L web/codegen/package-lock.json
 
 secrets: ## no secrets anywhere in the git history
-	$(MISE) gitleaks git --redact --no-banner --log-opts=--all .
+	$(MISE) gitleaks git --verbose --redact --no-banner --log-opts=--all .
 
 $(WEB_DEPS): web/package-lock.json
 	cd web && $(MISE) npm ci --no-audit --no-fund

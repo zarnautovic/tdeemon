@@ -15,8 +15,9 @@ permissions: {}
 
 concurrency:
   group: codeql-${{ github.event.pull_request.number || github.ref }}
-  # A newer push replaces a pull request's run; every commit on main is
-  # analysed.
+  # A newer push to a pull request cancels its running run. On main a run
+  # that has started is never cancelled; a newer push replaces only a run
+  # still waiting.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

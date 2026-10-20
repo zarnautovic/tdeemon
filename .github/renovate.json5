@@ -1,8 +1,8 @@
 // Renovate keeps every pinned version current: Go modules and the Go
 // version, npm packages, the tools in mise.toml and mise.lock, the Docker
-// base images (by digest), the GitHub Actions (by commit SHA) and mise in
-// the workflows. It runs once the Renovate GitHub App is installed on the
-// repository.
+// base images (by digest), the GitHub Actions (by commit SHA), and mise
+// and BuildKit in the workflows. It runs once the Renovate GitHub App is
+// installed on the repository.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
@@ -33,6 +33,16 @@
     '**/__fixtures__/**',
     '.mise/locks/**',
   ],
+  customManagers: [
+    {
+      // The BuildKit image the Docker image job builds with, pinned by
+      // digest in the buildx driver options.
+      customType: 'regex',
+      managerFilePatterns: ['/^\\.github/workflows/.+\\.ya?ml$/'],
+      matchStrings: ['image=(?<depName>moby/buildkit):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})'],
+      datasourceTemplate: 'docker',
+    },
+  ],
   lockFileMaintenance: {
     enabled: true,
     automerge: true,
@@ -60,6 +70,12 @@
       matchDepNames: ['go', 'docker.io/library/golang'],
       groupName: 'Go',
       semanticCommitType: 'fix',
+    },
+    {
+      description: 'A rebuilt build image with the same Go changes nothing that ships.',
+      matchDepNames: ['docker.io/library/golang'],
+      matchUpdateTypes: ['digest'],
+      semanticCommitType: 'chore',
     },
     {
       description: 'The runtime image ships.',

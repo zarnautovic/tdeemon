@@ -9,7 +9,7 @@ pre-commit:
   jobs:
     # Secrets first: a leaking change goes no further.
     - name: secrets
-      run: mise exec -- gitleaks git --pre-commit --staged --redact --no-banner .
+      run: mise exec -- gitleaks git --pre-commit --staged --verbose --redact --no-banner .
     # Then the formatters, so the linters see what they wrote.
     - name: go-format
       glob: "*.go"
