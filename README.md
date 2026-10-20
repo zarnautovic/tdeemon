@@ -22,14 +22,15 @@ maintenance, bulk or recomp — within guardrails you control.
 
 ## Development
 
-The toolchain and golangci-lint are pinned in `mise.toml`; install them
-with [mise](https://mise.jdx.dev). The rules for code and tests are in
-[docs/conventions.md](docs/conventions.md).
+The toolchain and every linter are pinned in `mise.toml`; install them
+with [mise](https://mise.jdx.dev). `make check` runs everything CI checks,
+and the git hooks run the fast part on each commit. The rules for code and
+tests are in [docs/conventions.md](docs/conventions.md).
 
 ```sh
 mise install
-golangci-lint run
-go test -race ./...
+lefthook install    # git hooks, once per clone
+make check          # make fmt formats, make help lists the targets
 
 TDEEMON_BASE_URL=http://localhost:8080 \
 TDEEMON_SECRET_KEY="$(openssl rand -base64 32)" \

@@ -1,0 +1,69 @@
+# Git hooks: run `lefthook install` once per clone. The tools run through
+# mise at the versions in mise.toml, so only mise itself has to be on PATH.
+#
+# pre-commit formats the staged files and stages what the formatters
+# fixed, then lints; pre-push runs the tests. Hooks are a convenience, CI
+# is the gate: `git commit --no-verify` skips them.
+pre-commit:
+  jobs:
+    # Formatters first, so the linters see what they wrote.
+    - name: go-format
+      glob: "*.go"
+      run: mise exec -- golangci-lint fmt {staged_files}
+      stage_fixed: true
+    - name: web-format
+      root: web/
+      run: >-
+        test -d node_modules || { echo 'web/node_modules is missing: run npm ci in web/'; exit 1; };
+        mise exec -- npx --no-install prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+    - name: sql-format
+      glob: "*.sql"
+      exclude:
+        - internal/store/testdata/**
+      run: mise exec -- sqlfluff fix --quiet {staged_files}
+      stage_fixed: true
+
+    # Go is linted as packages, so the whole module, not only the staged files.
+    - name: go-lint
+      glob: "*.go"
+      run: mise exec -- golangci-lint run
+    - name: web-lint
+      root: web/
+      glob: "*.{ts,tsx}"
+      run: >-
+        test -d node_modules || { echo 'web/node_modules is missing: run npm ci in web/'; exit 1; };
+        mise exec -- npx --no-install oxlint --no-error-on-unmatched-pattern {staged_files}
+    - name: sql-lint
+      glob: "*.sql"
+      exclude:
+        - internal/store/testdata/**
+      run: mise exec -- sqlfluff lint {staged_files}
+    - name: dockerfile
+      glob: "Dockerfile"
+      run: mise exec -- hadolint {staged_files}
+    - name: workflows
+      glob:
+        - ".github/workflows/*.{yml,yaml}"
+        - ".github/actions/**/*.{yml,yaml}"
+      run: mise exec -- actionlint && mise exec -- zizmor .
+    - name: yaml
+      glob: "*.{yml,yaml}"
+      run: mise exec -- yamllint -s {staged_files}
+    - name: markdown
+      glob: "*.md"
+      run: mise exec -- markdownlint-cli2 --no-globs {staged_files}
+    - name: editorconfig
+      run: mise exec -- editorconfig-checker {staged_files}
+
+# The tests, quickly; make check and CI run everything. lefthook skips the
+# jobs when HEAD adds or changes no files against what it was last pushed
+# to, as for a push of only deletions or of a branch not checked out.
+pre-push:
+  jobs:
+    - name: go-test
+      run: mise exec -- go test -race ./...
+    - name: web-test
+      run: >-
+        cd web && { test -d node_modules || { echo 'web/node_modules is missing: run npm ci in web/'; exit 1; }; };
+        mise exec -- npm test --silent

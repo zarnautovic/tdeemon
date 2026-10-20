@@ -3,6 +3,24 @@
 The rules every change follows. Tools check what they can; the rest is
 for the author and the reviewer.
 
+## Running the checks
+
+- **`make check`** runs every check CI runs: the linters and format
+  checks for every language, the Go and web tests, and the check that
+  the generated TypeScript types match the API spec. `make fmt` formats
+  Go and the web app in place, and `make help` lists the targets.
+  The tools run through mise, at the versions in `mise.toml`.
+- **Git hooks** (lefthook, `lefthook install` once per clone):
+  - pre-commit formats the staged files and stages what the formatters
+    fixed, then lints them; Go is linted as packages, so the whole module;
+  - pre-push runs the Go and web tests (lefthook skips them when the
+    checked-out branch adds or changes no files against its last push);
+  - they are a convenience and CI is the gate: `git commit --no-verify`
+    skips them.
+- The Makefile needs GNU make: macOS's `/usr/bin/make` is GNU make 3.81,
+  and on the BSDs it is `gmake`. GitHub's runners have it; the hooks do
+  not need it.
+
 ## Go
 
 ### Versions and tools
