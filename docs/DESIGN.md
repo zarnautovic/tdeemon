@@ -387,8 +387,8 @@ the first spec.
   - On the author's instance, Flux image automation deploys new
     releases, so a deploy depends only on the merge.
   - CI runs tests with coverage gates plus strict lint and format for
-    every language: `gofumpt`/`golangci-lint`, ESLint
-    strict-type-checked/Prettier/`tsc`, `hadolint`, `actionlint`,
+    every language: `golangci-lint` (with gofumpt), oxlint with
+    type-aware rules/Prettier/`tsc`, `hadolint`, `actionlint`,
     markdownlint. The same checks run locally via `make check` and
     lefthook.
   - Renovate, CodeQL, gitleaks and a license check guard dependencies

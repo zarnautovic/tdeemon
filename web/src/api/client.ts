@@ -1,5 +1,6 @@
 import createFetchClient from 'openapi-fetch'
 import createClient from 'openapi-react-query'
+
 import type { paths } from './schema'
 
 // Requests go to the app's own origin: the Go server serves the app in

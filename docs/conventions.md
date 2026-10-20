@@ -1,9 +1,8 @@
 # Conventions
 
 The rules every change follows. Tools check what they can; the rest is
-for the author and the reviewer. The web app (TypeScript, React) and the
-other files (SQL, Docker, workflows) get their sections with their own
-tooling.
+for the author and the reviewer. The other files (SQL, Docker, workflows)
+get their section with their own tooling.
 
 ## Go
 
@@ -104,3 +103,105 @@ in `web/`.
 - `t.Context()`, `t.TempDir()` and `t.Setenv` instead of hand-made
   equivalents.
 - `go test -race ./...` passes.
+
+## Web app (TypeScript, React)
+
+### Versions and tools
+
+- **Node:** the active LTS line, pinned in `mise.toml`.
+- **TypeScript 7**, the compiler rewritten in Go, for the app. `web/codegen`
+  stays on TypeScript 5.9 until openapi-typescript supports 7.
+- **React 19** with the React Compiler, Vite, TanStack Router and Query,
+  Tailwind 4, shadcn components on Base UI.
+- **oxlint** with type-aware rules (oxlint-tsgolint) and **Prettier**,
+  both pinned in `web/package.json` and configured in `web/.oxlintrc.json`
+  and `web/.prettierrc.json`.
+
+```sh
+cd web
+npm run lint           # oxlint with type information
+npm run format         # Prettier in place; format:check only checks
+npm run typecheck      # tsc -b
+npm test               # Vitest
+```
+
+### Why oxlint, not ESLint
+
+- ESLint's type-aware rules come from typescript-eslint, which supports
+  TypeScript below 6.1 only, and eslint-plugin-jsx-a11y does not support
+  ESLint 10. oxlint's type-aware rules run on TypeScript 7, and the React,
+  hooks, React Compiler, accessibility, import and Vitest rules are built
+  in.
+- Vite's own template lints with it, and it lints the app in about a
+  second.
+- The cost: its type-aware rules are still being completed, and ESLint
+  plugins (its JS plugins are in alpha) are not used, so there is no
+  TanStack Query plugin.
+
+### Lint rules
+
+- **Categories** correctness, suspicious and perf, as errors, across the
+  eslint, typescript, unicorn, oxc, react, jsx-a11y, import, vitest and
+  promise plugins.
+- **TypeScript:** on top of those, typescript-eslint's strict-type-checked
+  and stylistic-type-checked sets, with the options of strict-type-checked:
+  `+` does not mix types, template literals take only strings (and `Error`
+  or `URL`), and a `@ts-expect-error` needs a reason of ten characters.
+  Among them:
+  - no `any`, and no unsafe use of an `any` value;
+  - no floating or misused promises;
+  - no non-null assertions;
+  - type-only imports;
+  - exhaustive `switch`.
+- **React:**
+  - the rules of hooks and the React Compiler's rules (purity, refs,
+    immutability, `setState` during render or in effects);
+  - `only-export-components`, so fast refresh keeps state. It is off for
+    the shadcn components in `src/components/ui`, which export their
+    variants next to the component by design.
+  - `react-in-jsx-scope` is off: the JSX transform made it obsolete.
+- **Accessibility:** the jsx-a11y rules.
+- **Imports:** no cycles, no duplicates, and side-effect imports only for
+  CSS.
+- **Strictness of the run:** a warning fails the run, and so does a
+  disable comment that disables nothing. A disable names the rule and
+  says why after `--`:
+
+  ```ts
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API guarantees the shape
+  ```
+
+### Formatting
+
+Prettier, with no semicolons, single quotes and 100 columns. Imports are
+sorted in groups, with a blank line between groups: Node built-ins and
+packages, then `@/`, then relative imports. Tailwind classes are kept in
+Tailwind's order, in `className` and in the strings given to `cva` and
+`cn`. The generated `src/api/schema.d.ts` is left as the
+generator writes it.
+
+### Code
+
+- **`tsconfig`** is strict, with `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, `noImplicitOverride`, `noUnused*`,
+  `erasableSyntaxOnly` and `verbatimModuleSyntax`.
+- **Function components and hooks only**, and current React APIs: refs are
+  props, so no `forwardRef`, and no `defaultProps`.
+- **Server data only through TanStack Query**, using `$api` from
+  `src/api/client.ts`, which is typed from the OpenAPI spec. Components do
+  not call `fetch`, and do not copy server data into `useState`.
+- **Types:** `unknown` and narrowing instead of `any`.
+- **One exported component per file**, kept small.
+- **Imports** from another directory of `src` go through `@/`, never
+  `../` (`import/no-relative-parent-imports`). `./` is for a neighbour in
+  the same directory, such as `./schema` in `src/api`.
+- **Text:** user-facing text goes through i18n once it is set up.
+
+### Tests
+
+- Vitest and Testing Library. Tests check behaviour through the DOM:
+  roles and text, or test ids where nothing better identifies an element.
+- The network is faked at `fetch` with `vi.stubGlobal`, not by mocking our
+  own modules, and the stubs are undone after each test.
+- A change in behaviour comes with a test that fails without it.
+- Asynchronous UI is awaited with `findBy…` queries, never with sleeps.
