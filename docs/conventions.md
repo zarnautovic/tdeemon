@@ -3,6 +3,19 @@
 The rules every change follows. Tools check what they can; the rest is
 for the author and the reviewer.
 
+## Running the checks
+
+- **`make check`** runs every check CI runs: the linters and format
+  checks for every language, the Go and web tests, and the check that
+  the generated TypeScript types match the API spec. `make fmt` formats
+  Go, the web app and SQL in place, and `make help` lists the targets.
+  The tools run through mise, at the versions in `mise.toml`.
+- **Git hooks** (lefthook, `lefthook install` once per clone):
+  - pre-commit formats and lints the staged files, and stages what the
+    formatters fixed;
+  - pre-push runs `make test`.
+  Hooks are a convenience, CI is the gate.
+
 ## Go
 
 ### Versions and tools

@@ -1,0 +1,46 @@
+# Git hooks: run `lefthook install` once per clone. The tools run through
+# mise at the versions in mise.toml, so only mise itself has to be on PATH.
+#
+# pre-commit formats and lints what is staged; pre-push runs the tests.
+# Hooks are a convenience, CI is the gate: `git commit --no-verify` skips
+# them.
+pre-commit:
+  commands:
+    go:
+      glob: "*.go"
+      run: mise exec -- golangci-lint fmt {staged_files} && mise exec -- golangci-lint run
+      stage_fixed: true
+    web-format:
+      root: web/
+      glob: "*.{ts,tsx,css,json}"
+      run: mise exec -- npx prettier --write {staged_files}
+      stage_fixed: true
+    web-lint:
+      root: web/
+      glob: "*.{ts,tsx}"
+      run: mise exec -- npx oxlint {staged_files}
+    sql:
+      glob: "*.sql"
+      exclude:
+        - internal/store/testdata/**
+      run: mise exec -- sqlfluff fix --quiet {staged_files} && mise exec -- sqlfluff lint {staged_files}
+      stage_fixed: true
+    editorconfig:
+      run: mise exec -- editorconfig-checker {staged_files}
+    dockerfile:
+      glob: "Dockerfile"
+      run: mise exec -- hadolint {staged_files}
+    workflows:
+      glob: ".github/{workflows,actions}/**/*.{yml,yaml}"
+      run: mise exec -- actionlint && mise exec -- zizmor .
+    yaml:
+      glob: "*.{yml,yaml}"
+      run: mise exec -- yamllint -s {staged_files}
+    markdown:
+      glob: "*.md"
+      run: mise exec -- markdownlint-cli2 {staged_files}
+
+pre-push:
+  commands:
+    test:
+      run: make test
