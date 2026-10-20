@@ -5,22 +5,23 @@ for the author and the reviewer.
 
 ## Running the checks
 
-- **`make check`** runs every check CI runs, except three that only CI
-  runs: the Docker image build, the pull request title check, and
+- **`make check`** runs every check CI runs, except four that only CI
+  runs: the Docker image build, CodeQL, the pull request title check, and
   zizmor's online audits, which need `GH_TOKEN` set:
   - the linters and format checks for every language;
   - the Go and web tests, with coverage, and the Go tests behind the
     `webui` tag against a fresh build;
   - the check that the generated TypeScript types match the API spec;
-  - `govulncheck` and `npm audit`.
+  - `govulncheck`, `npm audit`, the licence check and the gitleaks scan
+    of the history.
   `make fmt` formats Go and the web app in place, and `make help` lists
   the targets. The tools run through mise, at the versions in
   `mise.toml`.
 - **CI** (`.github/workflows/ci.yml`) runs the same targets on every pull
-  request and on `main`, in four parallel jobs: Go, the web app, the
-  other files, and the Docker image, which is built with its tests but not
-  pushed. Only pushes to `main` write the caches; pull requests read
-  them.
+  request and on `main`, in five parallel jobs: Go, the web app, the
+  other files, the dependencies and secrets, and the Docker image, which
+  is built with its tests but not pushed. Only pushes to `main` write the
+  caches; pull requests read them.
 - **Tool versions** are exact in `mise.toml`, and each download is
   verified:
   - tools from the aqua registry against their checksums, and against
