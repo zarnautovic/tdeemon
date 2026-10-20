@@ -37,6 +37,23 @@ for the author and the reviewer.
   and on the BSDs it is `gmake`. GitHub's runners have it; the hooks do
   not need it.
 
+## Commits and pull requests
+
+- Every change reaches `main` through a pull request and is squash-merged,
+  so the pull request's title becomes the commit on `main`.
+- **Titles and commit messages are Conventional Commits:**
+  `type(scope)!: summary`.
+  - The types are feat, fix, perf, refactor, test, docs, ci, build, chore,
+    style and revert.
+  - The scope is optional.
+  - `!`, or a `BREAKING CHANGE:` footer, marks a breaking change.
+  - The summary is short and ends without a full stop.
+  - `feat`, `fix` and `perf` decide the next release.
+- **The checks:** the "PR title" workflow runs `cog verify` (cocogitto,
+  `cog.toml`) on every pull request title, and the commit-msg hook runs it
+  on every commit message. Merge and fixup commits pass the hook, since
+  the squash merge replaces them.
+
 ## Go
 
 ### Versions and tools

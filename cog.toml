@@ -1,0 +1,7 @@
+# Conventional Commits, checked by cocogitto: `cog verify` in the
+# commit-msg hook (lefthook.yml) and on every pull request title (the
+# "PR title" workflow), since the title becomes the squash-merge commit.
+# The commit types are cocogitto's defaults: feat, fix, perf, refactor,
+# test, docs, ci, build, chore, style and revert; `!` marks a breaking
+# change.
+ignore_merge_commits = true

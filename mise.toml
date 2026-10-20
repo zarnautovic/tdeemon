@@ -25,3 +25,5 @@ python = "3.14.8"
 "npm:markdownlint-cli2" = "0.23.3"
 # Git hooks (lefthook.yml): `lefthook install` once per clone.
 lefthook = "2.2.2"
+# Conventional Commits: commit messages and PR titles (cog.toml).
+cocogitto = "7.0.0"
