@@ -12,10 +12,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"net/url"
 	"runtime"
 	"strconv"
+	"strings"
 
 	_ "modernc.org/sqlite" // Registers the pure-Go "sqlite" driver.
 )
@@ -37,34 +37,46 @@ type DB struct {
 }
 
 // Open opens the database at path, creating the file if it does not
-// exist, and verifies that every connection runs with WAL, foreign keys
-// and a busy timeout. It does not apply migrations; call Migrate next.
+// exist. It checks that the file is in WAL mode and that foreign keys are
+// enforced, on the first connection of each pool; every later connection
+// is opened with the same settings. It does not apply migrations; call
+// Migrate next.
 //
 // The directory must exist and should be on a local disk: SQLite's WAL
 // mode relies on file locks and shared memory that network file systems
 // such as NFS do not provide reliably.
 func Open(ctx context.Context, path string) (*DB, error) {
-	common := url.Values{}
-	common.Set("_busy_timeout", strconv.Itoa(busyTimeoutMS))
-	common.Set("_foreign_keys", "1")
-	common.Set("_journal_mode", "WAL")
+	// The driver splits its connection string at the first "?".
+	if strings.ContainsRune(path, '?') {
+		return nil, fmt.Errorf("open %s: the database path must not contain \"?\"", path)
+	}
+
+	writeParams := url.Values{}
+	writeParams.Set("_busy_timeout", strconv.Itoa(busyTimeoutMS))
+	writeParams.Set("_foreign_keys", "1")
+	writeParams.Set("_journal_mode", "WAL")
 	// FULL syncs the WAL on every commit. Writes are rare and the database
 	// is the only copy of what users logged, so durability wins over the
 	// throughput NORMAL would buy.
-	common.Set("_synchronous", "FULL")
+	writeParams.Set("_synchronous", "FULL")
 	// Every write transaction takes the write lock up front, so a
 	// transaction that starts by reading can never fail when it later
 	// upgrades to a write.
-	common.Set("_txlock", "immediate")
+	writeParams.Set("_txlock", "immediate")
 
-	write, err := sql.Open("sqlite", path+"?"+common.Encode())
+	write, err := sql.Open("sqlite", path+"?"+writeParams.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	write.SetMaxOpenConns(1)
 	write.SetMaxIdleConns(1)
 
-	readParams := maps.Clone(common)
+	// Readers get only what applies to them. The journal mode belongs to
+	// the file (the write pool sets it), and a write lock would make
+	// BEGIN fail on a query-only connection.
+	readParams := url.Values{}
+	readParams.Set("_busy_timeout", strconv.Itoa(busyTimeoutMS))
+	readParams.Set("_foreign_keys", "1")
 	readParams.Set("_query_only", "1")
 	read, err := sql.Open("sqlite", path+"?"+readParams.Encode())
 	if err != nil {
@@ -111,7 +123,8 @@ func (db *DB) verify(ctx context.Context) error {
 }
 
 // Read returns the pool for queries. Its connections are query-only:
-// any statement that would change the database fails.
+// any statement that would change the database fails. A transaction on
+// it (BeginTx) reads one consistent snapshot, even while writes commit.
 func (db *DB) Read() *sql.DB { return db.read }
 
 // WriteTx runs fn inside a write transaction and commits it if fn
@@ -137,15 +150,10 @@ func (db *DB) WriteTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	return nil
 }
 
-// Close runs PRAGMA optimize, as SQLite recommends before closing a
-// long-lived connection, and closes both pools.
-func (db *DB) Close() error {
-	_, optErr := db.write.ExecContext(context.Background(), "PRAGMA optimize")
-	if optErr != nil {
-		optErr = fmt.Errorf("optimize: %w", optErr)
-	}
-	return errors.Join(optErr, db.close())
-}
+// Close closes both pools. It does not wait for connections that are
+// still in use, so a shutdown that gave up on a slow request cannot hang
+// here; such a transaction fails when it next touches the database.
+func (db *DB) Close() error { return db.close() }
 
 func (db *DB) close() error {
 	return errors.Join(db.read.Close(), db.write.Close())

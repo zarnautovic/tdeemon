@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -239,6 +240,89 @@ func assertForeignKeysEnforced(t *testing.T, db *DB) {
 	}
 }
 
+// TestMigrateRejectsMissingForeignKeyTarget runs the rebuild in the
+// wrong order (rename the old table first) on empty tables: SQLite then
+// points the child's foreign key at the renamed table, which is dropped,
+// and foreign_key_check alone finds no row to complain about.
+func TestMigrateRejectsMissingForeignKeyTarget(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	err := db.migrate(t.Context(), files(map[string]string{
+		"0001_create_parent.sql": createParent,
+		"0002_create_child.sql":  createChild,
+		"0003_rename_first.sql": `ALTER TABLE parent RENAME TO parent_old;
+CREATE TABLE parent (
+	id   INTEGER PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT ''
+) STRICT;
+INSERT INTO parent (id, name) SELECT id, coalesce(name, '') FROM parent_old;
+DROP TABLE parent_old;`,
+	}), discard())
+	if err == nil || !strings.Contains(err.Error(), "child references missing table parent_old") {
+		t.Fatalf("migrate returned %v, want the dangling foreign key reported", err)
+	}
+	if got := appliedVersions(t, db); len(got) != 2 {
+		t.Errorf("applied versions = %v, want [1 2]", got)
+	}
+	if !tableExists(t, db, "parent") || tableExists(t, db, "parent_old") {
+		t.Error("the failed rebuild was not rolled back")
+	}
+}
+
+func TestMigrateRejectsTransactionControl(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	err := db.migrate(t.Context(), files(map[string]string{
+		"0001_create_parent.sql": createParent,
+		"0002_half.sql":          "CREATE TABLE a (x INTEGER) STRICT;\nCOMMIT;\nCREATE TABLE b (x INTEGER) STRICT;",
+	}), discard())
+	if err == nil || !strings.Contains(err.Error(), `"0002_half.sql", line 2: COMMIT`) {
+		t.Fatalf("migrate returned %v, want the COMMIT on line 2 reported", err)
+	}
+	// The files are checked before anything runs.
+	if tableExists(t, db, "parent") || tableExists(t, db, "a") {
+		t.Error("migrations ran although one of the files was rejected")
+	}
+}
+
+// TestMigrateDiscardsItsConnection checks that per-connection state a
+// migration changes does not leak to later writers.
+func TestMigrateDiscardsItsConnection(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	err := db.migrate(t.Context(), files(map[string]string{
+		"0001_connection_state.sql": "PRAGMA busy_timeout = 1;\nCREATE TEMP TABLE leftover (x INTEGER);\nCREATE TABLE kept (x INTEGER) STRICT;",
+	}), discard())
+	if err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	err = db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+		var timeout, fk, temp int
+		if err := tx.QueryRowContext(t.Context(), "PRAGMA busy_timeout").Scan(&timeout); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(t.Context(), "PRAGMA foreign_keys").Scan(&fk); err != nil {
+			return err
+		}
+		if err := tx.QueryRowContext(t.Context(),
+			"SELECT count(*) FROM temp.sqlite_schema WHERE name = 'leftover'").Scan(&temp); err != nil {
+			return err
+		}
+		if timeout != busyTimeoutMS || fk != 1 || temp != 0 {
+			t.Errorf("write connection after migrating: busy_timeout=%d foreign_keys=%d temp tables=%d; want %d, 1, 0",
+				timeout, fk, temp, busyTimeoutMS)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WriteTx: %v", err)
+	}
+}
+
 func TestMigrateRefusesNewerDatabase(t *testing.T) {
 	t.Parallel()
 
@@ -318,6 +402,70 @@ func TestMigrateBacksUpBeforeMigrating(t *testing.T) {
 	}
 }
 
+// backupOnce takes one pre-migration snapshot of db at version 1.
+func backupOnce(t *testing.T, db *DB) string {
+	t.Helper()
+
+	conn, err := db.write.Conn(t.Context())
+	if err != nil {
+		t.Fatalf("conn: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	dst, err := db.backup(t.Context(), conn, 1, discard())
+	if err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	return dst
+}
+
+func TestBackupNamesAreUnique(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	// Back to back, well within the same second.
+	first, second := backupOnce(t, db), backupOnce(t, db)
+	if first == second {
+		t.Fatalf("two backups got the same name %s", first)
+	}
+	if b := backups(t, db); len(b) != 2 {
+		t.Errorf("backups = %v, want two", b)
+	}
+}
+
+func TestBackupKeepsNewestSnapshotsOnly(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	dir := filepath.Join(filepath.Dir(db.path), "backups")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// A killed backup's leftover, and a file the pruning must not touch.
+	leftover := filepath.Join(dir, "pre-migrate-123.tmp")
+	other := filepath.Join(dir, "nightly-20261020.db")
+	for _, f := range []string{leftover, other} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", f, err)
+		}
+	}
+
+	var made []string
+	for range keepPreMigrateBackups + 2 {
+		made = append(made, backupOnce(t, db))
+	}
+
+	got := backups(t, db) // *.db, so it includes the unrelated file
+	want := append(made[len(made)-keepPreMigrateBackups:], other)
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("backups after pruning = %v, want the %d newest snapshots plus %s", got, keepPreMigrateBackups, other)
+	}
+	if tmps, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(tmps) != 0 {
+		t.Errorf("temporary files left behind: %v", tmps)
+	}
+}
+
 func TestLoadMigrations(t *testing.T) {
 	t.Parallel()
 
@@ -339,6 +487,8 @@ func TestLoadMigrations(t *testing.T) {
 		{name: "short version", files: map[string]string{"1_init.sql": ""}, wantErr: "NNNN_snake_case_name.sql"},
 		{name: "upper case", files: map[string]string{"0001_Init.sql": ""}, wantErr: "NNNN_snake_case_name.sql"},
 		{name: "dash", files: map[string]string{"0001-init.sql": ""}, wantErr: "NNNN_snake_case_name.sql"},
+		{name: "upper case extension", files: map[string]string{"0001_init.SQL": ""}, wantErr: "NNNN_snake_case_name.sql"},
+		{name: "transaction control", files: map[string]string{"0001_init.sql": "CREATE TABLE a (x INTEGER);\nEND;"}, wantErr: "line 2: END"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

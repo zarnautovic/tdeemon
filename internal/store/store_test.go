@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,6 +116,10 @@ func TestReadsDoNotWaitForWriter(t *testing.T) {
 	exec(t, db, "CREATE TABLE t (n INTEGER NOT NULL) STRICT")
 
 	inTx, release := make(chan struct{}), make(chan struct{})
+	// If the test fails before releasing the writer, cleanup must still
+	// release it, or the test would hang instead of failing.
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
 	done := make(chan error, 1)
 	go func() {
 		done <- db.WriteTx(t.Context(), func(tx *sql.Tx) error {
@@ -136,13 +141,76 @@ func TestReadsDoNotWaitForWriter(t *testing.T) {
 		t.Errorf("read during the write saw %d rows, want 0 (uncommitted)", n)
 	}
 
-	close(release)
+	releaseOnce()
 	if err := <-done; err != nil {
 		t.Fatalf("WriteTx: %v", err)
 	}
 	if n := count(t.Context(), t, db, "t"); n != 1 {
 		t.Errorf("read after commit saw %d rows, want 1", n)
 	}
+}
+
+func TestReadTxSeesOneSnapshot(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	exec(t, db, "CREATE TABLE t (n INTEGER NOT NULL) STRICT")
+
+	tx, err := db.Read().BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("BeginTx on the read pool: %v", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	n := func() int {
+		t.Helper()
+		var n int
+		if err := tx.QueryRowContext(t.Context(), "SELECT count(*) FROM t").Scan(&n); err != nil {
+			t.Fatalf("count in the read transaction: %v", err)
+		}
+		return n
+	}
+	// The snapshot starts with the first read.
+	if got := n(); got != 0 {
+		t.Fatalf("first read saw %d rows, want 0", got)
+	}
+	exec(t, db, "INSERT INTO t (n) VALUES (1)")
+	if got := n(); got != 0 {
+		t.Errorf("second read in the same transaction saw %d rows, want 0 (the snapshot)", got)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatalf("end read transaction: %v", err)
+	}
+	if got := count(t.Context(), t, db, "t"); got != 1 {
+		t.Errorf("read after the transaction saw %d rows, want 1", got)
+	}
+}
+
+func TestCloseDoesNotWaitForBusyWriter(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	inTx, release := make(chan struct{}), make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
+	go func() {
+		// The result does not matter: the database closes under it.
+		_ = db.WriteTx(context.Background(), func(*sql.Tx) error {
+			close(inTx)
+			<-release
+			return nil
+		})
+	}()
+	<-inTx
+
+	closed := make(chan error, 1)
+	go func() { closed <- db.Close() }()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close blocked while a write transaction held the connection")
+	}
+	releaseOnce()
 }
 
 func TestWriteTxSerialisesWriters(t *testing.T) {
@@ -232,6 +300,20 @@ func TestWriteTxRollsBackOnPanic(t *testing.T) {
 	}
 	// The only write connection must be free again.
 	exec(t, db, "INSERT INTO t (n) VALUES (2)")
+}
+
+func TestOpenRejectsQuestionMarkInPath(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "what?", store.FileName)
+	db, err := store.Open(t.Context(), path)
+	if err == nil {
+		_ = db.Close()
+		t.Fatal("Open accepted a path with \"?\", want an error")
+	}
+	if !strings.Contains(err.Error(), `must not contain "?"`) {
+		t.Errorf("error %q does not explain the problem", err)
+	}
 }
 
 func TestOpenFailsWithoutDirectory(t *testing.T) {

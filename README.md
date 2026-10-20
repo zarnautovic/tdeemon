@@ -55,7 +55,8 @@ Every invalid or missing variable is reported at startup in one go.
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
 and applies database migrations at startup. Before it migrates a database
-that already has data, it saves a snapshot to `TDEEMON_DATA_DIR/backups/`.
+that already has data, it saves a snapshot to `TDEEMON_DATA_DIR/backups/`
+and keeps the three newest.
 
 ## Disclaimer
 
