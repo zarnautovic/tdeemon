@@ -1,0 +1,17 @@
+{
+  "name": "tdeemon-codegen",
+  "private": true,
+  "description": "Generates web/src/api/schema.d.ts from api/openapi.json. Kept apart from the web app because openapi-typescript 7 supports only TypeScript 5 (it breaks on TypeScript 7), so the app can move to newer TypeScript on its own.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "gen:api": "openapi-typescript ../../api/openapi.json --output ../src/api/schema.d.ts --default-non-nullable=false",
+    "check:api": "openapi-typescript ../../api/openapi.json --output ../src/api/schema.d.ts --default-non-nullable=false --check && tsc --noEmit --strict typetests/schema.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}
