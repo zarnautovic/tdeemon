@@ -370,7 +370,8 @@ the first spec.
     `TELEGRAM_BOT_TOKEN`; plus the standard `TZ`. The README has the
     current table.
   - Ships a `docker-compose.yml`; the homelab gets its own manifests.
-- **Backup:** a built-in nightly `VACUUM INTO` snapshot with retention,
+- **Backup:** a built-in nightly `VACUUM INTO` snapshot with retention
+  (plus one before every migration),
   and documented Litestream for continuous replication to S3/B2. Never
   put the DB on NFS.
 - **Dev process:**

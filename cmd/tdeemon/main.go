@@ -12,12 +12,14 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"syscall"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/server"
+	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
 // version can be set at build time with -ldflags "-X main.version=v1.2.3".
@@ -49,6 +51,19 @@ func run(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error 
 
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("data directory: %w", err)
+	}
+
+	db, err := store.Open(ctx, filepath.Join(cfg.DataDir, store.FileName))
+	if err != nil {
+		return fmt.Errorf("database: %w", err)
+	}
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("closing the database failed", "error", err)
+		}
+	}()
+	if err := db.Migrate(ctx, logger); err != nil {
+		return fmt.Errorf("database: %w", err)
 	}
 
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Listen)
