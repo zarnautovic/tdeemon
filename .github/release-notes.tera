@@ -1,9 +1,8 @@
 {#- The notes of a GitHub Release (cog.toml, [changelog]): the commits
     since the last release by type, each linked, and for a breaking
     change its BREAKING CHANGE footer, whose later lines are indented
-    under it (Tera strings take no escapes, so the newline in replace is
-    a real one). The release page itself has the version and the
-    comparison with the previous release. -#}
+    under it. The release page itself has the version and the comparison
+    with the previous release. -#}
 {% for value in commits | group_by_type -%}
 ### {{ value.0 | upper_first }}
 
@@ -11,9 +10,7 @@
 - {% if commit.breaking_change %}**BREAKING:** {% endif %}{% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.summary }} ([{{ commit.id | truncate(length=7, end="") }}]({{ repository_url }}/commit/{{ commit.id }}))
 {% for footer in commit.footers -%}
 {% if footer.footer -%}
-{% if footer.footer.token is starting_with("BREAKING") %}  - {{ footer.footer.content | replace(from="
-", to="
-    ") }}
+{% if footer.footer.token is starting_with("BREAKING") %}  - {{ footer.footer.content | indent(prefix="    ") }}
 {% endif -%}
 {% endif -%}
 {% endfor -%}

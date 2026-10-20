@@ -17,6 +17,9 @@ repo() {
   git init -q
   git config user.name test
   git config user.email test@example.com
+  # A contributor's global signing would need a key, or a tag message.
+  git config commit.gpgsign false
+  git config tag.gpgsign false
   mkdir scripts
   cp "$root/scripts/next-version.sh" scripts/
   cp "$root/cog.toml" .
@@ -133,14 +136,15 @@ real_cog=$(command -v cog)
 mkdir "$tmp/stub"
 cat >"$tmp/stub/cog" <<STUB
 #!/usr/bin/env bash
-case "\$STUB:\$1" in
-  changelog-fails:changelog) exit 1 ;;
-  bump-prints-junk:bump) echo "Next version: v9.9.9"; exit 0 ;;
+case "\$STUB:\$1:\${2-}" in
+  changelog-fails:changelog:*) exit 1 ;;
+  bump-prints-junk:bump:*) echo "Next version: v9.9.9"; exit 0 ;;
+  minor-prints-junk:bump:--minor) echo "Next version: v9.9.9"; exit 0 ;;
 esac
 exec "$real_cog" "\$@"
 STUB
 chmod +x "$tmp/stub/cog"
-for stub_case in "changelog-fails:fix!" "bump-prints-junk:fix" "bump-prints-junk:fix!"; do
+for stub_case in "changelog-fails:fix!" "bump-prints-junk:fix" "bump-prints-junk:fix!" "minor-prints-junk:fix!"; do
   stub=${stub_case%%:*}
   type=${stub_case#*:}
   repo
@@ -167,7 +171,7 @@ if ! notes=$(cog changelog --at v0.1.0 2>"$tmp/stderr"); then
 else
   missing=0
   for line in '- **BREAKING:** **api:** move the routes ([' '  - the routes moved:' '    - /v1/x is now /x'; do
-    if ! grep -qF -- "$line" <<<"$notes"; then
+    if [[ $'\n'$notes != *$'\n'"$line"* ]]; then
       echo "FAIL release notes: no line starting \"$line\""
       missing=1
     fi
