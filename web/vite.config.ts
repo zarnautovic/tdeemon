@@ -29,8 +29,13 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['src/**'],
-      exclude: ['src/api/schema.d.ts'],
+      // Generated types, the entry point that mounts the app, and the
+      // components copied from the shadcn registry.
+      exclude: ['src/api/schema.d.ts', 'src/main.tsx', 'src/components/ui/**'],
       reporter: ['text-summary', 'lcov'],
+      // No branch threshold: the React Compiler adds a cache branch to
+      // every memoised value, which a test takes only one way.
+      thresholds: { lines: 75, statements: 75, functions: 75 },
     },
   },
 })

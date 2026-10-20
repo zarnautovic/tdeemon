@@ -9,6 +9,8 @@ node = "24.22.0"
 golangci-lint = "2.15.0"
 # Known vulnerabilities in the Go dependencies and the standard library.
 "go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
+# Coverage thresholds for the Go tests (.testcoverage.yml).
+"go:github.com/vladopajic/go-test-coverage/v2" = "2.20.0"
 # Linters for the other files; configuration next to the repo root,
 # rules in docs/conventions.md ("Other files").
 editorconfig-checker = "4.0.2"

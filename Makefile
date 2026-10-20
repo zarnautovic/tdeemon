@@ -43,13 +43,13 @@ lint-other: ## EditorConfig, SQL, Dockerfile, shell scripts, workflows, YAML and
 		$(MISE) actionlint && $(MISE) zizmor .; \
 	fi
 
-test: test-go test-web ## Go tests with the race detector, then Vitest, both with coverage
+test: test-go test-web ## Go tests, then Vitest, both with coverage thresholds
 
-test-go:
+test-go: ## Go tests with the race detector; coverage must meet .testcoverage.yml
 	$(MISE) go test -race -coverprofile=coverage.out ./...
-	$(MISE) go tool cover -func=coverage.out | tail -n 1
+	$(MISE) go-test-coverage --config .testcoverage.yml
 
-test-web: $(WEB_DEPS)
+test-web: $(WEB_DEPS) ## Vitest; coverage must meet the thresholds in web/vite.config.ts
 	cd web && $(MISE) npm run --silent coverage
 
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json

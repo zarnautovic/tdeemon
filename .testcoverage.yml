@@ -1,0 +1,19 @@
+# Coverage thresholds for the Go tests, checked by go-test-coverage in
+# make test-go (and so in CI). The rules: docs/conventions.md ("Tests").
+profile: coverage.out
+
+threshold:
+  file: 0
+  package: 75
+  total: 75
+
+override:
+  # The domain and the boundaries where input enters: configuration, the
+  # API, the tool registry and MCP.
+  - path: ^internal/(domain|tools|api|mcp|config)$
+    threshold: 90
+
+exclude:
+  paths:
+    # A test helper, exercised by the tests that use it.
+    - ^internal/store/storetest/
