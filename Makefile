@@ -13,10 +13,13 @@ LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,Blue
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm licenses secrets
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm licenses secrets next-version
 
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+next-version: ## the version the next release would get (cog.toml)
+	@$(MISE) cog bump --auto --dry-run
 
 check: lint test test-webui api audit licenses secrets ## what CI checks, except a few that only CI runs (docs/conventions.md)
 

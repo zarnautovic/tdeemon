@@ -127,8 +127,9 @@ A change is done when:
     block: write it once, in the footer at the end, and nowhere else.
     Footers in the branch's commits are lost in the squash.
   - The summary is short and ends without a full stop.
-  - `feat` and `fix` decide the next release, and from 1.0.0 on a
-    breaking change raises the major version whatever its type.
+  - `feat`, `fix` and `perf` decide the next release, and from 1.0.0 on a
+    breaking change raises the major version whatever its type (see
+    Releases).
   - GitHub's Revert button titles a pull request `Revert "feat: x"`;
     rename it to `revert: feat: x`.
 - **The checks:** the "PR title" workflow runs `cog verify` (cocogitto,
@@ -136,6 +137,21 @@ A change is done when:
   on every commit message. Merge and fixup commits pass the hook, since
   the squash merge replaces them; a title starting with "Merge" does not
   pass.
+
+## Releases
+
+- **Every merge to `main` that brings a `feat`, `fix` or `perf` commit
+  cuts a release** (the "Release" workflow):
+  - the next version comes from the Conventional Commits since the last
+    tag: `feat` raises the minor version, `fix` and `perf` the patch;
+  - before 1.0.0, a breaking change raises the minor version too;
+  - the release is a `vX.Y.Z` tag and a GitHub Release whose notes list
+    the commits by type;
+  - other types (docs, chore, ci, refactor…) make no release.
+- `make next-version` shows the version the next release would get.
+- **The changelog is the list of GitHub Releases**, not a `CHANGELOG.md`:
+  committing one would mean pushing to `main`, which the ruleset allows
+  no one.
 
 ## Dependencies and security
 
