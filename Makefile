@@ -7,18 +7,18 @@ MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-other test test-go test-web api
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web api audit
 
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: lint test api ## everything CI checks
+check: lint test api audit ## everything CI checks
 
 fmt: $(WEB_DEPS) ## format Go and the web app in place (a new migration: sqlfluff fix <file>)
 	$(MISE) golangci-lint fmt
 	cd web && $(MISE) npm run --silent format
 
-lint: lint-go lint-web lint-other ## every linter and format check
+lint: lint-go lint-web lint-webui lint-other ## every linter and format check
 
 lint-go: ## golangci-lint, formatting included
 	$(MISE) golangci-lint run
@@ -27,6 +27,10 @@ lint-web: $(WEB_DEPS) ## oxlint, Prettier and tsc for the web app
 	cd web && $(MISE) npm run --silent lint
 	cd web && $(MISE) npm run --silent format:check
 	cd web && $(MISE) npm run --silent typecheck
+
+lint-webui: $(WEB_DEPS) ## golangci-lint on the files behind the webui tag, against a fresh build
+	cd web && $(MISE) npm run --silent build
+	$(MISE) golangci-lint run --build-tags webui
 
 lint-other: ## EditorConfig, SQL, Dockerfile, workflows, YAML and Markdown
 	$(MISE) editorconfig-checker
@@ -39,16 +43,22 @@ lint-other: ## EditorConfig, SQL, Dockerfile, workflows, YAML and Markdown
 		$(MISE) actionlint && $(MISE) zizmor .; \
 	fi
 
-test: test-go test-web ## Go tests with the race detector, then Vitest
+test: test-go test-web ## Go tests with the race detector, then Vitest, both with coverage
 
 test-go:
-	$(MISE) go test -race ./...
+	$(MISE) go test -race -coverprofile=coverage.out ./...
+	$(MISE) go tool cover -func=coverage.out | tail -n 1
 
 test-web: $(WEB_DEPS)
-	cd web && $(MISE) npm test --silent
+	cd web && $(MISE) npm run --silent coverage
 
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json
 	cd web/codegen && $(MISE) npm run --silent check:api
+
+audit: $(WEB_DEPS) $(CODEGEN_DEPS) ## known vulnerabilities in Go and npm dependencies
+	$(MISE) govulncheck ./...
+	cd web && $(MISE) npm audit --audit-level=high
+	cd web/codegen && $(MISE) npm audit --audit-level=high
 
 $(WEB_DEPS): web/package-lock.json
 	cd web && $(MISE) npm ci --no-audit --no-fund

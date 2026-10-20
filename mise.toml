@@ -7,6 +7,8 @@ node = "24.22.0"
 # Lint and format for Go (staticcheck, gofumpt and goimports inside);
 # configuration in .golangci.yml, rules in docs/conventions.md.
 golangci-lint = "2.15.0"
+# Known vulnerabilities in the Go dependencies and the standard library.
+"go:golang.org/x/vuln/cmd/govulncheck" = "1.9.0"
 # Linters for the other files; configuration next to the repo root,
 # rules in docs/conventions.md ("Other files").
 editorconfig-checker = "4.0.2"
@@ -14,8 +16,8 @@ hadolint = "2.15.1"
 actionlint = "1.7.12"
 zizmor = "1.31.1"
 shellcheck = "0.11.0"
-# uv and Python run the Python tools below. Python 3.15 waits for
-# wheels (pyyaml has none yet).
+# uv and Python run the Python tools below; mise.lock pins their
+# dependencies too. Python 3.15 waits for wheels (pyyaml has none yet).
 uv = "0.13.1"
 python = "3.14.8"
 "pipx:yamllint" = "1.38.0"

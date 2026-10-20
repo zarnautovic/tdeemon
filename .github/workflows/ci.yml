@@ -1,0 +1,114 @@
+# The checks every pull request must pass; the same targets run locally
+# with `make check`. The tool versions come from mise.toml and mise.lock.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: 2026.10.15
+          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-${{ runner.os }}-
+      - run: make lint-go
+      - run: make test-go
+      - run: mise exec -- govulncheck ./...
+
+  web:
+    name: Web app
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: 2026.10.15
+          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.npm
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: web-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/codegen/package-lock.json', 'go.sum') }}
+          restore-keys: web-${{ runner.os }}-
+      - run: make lint-web
+      - run: make test-web
+      - run: make api
+      # golangci-lint on the files behind the webui build tag, which need
+      # the built app.
+      - run: make lint-webui
+      - name: npm audit
+        run: |
+          (cd web && npm audit --audit-level=high)
+          (cd web/codegen && npm audit --audit-level=high)
+
+  other:
+    name: Other files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: 2026.10.15
+          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
+      # zizmor's online audits (impostor commits, actions with known
+      # vulnerabilities) read public data with the job's read-only token.
+      - run: make lint-other
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  image:
+    name: Docker image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # Built, with the tests the Dockerfile runs, but not pushed; releases
+      # publish the image.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          build-args: VERSION=ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
