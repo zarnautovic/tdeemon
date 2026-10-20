@@ -89,8 +89,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Before mise-action: it builds the Go tools from these modules, and
-      # the archive cannot unpack over modules it has already fetched.
+      # Before mise-action, as in the Go job, so a Go tool added to this
+      # job's list builds from these modules.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
