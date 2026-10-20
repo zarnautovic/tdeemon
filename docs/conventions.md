@@ -1,8 +1,7 @@
 # Conventions
 
 The rules every change follows. Tools check what they can; the rest is
-for the author and the reviewer. The other files (SQL, Docker, workflows)
-get their section with their own tooling.
+for the author and the reviewer.
 
 ## Go
 
@@ -205,3 +204,80 @@ generator writes it.
   own modules, and the stubs are undone after each test.
 - A change in behaviour comes with a test that fails without it.
 - Asynchronous UI is awaited with `findBy…` queries, never with sleeps.
+
+## Other files
+
+Every tool here is pinned in `mise.toml`; `mise install` brings them all.
+
+| Files | Tool | Configuration |
+| --- | --- | --- |
+| everything | editorconfig-checker | `.editorconfig`, `.editorconfig-checker.json` |
+| SQL migrations | sqlfluff (SQLite dialect) | `.sqlfluff`, `.sqlfluffignore` |
+| `Dockerfile` | hadolint | `.hadolint.yaml` |
+| GitHub Actions workflows | actionlint, zizmor | `.github/zizmor.yml` |
+| YAML | yamllint | `.yamllint.yaml` |
+| Markdown | markdownlint-cli2 | `.markdownlint-cli2.jsonc` |
+| shell scripts | shellcheck | none |
+
+```sh
+editorconfig-checker
+sqlfluff lint            # sqlfluff fix <new migration> lays one out
+hadolint Dockerfile
+actionlint && zizmor .  # once there are workflows
+yamllint -s .
+markdownlint-cli2
+```
+
+- **EditorConfig:** UTF-8, LF line endings, a final newline, no trailing
+  whitespace, and two spaces of indentation. Go and Makefiles use tabs,
+  and SQL uses four spaces.
+  - In Markdown, list markers set the indentation.
+  - The checker skips `LICENSE` (verbatim text), the generated schema
+    snapshot and Go files, which gofumpt formats.
+- **SQL migrations:**
+  - keywords and types are upper case; identifiers and functions lower
+    case. sqlfluff reads some keywords as functions or identifiers
+    (`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `RAISE`, `CAST`
+    and the collations `NOCASE`, `BINARY` and `RTRIM`); they may stay
+    upper case. A trigger's `new.` and `old.` are names like any other,
+    in lower case;
+  - in a trigger body, sqlfluff takes `new.x` in a `SELECT` without
+    `FROM` for an unknown table (RF01). Put the condition in the
+    trigger's `WHEN`, or mark that line `-- noqa: RF01`;
+  - four-space indentation, at most 100 columns;
+  - `sqlfluff fix` lays out a **new** migration. An applied migration is
+    never rewritten, not even to its layout: the runner would report it
+    as changed. If a newer sqlfluff flags an old migration, list that file
+    in `.sqlfluffignore` with the reason;
+  - sqlfluff's SQLite dialect cannot parse `SAVEPOINT`, `RELEASE` or
+    `ROLLBACK TO`, which the runner allows. A migration that needs them
+    goes into `.sqlfluffignore` too;
+  - the file name and the schema rules are in
+    [`internal/store/migrations/README.md`](../internal/store/migrations/README.md);
+  - every migration runs from an empty database in the tests
+    (`TestSchema`);
+  - the generated `internal/store/testdata/schema.sql` is not linted.
+- **Dockerfile:** hadolint at its strictest threshold (style), with Docker
+  Hub and Google's registry as the only trusted registries. Base images
+  are also fully qualified and pinned by digest; hadolint does not check
+  that, so the reviewer does.
+- **GitHub Actions:**
+  - actionlint checks the workflows;
+  - zizmor audits them for security, for example credentials left in
+    the checkout or permissions broader than the job needs;
+  - every action, GitHub's own included, is pinned to a full commit SHA
+    (zizmor's `unpinned-uses` with the `hash-pin` policy), with the
+    version in a comment, the form Renovate reads and writes:
+
+    ```yaml
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    ```
+
+- **YAML:** yamllint's default rules, without the `---` document start,
+  with lines up to 120 columns, `on:` allowed as a key, and one space
+  before a comment, as in the action pins.
+- **Markdown:** markdownlint's default rules.
+  - Prose wraps at 80 columns; tables, code and headings may run longer.
+  - Headings are real headings, not bold lines.
+  - Fenced code blocks name their language (`text` for plain text).
+- **Shell scripts:** shellcheck, when the repo gets any.

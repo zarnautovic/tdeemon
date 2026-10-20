@@ -1,0 +1,21 @@
+# Editors and editorconfig-checker follow this; gofumpt, Prettier and
+# sqlfluff own the finer layout of their languages.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[{*.go,go.mod,go.sum,Makefile}]
+indent_style = tab
+
+[*.sql]
+indent_size = 4
+
+# Markdown indentation follows its list markers, not a fixed width.
+[*.md]
+indent_size = unset

@@ -1,0 +1,6 @@
+# hadolint for the Dockerfile.
+failure-threshold: style
+# Base images come only from these registries.
+trustedRegistries:
+  - docker.io
+  - gcr.io

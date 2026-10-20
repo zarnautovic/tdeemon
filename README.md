@@ -80,7 +80,7 @@ cd web/codegen && npm ci && npm run gen:api
 All settings come from environment variables:
 
 | Variable | Default | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `TDEEMON_BASE_URL` | — (required) | public URL of the instance, without a path (tdeemon is served at the root of its host), e.g. `https://tdeemon.example.com` |
 | `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; signs sessions and encrypts stored secrets |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |

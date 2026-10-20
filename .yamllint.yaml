@@ -1,0 +1,18 @@
+# yamllint for every YAML file in the repo.
+extends: default
+
+ignore: |
+  **/node_modules/
+
+rules:
+  # No "---" required at the top of a file.
+  document-start: disable
+  line-length:
+    max: 120
+  # GitHub Actions' "on:" key is not a boolean.
+  truthy:
+    check-keys: false
+  # One space before a comment, as in the pins Renovate writes:
+  # uses: owner/action@<sha> # v1.2.3
+  comments:
+    min-spaces-from-content: 1
