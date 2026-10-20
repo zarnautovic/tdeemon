@@ -17,7 +17,7 @@ The tools are pinned in `mise.toml`:
 ```sh
 mise install       # Go, Node and every linter
 lefthook install   # git hooks
-make check         # everything CI checks
+make check         # what CI checks, except a few that only CI runs
 ```
 
 The rules for code, tests, commits and pull requests are in
