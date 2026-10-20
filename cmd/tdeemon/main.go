@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,17 +28,54 @@ import (
 // When empty, the module version recorded by the Go toolchain is used.
 var version string
 
+const usage = `Usage: tdeemon
+
+Runs the tdeemon server. It takes no arguments: configure it with TDEEMON_*
+environment variables, see
+https://github.com/zarnautovic/tdeemon#configuration
+`
+
+// errUsage marks a command line tdeemon does not accept.
+var errUsage = errors.New("takes no arguments")
+
 func main() {
-	if err := run(context.Background(), os.LookupEnv, os.Stderr); err != nil {
-		fmt.Fprintf(os.Stderr, "tdeemon: %v\n", err)
-		os.Exit(1)
+	err := run(context.Background(), os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr)
+	os.Exit(exitCode(err, os.Stderr))
+}
+
+// exitCode reports err on w, prefixed with the program name, and returns
+// the exit status: 2 for a command line tdeemon does not accept (with the
+// usage), 1 for any other error.
+func exitCode(err error, w io.Writer) int {
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, errUsage):
+		fmt.Fprintf(w, "tdeemon: %v\n\n%s", err, usage)
+		return 2
+	default:
+		fmt.Fprintf(w, "tdeemon: %v\n", err)
+		return 1
 	}
 }
 
 // run wires the server together and blocks until ctx is cancelled or a
 // termination signal arrives. Its inputs are parameters so tests can
 // drive it without touching the process environment.
-func run(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error {
+//
+// Any argument stops it before it reads the configuration or touches the
+// database: a mistyped command (say, a health check run inside the
+// container) must not start a second server on the live database.
+func run(ctx context.Context, args []string, lookup config.LookupFunc, out, logOut io.Writer) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "-h", "-help", "--help", "help":
+			_, err := io.WriteString(out, usage)
+			return err
+		}
+		return fmt.Errorf("%w, got %q", errUsage, args)
+	}
+
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

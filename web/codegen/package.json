@@ -1,6 +1,7 @@
 {
   "name": "tdeemon-codegen",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "Generates web/src/api/schema.d.ts from api/openapi.json. Kept apart from the web app because openapi-typescript 7 supports only TypeScript 5 (it breaks on TypeScript 7), so the app can move to newer TypeScript on its own.",
   "type": "module",
   "engines": {
