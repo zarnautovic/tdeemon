@@ -11,8 +11,10 @@ override:
   # The domain and the boundaries where input enters: configuration, the
   # API, the tool registry and MCP, with their subpackages. A new boundary
   # (the HAE ingest, the chat) is added here. The pattern matches package
-  # paths only: overrides apply to files too, and a file below 90 % would
-  # fail the run without a line saying why.
+  # paths only (a directory with a dot in its name is not matched):
+  # overrides apply to files too, and a file below 90 % would fail the run
+  # without a line saying why. A test helper package inside a boundary
+  # goes under exclude, like storetest.
   - path: ^internal/(domain|tools|api|mcp|config)(/[^/.]+)*$
     threshold: 90
 
