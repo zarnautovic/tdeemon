@@ -9,13 +9,25 @@ import (
 	"testing"
 )
 
-// references finds the files a built index.html loads.
-var references = regexp.MustCompile(`(?:src|href)="(/[^"]+)"`)
+var (
+	// tags finds the script and link elements of a built index.html.
+	tags = regexp.MustCompile(`<(?:script|link)\b[^>]*>`)
+	// attr reads one attribute of such an element.
+	attr = func(tag, name string) string {
+		m := regexp.MustCompile(`\b` + name + `="([^"]*)"`).FindStringSubmatch(tag)
+		if m == nil {
+			return ""
+		}
+		return m[1]
+	}
+)
 
 // TestEmbeddedApp runs only with the webui tag, after the web app has been
-// built: the real build must be in the binary and served, and every file
-// its index.html loads must get the long cache that hashed names allow.
-// It catches a Vite assetsDir that no longer matches this package's.
+// built: the real build must be in the binary and served, every file its
+// index.html references must be there, and the scripts and stylesheets,
+// whose names carry a hash, must get the long cache. That catches a Vite
+// assetsDir that no longer matches this package's. Other references
+// (an icon from web/public) are revalidated by design.
 func TestEmbeddedApp(t *testing.T) {
 	t.Parallel()
 
@@ -28,15 +40,30 @@ func TestEmbeddedApp(t *testing.T) {
 		t.Fatalf("GET / = %d, body %q; want the app's index.html", rec.Code, rec.Body.String())
 	}
 
-	refs := references.FindAllStringSubmatch(rec.Body.String(), -1)
-	if len(refs) == 0 {
-		t.Fatal("index.html references no script or stylesheet")
-	}
-	for _, ref := range refs {
-		asset := get(t, h, http.MethodGet, ref[1])
-		if asset.Code != 200 || asset.Header().Get("Cache-Control") != "public, max-age=31536000, immutable" {
-			t.Errorf("GET %s = %d, Cache-Control %q; want 200 with the immutable cache",
-				ref[1], asset.Code, asset.Header().Get("Cache-Control"))
+	hashed := 0
+	for _, tag := range tags.FindAllString(rec.Body.String(), -1) {
+		ref := attr(tag, "src")
+		if ref == "" {
+			ref = attr(tag, "href")
 		}
+		if !strings.HasPrefix(ref, "/") {
+			continue
+		}
+		rel := attr(tag, "rel")
+		isHashed := strings.HasPrefix(tag, "<script") || rel == "stylesheet" || rel == "modulepreload"
+
+		asset := get(t, h, http.MethodGet, ref)
+		if asset.Code != 200 {
+			t.Errorf("GET %s = %d, want 200", ref, asset.Code)
+		}
+		if isHashed {
+			hashed++
+			if got := asset.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+				t.Errorf("GET %s: Cache-Control %q, want the immutable cache", ref, got)
+			}
+		}
+	}
+	if hashed == 0 {
+		t.Fatal("index.html references no script or stylesheet")
 	}
 }

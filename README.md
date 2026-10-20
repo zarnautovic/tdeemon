@@ -78,7 +78,7 @@ All settings come from environment variables:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TDEEMON_BASE_URL` | — (required) | public URL of the instance, e.g. `https://tdeemon.example.com` |
+| `TDEEMON_BASE_URL` | — (required) | public URL of the instance, without a path (tdeemon is served at the root of its host), e.g. `https://tdeemon.example.com` |
 | `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; signs sessions and encrypts stored secrets |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
 | `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |

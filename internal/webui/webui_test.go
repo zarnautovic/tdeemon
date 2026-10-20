@@ -66,6 +66,8 @@ func TestHandler(t *testing.T) {
 		{name: "dotted route, no Sec-Fetch-Mode", method: http.MethodGet, path: "/day/1.5", header: []string{"Accept", "text/html,application/xhtml+xml"}, wantStatus: 200, wantBody: index},
 		{name: "fetch of a dotted path", method: http.MethodGet, path: "/favicon.ico", header: []string{"Sec-Fetch-Mode", "no-cors"}, wantStatus: 404, wantNoBodyOf: index},
 		{name: "navigation to an old asset", method: http.MethodGet, path: "/assets/index-OLD.js", header: navigate, wantStatus: 404, wantNoBodyOf: index},
+		// Sec-Fetch-Mode decides when present; Accept is only the fallback.
+		{name: "fetch that accepts HTML", method: http.MethodGet, path: "/x.y", header: []string{"Sec-Fetch-Mode", "cors", "Accept", "text/html"}, wantStatus: 404, wantNoBodyOf: index},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +90,31 @@ func TestHandler(t *testing.T) {
 				t.Errorf("body is the app's index.html, want a plain 404")
 			}
 		})
+	}
+}
+
+// TestHandlerVariesOnNavigation checks the headers that keep a cache from
+// serving one kind of request's answer to the other.
+func TestHandlerVariesOnNavigation(t *testing.T) {
+	t.Parallel()
+
+	h, err := Handler(app)
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	for _, rec := range []*httptest.ResponseRecorder{
+		get(t, h, http.MethodGet, "/invite/a.b.c", "Sec-Fetch-Mode", "navigate"),
+		get(t, h, http.MethodGet, "/invite/a.b.c", "Sec-Fetch-Mode", "no-cors"),
+	} {
+		if got := rec.Header().Get("Vary"); got != "Sec-Fetch-Mode, Accept" {
+			t.Errorf("status %d: Vary = %q, want Sec-Fetch-Mode, Accept", rec.Code, got)
+		}
+		if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("status %d: Cache-Control = %q, want no-store", rec.Code, got)
+		}
+	}
+	if got := get(t, h, http.MethodGet, "/assets/index-OLD.js").Header().Get("Cache-Control"); got != "no-store" {
+		t.Errorf("404 for an old asset: Cache-Control = %q, want no-store", got)
 	}
 }
 

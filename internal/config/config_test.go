@@ -131,6 +131,11 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"TDEEMON_BASE_URL", "query or fragment"},
 		},
 		{
+			name: "base url with an empty query",
+			set:  map[string]string{"TDEEMON_BASE_URL": "https://tdeemon.example.com?"},
+			want: []string{"TDEEMON_BASE_URL", "query or fragment"},
+		},
+		{
 			name: "base url with a path",
 			set:  map[string]string{"TDEEMON_BASE_URL": "https://example.com/tdeemon/"},
 			want: []string{"TDEEMON_BASE_URL", "must not have a path"},

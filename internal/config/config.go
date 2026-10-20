@@ -122,7 +122,7 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	if u.Host == "" {
 		return nil, fmt.Errorf("%q: host is missing", raw)
 	}
-	if u.RawQuery != "" || u.Fragment != "" {
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return nil, fmt.Errorf("%q: must not contain a query or fragment", raw)
 	}
 	// The web app and the API are served from the root of the host; the

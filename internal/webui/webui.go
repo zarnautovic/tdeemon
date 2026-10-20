@@ -64,7 +64,13 @@ func Handler(fsys fs.FS) (http.Handler, error) {
 				http.ServeFileFS(w, r, fsys, name)
 				return
 			}
+			if path.Ext(name) != "" {
+				// The answer below depends on these headers; caches must
+				// not hand a 404 for a fetch to a later navigation.
+				w.Header().Add("Vary", "Sec-Fetch-Mode, Accept")
+			}
 			if strings.HasPrefix(name, assetsDir) || (path.Ext(name) != "" && !isNavigation(r)) {
+				w.Header().Set("Cache-Control", "no-store")
 				http.NotFound(w, r)
 				return
 			}
