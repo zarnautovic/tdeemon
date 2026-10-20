@@ -42,6 +42,22 @@ for the author and the reviewer.
 
 - Every change reaches `main` through a pull request and is squash-merged,
   so the pull request's title becomes the commit on `main`.
+- **The ruleset for `main`** (`.github/rulesets/main.json`, applied with
+  `scripts/apply-github-settings.sh`), with no bypass:
+  - no direct pushes, force pushes or deletion;
+  - a pull request, squash-merged, with linear history;
+  - every required check green on a branch that is up to date with
+    `main`: Go, Web app, Other files, Docker image and Conventional Commit
+    title, each from GitHub Actions;
+  - review threads resolved;
+  - no approvals, since the project has one maintainer.
+
+  The squash commit's title is the pull request's title unless it is
+  edited in the merge dialog; leave it as it is. A renamed CI job must be
+  renamed in `main.json` too, or every pull request waits for the old
+  name. In an emergency the ruleset can be switched off in the
+  repository settings (or with `"enforcement": "disabled"` and the
+  script), and back on with the script.
 - **Titles and commit messages are Conventional Commits:**
   `type(scope)!: summary`.
   - The types are feat, fix, perf, refactor, test, docs, ci, build, chore,
@@ -278,7 +294,7 @@ Every tool here is pinned in `mise.toml`; `mise install` brings them all.
 | GitHub Actions workflows | actionlint, zizmor | `.github/zizmor.yml` |
 | YAML | yamllint | `.yamllint.yaml` |
 | Markdown | markdownlint-cli2 | `.markdownlint-cli2.jsonc` |
-| shell scripts | shellcheck | none |
+| shell scripts (`scripts/`) | shellcheck | none |
 
 ```sh
 editorconfig-checker
@@ -341,4 +357,4 @@ markdownlint-cli2
   - Prose wraps at 80 columns; tables, code and headings may run longer.
   - Headings are real headings, not bold lines.
   - Fenced code blocks name their language (`text` for plain text).
-- **Shell scripts:** shellcheck, when the repo gets any.
+- **Shell scripts:** bash with `set -euo pipefail`, checked by shellcheck.
