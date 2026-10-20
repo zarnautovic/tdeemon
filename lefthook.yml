@@ -7,7 +7,11 @@
 # gate: `git commit --no-verify` skips them.
 pre-commit:
   jobs:
-    # Formatters first, so the linters see what they wrote.
+    # Secrets first. A leak fails the commit, though the other jobs still
+    # run.
+    - name: secrets
+      run: mise exec -- gitleaks git --pre-commit --staged --verbose --redact --no-banner .
+    # Then the formatters, so the linters see what they wrote.
     - name: go-format
       glob: "*.go"
       run: mise exec -- golangci-lint fmt {staged_files}

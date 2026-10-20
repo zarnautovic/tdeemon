@@ -33,7 +33,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          version: 2026.10.15
+          version: v2026.10.15
           sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
           # Only main saves the tool cache; pull requests read it.
           cache_save: ${{ github.event_name == 'push' }}
@@ -74,7 +74,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          version: 2026.10.15
+          version: v2026.10.15
           sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
           # Only main saves the tool cache; pull requests read it.
           cache_save: ${{ github.event_name == 'push' }}
@@ -121,7 +121,7 @@ jobs:
           persist-credentials: false
       - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          version: 2026.10.15
+          version: v2026.10.15
           sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
           # Only main saves the tool cache; pull requests read it.
           cache_save: ${{ github.event_name == 'push' }}
@@ -130,6 +130,27 @@ jobs:
       - run: make lint-other
         env:
           GH_TOKEN: ${{ github.token }}
+
+  dependencies:
+    name: Dependencies and secrets
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # gitleaks scans the whole history, not only the last commit.
+          fetch-depth: 0
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: v2026.10.15
+          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
+          # Only main saves the tool cache; pull requests read it.
+          cache_save: ${{ github.event_name == 'push' }}
+      - run: make secrets
+      - run: make licenses
 
   image:
     name: Docker image

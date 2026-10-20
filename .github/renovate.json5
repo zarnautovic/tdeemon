@@ -1,0 +1,116 @@
+// Renovate keeps every pinned version current: Go modules and the Go
+// version, npm packages, the tools in mise.toml and mise.lock, the Docker
+// base images (by digest), the GitHub Actions (by commit SHA), and mise
+// and BuildKit in the workflows. It runs once the Renovate GitHub App is
+// installed on the repository.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    // Pins digests and SHAs, waits a few days before taking a new npm
+    // release, and groups packages released together.
+    'config:best-practices',
+    // Conventional Commit titles: fix(deps) for the Go modules and the
+    // npm dependencies, chore(deps) for the rest, devDependencies
+    // included; the Go version and the runtime image are marked fix
+    // below.
+    ':semanticCommits',
+  ],
+  timezone: 'Europe/Zagreb',
+  // One batch a week, early on Monday.
+  schedule: ['* 0-6 * * 1'],
+  labels: ['dependencies'],
+  postUpdateOptions: ['gomodTidy'],
+  // The preset's list (ignorePaths replaces it), plus the lock files mise
+  // keeps for its Python and npm tools: mise lock rewrites those with
+  // mise.lock, so the pep621 and npm managers must leave them alone.
+  ignorePaths: [
+    '**/node_modules/**',
+    '**/bower_components/**',
+    '**/vendor/**',
+    '**/examples/**',
+    '**/__tests__/**',
+    '**/test/**',
+    '**/tests/**',
+    '**/__fixtures__/**',
+    '.mise/locks/**',
+  ],
+  customManagers: [
+    {
+      // The BuildKit image the Docker image job builds with, pinned by
+      // digest in the buildx driver options.
+      customType: 'regex',
+      managerFilePatterns: ['/^\\.github/workflows/.+\\.ya?ml$/'],
+      matchStrings: ['image=(?<depName>moby/buildkit):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})'],
+      datasourceTemplate: 'docker',
+    },
+  ],
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+  },
+  packageRules: [
+    {
+      description: 'Merge minor, patch and digest updates once CI is green; majors wait for a review.',
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin', 'pinDigest'],
+      automerge: true,
+    },
+    {
+      description: 'Before 1.0 a minor release may break things, so it waits for a review like a major.',
+      matchUpdateTypes: ['minor'],
+      matchCurrentVersion: '/^v?0\\./',
+      automerge: false,
+    },
+    {
+      description: 'The go directive in go.mod moves with the Go version, instead of only being kept valid.',
+      matchManagers: ['gomod'],
+      matchDepTypes: ['golang'],
+      rangeStrategy: 'bump',
+    },
+    {
+      description: 'One pull request for the Go version: go.mod, mise.toml and the build image, whose GOTOOLCHAIN=local cannot build a newer go.mod. Go is compiled into the binary, so the update ships.',
+      matchDepNames: ['go', 'docker.io/library/golang'],
+      groupName: 'Go',
+      semanticCommitType: 'fix',
+    },
+    {
+      description: 'A rebuilt build image with the same Go changes nothing that ships.',
+      matchDepNames: ['docker.io/library/golang'],
+      matchUpdateTypes: ['digest'],
+      semanticCommitType: 'chore',
+    },
+    {
+      description: 'The runtime image ships.',
+      matchManagers: ['dockerfile'],
+      matchDepTypes: ['final'],
+      semanticCommitType: 'fix',
+    },
+    {
+      description: 'One pull request for the Node version, in mise.toml and the web build image.',
+      matchDepNames: ['node', 'docker.io/library/node'],
+      groupName: 'Node',
+    },
+    {
+      description: 'oxlint and its type-aware engine are released together.',
+      matchPackageNames: ['oxlint', 'oxlint-tsgolint'],
+      groupName: 'oxlint',
+    },
+    {
+      description: 'Vitest and its coverage provider must stay on the same version.',
+      matchPackageNames: ['vitest', '@vitest/**'],
+      groupName: 'Vitest',
+    },
+    {
+      description: 'openapi-typescript supports only TypeScript 5.',
+      matchFileNames: ['web/codegen/package.json'],
+      matchPackageNames: ['typescript'],
+      allowedVersions: '<6',
+    },
+    {
+      // mise's dependency name is python; its package is python/cpython.
+      description: 'pyyaml, which yamllint and sqlfluff need, has no wheels for Python 3.15 yet.',
+      matchManagers: ['mise'],
+      matchDepNames: ['python'],
+      allowedVersions: '<3.15',
+    },
+  ],
+}

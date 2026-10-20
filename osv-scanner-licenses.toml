@@ -1,0 +1,11 @@
+# osv-scanner checks licences only (make licenses). Known vulnerabilities
+# are govulncheck's and npm audit's job (make audit): they count only
+# reachable Go code and npm advisories at high severity, where osv-scanner
+# would fail on any advisory in any dependency.
+[[PackageOverrides]]
+ecosystem = "Go"
+vulnerability.ignore = true
+
+[[PackageOverrides]]
+ecosystem = "npm"
+vulnerability.ignore = true

@@ -39,8 +39,10 @@ write() {
 }
 
 # Squash merges only, with the pull request's title as the commit (the
-# release tooling reads it); merged branches are deleted.
+# release tooling reads it); merged branches are deleted; auto-merge lets
+# Renovate merge its updates once the required checks pass.
 write --method PATCH "repos/$repo" --silent \
+  -F allow_auto_merge=true \
   -F allow_squash_merge=true \
   -F allow_merge_commit=false \
   -F allow_rebase_merge=false \
