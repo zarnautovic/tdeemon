@@ -7,7 +7,8 @@ chat; tdeemon does the math, learns your real energy expenditure from
 intake and weight trend, and lets an AI coach adjust your goals — cut,
 maintenance, bulk or recomp — within guardrails you control.
 
-> **Status: early development.** Only the server skeleton runs so far.
+> **Status: early development.** Only the server skeleton and the
+> database layer exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights
@@ -43,12 +44,34 @@ All settings come from environment variables:
 | `TDEEMON_BASE_URL` | — (required) | public URL of the instance, e.g. `https://tdeemon.example.com` |
 | `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; signs sessions and encrypts stored secrets |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
-| `TDEEMON_DATA_DIR` | `./data` | database, backups and archives |
+| `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |
 | `TDEEMON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `TDEEMON_LOG_FORMAT` | `json` | `json` or `text` |
 | `TZ` | system | default time zone of the instance |
 
 Every invalid or missing variable is reported at startup in one go.
+
+## Data
+
+tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
+which it creates readable by its owner only, and applies database
+migrations at startup. Before it migrates a database that already has
+data, it saves a snapshot to
+`TDEEMON_DATA_DIR/backups/pre-migrate-<version>-<time>.db`. It keeps the
+newest snapshot of each schema version, for the three newest versions.
+
+To restore a snapshot:
+
+1. Stop tdeemon.
+2. Move `tdeemon.db`, `tdeemon.db-wal` and `tdeemon.db-shm` aside
+   together, for example into a `before-restore/` folder. After an
+   unclean stop the `-wal` file holds the latest committed changes, so
+   the three files are only a complete copy of the current database
+   together. Left next to the restored file, SQLite would replay the old
+   `-wal` onto it.
+3. Copy the snapshot to `tdeemon.db`.
+4. Start tdeemon. A release newer than the snapshot migrates it again; to
+   stay on the snapshot's schema, run the release that shipped it.
 
 ## Disclaimer
 
