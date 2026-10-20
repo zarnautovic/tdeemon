@@ -2,6 +2,10 @@ module github.com/zarnautovic/tdeemon
 
 go 1.27.2
 
+// web/ is the Node project of the web app; its node_modules can hold .go
+// files that are no part of this module.
+ignore ./web
+
 require (
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	modernc.org/sqlite v1.60.1

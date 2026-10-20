@@ -8,7 +8,7 @@ intake and weight trend, and lets an AI coach adjust your goals — cut,
 maintenance, bulk or recomp — within guardrails you control.
 
 > **Status: early development.** Only the server skeleton, the database
-> layer and the API contract exist so far.
+> layer, the API contract and an empty web app exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights
@@ -33,6 +33,28 @@ TDEEMON_BASE_URL=http://localhost:8080 \
 TDEEMON_SECRET_KEY="$(openssl rand -base64 32)" \
 TDEEMON_LOG_FORMAT=text \
 go run ./cmd/tdeemon
+```
+
+### Web app
+
+The web app in `web/` (React, TypeScript, Vite) is compiled into the
+binary only with the `webui` build tag, so Go builds and tests never need
+Node; a binary built without the tag serves a short notice at `/`. To work
+on the app, run the server as above and the Vite dev server next to it,
+which forwards `/api` to the server (`TDEEMON_DEV_SERVER`, default
+`http://localhost:8080`):
+
+```sh
+cd web && npm ci
+npm run dev     # http://localhost:5173
+npm test        # Vitest
+```
+
+A binary with the app inside:
+
+```sh
+(cd web && npm ci && npm run build)   # writes internal/webui/dist
+go build -tags webui ./cmd/tdeemon
 ```
 
 ### API contract

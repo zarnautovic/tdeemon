@@ -20,6 +20,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
+	"github.com/zarnautovic/tdeemon/internal/webui"
 )
 
 // version can be set at build time with -ldflags "-X main.version=v1.2.3".
@@ -67,7 +68,12 @@ func run(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error 
 		return fmt.Errorf("database: %w", err)
 	}
 
-	handler, err := api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: version})
+	app, embedded, err := webui.New()
+	if err != nil {
+		return err
+	}
+	logger.Info("web app", "embedded", embedded)
+	handler, err := api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: version}, app)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}

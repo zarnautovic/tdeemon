@@ -15,7 +15,7 @@ var testInfo = api.ServerInfo{Name: "tdeemon", Version: "v9.9.9"}
 func serve(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	h, err := api.NewHandler(testInfo)
+	h, err := api.NewHandler(testInfo, nil)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
@@ -114,6 +114,34 @@ func TestNonAPIErrorsStayPlain(t *testing.T) {
 		rec := serve(t, http.MethodGet, path)
 		if rec.Code != http.StatusNotFound || rec.Header().Get("Content-Type") == "application/problem+json" {
 			t.Errorf("GET %s = %d %q, want the mux's plain 404", path, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+}
+
+// TestAppGetsEveryOtherGET mounts a stand-in web app: it answers paths the
+// API and /healthz do not own, and never an /api/ path.
+func TestAppGetsEveryOtherGET(t *testing.T) {
+	t.Parallel()
+
+	app := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	})
+	h, err := api.NewHandler(testInfo, app)
+	if err != nil {
+		t.Fatalf("NewHandler: %v", err)
+	}
+	for path, want := range map[string]string{
+		"/":             "text/html; charset=utf-8",
+		"/day/today":    "text/html; charset=utf-8",
+		"/healthz":      "text/plain; charset=utf-8",
+		"/api/v1/info":  "application/json",
+		"/api/v1/typo":  "application/problem+json",
+		"/api/whatever": "application/problem+json",
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+		if got := rec.Header().Get("Content-Type"); got != want {
+			t.Errorf("GET %s: Content-Type = %q, want %q", path, got, want)
 		}
 	}
 }

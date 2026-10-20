@@ -70,7 +70,7 @@ func TestServedSpecIsTheCommittedOne(t *testing.T) {
 func TestSpecServesConcurrently(t *testing.T) {
 	t.Parallel()
 
-	h, err := api.NewHandler(testInfo)
+	h, err := api.NewHandler(testInfo, nil)
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
