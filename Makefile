@@ -1,5 +1,5 @@
 # One entry point for the checks CI runs: `make check` runs them all and
-# `make fmt` formats in place; `make help` lists the targets. The tools
+# `make fmt` formats Go and the web app in place; `make help` lists the targets. The tools
 # are pinned in mise.toml; with mise installed they run through it, and
 # otherwise from PATH.
 MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
@@ -10,14 +10,13 @@ CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 .PHONY: help check fmt lint lint-go lint-web lint-other test test-go test-web api
 
 help: ## list the targets
-	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
+	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check: lint test api ## everything CI checks
 
-fmt: $(WEB_DEPS) ## format Go, the web app and SQL in place
+fmt: $(WEB_DEPS) ## format Go and the web app in place (a new migration: sqlfluff fix <file>)
 	$(MISE) golangci-lint fmt
 	cd web && $(MISE) npm run --silent format
-	$(MISE) sqlfluff fix --quiet .
 
 lint: lint-go lint-web lint-other ## every linter and format check
 
