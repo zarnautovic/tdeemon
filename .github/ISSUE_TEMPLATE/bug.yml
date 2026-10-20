@@ -1,0 +1,33 @@
+name: Bug report
+description: Something does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version the server reports at /api/v1/info.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: How you run tdeemon (Docker, Kubernetes, binary) and anything unusual about it.
+  - type: markdown
+    attributes:
+      value: Leave out personal data such as your weights and meals, and secrets such as keys and tokens.
