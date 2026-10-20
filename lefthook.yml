@@ -31,7 +31,9 @@ pre-commit:
     - name: web-lint
       root: web/
       glob: "*.{ts,tsx}"
-      run: mise exec -- npx --no-install oxlint --no-error-on-unmatched-pattern {staged_files}
+      run: >-
+        test -d node_modules || { echo 'web/node_modules is missing: run npm ci in web/'; exit 1; };
+        mise exec -- npx --no-install oxlint --no-error-on-unmatched-pattern {staged_files}
     - name: sql-lint
       glob: "*.sql"
       exclude:
@@ -54,11 +56,11 @@ pre-commit:
     - name: editorconfig
       run: mise exec -- editorconfig-checker {staged_files}
 
-# The tests, without the coverage thresholds that make test and CI add.
+# The tests, quickly; make check and CI run everything. lefthook skips a
+# job when the push changes no files, as when it only deletes some.
 pre-push:
   jobs:
     - name: go-test
       run: mise exec -- go test -race ./...
     - name: web-test
-      root: web/
-      run: mise exec -- npm test --silent
+      run: cd web && mise exec -- npm test --silent

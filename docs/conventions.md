@@ -13,11 +13,12 @@ for the author and the reviewer.
 - **Git hooks** (lefthook, `lefthook install` once per clone):
   - pre-commit formats the staged files and stages what the formatters
     fixed, then lints them; Go is linted as packages, so the whole module;
-  - pre-push runs the Go and web tests, without the coverage thresholds;
+  - pre-push runs the Go and web tests, when the push changes files;
   - they are a convenience and CI is the gate: `git commit --no-verify`
     skips them.
-- `make` itself is GNU or BSD make, which usual systems and GitHub's
-  runners have; the hooks do not need it.
+- The Makefile needs GNU make: macOS's `/usr/bin/make` is GNU make 3.81,
+  and on the BSDs it is `gmake`. GitHub's runners have it; the hooks do
+  not need it.
 
 ## Go
 
