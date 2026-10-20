@@ -51,6 +51,7 @@ for the author and the reviewer.
     title, each from GitHub Actions;
   - review threads resolved;
   - no approvals, since the project has one maintainer.
+
   The squash commit's title is the pull request's title unless it is
   edited in the merge dialog; leave it as it is. A renamed CI job must be
   renamed in `main.json` too, or every pull request waits for the old
