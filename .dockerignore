@@ -11,12 +11,14 @@
 
 # Within them: dependencies are installed and the web app is built inside
 # the image, and no data or secrets go in, at any depth (a server started
-# from a subdirectory puts its data directory there).
+# from a subdirectory puts its data directory there). The data patterns
+# follow .gitignore: only what the server writes, so a source directory
+# may be called data.
 **/node_modules
 internal/webui/dist
 web/codegen
 web/coverage
-**/data
+**/data/backups
 **/testdata/private
 **/.env*
 **/.npmrc

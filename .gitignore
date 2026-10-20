@@ -1,9 +1,12 @@
-# Runtime data — never commit databases, backups or uploads, wherever
-# the server ran (its data directory is relative to the working one)
-data/
+# Runtime data — never commit databases, backups or uploads. The data
+# directory is relative to the working one, so a server started below the
+# root writes the same files there. Only what the server writes is listed
+# (a source directory may be called data); when it starts writing a new
+# kind of file under DATA_DIR, add it here and to .dockerignore.
+/data/
+**/data/backups/
 *.db
-*.db-shm
-*.db-wal
+*.db-*
 *.sqlite*
 pre-migrate-*.tmp
 
@@ -15,6 +18,7 @@ pre-migrate-*.tmp
 .env
 .env.*
 !.env.example
+.npmrc
 
 # Go
 /bin/
