@@ -1,15 +1,17 @@
 // Renovate keeps every pinned version current: Go modules and the Go
-// version, npm packages, the tools in mise.toml, the Docker base images
-// (by digest) and the GitHub Actions (by commit SHA). It runs once the
-// Renovate GitHub App is installed on the repository.
+// version, npm packages, the tools in mise.toml and mise.lock, the Docker
+// base images (by digest), the GitHub Actions (by commit SHA) and mise in
+// the workflows. It runs once the Renovate GitHub App is installed on the
+// repository.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
     // Pins digests and SHAs, waits a few days before taking a new npm
     // release, and groups packages released together.
     'config:best-practices',
-    // Conventional Commit titles: fix(deps) for what ships, chore(deps)
-    // for the rest.
+    // Conventional Commit titles: fix(deps) for the dependencies that
+    // ship, chore(deps) for the rest; the Go toolchain and the runtime
+    // image are marked fix below.
     ':semanticCommits',
   ],
   timezone: 'Europe/Zagreb',
@@ -28,9 +30,33 @@
       automerge: true,
     },
     {
-      description: 'One pull request for the Go version, in go.mod and mise.toml alike.',
-      matchDepNames: ['go', 'golang'],
+      description: 'Before 1.0 a minor release may break things, so it waits for a review like a major.',
+      matchUpdateTypes: ['minor'],
+      matchCurrentVersion: '/^v?0\\./',
+      automerge: false,
+    },
+    {
+      description: 'The go directive in go.mod moves with the Go version, instead of only being kept valid.',
+      matchManagers: ['gomod'],
+      matchDepTypes: ['golang'],
+      rangeStrategy: 'bump',
+    },
+    {
+      description: 'One pull request for the Go version: go.mod, mise.toml and the build image, whose GOTOOLCHAIN=local cannot build a newer go.mod. Go is compiled into the binary, so the update ships.',
+      matchDepNames: ['go', 'docker.io/library/golang'],
       groupName: 'Go',
+      semanticCommitType: 'fix',
+    },
+    {
+      description: 'The runtime image ships.',
+      matchManagers: ['dockerfile'],
+      matchDepTypes: ['final'],
+      semanticCommitType: 'fix',
+    },
+    {
+      description: 'One pull request for the Node version, in mise.toml and the web build image.',
+      matchDepNames: ['node', 'docker.io/library/node'],
+      groupName: 'Node',
     },
     {
       description: 'oxlint and its type-aware engine are released together.',
@@ -49,9 +75,10 @@
       allowedVersions: '<6',
     },
     {
+      // mise's dependency name is python; its package is python/cpython.
       description: 'pyyaml, which yamllint and sqlfluff need, has no wheels for Python 3.15 yet.',
       matchManagers: ['mise'],
-      matchPackageNames: ['python'],
+      matchDepNames: ['python'],
       allowedVersions: '<3.15',
     },
   ],

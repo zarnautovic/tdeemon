@@ -3,6 +3,8 @@ extends: default
 
 ignore: |
   **/node_modules/
+  # Lock files mise generates.
+  .mise/
 
 rules:
   # No "---" required at the top of a file.

@@ -15,7 +15,9 @@ permissions: {}
 
 concurrency:
   group: codeql-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  # A newer push replaces a pull request's run; every commit on main is
+  # analysed.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:
@@ -42,7 +44,7 @@ jobs:
       - if: matrix.language == 'go'
         uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
         with:
-          version: 2026.10.15
+          version: v2026.10.15
           sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
           install_args: go
           # Only Go: a cache saved here would shadow CI's full one.

@@ -22,14 +22,14 @@ for the author and the reviewer.
   other files, the dependencies and secrets, and the Docker image, which
   is built with its tests but not pushed. Only pushes to `main` write the
   caches; pull requests read them.
-- **Tool versions** are exact in `mise.toml`, and each download is
-  verified:
-  - tools from the aqua registry against their checksums, and against
-    signatures or attestations where the registry has them;
-  - Go tools through the Go checksum database;
-  - the Python and npm tools through uv and npm.
-  There is no `mise.lock`: the Renovate app cannot update it, so every
-  tool update would break CI's locked install.
+- **`mise.lock`** pins each tool's version and, for the tools mise
+  downloads as binaries, the URL and checksum for Linux and macOS on x64
+  and arm64; `.mise/locks/` pins the dependencies of the Python and npm
+  tools. Go tools are built from source and checked against the Go
+  checksum database. CI installs with `--locked`. After changing a
+  version in `mise.toml`, run
+  `mise lock --platform linux-x64,linux-arm64,macos-arm64,macos-x64`.
+  Renovate does this itself, in mise's safe mode.
 - **Git hooks** (lefthook, `lefthook install` once per clone):
   - pre-commit formats the staged files and stages what the formatters
     fixed, then lints them; Go is linted as packages, so the whole module;
@@ -143,17 +143,27 @@ A change is done when:
   installed) keeps every pinned version current: Go modules and the Go
   version, npm packages, the tools in `mise.toml`, the Docker base images
   by digest and the GitHub Actions by commit SHA.
-  - One batch a week; a new npm release waits a few days first.
+  - One batch a week; a new npm release waits a few days first (only
+    npm: the other sources are taken the day they appear).
   - Minor, patch and digest updates merge themselves once CI is green;
-    majors wait for a review.
+    majors, and minors of a package before 1.0, wait for a review.
+  - The Go version moves in one pull request, in `go.mod`, `mise.toml`
+    and the build image; so does Node's, in `mise.toml` and the web build
+    image.
+  - Titles are `fix(deps)` for what ships (the Go and npm dependencies,
+    the Go toolchain and the runtime image), so it makes a release, and
+    `chore(deps)` for the rest.
   - Pins that must not move have a rule with the reason: TypeScript 5 in
     `web/codegen`, Python below 3.15 for the tools.
+  - mise itself, in the workflows, moves with its checksum.
 - **Known vulnerabilities:** `govulncheck` for Go (only code that is
   reached counts) and `npm audit` at high severity (`make audit`).
 - **Licences** (`make licenses`, osv-scanner): every Go and npm
   dependency must be under a permissive licence or MPL-2.0. Copyleft
   licences such as the GPL would keep the project from also being offered
   under another licence; the list is `LICENSES` in the `Makefile`.
+  osv-scanner checks only licences here (`osv-scanner-licenses.toml`);
+  known vulnerabilities are left to `make audit`.
 - **Secrets:** gitleaks scans the staged changes in the pre-commit hook
   and the whole history in CI (`make secrets`).
 - **CodeQL** scans Go, the TypeScript and the workflows on every pull

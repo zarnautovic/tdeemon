@@ -79,7 +79,7 @@ audit-npm: $(WEB_DEPS) $(CODEGEN_DEPS)
 	cd web/codegen && $(MISE) npm audit --audit-level=high
 
 licenses: ## every Go and npm dependency has an allowed licence (LICENSES)
-	$(MISE) osv-scanner scan source --licenses="$(LICENSES)" \
+	$(MISE) osv-scanner scan source --config osv-scanner-licenses.toml --licenses="$(LICENSES)" \
 		-L go.mod -L web/package-lock.json -L web/codegen/package-lock.json
 
 secrets: ## no secrets anywhere in the git history
