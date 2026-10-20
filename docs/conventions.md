@@ -149,7 +149,8 @@ A change is done when:
   - before 1.0.0, a breaking change of any type raises the minor
     version instead;
   - the release is a `vX.Y.Z` tag and a GitHub Release whose notes list
-    the commits by type, with a link to each and a BREAKING badge;
+    the commits by type, with a link to each, and for a breaking change
+    a BREAKING mark and its footer (`.github/release-notes.tera`);
   - other types (docs, chore, ci, refactor…) make no release;
   - a commit that is already in a release makes no other, so re-running
     the workflow is safe.

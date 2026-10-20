@@ -1,0 +1,17 @@
+{#- The notes of a GitHub Release (cog.toml, [changelog]): the commits
+    since the last release by type, each linked, and for a breaking
+    change its BREAKING CHANGE footer. The release page itself has the
+    version and the comparison with the previous release. -#}
+{% for value in commits | group_by_type -%}
+### {{ value.0 | upper_first }}
+
+{% for commit in value.1 -%}
+- {% if commit.breaking_change %}**BREAKING:** {% endif %}{% if commit.scope %}**{{ commit.scope }}:** {% endif %}{{ commit.summary }} ([{{ commit.id | truncate(length=7, end="") }}]({{ repository_url }}/commit/{{ commit.id }}))
+{% for footer in commit.footers -%}
+{% if footer.footer -%}
+{% if footer.footer.token is starting_with("BREAKING") %}  - {{ footer.footer.content | replace(from="\n", to=" ") }}
+{% endif -%}
+{% endif -%}
+{% endfor -%}
+{% endfor %}
+{% endfor -%}

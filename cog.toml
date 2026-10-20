@@ -14,10 +14,11 @@
 # script does it for every type. The other types make no release.
 tag_prefix = "v"
 
-# The release notes link each commit, and the comparison with the
-# previous release, on GitHub; a breaking change gets a BREAKING badge.
+# The release notes (.github/release-notes.tera) link each commit on
+# GitHub and give a breaking change its footer. cog's own remote template
+# links the comparison wrongly after the first release (vX..vX).
 [changelog]
-template = "remote"
+template = ".github/release-notes.tera"
 remote = "github.com"
 owner = "zarnautovic"
 repository = "tdeemon"
