@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,6 +50,17 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	// The driver splits its connection string at the first "?".
 	if strings.ContainsRune(path, '?') {
 		return nil, fmt.Errorf("open %s: the database path must not contain \"?\"", path)
+	}
+	// SQLite would create the file readable by everyone (0644 under the
+	// usual umask); it holds health data, so only its owner may read it.
+	// SQLite gives the -wal and -shm files the database file's mode. An
+	// existing file keeps the mode its operator chose.
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 
 	writeParams := url.Values{}

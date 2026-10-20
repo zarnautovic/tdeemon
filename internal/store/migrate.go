@@ -44,8 +44,9 @@ const preMigratePrefix = "pre-migrate-"
 // backupTimeFormat is the time in a snapshot's name. It sorts lexically.
 const backupTimeFormat = "20060102T150405.000000Z"
 
-// preMigrateFile matches a finished snapshot and captures its time.
-var preMigrateFile = regexp.MustCompile(`^pre-migrate-\d{4}-(\d{8}T\d{6}\.\d{6}Z)\.db$`)
+// preMigrateFile matches a finished snapshot and captures its schema
+// version and its time.
+var preMigrateFile = regexp.MustCompile(`^pre-migrate-(\d{4})-(\d{8}T\d{6}\.\d{6}Z)\.db$`)
 
 const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
 	version    INTEGER PRIMARY KEY,
@@ -70,6 +71,9 @@ type migration struct {
 // (ErrSchemaTooNew). Afterwards it refreshes the query planner's
 // statistics with PRAGMA optimize, which SQLite recommends when a
 // long-lived connection opens and after schema changes.
+//
+// Call it at startup, before anything else writes: every migration runs
+// on a connection of its own, so another writer could slip in between.
 func (db *DB) Migrate(ctx context.Context, logger *slog.Logger) error {
 	sub, err := fs.Sub(embedded, "migrations")
 	if err != nil {
@@ -84,78 +88,78 @@ func (db *DB) migrate(ctx context.Context, fsys fs.FS, logger *slog.Logger) erro
 		return fmt.Errorf("migrate: %w", err)
 	}
 
-	// Pin the write connection, so nothing else writes while migrations
-	// run, and discard it afterwards instead of returning it to the pool:
-	// foreign keys are switched off below, and a migration may change
-	// other per-connection state (pragmas, TEMP objects). The pool opens
-	// a fresh connection with the standard settings for the next writer.
-	conn, err := db.write.Conn(ctx)
+	var applied, pending []migration
+	err = db.withSingleUseConn(ctx, func(conn *sql.Conn) error {
+		if _, err := conn.ExecContext(ctx, createMigrationsTable); err != nil {
+			return fmt.Errorf("create schema_migrations: %w", err)
+		}
+		if applied, err = appliedMigrations(ctx, conn); err != nil {
+			return err
+		}
+		if pending, err = pendingMigrations(known, applied, logger); err != nil {
+			return err
+		}
+		if len(pending) == 0 || len(applied) == 0 {
+			return nil
+		}
+		dst, err := db.backup(ctx, conn, len(applied), logger)
+		if err != nil {
+			return fmt.Errorf("back up before migrating: %w", err)
+		}
+		logger.Info("backed up the database before migrating", "path", dst)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
-	defer func() {
-		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
-		_ = conn.Close()
-	}()
 
-	if _, err := conn.ExecContext(ctx, createMigrationsTable); err != nil {
-		return fmt.Errorf("migrate: create schema_migrations: %w", err)
-	}
-	applied, err := appliedMigrations(ctx, conn)
-	if err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
-	pending, err := pendingMigrations(known, applied, logger)
-	if err != nil {
-		return fmt.Errorf("migrate: %w", err)
-	}
 	if len(pending) == 0 {
 		logger.Info("database schema is up to date", "version", len(applied))
 	} else {
-		if err := db.applyPending(ctx, conn, applied, pending, logger); err != nil {
-			return err
+		for _, m := range pending {
+			start := time.Now()
+			// A fresh connection per migration: a fresh install runs every
+			// migration in one go, an upgrade only the new ones, and both
+			// must see each migration start from the same connection state.
+			err := db.withSingleUseConn(ctx, func(conn *sql.Conn) error {
+				return applyMigration(ctx, conn, m)
+			})
+			if err != nil {
+				return fmt.Errorf("migrate: %04d_%s: %w", m.version, m.name, err)
+			}
+			logger.Info("applied migration", "version", m.version, "name", m.name, "duration", time.Since(start))
 		}
 		logger.Info("database schema migrated", "from", len(applied), "to", len(known))
 	}
 
 	// analysis_limit keeps ANALYZE on a large table quick, as the SQLite
-	// documentation advises for PRAGMA optimize. Both settings die with
-	// the discarded connection. The statistics live in the file, so the
-	// read pool benefits too. A failure here only costs query plans.
-	if _, err := conn.ExecContext(ctx, "PRAGMA analysis_limit = 400; PRAGMA optimize = 0x10002"); err != nil {
+	// documentation advises for PRAGMA optimize. The statistics live in the
+	// file, so the read pool benefits too. A failure only costs query plans.
+	err = db.withSingleUseConn(ctx, func(conn *sql.Conn) error {
+		_, err := conn.ExecContext(ctx, "PRAGMA analysis_limit = 400; PRAGMA optimize = 0x10002")
+		return err
+	})
+	if err != nil {
 		logger.Warn("refreshing query planner statistics failed", "error", err)
 	}
 	return nil
 }
 
-func (db *DB) applyPending(ctx context.Context, conn *sql.Conn, applied, pending []migration, logger *slog.Logger) error {
-	if len(applied) > 0 {
-		dst, err := db.backup(ctx, conn, len(applied), logger)
-		if err != nil {
-			return fmt.Errorf("migrate: back up before migrating: %w", err)
-		}
-		logger.Info("backed up the database before migrating", "path", dst)
+// withSingleUseConn runs fn on the write connection and then discards the
+// connection instead of returning it to the pool, so per-connection state
+// fn or a migration changed (pragmas, TEMP objects) never reaches anyone
+// else. The pool opens a fresh connection with the standard settings for
+// the next user.
+func (db *DB) withSingleUseConn(ctx context.Context, fn func(conn *sql.Conn) error) error {
+	conn, err := db.write.Conn(ctx)
+	if err != nil {
+		return err
 	}
-
-	// SQLite cannot alter most column definitions in place; a migration
-	// rebuilds the table instead (create, copy, drop, rename). With
-	// foreign keys enforced, dropping a referenced table fails or
-	// cascades, so they are off while migrations run and every migration
-	// must pass the foreign key checks before it commits. The pragma is a
-	// no-op inside a transaction, hence here. The connection is discarded
-	// afterwards, so it is never switched back on.
-	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
-		return fmt.Errorf("migrate: disable foreign keys: %w", err)
-	}
-
-	for _, m := range pending {
-		start := time.Now()
-		if err := applyMigration(ctx, conn, m); err != nil {
-			return fmt.Errorf("migrate: %04d_%s: %w", m.version, m.name, err)
-		}
-		logger.Info("applied migration", "version", m.version, "name", m.name, "duration", time.Since(start))
-	}
-	return nil
+	defer func() {
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+		_ = conn.Close()
+	}()
+	return fn(conn)
 }
 
 // loadMigrations reads the migration files in fsys and checks that their
@@ -249,7 +253,19 @@ func pendingMigrations(known, applied []migration, logger *slog.Logger) ([]migra
 	return known[len(applied):], nil
 }
 
+// applyMigration runs m in one transaction on conn, which the caller
+// discards afterwards.
 func applyMigration(ctx context.Context, conn *sql.Conn, m migration) error {
+	// SQLite cannot alter most column definitions in place; a migration
+	// rebuilds the table instead (create, copy, drop, rename). With
+	// foreign keys enforced, dropping a referenced table fails or
+	// cascades, so they are off and the checks below run before the
+	// commit. The pragma is a no-op inside a transaction, hence here; the
+	// connection is discarded afterwards, so it is never switched back on.
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys = OFF"); err != nil {
+		return fmt.Errorf("disable foreign keys: %w", err)
+	}
+
 	tx, err := conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -262,7 +278,7 @@ func applyMigration(ctx context.Context, conn *sql.Conn, m migration) error {
 	if err := checkForeignKeys(ctx, tx); err != nil {
 		return err
 	}
-	if err := checkViews(ctx, tx); err != nil {
+	if err := checkSchema(ctx, tx); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx,
@@ -349,39 +365,24 @@ func checkForeignKeyTargets(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-// checkViews fails if a view cannot be read. SQLite resolves a view's
-// tables only when the view is used, so a table rebuild that leaves a view
-// pointing at a dropped table would otherwise go unnoticed until the first
-// read fails.
-func checkViews(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_schema WHERE type = 'view' ORDER BY name")
-	if err != nil {
-		return fmt.Errorf("list views: %w", err)
-	}
-	var views []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("list views: %w", err)
-		}
-		views = append(views, name)
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return fmt.Errorf("list views: %w", err)
-	}
+// schemaProbe is the throwaway table checkSchema creates and renames.
+const schemaProbe = "tdeemon_schema_probe"
 
-	var broken []string
-	for _, name := range views {
-		r, err := tx.QueryContext(ctx, `SELECT * FROM "`+strings.ReplaceAll(name, `"`, `""`)+`" LIMIT 0`)
-		if err != nil {
-			broken = append(broken, fmt.Sprintf("%s (%v)", name, err))
-			continue
-		}
-		_ = r.Close()
-	}
-	if len(broken) > 0 {
-		return fmt.Errorf("leaves views that cannot be read: %s", strings.Join(broken, "; "))
+// checkSchema fails if a view or trigger refers to a table or column that
+// does not exist. SQLite resolves those only when they are used, so a
+// table rebuild that leaves one pointing at a dropped table would go
+// unnoticed until the first read or write that touches it fails. Renaming
+// a table makes SQLite re-check every view and trigger in the schema, so
+// a throwaway table is created, renamed and dropped. legacy_alter_table
+// is switched off first, in case a migration turned it on, because the
+// legacy rename skips that check.
+func checkSchema(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, "PRAGMA legacy_alter_table = OFF;"+
+		" CREATE TABLE "+schemaProbe+" (x INTEGER);"+
+		" ALTER TABLE "+schemaProbe+" RENAME TO "+schemaProbe+"_renamed;"+
+		" DROP TABLE "+schemaProbe+"_renamed")
+	if err != nil {
+		return fmt.Errorf("leaves views or triggers that refer to something missing: %w", err)
 	}
 	return nil
 }
@@ -437,21 +438,29 @@ func (db *DB) backup(ctx context.Context, conn *sql.Conn, version int, logger *s
 }
 
 // pruneBackups keeps the snapshot just written (current) and the newest
-// keepPreMigrateBackups-1 others, and removes temporary files a killed
-// process left behind. Age comes from the time in the name, not from the
-// version in front of it: after a restore the version goes down, and the
-// snapshot taken then is the one most worth keeping. Files that do not
-// look like snapshots are not touched.
+// snapshots of keepPreMigrateBackups-1 other schema versions, and removes
+// temporary files a killed process left behind. Files that do not look
+// like snapshots are not touched.
+//
+// One snapshot per version: a crash loop on a failing migration takes a
+// new snapshot of the same version on every restart, and those copies
+// must not push out the snapshots of earlier versions. Age comes from the
+// time in the name, not from the version: after a restore the version
+// goes down, and the snapshot taken then is the one most worth keeping.
 func pruneBackups(dir, current string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
-	type snapshot struct{ path, at string }
+	type snapshot struct{ path, version, at string }
 	var (
 		others []snapshot
 		stale  []string
 	)
+	seen := map[string]bool{}
+	if m := preMigrateFile.FindStringSubmatch(filepath.Base(current)); m != nil {
+		seen[m[1]] = true
+	}
 	for _, e := range entries {
 		name, path := e.Name(), filepath.Join(dir, e.Name())
 		if e.IsDir() || path == current || !strings.HasPrefix(name, preMigratePrefix) {
@@ -462,13 +471,20 @@ func pruneBackups(dir, current string) error {
 			continue
 		}
 		if m := preMigrateFile.FindStringSubmatch(name); m != nil {
-			others = append(others, snapshot{path: path, at: m[1]})
+			others = append(others, snapshot{path: path, version: m[1], at: m[2]})
 		}
 	}
-	// Newest first.
+
+	// Newest first; keep the first of each version until the limit.
 	slices.SortFunc(others, func(a, b snapshot) int { return strings.Compare(b.at, a.at) })
-	for _, s := range others[min(len(others), keepPreMigrateBackups-1):] {
-		stale = append(stale, s.path)
+	kept := 1 // current
+	for _, s := range others {
+		if seen[s.version] || kept >= keepPreMigrateBackups {
+			stale = append(stale, s.path)
+			continue
+		}
+		seen[s.version] = true
+		kept++
 	}
 
 	var errs []error

@@ -255,7 +255,7 @@ CREATE TABLE parent (
 INSERT INTO parent (id, name) SELECT id, coalesce(name, '') FROM parent_old;
 DROP TABLE parent_old;`,
 	}), discard())
-	if err == nil || !strings.Contains(err.Error(), "views that cannot be read: parent_names") ||
+	if err == nil || !strings.Contains(err.Error(), "error in view parent_names") ||
 		!strings.Contains(err.Error(), "parent_old") {
 		t.Fatalf("migrate returned %v, want the broken view reported", err)
 	}
@@ -361,6 +361,56 @@ func TestMigrateDiscardsItsConnection(t *testing.T) {
 	}
 }
 
+// TestMigrateRejectsBrokenTrigger runs a rename-first rebuild of a table
+// that a trigger on another table writes to: SQLite points the trigger at
+// the renamed table, which is then dropped.
+func TestMigrateRejectsBrokenTrigger(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	err := db.migrate(t.Context(), files(map[string]string{
+		"0001_create_parent.sql": createParent,
+		"0002_other.sql": `CREATE TABLE other (x INTEGER NOT NULL) STRICT;
+CREATE TRIGGER other_ins AFTER INSERT ON other BEGIN
+	INSERT INTO parent (id, name) VALUES (new.x, 'from other');
+END;`,
+		"0003_rename_first.sql": `ALTER TABLE parent RENAME TO parent_old;
+CREATE TABLE parent (
+	id   INTEGER PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT ''
+) STRICT;
+INSERT INTO parent (id, name) SELECT id, coalesce(name, '') FROM parent_old;
+DROP TABLE parent_old;`,
+	}), discard())
+	if err == nil || !strings.Contains(err.Error(), "error in trigger other_ins") ||
+		!strings.Contains(err.Error(), "parent_old") {
+		t.Fatalf("migrate returned %v, want the broken trigger reported", err)
+	}
+	if got := appliedVersions(t, db); len(got) != 2 {
+		t.Errorf("applied versions = %v, want [1 2]", got)
+	}
+}
+
+// TestMigrationsStartFromTheSameConnectionState checks that a fresh
+// install, which runs every migration in one go, behaves like an upgrade,
+// which runs only the new one: state a migration leaves on its connection
+// must not carry over to the next.
+func TestMigrationsStartFromTheSameConnectionState(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	err := db.migrate(t.Context(), files(map[string]string{
+		"0001_loose_checks.sql": "PRAGMA ignore_check_constraints = ON;\nCREATE TABLE t (x INTEGER NOT NULL CHECK (x > 0)) STRICT;",
+		"0002_bad_row.sql":      "INSERT INTO t (x) VALUES (-1);",
+	}), discard())
+	if err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
+		t.Fatalf("migrate returned %v, want 0002 to hit the CHECK constraint as it would on an upgrade", err)
+	}
+	if got := appliedVersions(t, db); len(got) != 1 {
+		t.Errorf("applied versions = %v, want [1]", got)
+	}
+}
+
 func TestMigrateRefusesNewerDatabase(t *testing.T) {
 	t.Parallel()
 
@@ -460,13 +510,14 @@ func TestBackupNamesAreUnique(t *testing.T) {
 	t.Parallel()
 
 	db := openEmpty(t)
-	// Back to back, well within the same second.
+	// Back to back, well within the same second; backupOnce fails the
+	// test if the second one cannot be written.
 	first, second := backupOnce(t, db, 1), backupOnce(t, db, 1)
 	if first == second {
 		t.Fatalf("two backups got the same name %s", first)
 	}
-	if b := backups(t, db); len(b) != 2 {
-		t.Errorf("backups = %v, want two", b)
+	if _, err := os.Stat(second); err != nil {
+		t.Errorf("the second backup is missing: %v", err)
 	}
 }
 
@@ -488,8 +539,8 @@ func TestBackupKeepsNewestSnapshotsOnly(t *testing.T) {
 	}
 
 	var made []string
-	for range keepPreMigrateBackups + 2 {
-		made = append(made, backupOnce(t, db, 1))
+	for version := range keepPreMigrateBackups + 2 {
+		made = append(made, backupOnce(t, db, version+1))
 	}
 
 	got := backups(t, db) // *.db, so it includes the unrelated file
@@ -537,6 +588,28 @@ func TestBackupPruningUsesTimeNotVersion(t *testing.T) {
 	}
 	if _, err := os.Stat(v11); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("the oldest snapshot %s should be gone, stat: %v", filepath.Base(v11), err)
+	}
+}
+
+// TestBackupPruningKeepsOneSnapshotPerVersion simulates a crash loop on
+// a failing migration: every restart snapshots the same version again,
+// and those copies must not push out the snapshot of an earlier version.
+func TestBackupPruningKeepsOneSnapshotPerVersion(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	earlier := backupOnce(t, db, 1) // taken at the previous upgrade
+	var loop []string
+	for range keepPreMigrateBackups {
+		loop = append(loop, backupOnce(t, db, 2))
+	}
+
+	got := backups(t, db)
+	want := []string{earlier, loop[len(loop)-1]}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("backups after the crash loop = %v, want %v (one per version)", got, want)
 	}
 }
 

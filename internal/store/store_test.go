@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -313,6 +314,30 @@ func TestWriteTxRollsBackOnPanic(t *testing.T) {
 	}
 	// The only write connection must be free again.
 	exec(t, db, "INSERT INTO t (n) VALUES (2)")
+}
+
+func TestOpenCreatesPrivateFiles(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), store.FileName)
+	db, err := store.Open(t.Context(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	// A write makes sure the -wal and -shm files exist.
+	exec(t, db, "CREATE TABLE t (n INTEGER) STRICT")
+
+	for _, f := range []string{path, path + "-wal", path + "-shm"} {
+		info, err := os.Stat(f)
+		if err != nil {
+			t.Errorf("stat %s: %v", filepath.Base(f), err)
+			continue
+		}
+		if mode := info.Mode().Perm(); mode&0o077 != 0 {
+			t.Errorf("%s has mode %v, want no access for group or others", filepath.Base(f), mode)
+		}
+	}
 }
 
 func TestOpenRejectsQuestionMarkInPath(t *testing.T) {

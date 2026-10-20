@@ -54,9 +54,21 @@ Every invalid or missing variable is reported at startup in one go.
 ## Data
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
-and applies database migrations at startup. Before it migrates a database
-that already has data, it saves a snapshot to `TDEEMON_DATA_DIR/backups/`
-and keeps the three newest.
+which it creates readable by its owner only, and applies database
+migrations at startup. Before it migrates a database that already has
+data, it saves a snapshot to
+`TDEEMON_DATA_DIR/backups/pre-migrate-<version>-<time>.db`. It keeps the
+newest snapshot of each schema version, for the three newest versions.
+
+To restore a snapshot:
+
+1. Stop tdeemon.
+2. Delete `tdeemon.db-wal` and `tdeemon.db-shm` next to the database if
+   they exist. They belong to the current database, and SQLite would
+   replay them onto the restored file.
+3. Copy the snapshot to `tdeemon.db`.
+4. Start tdeemon. A release newer than the snapshot migrates it again; to
+   stay on the snapshot's schema, run the release that shipped it.
 
 ## Disclaimer
 
