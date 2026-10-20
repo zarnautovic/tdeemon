@@ -1,0 +1,110 @@
+// oxlint with type-aware rules (oxlint-tsgolint, TypeScript 7). The
+// rules and why they are set this way: docs/conventions.md.
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "eslint",
+    "typescript",
+    "unicorn",
+    "oxc",
+    "react",
+    "jsx-a11y",
+    "import",
+    "vitest",
+    "promise"
+  ],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "options": {
+    "typeAware": true,
+    // A warning fails the run too, and so does a disable comment that
+    // no longer disables anything.
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error"
+  },
+  // node_modules is listed although .gitignore covers it: without it, a
+  // copy of the tree with no .gitignore makes tsgolint type-check every
+  // dependency, which takes minutes and gigabytes.
+  "ignorePatterns": ["**/node_modules/**", "dist/**", "coverage/**", "src/api/schema.d.ts"],
+  "rules": {
+    // typescript-eslint's strict-type-checked set, beyond the categories.
+    "typescript/ban-ts-comment": "error",
+    "typescript/no-confusing-void-expression": "error",
+    "typescript/no-deprecated": "error",
+    "typescript/no-dynamic-delete": "error",
+    "typescript/no-empty-object-type": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-import-type-side-effects": "error",
+    "typescript/no-invalid-void-type": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-mixed-enums": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-nullish-coalescing": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-require-imports": "error",
+    "typescript/no-unnecessary-condition": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-literal-enum-member": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/related-getter-setter-pairs": "error",
+    "typescript/require-await": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/return-await": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+
+    // typescript-eslint's stylistic-type-checked set.
+    "typescript/adjacent-overload-signatures": "error",
+    "typescript/array-type": "error",
+    "typescript/consistent-generic-constructors": "error",
+    "typescript/consistent-indexed-object-style": "error",
+    "typescript/consistent-type-assertions": "error",
+    "typescript/consistent-type-definitions": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/dot-notation": "error",
+    "typescript/no-inferrable-types": "error",
+    "typescript/non-nullable-type-assertion-style": "error",
+    "typescript/prefer-find": "error",
+    "typescript/prefer-for-of": "error",
+    "typescript/prefer-function-type": "error",
+    "typescript/prefer-includes": "error",
+    "typescript/prefer-nullish-coalescing": "error",
+    "typescript/prefer-optional-chain": "error",
+    "typescript/prefer-reduce-type-parameter": "error",
+    "typescript/prefer-regexp-exec": "error",
+    "typescript/prefer-return-this-type": "error",
+    "typescript/prefer-string-starts-ends-with": "error",
+
+    // The hooks and React Compiler rules are in the correctness category;
+    // these complete the set.
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": "error",
+    "react/jsx-no-target-blank": "error",
+    "react/jsx-no-useless-fragment": "error",
+    "react/no-unescaped-entities": "error",
+    "react/self-closing-comp": "error",
+    "react/react-in-jsx-scope": "off",
+
+    // Import order is Prettier's job (@ianvs/prettier-plugin-sort-imports).
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }]
+  },
+  "overrides": [
+    {
+      // Components from the shadcn registry export their variants next to
+      // the component, by design.
+      "files": ["src/components/ui/**"],
+      "rules": { "react/only-export-components": "off" }
+    }
+  ]
+}

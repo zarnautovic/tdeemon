@@ -6,7 +6,7 @@ import { defineConfig } from 'vitest/config'
 
 // The Go server in development (go run ./cmd/tdeemon); the dev server
 // forwards API calls to it, so the app always talks to its own origin.
-const server = process.env['TDEEMON_DEV_SERVER'] ?? 'http://localhost:8080'
+const server = process.env.TDEEMON_DEV_SERVER ?? 'http://localhost:8080'
 
 export default defineConfig({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss()],

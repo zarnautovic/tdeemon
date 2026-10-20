@@ -2,6 +2,7 @@ import { QueryClient } from '@tanstack/react-query'
 import { createMemoryHistory } from '@tanstack/react-router'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
+
 import { App } from '@/app'
 import { createAppRouter } from '@/router'
 
@@ -36,7 +37,10 @@ test("the start page shows the server's name and version from the API", async ()
 })
 
 test('the start page says so when the server cannot be reached', async () => {
-  vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))))
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+  )
 
   renderAt('/')
 

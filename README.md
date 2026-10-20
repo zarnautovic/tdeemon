@@ -50,6 +50,7 @@ which forwards `/api` to the server (`TDEEMON_DEV_SERVER`, default
 cd web && npm ci
 npm run dev     # http://localhost:5173
 npm test        # Vitest
+npm run lint    # oxlint; npm run format for Prettier
 ```
 
 A binary with the app inside:

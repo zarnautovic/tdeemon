@@ -1,0 +1,6 @@
+# Generated: written by web/codegen, checked by npm run check:api there.
+src/api/schema.d.ts
+package-lock.json
+codegen/package-lock.json
+dist
+coverage

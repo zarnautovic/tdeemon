@@ -1,13 +1,14 @@
 import type { QueryClient } from '@tanstack/react-query'
 import {
-  Outlet,
   createRootRouteWithContext,
   createRoute,
   createRouter,
   type RouterHistory,
 } from '@tanstack/react-router'
+
 import { HomePage } from '@/pages/home'
 import { NotFoundPage } from '@/pages/not-found'
+import { RootLayout } from '@/pages/root-layout'
 
 // Routes are declared in code, not generated from files: the app has few
 // screens, and this keeps type-safe routing without a generated route tree.
@@ -28,16 +29,6 @@ const indexRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([indexRoute])
-
-function RootLayout() {
-  return (
-    <div className="mx-auto min-h-dvh max-w-3xl px-4 py-8">
-      <main>
-        <Outlet />
-      </main>
-    </div>
-  )
-}
 
 export function createAppRouter(options: { queryClient: QueryClient; history?: RouterHistory }) {
   return createRouter({
