@@ -221,9 +221,9 @@ Every tool here is pinned in `mise.toml`; `mise install` brings them all.
 
 ```sh
 editorconfig-checker
-sqlfluff lint            # sqlfluff fix to format
+sqlfluff lint            # sqlfluff fix <new migration> lays one out
 hadolint Dockerfile
-actionlint && zizmor .github/workflows
+actionlint && zizmor .  # once there are workflows
 yamllint -s .
 markdownlint-cli2
 ```
@@ -236,8 +236,10 @@ markdownlint-cli2
     snapshot and Go files, which gofumpt formats.
 - **SQL migrations:**
   - keywords and types are upper case; identifiers and functions lower
-    case. sqlfluff reads `CURRENT_TIMESTAMP` and `RAISE` as functions and
-    `NOCASE` as an identifier; they may stay upper case;
+    case. sqlfluff reads some keywords as functions or identifiers
+    (`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `RAISE`, the
+    collations `NOCASE`, `BINARY` and `RTRIM`, and a trigger's `NEW` and
+    `OLD`); they may stay upper case;
   - four-space indentation, at most 100 columns;
   - `sqlfluff fix` lays out a **new** migration. An applied migration is
     never rewritten, not even to its layout: the runner would report it

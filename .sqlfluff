@@ -19,13 +19,15 @@ extended_capitalisation_policy = upper
 [sqlfluff:rules:capitalisation.literals]
 capitalisation_policy = upper
 
-# sqlfluff reads CURRENT_TIMESTAMP and RAISE as functions; written in
-# upper case, as SQLite's documentation does, they are left alone.
+# sqlfluff reads CURRENT_TIMESTAMP, CURRENT_DATE, CURRENT_TIME and RAISE
+# as functions; written in upper case, as SQLite's documentation does,
+# they are left alone.
 [sqlfluff:rules:capitalisation.functions]
 extended_capitalisation_policy = lower
-ignore_words = current_timestamp,raise
+ignore_words = current_timestamp,current_date,current_time,raise
 
-# NOCASE is a collation name, which sqlfluff reads as an identifier.
+# The collations NOCASE, BINARY and RTRIM, and a trigger's NEW and OLD,
+# which sqlfluff reads as identifiers.
 [sqlfluff:rules:capitalisation.identifiers]
 extended_capitalisation_policy = lower
-ignore_words = nocase
+ignore_words = nocase,binary,rtrim,new,old
