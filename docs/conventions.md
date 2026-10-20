@@ -38,6 +38,55 @@ for the author and the reviewer.
   and on the BSDs it is `gmake`. GitHub's runners have it; the hooks do
   not need it.
 
+## Tests and the Definition of Done
+
+### What gets tested
+
+- **Domain logic:** unit tests, table-driven.
+- **The store:** integration tests against a real SQLite file
+  (`storetest.Open`), and every migration from an empty database.
+- **HTTP and MCP handlers:** integration tests through the handler, with a
+  real store behind it.
+- **The web app:** components and hooks with Vitest and Testing Library.
+- End-to-end tests of the main flows (Playwright) come later.
+
+### Coverage
+
+Coverage is a floor, not the goal: the rule is a test that fails without
+the change. The floors fail `make test`, and so CI.
+
+- **Go** (go-test-coverage, `.testcoverage.yml`):
+  - 75 % in total and in every package;
+  - 90 % for the domain and the boundaries where input enters, with
+    their subpackages: `internal/domain`, `internal/tools`,
+    `internal/api`, `internal/mcp` and `internal/config`. A new boundary,
+    such as the HAE ingest or the chat, joins the list;
+  - the `storetest` helper is excluded, as the tests that use it exercise
+    it.
+- **The web app** (Vitest, `web/vite.config.ts`):
+  - 75 % of lines and functions. Branches and statements have no
+    threshold: the React Compiler adds a cache branch, and the statements
+    around it, to every memoised value, and a test takes it only one way;
+  - the entry point `main.tsx` and the shadcn registry components are
+    excluded.
+
+### Definition of Done
+
+A change is done when:
+
+- its behaviour is covered by tests that fail without it;
+- `make check` passes, and so does CI;
+- generated files are fresh:
+  - `api/openapi.json` and `web/src/api/schema.d.ts` after an API
+    change;
+  - the schema snapshot after a migration
+    (`go test ./internal/store -run TestSchema -update`);
+- the docs say what changed: README, these conventions, `DESIGN.md` for
+  design decisions;
+- no personal data entered the repo (real weights, meals, sessions);
+- the pull request title is a Conventional Commit, and the description
+  says what changed, why, and how it was checked.
+
 ## Commits and pull requests
 
 - Every change reaches `main` through a pull request and is squash-merged,
