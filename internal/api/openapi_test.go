@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -58,6 +59,9 @@ func TestServedSpecIsTheCommittedOne(t *testing.T) {
 	}
 	if !bytes.Equal(rec.Body.Bytes(), spec) {
 		t.Error("the served OpenAPI document differs from Spec(), which the committed file must equal")
+	}
+	if got, want := rec.Header().Get("Content-Length"), strconv.Itoa(len(spec)); got != want {
+		t.Errorf("Content-Length = %q, want %q", got, want)
 	}
 }
 

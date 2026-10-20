@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -48,6 +49,7 @@ func NewHandler(info ServerInfo) (http.Handler, error) {
 	}
 	mux.HandleFunc("GET "+Prefix+"/openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/openapi+json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(spec)))
 		_, _ = w.Write(spec)
 	})
 	return withAPIErrors(mux), nil
