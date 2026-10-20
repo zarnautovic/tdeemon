@@ -36,17 +36,26 @@ https://github.com/zarnautovic/tdeemon#configuration
 `
 
 // errUsage marks a command line tdeemon does not accept.
-var errUsage = errors.New("tdeemon takes no arguments")
+var errUsage = errors.New("takes no arguments")
 
 func main() {
 	err := run(context.Background(), os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr)
+	os.Exit(exitCode(err, os.Stderr))
+}
+
+// exitCode reports err on w, prefixed with the program name, and returns
+// the exit status: 2 for a command line tdeemon does not accept (with the
+// usage), 1 for any other error.
+func exitCode(err error, w io.Writer) int {
 	switch {
+	case err == nil:
+		return 0
 	case errors.Is(err, errUsage):
-		fmt.Fprintf(os.Stderr, "tdeemon: %v\n\n%s", err, usage)
-		os.Exit(2)
-	case err != nil:
-		fmt.Fprintf(os.Stderr, "tdeemon: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(w, "tdeemon: %v\n\n%s", err, usage)
+		return 2
+	default:
+		fmt.Fprintf(w, "tdeemon: %v\n", err)
+		return 1
 	}
 }
 

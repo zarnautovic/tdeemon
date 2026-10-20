@@ -1,12 +1,14 @@
-# Runtime data — never commit databases, backups or uploads
-/data/
+# Runtime data — never commit databases, backups or uploads, wherever
+# the server ran (its data directory is relative to the working one)
+data/
 *.db
 *.db-shm
 *.db-wal
-*.sqlite
+*.sqlite*
+pre-migrate-*.tmp
 
 # Personal fixtures and eval sets (real health data stays out of git)
-/testdata/private/
+**/testdata/private/
 /private/
 
 # Secrets

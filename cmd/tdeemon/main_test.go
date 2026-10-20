@@ -118,6 +118,30 @@ func TestRunRejectsArguments(t *testing.T) {
 	}
 }
 
+func TestExitCode(t *testing.T) {
+	t.Parallel()
+
+	usageErr := run(t.Context(), []string{"healthcheck"}, lookup(nil), io.Discard, io.Discard)
+	for _, tc := range []struct {
+		name string
+		err  error
+		code int
+		out  string
+	}{
+		{"success", nil, 0, ""},
+		{"arguments", usageErr, 2, "tdeemon: takes no arguments, got [\"healthcheck\"]\n\n" + usage},
+		{"failure", errors.New("database: disk full"), 1, "tdeemon: database: disk full\n"},
+	} {
+		var out bytes.Buffer
+		if code := exitCode(tc.err, &out); code != tc.code {
+			t.Errorf("%s: exit code %d, want %d", tc.name, code, tc.code)
+		}
+		if out.String() != tc.out {
+			t.Errorf("%s: printed %q, want %q", tc.name, out.String(), tc.out)
+		}
+	}
+}
+
 // syncBuffer is a bytes.Buffer that run's logger and the test can use
 // from different goroutines.
 type syncBuffer struct {

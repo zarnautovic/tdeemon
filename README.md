@@ -98,12 +98,13 @@ one volume at `/data`, so the root filesystem can be read-only.
 docker build -t tdeemon .
 
 # Once: the settings, readable by you only. Keep the secret key: it signs
-# sessions and encrypts stored secrets.
-(umask 077 && printf 'TDEEMON_BASE_URL=%s\nTDEEMON_SECRET_KEY=%s\n' \
+# sessions and encrypts stored secrets. set -C refuses to replace an
+# existing .env, so running this again keeps the key.
+(umask 077 && set -C && printf 'TDEEMON_BASE_URL=%s\nTDEEMON_SECRET_KEY=%s\n' \
   http://localhost:8080 "$(openssl rand -base64 32)" > .env)
 
-docker run --read-only -v tdeemon-data:/data -p 8080:8080 \
-  --env-file .env tdeemon
+docker run --read-only --stop-timeout 20 -v tdeemon-data:/data \
+  -p 8080:8080 --env-file .env tdeemon
 ```
 
 - `--env-file` keeps the key out of the command line, where other users
@@ -116,6 +117,9 @@ docker run --read-only -v tdeemon-data:/data -p 8080:8080 \
   rootless Podman, add `:U` to the mount, e.g. `-v ./data:/data:U`).
 - Nothing else needs to be writable, so `--read-only` (or
   `readOnlyRootFilesystem` in Kubernetes) works without a tmpfs.
+- On stop the server gives in-flight requests up to 15 seconds;
+  `--stop-timeout 20` waits for that, where the default of 10 would kill
+  the process first.
 - `--build-arg VERSION=v1.2.3` sets the version the server reports
   (default `dev`). The binary takes no arguments; with any it prints its
   usage and exits, without touching the database.
@@ -151,5 +155,5 @@ significant changes to your diet or training.
 
 ## License
 
-[AGPL-3.0](LICENSE). Contributions require signing a CLA (set up before
+[AGPL-3.0-only](LICENSE). Contributions require signing a CLA (set up before
 the first external contribution).

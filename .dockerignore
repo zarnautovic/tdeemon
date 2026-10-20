@@ -1,6 +1,6 @@
-# An allowlist: the build gets only what it needs, so nothing else in the
-# working tree (secrets, local databases, real health data, editor files)
-# can reach an image layer, not even an intermediate one.
+# An allowlist: the build context holds only these paths, so nothing else
+# in the working tree (the root data directory, private fixtures, editor
+# files) can reach an image layer, not even an intermediate one.
 *
 !go.mod
 !go.sum
@@ -9,15 +9,20 @@
 !internal/
 !web/
 
-# Within the allowed directories: dependencies are installed and the web
-# app is built inside the image, and no data or secrets go in.
+# Within them: dependencies are installed and the web app is built inside
+# the image, and no data or secrets go in, at any depth (a server started
+# from a subdirectory puts its data directory there).
 **/node_modules
 internal/webui/dist
 web/codegen
 web/coverage
+**/data
+**/testdata/private
 **/.env*
+**/.npmrc
 **/*.db
 **/*.db-*
-**/*.sqlite
+**/*.sqlite*
+**/*.tmp
 **/*.test
 **/coverage.out

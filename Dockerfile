@@ -1,8 +1,8 @@
 # tdeemon: one static binary with the web app inside, on distroless.
 #
 #   docker build -t tdeemon .
-#   docker run --read-only -v tdeemon-data:/data -p 8080:8080 \
-#     --env-file .env tdeemon
+#   docker run --read-only --stop-timeout 20 -v tdeemon-data:/data \
+#     -p 8080:8080 --env-file .env tdeemon
 #
 # README.md ("Docker") has the details. The image needs no writable path
 # besides /data: SQLite keeps its temporary storage in memory.
