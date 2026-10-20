@@ -21,14 +21,21 @@ the `schema_migrations` table.
   A file must not contain `BEGIN`, `COMMIT`, `END` or `ROLLBACK`; the
   runner rejects it before anything runs. `SAVEPOINT`, `RELEASE` and
   `ROLLBACK TO` are fine.
-- **Foreign keys must hold before the commit:** every foreign key has to
-  name an existing table, and `PRAGMA foreign_key_check` must come back
-  clean, or the whole migration rolls back.
-- **Rebuild tables in SQLite's order:** create `x_new`, copy the rows,
-  drop `x`, rename `x_new` to `x`. Renaming the old table first makes
-  SQLite point other tables' foreign keys at the old name, which the
-  check above rejects. With foreign keys off during migrations this
-  works for tables other tables reference too.
+- **The schema must hold before the commit:** every foreign key has to
+  name an existing table, `PRAGMA foreign_key_check` must come back
+  clean, and every view must be readable, or the whole migration rolls
+  back.
+- **Rebuild tables in SQLite's order:**
+  1. drop the views and triggers that use `x`, including triggers on
+     other tables;
+  2. create `x_new`, copy the rows, drop `x`, rename `x_new` to `x`;
+  3. recreate `x`'s indexes and triggers, and the views and triggers
+     dropped in step 1.
+
+  With foreign keys off during migrations this works for tables other
+  tables reference too. Renaming the old table first makes SQLite point
+  other tables' foreign keys and views at the old name; the runner
+  rejects both, but it cannot check trigger bodies, so step 1 matters.
 - **Keep the schema snapshot current.** After adding a migration, run
   `go test ./internal/store -run TestSchema -update` and commit
   `internal/store/testdata/schema.sql`. The test fails when the snapshot
@@ -50,7 +57,7 @@ The runner (`../migrate.go` and `../sqlscan.go`) is a few hundred
 lines, comments included, and covers what this project needs: embedded
 files, one transaction per migration, a refusal to run against a
 database migrated by a newer binary, a snapshot before migrating, and
-foreign key checks that make table rebuilds safe. It assumes one
+foreign key and view checks that make table rebuilds safe. It assumes one
 process migrates at a time.
 [goose](https://github.com/pressly/goose) would add down migrations we
 do not want, and its module requires drivers for databases we do not

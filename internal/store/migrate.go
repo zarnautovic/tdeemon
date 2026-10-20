@@ -41,6 +41,12 @@ const keepPreMigrateBackups = 3
 
 const preMigratePrefix = "pre-migrate-"
 
+// backupTimeFormat is the time in a snapshot's name. It sorts lexically.
+const backupTimeFormat = "20060102T150405.000000Z"
+
+// preMigrateFile matches a finished snapshot and captures its time.
+var preMigrateFile = regexp.MustCompile(`^pre-migrate-\d{4}-(\d{8}T\d{6}\.\d{6}Z)\.db$`)
+
 const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
 	version    INTEGER PRIMARY KEY,
 	name       TEXT    NOT NULL,
@@ -256,6 +262,9 @@ func applyMigration(ctx context.Context, conn *sql.Conn, m migration) error {
 	if err := checkForeignKeys(ctx, tx); err != nil {
 		return err
 	}
+	if err := checkViews(ctx, tx); err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx,
 		"INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
 		m.version, m.name, m.checksum, time.Now().UTC().Format(time.RFC3339),
@@ -340,6 +349,43 @@ func checkForeignKeyTargets(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
+// checkViews fails if a view cannot be read. SQLite resolves a view's
+// tables only when the view is used, so a table rebuild that leaves a view
+// pointing at a dropped table would otherwise go unnoticed until the first
+// read fails.
+func checkViews(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_schema WHERE type = 'view' ORDER BY name")
+	if err != nil {
+		return fmt.Errorf("list views: %w", err)
+	}
+	var views []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("list views: %w", err)
+		}
+		views = append(views, name)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return fmt.Errorf("list views: %w", err)
+	}
+
+	var broken []string
+	for _, name := range views {
+		r, err := tx.QueryContext(ctx, `SELECT * FROM "`+strings.ReplaceAll(name, `"`, `""`)+`" LIMIT 0`)
+		if err != nil {
+			broken = append(broken, fmt.Sprintf("%s (%v)", name, err))
+			continue
+		}
+		_ = r.Close()
+	}
+	if len(broken) > 0 {
+		return fmt.Errorf("leaves views that cannot be read: %s", strings.Join(broken, "; "))
+	}
+	return nil
+}
+
 // backup writes a consistent snapshot of the database at schema version
 // to the backups directory next to the database file and returns its
 // path. The snapshot is written under a temporary name and renamed when
@@ -375,7 +421,7 @@ func (db *DB) backup(ctx context.Context, conn *sql.Conn, version int, logger *s
 		return "", err
 	}
 	dst := filepath.Join(dir, fmt.Sprintf("%s%04d-%s.db", preMigratePrefix, version,
-		time.Now().UTC().Format("20060102T150405.000000Z")))
+		time.Now().UTC().Format(backupTimeFormat)))
 	if err := os.Rename(tmpPath, dst); err != nil {
 		return "", err
 	}
@@ -384,30 +430,49 @@ func (db *DB) backup(ctx context.Context, conn *sql.Conn, version int, logger *s
 		return "", err
 	}
 
-	if err := pruneBackups(dir); err != nil {
+	if err := pruneBackups(dir, dst); err != nil {
 		logger.Warn("removing old pre-migration snapshots failed", "error", err)
 	}
 	return dst, nil
 }
 
-// pruneBackups keeps the newest keepPreMigrateBackups snapshots and
-// removes temporary files a killed process left behind. Other files in
-// the directory are not touched.
-func pruneBackups(dir string) error {
-	snapshots, err := filepath.Glob(filepath.Join(dir, preMigratePrefix+"*.db"))
+// pruneBackups keeps the snapshot just written (current) and the newest
+// keepPreMigrateBackups-1 others, and removes temporary files a killed
+// process left behind. Age comes from the time in the name, not from the
+// version in front of it: after a restore the version goes down, and the
+// snapshot taken then is the one most worth keeping. Files that do not
+// look like snapshots are not touched.
+func pruneBackups(dir, current string) error {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
-	// Names hold the version and then the time, so they sort oldest first.
-	slices.Sort(snapshots)
-	stale := snapshots[:max(0, len(snapshots)-keepPreMigrateBackups)]
+	type snapshot struct{ path, at string }
+	var (
+		others []snapshot
+		stale  []string
+	)
+	for _, e := range entries {
+		name, path := e.Name(), filepath.Join(dir, e.Name())
+		if e.IsDir() || path == current || !strings.HasPrefix(name, preMigratePrefix) {
+			continue
+		}
+		if strings.HasSuffix(name, ".tmp") {
+			stale = append(stale, path)
+			continue
+		}
+		if m := preMigrateFile.FindStringSubmatch(name); m != nil {
+			others = append(others, snapshot{path: path, at: m[1]})
+		}
+	}
+	// Newest first.
+	slices.SortFunc(others, func(a, b snapshot) int { return strings.Compare(b.at, a.at) })
+	for _, s := range others[min(len(others), keepPreMigrateBackups-1):] {
+		stale = append(stale, s.path)
+	}
 
-	leftovers, err := filepath.Glob(filepath.Join(dir, preMigratePrefix+"*.tmp"))
-	if err != nil {
-		return err
-	}
 	var errs []error
-	for _, f := range slices.Concat(stale, leftovers) {
+	for _, f := range stale {
 		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			errs = append(errs, err)
 		}

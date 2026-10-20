@@ -190,15 +190,18 @@ func TestCloseDoesNotWaitForBusyWriter(t *testing.T) {
 	t.Parallel()
 
 	db := storetest.Open(t)
+	exec(t, db, "CREATE TABLE t (n INTEGER NOT NULL) STRICT")
 	inTx, release := make(chan struct{}), make(chan struct{})
 	releaseOnce := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(releaseOnce)
+	written := make(chan error, 1)
 	go func() {
-		// The result does not matter: the database closes under it.
-		_ = db.WriteTx(context.Background(), func(*sql.Tx) error {
+		written <- db.WriteTx(context.Background(), func(tx *sql.Tx) error {
 			close(inTx)
 			<-release
-			return nil
+			// Runs after Close: the transaction still has its connection.
+			_, err := tx.ExecContext(context.Background(), "INSERT INTO t (n) VALUES (1)")
+			return err
 		})
 	}()
 	<-inTx
@@ -210,7 +213,17 @@ func TestCloseDoesNotWaitForBusyWriter(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close blocked while a write transaction held the connection")
 	}
+
+	// As documented on Close, the running transaction can still finish.
 	releaseOnce()
+	select {
+	case err := <-written:
+		if err != nil {
+			t.Errorf("the transaction that outlived Close failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the transaction that outlived Close did not finish")
+	}
 }
 
 func TestWriteTxSerialisesWriters(t *testing.T) {

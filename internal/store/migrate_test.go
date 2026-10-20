@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -205,14 +206,21 @@ func TestMigrateRebuildsReferencedTable(t *testing.T) {
 	err := db.migrate(t.Context(), files(map[string]string{
 		"0001_create_parent.sql": createParent,
 		"0002_create_child.sql":  createChild,
-		"0003_seed.sql":          "INSERT INTO parent (id, name) VALUES (1, NULL); INSERT INTO child (id, parent_id) VALUES (1, 1);",
-		"0004_parent_name_not_null.sql": `CREATE TABLE parent_new (
+		"0003_seed.sql": `INSERT INTO parent (id, name) VALUES (1, NULL);
+INSERT INTO child (id, parent_id) VALUES (1, 1);
+CREATE INDEX parent_name ON parent (name);
+CREATE VIEW parent_names AS SELECT id, name FROM parent;`,
+		// The procedure migrations/README.md prescribes.
+		"0004_parent_name_not_null.sql": `DROP VIEW parent_names;
+CREATE TABLE parent_new (
 	id   INTEGER PRIMARY KEY,
 	name TEXT NOT NULL DEFAULT ''
 ) STRICT;
 INSERT INTO parent_new (id, name) SELECT id, coalesce(name, '') FROM parent;
 DROP TABLE parent;
-ALTER TABLE parent_new RENAME TO parent;`,
+ALTER TABLE parent_new RENAME TO parent;
+CREATE INDEX parent_name ON parent (name);
+CREATE VIEW parent_names AS SELECT id, name FROM parent;`,
 	}), discard())
 	if err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -223,7 +231,37 @@ ALTER TABLE parent_new RENAME TO parent;`,
 		"SELECT count(*) FROM child JOIN parent ON parent.id = child.parent_id").Scan(&n); err != nil || n != 1 {
 		t.Errorf("child rows joined to the rebuilt parent = %d, %v; want 1", n, err)
 	}
+	var name string
+	if err := db.Read().QueryRowContext(t.Context(), "SELECT name FROM parent_names WHERE id = 1").Scan(&name); err != nil || name != "" {
+		t.Errorf("recreated view = %q, %v; want the coalesced empty name", name, err)
+	}
 	assertForeignKeysEnforced(t, db)
+}
+
+// TestMigrateRejectsUnreadableView runs a rename-first rebuild that leaves
+// a view pointing at the dropped table.
+func TestMigrateRejectsUnreadableView(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	err := db.migrate(t.Context(), files(map[string]string{
+		"0001_create_parent.sql": createParent,
+		"0002_view.sql":          "CREATE VIEW parent_names AS SELECT id, name FROM parent;",
+		"0003_rename_first.sql": `ALTER TABLE parent RENAME TO parent_old;
+CREATE TABLE parent (
+	id   INTEGER PRIMARY KEY,
+	name TEXT NOT NULL DEFAULT ''
+) STRICT;
+INSERT INTO parent (id, name) SELECT id, coalesce(name, '') FROM parent_old;
+DROP TABLE parent_old;`,
+	}), discard())
+	if err == nil || !strings.Contains(err.Error(), "views that cannot be read: parent_names") ||
+		!strings.Contains(err.Error(), "parent_old") {
+		t.Fatalf("migrate returned %v, want the broken view reported", err)
+	}
+	if got := appliedVersions(t, db); len(got) != 2 {
+		t.Errorf("applied versions = %v, want [1 2]", got)
+	}
 }
 
 // assertForeignKeysEnforced checks that the write connection enforces
@@ -402,8 +440,8 @@ func TestMigrateBacksUpBeforeMigrating(t *testing.T) {
 	}
 }
 
-// backupOnce takes one pre-migration snapshot of db at version 1.
-func backupOnce(t *testing.T, db *DB) string {
+// backupOnce takes one pre-migration snapshot of db at the given version.
+func backupOnce(t *testing.T, db *DB, version int) string {
 	t.Helper()
 
 	conn, err := db.write.Conn(t.Context())
@@ -411,7 +449,7 @@ func backupOnce(t *testing.T, db *DB) string {
 		t.Fatalf("conn: %v", err)
 	}
 	defer func() { _ = conn.Close() }()
-	dst, err := db.backup(t.Context(), conn, 1, discard())
+	dst, err := db.backup(t.Context(), conn, version, discard())
 	if err != nil {
 		t.Fatalf("backup: %v", err)
 	}
@@ -423,7 +461,7 @@ func TestBackupNamesAreUnique(t *testing.T) {
 
 	db := openEmpty(t)
 	// Back to back, well within the same second.
-	first, second := backupOnce(t, db), backupOnce(t, db)
+	first, second := backupOnce(t, db, 1), backupOnce(t, db, 1)
 	if first == second {
 		t.Fatalf("two backups got the same name %s", first)
 	}
@@ -451,7 +489,7 @@ func TestBackupKeepsNewestSnapshotsOnly(t *testing.T) {
 
 	var made []string
 	for range keepPreMigrateBackups + 2 {
-		made = append(made, backupOnce(t, db))
+		made = append(made, backupOnce(t, db, 1))
 	}
 
 	got := backups(t, db) // *.db, so it includes the unrelated file
@@ -463,6 +501,42 @@ func TestBackupKeepsNewestSnapshotsOnly(t *testing.T) {
 	}
 	if tmps, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(tmps) != 0 {
 		t.Errorf("temporary files left behind: %v", tmps)
+	}
+}
+
+// TestBackupPruningUsesTimeNotVersion restores an older database next to
+// newer snapshots: the snapshot taken then has the lowest version, and
+// sorting by name would delete it the moment it was written.
+func TestBackupPruningUsesTimeNotVersion(t *testing.T) {
+	t.Parallel()
+
+	db := openEmpty(t)
+	dir := filepath.Join(filepath.Dir(db.path), "backups")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	// Older snapshots whose time order differs from their version order,
+	// and a file that only looks like a snapshot.
+	name := func(version int, at string) string {
+		return filepath.Join(dir, fmt.Sprintf("pre-migrate-%04d-%s.db", version, at))
+	}
+	v10, v11, v12 := name(10, "20260103T000000.000000Z"), name(11, "20260101T000000.000000Z"), name(12, "20260102T000000.000000Z")
+	notes := filepath.Join(dir, "pre-migrate-notes.db")
+	for _, f := range []string{v10, v11, v12, notes} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", f, err)
+		}
+	}
+
+	current := backupOnce(t, db, 9)
+
+	for _, f := range []string{current, v10, v12, notes} {
+		if _, err := os.Stat(f); err != nil {
+			t.Errorf("%s should be kept: %v", filepath.Base(f), err)
+		}
+	}
+	if _, err := os.Stat(v11); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the oldest snapshot %s should be gone, stat: %v", filepath.Base(v11), err)
 	}
 }
 

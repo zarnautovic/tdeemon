@@ -152,7 +152,8 @@ func (db *DB) WriteTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 
 // Close closes both pools. It does not wait for connections that are
 // still in use, so a shutdown that gave up on a slow request cannot hang
-// here; such a transaction fails when it next touches the database.
+// here. A transaction that is still running keeps its connection and can
+// still commit; that connection closes when the transaction ends.
 func (db *DB) Close() error { return db.close() }
 
 func (db *DB) close() error {
