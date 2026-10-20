@@ -204,9 +204,11 @@ A change is done when:
   high-severity alert.
 - **Vulnerability reports** come in privately, as GitHub's draft security
   advisories (`SECURITY.md`); the settings script turns private
-  vulnerability reporting on. The fix can be prepared in the
-  advisory's private fork, and the advisory is published with the
-  release that ships it.
+  vulnerability reporting on. The fix can be prepared and reviewed in
+  the advisory's private fork, but it lands as an ordinary `fix:` pull
+  request: the advisory's merge button skips CI and the ruleset and
+  makes a merge commit. The advisory is published once the release
+  that ships the fix is out.
 
 ## Go
 

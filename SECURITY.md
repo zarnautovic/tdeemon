@@ -10,7 +10,7 @@ report.
 
 Please do not open a public issue for a vulnerability. Report it
 privately on GitHub instead: [report a vulnerability][report], also
-reachable from the repository's Security tab.
+reachable from the repository's security advisories page.
 
 Include:
 
@@ -24,8 +24,8 @@ enough to show the problem.
 ## What to expect
 
 - An answer within 7 days.
-- The report and the fix stay private until a release fixes the problem;
-  you can follow and discuss the fix in the private advisory.
+- The report stays private, and so does the fix until it is ready to
+  release; you can follow and discuss it in the private advisory.
 - Then the advisory is published, crediting you unless you would rather
   not be named, and a CVE is requested where one applies.
 
