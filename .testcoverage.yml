@@ -9,8 +9,9 @@ threshold:
 
 override:
   # The domain and the boundaries where input enters: configuration, the
-  # API, the tool registry and MCP.
-  - path: ^internal/(domain|tools|api|mcp|config)$
+  # API, the tool registry and MCP, with their subpackages. A new boundary
+  # (the HAE ingest, the chat, Telegram) is added here.
+  - path: ^internal/(domain|tools|api|mcp|config)(/|$)
     threshold: 90
 
 exclude:

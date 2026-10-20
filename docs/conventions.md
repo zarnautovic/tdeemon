@@ -57,15 +57,16 @@ the change. The floors fail `make test`, and so CI.
 
 - **Go** (go-test-coverage, `.testcoverage.yml`):
   - 75 % in total and in every package;
-  - 90 % for the domain and the boundaries where input enters:
-    `internal/domain`, `internal/tools`, `internal/api`, `internal/mcp`
-    and `internal/config`;
-  - the `storetest` helper is excluded, as the tests that use it cover
+  - 90 % for the domain and the boundaries where input enters, with
+    their subpackages: `internal/domain`, `internal/tools`,
+    `internal/api`, `internal/mcp` and `internal/config`. A new boundary,
+    such as the HAE ingest or the chat, joins the list;
+  - the `storetest` helper is excluded, as the tests that use it exercise
     it.
 - **The web app** (Vitest, `web/vite.config.ts`):
-  - 75 % of lines, statements and functions;
-  - no branch threshold, because the React Compiler adds a cache branch
-    to every memoised value and a test takes it only one way;
+  - 75 % of lines and functions. Branches and statements have no
+    threshold: the React Compiler adds a cache branch, and the statements
+    around it, to every memoised value, and a test takes it only one way;
   - the entry point `main.tsx` and the shadcn registry components are
     excluded.
 
