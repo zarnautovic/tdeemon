@@ -1,6 +1,7 @@
-# Every merge to main that brings a feat, fix or perf commit cuts a
-# release: the next version from the Conventional Commits since the last
-# tag (cog.toml), a vX.Y.Z tag and a GitHub Release with the notes.
+# Every merge to main that brings a feat, fix or perf commit, or a
+# breaking change, cuts a release: the next version from the
+# Conventional Commits since the last tag (scripts/next-version.sh,
+# cog.toml), a vX.Y.Z tag and a GitHub Release with the notes.
 name: Release
 
 on:
@@ -9,18 +10,22 @@ on:
 
 permissions: {}
 
-# One release at a time, in merge order.
+# One run at a time. A newer merge replaces a run still waiting, and the
+# release it makes includes that run's commits.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Release
+  version:
+    name: Next version
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
-      contents: write # create the version tag and the GitHub Release
+      contents: read
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      notes: ${{ steps.next.outputs.notes }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,26 +39,44 @@ jobs:
           install_args: cocogitto
           # Only one tool: a cache saved here would shadow CI's full one.
           cache: false
-      - name: Next version
+      - name: Next version and notes
         id: next
         run: |
           # cog reads an author from the git config and aborts without one.
           git config --local user.name 'github-actions[bot]'
           git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          next=$(cog bump --auto --dry-run 2>/dev/null | head -n 1)
-          if [[ "$next" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "version=$next" >> "$GITHUB_OUTPUT"
-            echo "Releasing $next"
-          else
-            echo "No feat, fix or perf commit since the last release; nothing to release."
+          version=$(scripts/next-version.sh)
+          if [[ -z $version ]]; then
+            echo "Nothing since the last release makes one: no feat, fix or perf commit and no breaking change."
+            exit 0
           fi
+          echo "Releasing $version"
+          # A local tag, for cog changelog to cut the notes at; the
+          # release job creates the real one.
+          git tag "$version"
+          delimiter="notes_$(openssl rand -hex 16)"
+          {
+            echo "version=$version"
+            echo "notes<<$delimiter"
+            cog changelog --at "$version"
+            echo "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+  release:
+    name: Release
+    needs: version
+    if: needs.version.outputs.version != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    # The only job that can write, and it runs no action: only gh.
+    permissions:
+      contents: write # create the version tag and the GitHub Release
+    steps:
       - name: Tag and GitHub Release
-        if: steps.next.outputs.version != ''
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.next.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+          NOTES: ${{ needs.version.outputs.notes }}
         run: |
-          git tag "$VERSION"
-          cog changelog --at "$VERSION" > "$RUNNER_TEMP/notes.md"
-          gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" \
-            --notes-file "$RUNNER_TEMP/notes.md"
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes "$NOTES"

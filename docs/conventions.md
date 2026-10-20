@@ -9,8 +9,8 @@ for the author and the reviewer.
   runs: the Docker image build, CodeQL, the pull request title check, and
   zizmor's online audits, which need `GH_TOKEN` set:
   - the linters and format checks for every language;
-  - the Go and web tests, with coverage, and the Go tests behind the
-    `webui` tag against a fresh build;
+  - the Go and web tests, with coverage, the Go tests behind the
+    `webui` tag against a fresh build, and the tests of the scripts;
   - the check that the generated TypeScript types match the API spec;
   - `govulncheck`, `npm audit`, the licence check and the gitleaks scan
     of the history.
@@ -140,15 +140,21 @@ A change is done when:
 
 ## Releases
 
-- **Every merge to `main` that brings a `feat`, `fix` or `perf` commit
-  cuts a release** (the "Release" workflow):
+- **Every merge to `main` that brings a `feat`, `fix` or `perf` commit,
+  or a breaking change, cuts a release** (the "Release" workflow):
   - the next version comes from the Conventional Commits since the last
-    tag: `feat` raises the minor version, `fix` and `perf` the patch;
-  - before 1.0.0, a breaking change raises the minor version too;
+    tag (`scripts/next-version.sh`, `cog.toml`): `feat` raises the minor
+    version, `fix` and `perf` the patch, and a breaking change of any
+    type the major;
+  - before 1.0.0, a breaking change of any type raises the minor
+    version instead;
   - the release is a `vX.Y.Z` tag and a GitHub Release whose notes list
-    the commits by type;
-  - other types (docs, chore, ci, refactor…) make no release.
-- `make next-version` shows the version the next release would get.
+    the commits by type, with a link to each and a BREAKING badge;
+  - other types (docs, chore, ci, refactor…) make no release;
+  - a commit that is already in a release makes no other, so re-running
+    the workflow is safe.
+- `make next-version` shows the version the next release would get, and
+  `make test-scripts` checks those rules.
 - **The changelog is the list of GitHub Releases**, not a `CHANGELOG.md`:
   committing one would mean pushing to `main`, which the ruleset allows
   no one.
