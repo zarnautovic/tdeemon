@@ -7,8 +7,8 @@ chat; tdeemon does the math, learns your real energy expenditure from
 intake and weight trend, and lets an AI coach adjust your goals — cut,
 maintenance, bulk or recomp — within guardrails you control.
 
-> **Status: early development.** Only the server skeleton and the
-> database layer exist so far.
+> **Status: early development.** Only the server skeleton, the database
+> layer and the API contract exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights
@@ -43,7 +43,7 @@ is generated from the Go handlers in `internal/api` (with
 committed as `api/openapi.json`, and the TypeScript types in
 `web/src/api/schema.d.ts` are generated from it. `go test` fails when
 `api/openapi.json` is stale, and `npm run check:api` in `web/codegen` when
-the types are. After changing the API:
+the types are stale or no longer type-check. After changing the API:
 
 ```sh
 go test ./internal/api -run TestOpenAPISpec -update

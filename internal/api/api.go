@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -26,7 +27,7 @@ const Prefix = "/api/" + Version
 // ServerInfo describes the running server.
 type ServerInfo struct {
 	Name    string `json:"name" example:"tdeemon" doc:"Name of the server software."`
-	Version string `json:"version" example:"v0.1.0" doc:"Version of the running server; dev for a local build."`
+	Version string `json:"version" example:"v0.1.0" doc:"Version of the running server; dev when the build carries no version information."`
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
@@ -34,7 +35,67 @@ func NewHandler(info ServerInfo) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
 	register(newAPI(mux), info)
-	return mux
+	return withAPIErrors(mux)
+}
+
+// apiMethods are the methods withAPIErrors probes for an Allow header.
+var apiMethods = []string{
+	http.MethodGet, http.MethodHead, http.MethodPost,
+	http.MethodPut, http.MethodPatch, http.MethodDelete,
+}
+
+// withAPIErrors answers a request under /api/ that no API operation
+// handles with problem details, like every other API error: 405 with an
+// Allow header when the path exists for other methods, 404 otherwise.
+// Without it the mux would answer in plain text, and a catch-all route
+// added later (the web app's index.html) would answer API typos with HTML.
+func withAPIErrors(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isAPIPath(r.URL.Path) || handlesAPI(mux, r) {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		var allowed []string
+		for _, m := range apiMethods {
+			probe := *r
+			probe.Method = m
+			if m != r.Method && handlesAPI(mux, &probe) {
+				allowed = append(allowed, m)
+			}
+		}
+		if len(allowed) > 0 {
+			w.Header().Set("Allow", strings.Join(allowed, ", "))
+			writeProblem(w, http.StatusMethodNotAllowed, r.Method+" is not allowed on "+r.URL.Path)
+			return
+		}
+		writeProblem(w, http.StatusNotFound, "no API operation at "+r.URL.Path)
+	})
+}
+
+// handlesAPI reports whether mux routes r to an API operation.
+func handlesAPI(mux *http.ServeMux, r *http.Request) bool {
+	_, pattern := mux.Handler(r)
+	// A pattern is "[METHOD ][HOST]/PATH"; ours carry no host.
+	if _, path, ok := strings.Cut(pattern, " "); ok {
+		pattern = path
+	}
+	return isAPIPath(pattern)
+}
+
+func isAPIPath(path string) bool {
+	return path == "/api" || strings.HasPrefix(path, "/api/")
+}
+
+// writeProblem writes an RFC 9457 problem in the shape huma uses for every
+// other API error.
+func writeProblem(w http.ResponseWriter, status int, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(&huma.ErrorModel{
+		Title:  http.StatusText(status),
+		Status: status,
+		Detail: detail,
+	})
 }
 
 // Spec returns the OpenAPI document of the API, indented and with a

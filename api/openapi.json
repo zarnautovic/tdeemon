@@ -84,7 +84,7 @@
             "type": "string"
           },
           "version": {
-            "description": "Version of the running server; dev for a local build.",
+            "description": "Version of the running server; dev when the build carries no version information.",
             "examples": [
               "v0.1.0"
             ],

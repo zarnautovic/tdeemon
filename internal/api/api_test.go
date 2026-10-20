@@ -56,6 +56,61 @@ func TestRoutes(t *testing.T) {
 	}
 }
 
+func TestUnhandledAPIRequestsGetProblemDetails(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+		wantAllow  string
+	}{
+		{name: "unknown operation", method: http.MethodGet, path: "/api/v1/nope", wantStatus: http.StatusNotFound},
+		{name: "api root", method: http.MethodGet, path: "/api", wantStatus: http.StatusNotFound},
+		{name: "wrong method", method: http.MethodPost, path: "/api/v1/info", wantStatus: http.StatusMethodNotAllowed, wantAllow: "GET, HEAD"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			rec := serve(t, tt.method, tt.path)
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/problem+json" {
+				t.Errorf("Content-Type = %q, want application/problem+json", got)
+			}
+			if got := rec.Header().Get("Allow"); got != tt.wantAllow {
+				t.Errorf("Allow = %q, want %q", got, tt.wantAllow)
+			}
+			var problem struct {
+				Title  string `json:"title"`
+				Status int    `json:"status"`
+				Detail string `json:"detail"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+				t.Fatalf("decode %q: %v", rec.Body.String(), err)
+			}
+			if problem.Status != tt.wantStatus || problem.Title != http.StatusText(tt.wantStatus) ||
+				!strings.Contains(problem.Detail, tt.path) {
+				t.Errorf("problem = %+v", problem)
+			}
+		})
+	}
+}
+
+func TestNonAPIErrorsStayPlain(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range []string{"/nope", "/apiary"} {
+		rec := serve(t, http.MethodGet, path)
+		if rec.Code != http.StatusNotFound || rec.Header().Get("Content-Type") == "application/problem+json" {
+			t.Errorf("GET %s = %d %q, want the mux's plain 404", path, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+}
+
 func TestHealthzIsNotCached(t *testing.T) {
 	t.Parallel()
 

@@ -67,7 +67,7 @@ export interface components {
              * @default about:blank
              * @example https://example.com/errors/example
              */
-            type: string;
+            type?: string;
         };
         ServerInfo: {
             /**
@@ -76,7 +76,7 @@ export interface components {
              */
             name: string;
             /**
-             * @description Version of the running server; dev for a local build.
+             * @description Version of the running server; dev when the build carries no version information.
              * @example v0.1.0
              */
             version: string;
