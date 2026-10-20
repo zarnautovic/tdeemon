@@ -79,10 +79,16 @@
         "allowRegExp": false
       }
     ],
-    "typescript/return-await": "error",
+    "typescript/return-await": ["error", "error-handling-correctness-only"],
     "typescript/switch-exhaustiveness-check": "error",
     "typescript/unified-signatures": "error",
     "typescript/use-unknown-in-catch-callback-variable": "error",
+    "eslint/no-array-constructor": "error",
+    // ESLint's own rules that the strict set turns on for TypeScript.
+    "eslint/no-var": "error",
+    "eslint/prefer-const": "error",
+    "eslint/prefer-rest-params": "error",
+    "eslint/prefer-spread": "error",
 
     // typescript-eslint's stylistic-type-checked set.
     "typescript/adjacent-overload-signatures": "error",

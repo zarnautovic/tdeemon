@@ -144,9 +144,10 @@ npm test               # Vitest
   eslint, typescript, unicorn, oxc, react, jsx-a11y, import, vitest and
   promise plugins.
 - **TypeScript:** on top of those, typescript-eslint's strict-type-checked
-  and stylistic-type-checked sets, with the options of strict-type-checked
-  (template literals and `+` take strings only, a `@ts-expect-error` needs
-  a reason of ten characters). Among them:
+  and stylistic-type-checked sets, with the options of strict-type-checked:
+  `+` does not mix types, template literals take only strings (and `Error`
+  or `URL`), and a `@ts-expect-error` needs a reason of ten characters.
+  Among them:
   - no `any`, and no unsafe use of an `any` value;
   - no floating or misused promises;
   - no non-null assertions;
