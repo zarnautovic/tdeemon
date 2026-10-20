@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Applies the GitHub settings kept in the repo: the merge settings and the
-# ruleset for main (.github/rulesets/main.json). It needs gh logged in
+# Applies the GitHub settings kept in the repo: the merge settings, private
+# vulnerability reporting (SECURITY.md) and the ruleset for main
+# (.github/rulesets/main.json). It needs gh logged in
 # with admin rights on the repo, and jq; the required checks must already
 # run on pull requests, or nothing could be merged.
 #
@@ -49,6 +50,9 @@ write --method PATCH "repos/$repo" --silent \
   -f squash_merge_commit_title=PR_TITLE \
   -f squash_merge_commit_message=PR_BODY \
   -F delete_branch_on_merge=true
+
+# Vulnerabilities are reported privately, as private security advisories.
+write --method PUT "repos/$repo/private-vulnerability-reporting" --silent
 
 if [[ -n "$id" ]]; then
   write --method PUT "repos/$repo/rulesets/$id" --silent --input "$ruleset"

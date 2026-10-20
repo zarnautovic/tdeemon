@@ -202,6 +202,12 @@ A change is done when:
 - **CodeQL** scans Go, the TypeScript and the workflows on every pull
   request and weekly; the ruleset blocks merging a new error or a
   high-severity alert.
+- **Vulnerability reports** come in privately, as GitHub's private
+  security advisories (`SECURITY.md`); the settings script turns private
+  vulnerability reporting on. The fix can be prepared and reviewed in
+  the advisory's private fork, but it lands as an ordinary `fix:` pull
+  request: the advisory's merge button skips CI and the ruleset. The
+  advisory is published once the release that ships the fix is out.
 
 ## Go
 
