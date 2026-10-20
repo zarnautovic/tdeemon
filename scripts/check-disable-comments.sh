@@ -18,23 +18,28 @@ if (($# > 0)); then
   list=$(printf '%s\n' "$@" | sort -u)
 else
   # Tracked files and new ones not yet added, but nothing git ignores,
-  # such as node_modules or dist. A plain assignment, so that a failing
-  # git stops the script.
+  # such as node_modules or dist; once each, as a merge conflict lists a
+  # file per stage. A plain assignment, so that a failing git stops the
+  # script.
   list=$(git ls-files --cached --others --exclude-standard -- \
-    'web/*.ts' 'web/*.tsx' 'web/*.mts' 'web/*.cts' 'web/*.js' 'web/*.jsx' 'web/*.mjs' 'web/*.cjs')
+    'web/*.ts' 'web/*.tsx' 'web/*.mts' 'web/*.cts' 'web/*.js' 'web/*.jsx' 'web/*.mjs' 'web/*.cjs' |
+    sort -u)
 fi
 files=()
 while IFS= read -r file; do
-  if [[ -n $file ]]; then
+  # A tracked file deleted or renamed but not yet staged is still listed;
+  # it has nothing to check. A file named on the command line must exist.
+  if [[ -n $file ]] && { (($# > 0)) || [[ -e $file ]]; }; then
     files+=("$file")
   fi
 done <<<"$list"
 ((${#files[@]} > 0)) || exit 0
 
-# A directive opens a comment: eslint- or oxlint-disable, -disable-line or
-# -disable-next-line. Its reason is " -- " and then a word, which may
-# follow punctuation such as a backtick or a parenthesis.
-directive='(//|/\*)[[:space:]]*(eslint|oxlint)-disable(-next-line|-line)?([^a-z-]|$)'
+# A directive opens a comment, or a line of a block comment: eslint- or
+# oxlint-disable, -disable-line or -disable-next-line. Its reason is
+# " -- " and then a word, which may follow punctuation such as a
+# backtick or a parenthesis, after the directive on the same line.
+directive='(^[[:space:]]*|//|/\*)[[:space:]]*(eslint|oxlint)-disable(-next-line|-line)?([^a-z-]|$)'
 reason='[[:space:]]--[[:space:]]+[^[:alnum:]]*[[:alnum:]]'
 
 status=0
@@ -42,7 +47,11 @@ for file in "${files[@]}"; do
   if hits=$(grep -anE "$directive" -- "$file"); then
     while IFS= read -r hit; do
       line=${hit#*:}
-      if [[ ! $line =~ $reason ]]; then
+      # The text after the line's last directive, up to the end of its
+      # block comment if it is in one.
+      after=${line##*lint-disable}
+      after=${after%%\*/*}
+      if [[ ! $after =~ $reason ]]; then
         echo "$file:${hit%%:*}: a disable comment gives its reason after \" -- \", on the same line: $line" >&2
         status=1
       fi

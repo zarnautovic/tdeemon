@@ -47,6 +47,11 @@ expect "a JSX comment, no reason" fail '{/* eslint-disable-next-line react/no-da
 expect "no space after //" fail '//oxlint-disable-next-line a/b'
 expect "prose that mentions a disable" pass '// We do not need an eslint-disable here.'
 expect "a doc comment" pass '/** eslint-disable-next-line is not a directive here */'
+expect "a reason before the directive" fail 'f(" -- x"); // eslint-disable-line a/b'
+expect "a second directive without a reason" fail '/* eslint-disable a/b -- why */ x; // eslint-disable-line c/d'
+expect "an empty reason mid-line" fail 'foo(); /* eslint-disable-line a/b -- */ bar();'
+expect "a block comment's own line, no reason" fail '  eslint-disable no-debugger'
+expect "a block comment's own line with a reason" pass '  eslint-disable no-debugger -- a breakpoint for the demo'
 
 # A file named twice, as the hook's two globs can, is reported once.
 printf '// oxlint-disable-next-line x/y\n' >"$tmp/twice.ts"
@@ -70,9 +75,14 @@ else
 fi
 mkdir -p "$tmp/nogit/scripts" "$tmp/nogit/web"
 cp "$root/scripts/check-disable-comments.sh" "$tmp/nogit/scripts/"
-printf '// oxlint-disable-next-line x/y\n' >"$tmp/nogit/web/a.ts"
+# A clean file: the run may fail only because git does.
+printf '// oxlint-disable-next-line x/y -- a reason\n' >"$tmp/nogit/web/a.ts"
 if GIT_CEILING_DIRECTORIES=$tmp "$tmp/nogit/scripts/check-disable-comments.sh" 2>"$tmp/stderr"; then
   echo "FAIL outside a git repository: it passed"
+  fails=$((fails + 1))
+elif ! grep -q 'not a git repository' "$tmp/stderr"; then
+  echo "FAIL outside a git repository: it failed for another reason"
+  sed 's/^/     /' "$tmp/stderr"
   fails=$((fails + 1))
 else
   echo "ok   outside a git repository: fail"
@@ -114,6 +124,22 @@ elif grep -q node_modules "$tmp/stderr"; then
   fails=$((fails + 1))
 else
   echo "ok   the repo's files: tracked, new, .tsx and top-level files are checked, ignored ones not"
+fi
+
+# A tracked file deleted, or renamed, before the change is staged has
+# nothing left to check, and must not fail the run.
+mkdir -p "$tmp/gone/scripts" "$tmp/gone/web/src"
+cp "$root/scripts/check-disable-comments.sh" "$tmp/gone/scripts/"
+printf 'export const a = 1;\n' >"$tmp/gone/web/src/old.ts"
+git -C "$tmp/gone" init -q
+git -C "$tmp/gone" add scripts web/src/old.ts
+mv "$tmp/gone/web/src/old.ts" "$tmp/gone/web/src/renamed.ts"
+if "$tmp/gone/scripts/check-disable-comments.sh" 2>"$tmp/stderr"; then
+  echo "ok   a tracked file renamed before staging: pass"
+else
+  echo "FAIL a tracked file renamed before staging: it failed"
+  sed 's/^/     /' "$tmp/stderr"
+  fails=$((fails + 1))
 fi
 
 if ((fails > 0)); then
