@@ -5,4 +5,23 @@
 # test, docs, ci, build, chore, style and revert; `!` marks a breaking
 # change. Merge commits are let through by the hook alone (it passes
 # --ignore-merge-commits): here it would also let any title starting
-# with "Merge " pass the PR title check.
+# with "Merge " pass the PR title check, and the release skip it.
+#
+# The release workflow takes the next version from these commits
+# (scripts/next-version.sh): feat raises the minor version, fix and perf
+# the patch, and a breaking change the major. Before 1.0.0 a breaking
+# change raises the minor instead; cog does that only for feat, so the
+# script does it for every type. The other types make no release.
+tag_prefix = "v"
+
+# The release notes (.github/release-notes.tera) link each commit on
+# GitHub and give a breaking change its footer. cog's own remote template
+# links the comparison wrongly after the first release (vX..vX).
+[changelog]
+template = ".github/release-notes.tera"
+remote = "github.com"
+owner = "zarnautovic"
+repository = "tdeemon"
+
+[commit_types]
+perf = { changelog_title = "Performance Improvements", bump_patch = true }

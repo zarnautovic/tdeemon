@@ -9,8 +9,8 @@ for the author and the reviewer.
   runs: the Docker image build, CodeQL, the pull request title check, and
   zizmor's online audits, which need `GH_TOKEN` set:
   - the linters and format checks for every language;
-  - the Go and web tests, with coverage, and the Go tests behind the
-    `webui` tag against a fresh build;
+  - the Go and web tests, with coverage, the Go tests behind the
+    `webui` tag against a fresh build, and the tests of the scripts;
   - the check that the generated TypeScript types match the API spec;
   - `govulncheck`, `npm audit`, the licence check and the gitleaks scan
     of the history.
@@ -127,8 +127,9 @@ A change is done when:
     block: write it once, in the footer at the end, and nowhere else.
     Footers in the branch's commits are lost in the squash.
   - The summary is short and ends without a full stop.
-  - `feat` and `fix` decide the next release, and from 1.0.0 on a
-    breaking change raises the major version whatever its type.
+  - `feat`, `fix` and `perf` decide the next release, and from 1.0.0 on a
+    breaking change raises the major version whatever its type (see
+    Releases).
   - GitHub's Revert button titles a pull request `Revert "feat: x"`;
     rename it to `revert: feat: x`.
 - **The checks:** the "PR title" workflow runs `cog verify` (cocogitto,
@@ -136,6 +137,28 @@ A change is done when:
   on every commit message. Merge and fixup commits pass the hook, since
   the squash merge replaces them; a title starting with "Merge" does not
   pass.
+
+## Releases
+
+- **Every merge to `main` that brings a `feat`, `fix` or `perf` commit,
+  or a breaking change, cuts a release** (the "Release" workflow):
+  - the next version comes from the Conventional Commits since the last
+    tag (`scripts/next-version.sh`, `cog.toml`): `feat` raises the minor
+    version, `fix` and `perf` the patch, and a breaking change of any
+    type the major;
+  - before 1.0.0, a breaking change of any type raises the minor
+    version instead;
+  - the release is a `vX.Y.Z` tag and a GitHub Release whose notes list
+    the commits by type, with a link to each, and for a breaking change
+    a BREAKING mark and its footer (`.github/release-notes.tera`);
+  - other types (docs, chore, ci, refactor…) make no release;
+  - a commit that is already in a release makes no other, so re-running
+    the workflow is safe.
+- `make next-version` shows the version the next release would get, and
+  `make test-scripts` checks those rules.
+- **The changelog is the list of GitHub Releases**, not a `CHANGELOG.md`:
+  committing one would mean pushing to `main`, which the ruleset allows
+  no one.
 
 ## Dependencies and security
 

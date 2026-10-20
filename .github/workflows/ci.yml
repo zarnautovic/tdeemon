@@ -130,6 +130,7 @@ jobs:
       - run: make lint-other
         env:
           GH_TOKEN: ${{ github.token }}
+      - run: make test-scripts
 
   dependencies:
     name: Dependencies and secrets

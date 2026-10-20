@@ -382,8 +382,9 @@ the first spec.
   - `main` is protected by a ruleset: PRs only, squash merge, merge
     blocked until every required check is green.
   - PR titles follow Conventional Commits, and every merge to `main`
-    cuts a semver release automatically (tag, GitHub Release,
-    changelog, image).
+    that brings a `feat`, `fix` or `perf` commit or a breaking change
+    cuts a semver release automatically: a tag and a GitHub Release
+    with the changelog, and, once deploys exist, the image.
   - On the author's instance, Flux image automation deploys new
     releases, so a deploy depends only on the merge.
   - CI runs tests with coverage gates plus strict lint and format for

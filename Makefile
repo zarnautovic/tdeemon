@@ -13,10 +13,13 @@ LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,Blue
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm licenses secrets
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm licenses secrets next-version test-scripts
 
 help: ## list the targets
-	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+next-version: ## the version the next release would get (scripts/next-version.sh)
+	@v=$$($(MISE) scripts/next-version.sh) && echo "$${v:-no release: nothing since the last one makes a release}"
 
 check: lint test test-webui api audit licenses secrets ## what CI checks, except a few that only CI runs (docs/conventions.md)
 
@@ -49,7 +52,7 @@ lint-other: ## EditorConfig, SQL, Dockerfile, shell scripts, workflows, YAML and
 		$(MISE) actionlint && $(MISE) zizmor .; \
 	fi
 
-test: test-go test-web ## Go tests, then Vitest, both with coverage thresholds
+test: test-go test-web test-scripts ## Go tests and Vitest, both with coverage thresholds, then the script tests
 
 test-go: ## Go tests with the race detector; coverage must meet .testcoverage.yml
 	$(MISE) go test -race -coverprofile=coverage.out ./...
@@ -57,6 +60,9 @@ test-go: ## Go tests with the race detector; coverage must meet .testcoverage.ym
 
 test-web: $(WEB_DEPS) ## Vitest; coverage must meet the thresholds in web/vite.config.ts
 	cd web && $(MISE) npm run --silent coverage
+
+test-scripts: ## the tests of the shell scripts (scripts/*-test.sh)
+	$(MISE) scripts/next-version-test.sh
 
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json
 	cd web/codegen && $(MISE) npm run --silent check:api
