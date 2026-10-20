@@ -23,9 +23,10 @@ maintenance, bulk or recomp — within guardrails you control.
 ## Development
 
 The toolchain and every linter are pinned in `mise.toml`; install them
-with [mise](https://mise.jdx.dev). `make check` runs everything CI checks,
-and the git hooks run the fast part on each commit. The rules for code and
-tests are in [docs/conventions.md](docs/conventions.md).
+with [mise](https://mise.jdx.dev). `make check` runs what CI checks,
+except a few checks that only CI runs, and the git hooks run the fast part
+on each commit. The rules for code and tests, and the CI-only checks, are
+in [docs/conventions.md](docs/conventions.md).
 
 ```sh
 mise install
