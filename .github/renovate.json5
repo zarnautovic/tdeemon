@@ -19,6 +19,20 @@
   schedule: ['* 0-6 * * 1'],
   labels: ['dependencies'],
   postUpdateOptions: ['gomodTidy'],
+  // The preset's list (ignorePaths replaces it), plus the lock files mise
+  // keeps for its Python and npm tools: mise lock rewrites those with
+  // mise.lock, so the pep621 and npm managers must leave them alone.
+  ignorePaths: [
+    '**/node_modules/**',
+    '**/bower_components/**',
+    '**/vendor/**',
+    '**/examples/**',
+    '**/__tests__/**',
+    '**/test/**',
+    '**/tests/**',
+    '**/__fixtures__/**',
+    '.mise/locks/**',
+  ],
   lockFileMaintenance: {
     enabled: true,
     automerge: true,
