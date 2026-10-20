@@ -1,0 +1,58 @@
+// Renovate keeps every pinned version current: Go modules and the Go
+// version, npm packages, the tools in mise.toml, the Docker base images
+// (by digest) and the GitHub Actions (by commit SHA). It runs once the
+// Renovate GitHub App is installed on the repository.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    // Pins digests and SHAs, waits a few days before taking a new npm
+    // release, and groups packages released together.
+    'config:best-practices',
+    // Conventional Commit titles: fix(deps) for what ships, chore(deps)
+    // for the rest.
+    ':semanticCommits',
+  ],
+  timezone: 'Europe/Zagreb',
+  // One batch a week, early on Monday.
+  schedule: ['* 0-6 * * 1'],
+  labels: ['dependencies'],
+  postUpdateOptions: ['gomodTidy'],
+  lockFileMaintenance: {
+    enabled: true,
+    automerge: true,
+  },
+  packageRules: [
+    {
+      description: 'Merge minor, patch and digest updates once CI is green; majors wait for a review.',
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pin', 'pinDigest'],
+      automerge: true,
+    },
+    {
+      description: 'One pull request for the Go version, in go.mod and mise.toml alike.',
+      matchDepNames: ['go', 'golang'],
+      groupName: 'Go',
+    },
+    {
+      description: 'oxlint and its type-aware engine are released together.',
+      matchPackageNames: ['oxlint', 'oxlint-tsgolint'],
+      groupName: 'oxlint',
+    },
+    {
+      description: 'Vitest and its coverage provider must stay on the same version.',
+      matchPackageNames: ['vitest', '@vitest/**'],
+      groupName: 'Vitest',
+    },
+    {
+      description: 'openapi-typescript supports only TypeScript 5.',
+      matchFileNames: ['web/codegen/package.json'],
+      matchPackageNames: ['typescript'],
+      allowedVersions: '<6',
+    },
+    {
+      description: 'pyyaml, which yamllint and sqlfluff need, has no wheels for Python 3.15 yet.',
+      matchManagers: ['mise'],
+      matchPackageNames: ['python'],
+      allowedVersions: '<3.15',
+    },
+  ],
+}

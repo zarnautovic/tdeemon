@@ -36,7 +36,20 @@
           { "context": "Web app", "integration_id": 15368 },
           { "context": "Other files", "integration_id": 15368 },
           { "context": "Docker image", "integration_id": 15368 },
+          { "context": "Dependencies and secrets", "integration_id": 15368 },
           { "context": "Conventional Commit title", "integration_id": 15368 }
+        ]
+      }
+    },
+    {
+      "type": "code_scanning",
+      "parameters": {
+        "code_scanning_tools": [
+          {
+            "tool": "CodeQL",
+            "security_alerts_threshold": "high_or_higher",
+            "alerts_threshold": "errors"
+          }
         ]
       }
     }

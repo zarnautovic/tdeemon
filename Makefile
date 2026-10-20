@@ -5,15 +5,20 @@
 # otherwise from PATH.
 MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
 
+# Licences a dependency may have: permissive ones and MPL-2.0. Copyleft
+# licences such as GPL would keep the project from being offered under
+# another licence besides the AGPL.
+LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,BlueOak-1.0.0,CC0-1.0,Unlicense,Python-2.0,CC-BY-4.0
+
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm licenses secrets
 
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: lint test test-webui api audit ## what CI checks, except a few that only CI runs (docs/conventions.md)
+check: lint test test-webui api audit licenses secrets ## what CI checks, except a few that only CI runs (docs/conventions.md)
 
 fmt: $(WEB_DEPS) ## format Go and the web app in place (a new migration: sqlfluff fix <file>)
 	$(MISE) golangci-lint fmt
@@ -72,6 +77,13 @@ audit-go:
 audit-npm: $(WEB_DEPS) $(CODEGEN_DEPS)
 	cd web && $(MISE) npm audit --audit-level=high
 	cd web/codegen && $(MISE) npm audit --audit-level=high
+
+licenses: ## every Go and npm dependency has an allowed licence (LICENSES)
+	$(MISE) osv-scanner scan source --licenses="$(LICENSES)" \
+		-L go.mod -L web/package-lock.json -L web/codegen/package-lock.json
+
+secrets: ## no secrets anywhere in the git history
+	$(MISE) gitleaks git --redact --no-banner --log-opts=--all .
 
 $(WEB_DEPS): web/package-lock.json
 	cd web && $(MISE) npm ci --no-audit --no-fund

@@ -2,8 +2,6 @@
   "Exclude": [
     "^LICENSE$",
     "^internal/store/testdata/schema\\.sql$",
-    "\\.go$",
-    "^mise\\.lock$",
-    "^\\.mise/"
+    "\\.go$"
   ]
 }

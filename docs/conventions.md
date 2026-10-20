@@ -21,13 +21,14 @@ for the author and the reviewer.
   other files, and the Docker image, which is built with its tests but not
   pushed. Only pushes to `main` write the caches; pull requests read
   them.
-- **`mise.lock`** pins each tool's version and, for the tools mise
-  downloads as binaries, the URL and checksum for Linux and macOS on x64
-  and arm64; `.mise/locks/` pins the dependencies of the Python and npm
-  tools. Go tools are built from source and checked against the Go
-  checksum database. CI installs with `--locked`. After changing a
-  version in `mise.toml`, run
-  `mise lock --platform linux-x64,linux-arm64,macos-arm64,macos-x64`.
+- **Tool versions** are exact in `mise.toml`, and each download is
+  verified:
+  - tools from the aqua registry against their checksums, and against
+    signatures or attestations where the registry has them;
+  - Go tools through the Go checksum database;
+  - the Python and npm tools through uv and npm.
+  There is no `mise.lock`: the Renovate app cannot update it, so every
+  tool update would break CI's locked install.
 - **Git hooks** (lefthook, `lefthook install` once per clone):
   - pre-commit formats the staged files and stages what the formatters
     fixed, then lints them; Go is linted as packages, so the whole module;
@@ -101,8 +102,9 @@ A change is done when:
   - no direct pushes, force pushes or deletion;
   - a pull request, squash-merged, with linear history;
   - every required check green on a branch that is up to date with
-    `main`: Go, Web app, Other files, Docker image and Conventional Commit
-    title, each from GitHub Actions;
+    `main`: Go, Web app, Other files, Dependencies and secrets, Docker
+    image and Conventional Commit title, each from GitHub Actions;
+  - no new CodeQL error or high-severity security alert;
   - review threads resolved;
   - no approvals, since the project has one maintainer.
 
@@ -133,6 +135,29 @@ A change is done when:
   on every commit message. Merge and fixup commits pass the hook, since
   the squash merge replaces them; a title starting with "Merge" does not
   pass.
+
+## Dependencies and security
+
+- **Renovate** (`.github/renovate.json5`, once its GitHub App is
+  installed) keeps every pinned version current: Go modules and the Go
+  version, npm packages, the tools in `mise.toml`, the Docker base images
+  by digest and the GitHub Actions by commit SHA.
+  - One batch a week; a new npm release waits a few days first.
+  - Minor, patch and digest updates merge themselves once CI is green;
+    majors wait for a review.
+  - Pins that must not move have a rule with the reason: TypeScript 5 in
+    `web/codegen`, Python below 3.15 for the tools.
+- **Known vulnerabilities:** `govulncheck` for Go (only code that is
+  reached counts) and `npm audit` at high severity (`make audit`).
+- **Licences** (`make licenses`, osv-scanner): every Go and npm
+  dependency must be under a permissive licence or MPL-2.0. Copyleft
+  licences such as the GPL would keep the project from also being offered
+  under another licence; the list is `LICENSES` in the `Makefile`.
+- **Secrets:** gitleaks scans the staged changes in the pre-commit hook
+  and the whole history in CI (`make secrets`).
+- **CodeQL** scans Go, the TypeScript and the workflows on every pull
+  request and weekly; the ruleset blocks merging a new error or a
+  high-severity alert.
 
 ## Go
 

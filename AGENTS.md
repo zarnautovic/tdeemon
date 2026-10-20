@@ -30,7 +30,7 @@ an empty web app exist.
 ## Commands
 
 ```sh
-mise install       # every tool at the pinned version (mise.toml, mise.lock)
+mise install       # every tool at the version pinned in mise.toml
 lefthook install   # git hooks, once per clone
 make check         # what CI checks, except a few that only CI runs
 make fmt           # Go and the web app; a new migration: sqlfluff fix <file>
