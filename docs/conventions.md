@@ -237,9 +237,13 @@ markdownlint-cli2
 - **SQL migrations:**
   - keywords and types are upper case; identifiers and functions lower
     case. sqlfluff reads some keywords as functions or identifiers
-    (`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `RAISE`, the
-    collations `NOCASE`, `BINARY` and `RTRIM`, and a trigger's `NEW` and
-    `OLD`); they may stay upper case;
+    (`CURRENT_TIMESTAMP`, `CURRENT_DATE`, `CURRENT_TIME`, `RAISE`, `CAST`
+    and the collations `NOCASE`, `BINARY` and `RTRIM`); they may stay
+    upper case. A trigger's `new.` and `old.` are names like any other,
+    in lower case;
+  - in a trigger body, sqlfluff takes `new.x` in a `SELECT` without
+    `FROM` for an unknown table (RF01). Put the condition in the
+    trigger's `WHEN`, or mark that line `-- noqa: RF01`;
   - four-space indentation, at most 100 columns;
   - `sqlfluff fix` lays out a **new** migration. An applied migration is
     never rewritten, not even to its layout: the runner would report it
