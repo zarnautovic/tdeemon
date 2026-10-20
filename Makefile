@@ -31,10 +31,11 @@ lint-web: $(WEB_DEPS) ## oxlint, Prettier and tsc for the web app
 lint-webui: webui-build ## golangci-lint on the files behind the webui tag, against a fresh build
 	$(MISE) golangci-lint run --build-tags webui
 
-lint-other: ## EditorConfig, SQL, Dockerfile, workflows, YAML and Markdown
+lint-other: ## EditorConfig, SQL, Dockerfile, shell scripts, workflows, YAML and Markdown
 	$(MISE) editorconfig-checker
 	$(MISE) sqlfluff lint .
 	$(MISE) hadolint Dockerfile
+	$(MISE) shellcheck scripts/*.sh
 	$(MISE) yamllint -s .
 	$(MISE) markdownlint-cli2
 	@if [ -d .github/workflows ]; then \
