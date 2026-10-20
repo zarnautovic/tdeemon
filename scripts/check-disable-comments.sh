@@ -9,6 +9,8 @@
 #   scripts/check-disable-comments.sh           # every JS/TS file in web/ that git does not ignore
 #   scripts/check-disable-comments.sh FILE...   # these files (the git hook)
 #
+# It reads line by line: a reason belongs to the line's last directive,
+# and a block comment's line that starts with a directive counts as one.
 # It runs on macOS's bash 3.2 too, so no mapfile.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -19,9 +21,9 @@ if (($# > 0)); then
 else
   # Tracked files and new ones not yet added, but nothing git ignores,
   # such as node_modules or dist; once each, as a merge conflict lists a
-  # file per stage. A plain assignment, so that a failing git stops the
-  # script.
-  list=$(git ls-files --cached --others --exclude-standard -- \
+  # file per stage; names as they are, not quoted (core.quotePath). A
+  # plain assignment, so that a failing git stops the script.
+  list=$(git -c core.quotePath=false ls-files --cached --others --exclude-standard -- \
     'web/*.ts' 'web/*.tsx' 'web/*.mts' 'web/*.cts' 'web/*.js' 'web/*.jsx' 'web/*.mjs' 'web/*.cjs' |
     sort -u)
 fi

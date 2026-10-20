@@ -77,7 +77,7 @@ mkdir -p "$tmp/nogit/scripts" "$tmp/nogit/web"
 cp "$root/scripts/check-disable-comments.sh" "$tmp/nogit/scripts/"
 # A clean file: the run may fail only because git does.
 printf '// oxlint-disable-next-line x/y -- a reason\n' >"$tmp/nogit/web/a.ts"
-if GIT_CEILING_DIRECTORIES=$tmp "$tmp/nogit/scripts/check-disable-comments.sh" 2>"$tmp/stderr"; then
+if LC_ALL=C GIT_CEILING_DIRECTORIES=$tmp "$tmp/nogit/scripts/check-disable-comments.sh" 2>"$tmp/stderr"; then
   echo "FAIL outside a git repository: it passed"
   fails=$((fails + 1))
 elif ! grep -q 'not a git repository' "$tmp/stderr"; then
@@ -103,16 +103,16 @@ fi
 # does not ignore: tracked ones and new ones, but not node_modules.
 mkdir -p "$tmp/repo/scripts" "$tmp/repo/web/src" "$tmp/repo/web/node_modules/pkg"
 cp "$root/scripts/check-disable-comments.sh" "$tmp/repo/scripts/"
-for file in web/src/tracked.ts web/src/component.tsx web/top.config.ts web/src/new.ts web/node_modules/pkg/index.js; do
+for file in web/src/tracked.ts web/src/component.tsx web/top.config.ts web/src/čaša.ts web/src/new.ts web/node_modules/pkg/index.js; do
   printf '// oxlint-disable-next-line x/y\nexport const a = 1;\n' >"$tmp/repo/$file"
 done
 printf 'node_modules/\n' >"$tmp/repo/web/.gitignore"
 git -C "$tmp/repo" init -q
-git -C "$tmp/repo" add scripts web/.gitignore web/src/tracked.ts web/src/component.tsx web/top.config.ts
+git -C "$tmp/repo" add scripts web/.gitignore web/src/tracked.ts web/src/component.tsx web/top.config.ts web/src/čaša.ts
 "$tmp/repo/scripts/check-disable-comments.sh" 2>"$tmp/stderr"
 rc=$?
 missing=
-for name in tracked.ts component.tsx top.config.ts new.ts; do
+for name in tracked.ts component.tsx top.config.ts čaša.ts new.ts; do
   grep -q "$name" "$tmp/stderr" || missing="$missing $name"
 done
 if ((rc == 0)) || [[ -n $missing ]]; then
@@ -123,7 +123,7 @@ elif grep -q node_modules "$tmp/stderr"; then
   echo "FAIL the repo's files: an ignored file was checked"
   fails=$((fails + 1))
 else
-  echo "ok   the repo's files: tracked, new, .tsx and top-level files are checked, ignored ones not"
+  echo "ok   the repo's files: tracked, new, .tsx, top-level and non-ASCII files are checked, ignored ones not"
 fi
 
 # A tracked file deleted, or renamed, before the change is staged has
