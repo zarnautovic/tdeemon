@@ -18,7 +18,8 @@ import (
 	"strings"
 )
 
-// assetsDir holds Vite's output files, whose names carry a content hash.
+// assetsDir holds Vite's output files, whose names carry a content hash
+// (build.assetsDir in web/vite.config.ts).
 const assetsDir = "assets/"
 
 // New returns the handler for the paths the API does not own, and whether
@@ -42,11 +43,13 @@ func New() (http.Handler, bool, error) {
 //   - files under assets/ with a year-long immutable cache, because a new
 //     build gives every changed file a new name;
 //   - other files (favicon and the like) with revalidation on every use;
-//   - index.html for every other path without a file extension, so the
-//     app's client-side router can own it, never cached, so a deploy
-//     takes effect on the next page load;
-//   - 404 for a missing path with an extension, so a tab still open from
-//     the previous build gets an error for its old script, not HTML.
+//   - index.html for every other path, so the app's client-side router can
+//     own it, never cached, so a deploy takes effect on the next page load;
+//   - 404 instead for a missing file under assets/, so a tab still open
+//     from the previous build gets an error for its old script, not HTML,
+//     and for a missing path with an extension that a page asks for (a
+//     favicon, robots.txt). A navigation to such a path still gets the app,
+//     so a client route may end in a dot-separated token (/invite/a.b.c).
 func Handler(fsys fs.FS) (http.Handler, error) {
 	index, err := fs.ReadFile(fsys, "index.html")
 	if err != nil {
@@ -61,7 +64,7 @@ func Handler(fsys fs.FS) (http.Handler, error) {
 				http.ServeFileFS(w, r, fsys, name)
 				return
 			}
-			if path.Ext(name) != "" {
+			if strings.HasPrefix(name, assetsDir) || (path.Ext(name) != "" && !isNavigation(r)) {
 				http.NotFound(w, r)
 				return
 			}
@@ -71,6 +74,16 @@ func Handler(fsys fs.FS) (http.Handler, error) {
 		w.Header().Set("Content-Length", strconv.Itoa(len(index)))
 		_, _ = w.Write(index)
 	}), nil
+}
+
+// isNavigation reports whether r loads a page, as opposed to a script,
+// image or fetch: browsers say so in Sec-Fetch-Mode; for clients that do
+// not send it, a request that accepts HTML counts.
+func isNavigation(r *http.Request) bool {
+	if mode := r.Header.Get("Sec-Fetch-Mode"); mode != "" {
+		return mode == "navigate"
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
 func cacheControl(name string) string {

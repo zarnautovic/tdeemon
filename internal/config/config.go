@@ -109,8 +109,8 @@ func Load(lookup LookupFunc) (Config, error) {
 	return cfg, errors.Join(errs...)
 }
 
-// parseBaseURL accepts an absolute http(s) URL with a host and no query
-// or fragment, and drops a trailing slash from its path.
+// parseBaseURL accepts an absolute http(s) URL with a host and no path,
+// query or fragment, and drops a trailing slash.
 func parseBaseURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -125,7 +125,12 @@ func parseBaseURL(raw string) (*url.URL, error) {
 	if u.RawQuery != "" || u.Fragment != "" {
 		return nil, fmt.Errorf("%q: must not contain a query or fragment", raw)
 	}
-	u.Path = strings.TrimRight(u.Path, "/")
+	// The web app and the API are served from the root of the host; the
+	// app's assets and API calls would miss a path prefix.
+	if strings.Trim(u.Path, "/") != "" {
+		return nil, fmt.Errorf("%q: must not have a path; tdeemon is served at the root of its host", raw)
+	}
+	u.Path = ""
 	return u, nil
 }
 

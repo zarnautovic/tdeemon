@@ -10,7 +10,8 @@ export function HomePage() {
       {info.isError && <p className="text-destructive">The server cannot be reached.</p>}
       {info.data && (
         <p className="text-muted-foreground">
-          {info.data.name} <span data-testid="server-version">{info.data.version}</span>
+          <span data-testid="server-name">{info.data.name}</span>{' '}
+          <span data-testid="server-version">{info.data.version}</span>
         </p>
       )}
     </section>

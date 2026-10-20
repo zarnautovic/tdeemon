@@ -19,15 +19,17 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-test('the start page shows the server version from the API', async () => {
+test("the start page shows the server's name and version from the API", async () => {
+  // A name unlike the page heading, so the test sees the API's value.
   const fetch = vi.fn<typeof globalThis.fetch>(() =>
-    Promise.resolve(Response.json({ name: 'tdeemon', version: 'v1.2.3' })),
+    Promise.resolve(Response.json({ name: 'tdeemon-test', version: 'v1.2.3' })),
   )
   vi.stubGlobal('fetch', fetch)
 
   renderAt('/')
 
   expect((await screen.findByTestId('server-version')).textContent).toBe('v1.2.3')
+  expect(screen.getByTestId('server-name').textContent).toBe('tdeemon-test')
   expect(fetch).toHaveBeenCalledOnce()
   const request = fetch.mock.calls[0]?.[0]
   expect(request instanceof Request ? new URL(request.url).pathname : request).toBe('/api/v1/info')

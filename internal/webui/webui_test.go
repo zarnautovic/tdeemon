@@ -15,11 +15,15 @@ var app = fstest.MapFS{
 	"favicon.svg":               {Data: []byte("<svg/>")},
 }
 
-func get(t *testing.T, h http.Handler, method, path string) *httptest.ResponseRecorder {
+func get(t *testing.T, h http.Handler, method, path string, header ...string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	req := httptest.NewRequestWithContext(t.Context(), method, path, nil)
+	for i := 0; i+1 < len(header); i += 2 {
+		req.Header.Set(header[i], header[i+1])
+	}
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, nil))
+	h.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -35,10 +39,12 @@ func TestHandler(t *testing.T) {
 		index     = "<!doctype html><div id=root></div>"
 		immutable = "public, max-age=31536000, immutable"
 	)
+	navigate := []string{"Sec-Fetch-Mode", "navigate"}
 	tests := []struct {
 		name         string
 		method       string
 		path         string
+		header       []string
 		wantStatus   int
 		wantType     string
 		wantCache    string
@@ -55,12 +61,17 @@ func TestHandler(t *testing.T) {
 		{name: "script of an old build", method: http.MethodGet, path: "/assets/index-OLD.js", wantStatus: 404, wantNoBodyOf: index},
 		{name: "missing file", method: http.MethodGet, path: "/robots.txt", wantStatus: 404, wantNoBodyOf: index},
 		{name: "HEAD", method: http.MethodHead, path: "/", wantStatus: 200, wantCache: "no-store"},
+		// A client route may end in a dot-separated token.
+		{name: "navigation to a dotted route", method: http.MethodGet, path: "/invite/aaa.bbb.ccc", header: navigate, wantStatus: 200, wantCache: "no-store", wantBody: index},
+		{name: "dotted route, no Sec-Fetch-Mode", method: http.MethodGet, path: "/day/1.5", header: []string{"Accept", "text/html,application/xhtml+xml"}, wantStatus: 200, wantBody: index},
+		{name: "fetch of a dotted path", method: http.MethodGet, path: "/favicon.ico", header: []string{"Sec-Fetch-Mode", "no-cors"}, wantStatus: 404, wantNoBodyOf: index},
+		{name: "navigation to an old asset", method: http.MethodGet, path: "/assets/index-OLD.js", header: navigate, wantStatus: 404, wantNoBodyOf: index},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			rec := get(t, h, tt.method, tt.path)
+			rec := get(t, h, tt.method, tt.path, tt.header...)
 			if rec.Code != tt.wantStatus {
 				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
 			}

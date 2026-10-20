@@ -60,7 +60,7 @@ func TestLoadOverrides(t *testing.T) {
 
 	vars := required()
 	vars["TDEEMON_LISTEN"] = "127.0.0.1:9000"
-	vars["TDEEMON_BASE_URL"] = "http://localhost:9000/tdeemon/"
+	vars["TDEEMON_BASE_URL"] = "http://localhost:9000/"
 	vars["TDEEMON_DATA_DIR"] = " /var/lib/tdeemon "
 	vars["TDEEMON_LOG_LEVEL"] = "DEBUG"
 	vars["TDEEMON_LOG_FORMAT"] = "Text"
@@ -74,7 +74,7 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.Listen != "127.0.0.1:9000" {
 		t.Errorf("Listen = %q", cfg.Listen)
 	}
-	if got := cfg.BaseURL.String(); got != "http://localhost:9000/tdeemon" {
+	if got := cfg.BaseURL.String(); got != "http://localhost:9000" {
 		t.Errorf("BaseURL = %q", got)
 	}
 	if cfg.DataDir != "/var/lib/tdeemon" {
@@ -129,6 +129,11 @@ func TestLoadErrors(t *testing.T) {
 			name: "base URL with a query",
 			set:  map[string]string{"TDEEMON_BASE_URL": "https://tdeemon.example.com/?a=1"},
 			want: []string{"TDEEMON_BASE_URL", "query or fragment"},
+		},
+		{
+			name: "base url with a path",
+			set:  map[string]string{"TDEEMON_BASE_URL": "https://example.com/tdeemon/"},
+			want: []string{"TDEEMON_BASE_URL", "must not have a path"},
 		},
 		{
 			name: "short secret key",

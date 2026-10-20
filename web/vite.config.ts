@@ -20,6 +20,9 @@ export default defineConfig({
     // internal/webui embeds this directory (go build -tags webui).
     outDir: '../internal/webui/dist',
     emptyOutDir: true,
+    // internal/webui caches files here for a year, as their names carry a
+    // content hash; its assetsDir must match.
+    assetsDir: 'assets',
   },
   test: {
     environment: 'jsdom',
