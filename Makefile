@@ -7,7 +7,7 @@ MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui api audit audit-go audit-npm
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm
 
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -28,8 +28,7 @@ lint-web: $(WEB_DEPS) ## oxlint, Prettier and tsc for the web app
 	cd web && $(MISE) npm run --silent format:check
 	cd web && $(MISE) npm run --silent typecheck
 
-lint-webui: $(WEB_DEPS) ## golangci-lint on the files behind the webui tag, against a fresh build
-	cd web && $(MISE) npm run --silent build
+lint-webui: webui-build ## golangci-lint on the files behind the webui tag, against a fresh build
 	$(MISE) golangci-lint run --build-tags webui
 
 lint-other: ## EditorConfig, SQL, Dockerfile, workflows, YAML and Markdown
@@ -55,9 +54,13 @@ test-web: $(WEB_DEPS)
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json
 	cd web/codegen && $(MISE) npm run --silent check:api
 
-test-webui: $(WEB_DEPS) ## the Go tests behind the webui tag, against a fresh build
-	cd web && $(MISE) npm run --silent build
+test-webui: webui-build ## the Go tests behind the webui tag, against a fresh build
 	$(MISE) go test -tags webui ./internal/webui/...
+
+# One build of the web app per make run, shared by the webui targets, so
+# make -j never empties dist under a running one.
+webui-build: $(WEB_DEPS)
+	cd web && $(MISE) npm run --silent build
 
 audit: audit-go audit-npm ## known vulnerabilities in Go and npm dependencies
 

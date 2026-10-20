@@ -15,8 +15,9 @@ permissions: {}
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  # A newer push to a pull request replaces its run; every commit on main
-  # keeps its own.
+  # A newer push to a pull request cancels its running run. On main a run
+  # that has started is never cancelled; a newer push replaces only a run
+  # still waiting.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -95,6 +96,8 @@ jobs:
       # and run their tests.
       - run: make lint-webui
       - run: make test-webui
+        env:
+          GOFLAGS: -count=1
       - run: make audit-npm
       - if: github.event_name == 'push'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
