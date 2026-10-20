@@ -61,7 +61,7 @@ func Handler(fsys fs.FS) (http.Handler, error) {
 		if name != "" && name != "index.html" {
 			if info, err := fs.Stat(fsys, name); err == nil && !info.IsDir() {
 				w.Header().Set("Cache-Control", cacheControl(name))
-				http.ServeFileFS(w, r, fsys, name)
+				http.ServeFileFS(w, r, fsys, name) //nolint:gosec // G703: path.Clean above, and an fs.FS rejects names with ..
 				return
 			}
 			if path.Ext(name) != "" {

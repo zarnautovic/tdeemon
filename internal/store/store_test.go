@@ -30,11 +30,11 @@ func pragma(ctx context.Context, t *testing.T, q queryRower, name string) string
 	return v
 }
 
-func exec(t *testing.T, db *store.DB, query string, args ...any) {
+func exec(t *testing.T, db *store.DB, query string) {
 	t.Helper()
 
 	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(t.Context(), query, args...)
+		_, err := tx.ExecContext(t.Context(), query)
 		return err
 	})
 	if err != nil {
@@ -42,12 +42,14 @@ func exec(t *testing.T, db *store.DB, query string, args ...any) {
 	}
 }
 
-func count(ctx context.Context, t *testing.T, db *store.DB, table string) int {
+// rowsInT counts the rows of table t, the one most tests create. ctx
+// lets a caller bound a read that must not wait.
+func rowsInT(ctx context.Context, t *testing.T, db *store.DB) int {
 	t.Helper()
 
 	var n int
-	if err := db.Read().QueryRowContext(ctx, "SELECT count(*) FROM "+table).Scan(&n); err != nil {
-		t.Fatalf("count %s: %v", table, err)
+	if err := db.Read().QueryRowContext(ctx, "SELECT count(*) FROM t").Scan(&n); err != nil {
+		t.Fatalf("count the rows of t: %v", err)
 	}
 	return n
 }
@@ -140,7 +142,7 @@ func TestReadsDoNotWaitForWriter(t *testing.T) {
 	// at once, from the last committed state.
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	if n := count(ctx, t, db, "t"); n != 0 {
+	if n := rowsInT(ctx, t, db); n != 0 {
 		t.Errorf("read during the write saw %d rows, want 0 (uncommitted)", n)
 	}
 
@@ -148,7 +150,7 @@ func TestReadsDoNotWaitForWriter(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("WriteTx: %v", err)
 	}
-	if n := count(t.Context(), t, db, "t"); n != 1 {
+	if n := rowsInT(t.Context(), t, db); n != 1 {
 		t.Errorf("read after commit saw %d rows, want 1", n)
 	}
 }
@@ -184,7 +186,7 @@ func TestReadTxSeesOneSnapshot(t *testing.T) {
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("end read transaction: %v", err)
 	}
-	if got := count(t.Context(), t, db, "t"); got != 1 {
+	if got := rowsInT(t.Context(), t, db); got != 1 {
 		t.Errorf("read after the transaction saw %d rows, want 1", got)
 	}
 }
@@ -212,7 +214,10 @@ func TestCloseDoesNotWaitForBusyWriter(t *testing.T) {
 	closed := make(chan error, 1)
 	go func() { closed <- db.Close() }()
 	select {
-	case <-closed:
+	case err := <-closed:
+		if err != nil {
+			t.Errorf("Close returned %v", err)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("Close blocked while a write transaction held the connection")
 	}
@@ -286,7 +291,7 @@ func TestWriteTxRollsBackOnError(t *testing.T) {
 	if !errors.Is(err, errBoom) {
 		t.Fatalf("WriteTx returned %v, want %v", err, errBoom)
 	}
-	if n := count(t.Context(), t, db, "t"); n != 0 {
+	if n := rowsInT(t.Context(), t, db); n != 0 {
 		t.Errorf("table has %d rows after a failed transaction, want 0", n)
 	}
 }
@@ -311,7 +316,7 @@ func TestWriteTxRollsBackOnPanic(t *testing.T) {
 		})
 	}()
 
-	if n := count(t.Context(), t, db, "t"); n != 0 {
+	if n := rowsInT(t.Context(), t, db); n != 0 {
 		t.Errorf("table has %d rows after a panic, want 0", n)
 	}
 	// The only write connection must be free again.

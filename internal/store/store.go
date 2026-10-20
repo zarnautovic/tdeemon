@@ -56,7 +56,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	// SQLite gives the -wal and -shm files the database file's mode. An
 	// existing file keeps the mode its operator chose.
 	// The *fs.PathError already names the operation and the path.
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: the operator chooses the database path
 	if err != nil {
 		return nil, err
 	}

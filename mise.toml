@@ -4,3 +4,6 @@ go = "1.27.3"
 # LTS line the web build and code generation run on. Node 26 becomes the
 # active LTS on 2026-10-28; move to it then.
 node = "24.22.0"
+# Lint and format for Go (staticcheck, gofumpt and goimports inside);
+# configuration in .golangci.yml, rules in docs/conventions.md.
+golangci-lint = "2.15.0"

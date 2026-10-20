@@ -1,0 +1,95 @@
+# golangci-lint v2, pinned in mise.toml. The rules and why they are set
+# this way: docs/conventions.md.
+#
+#   golangci-lint run      # lint
+#   golangci-lint fmt      # format (gofumpt, goimports)
+version: "2"
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck and unused.
+  default: standard
+  enable:
+    # Bugs: unclosed resources, lost errors and contexts, unsafe code.
+    - bodyclose
+    - contextcheck
+    - errorlint
+    - exhaustive
+    - fatcontext
+    - forcetypeassert
+    - gosec
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    # Idioms and consistency.
+    - canonicalheader
+    - cyclop
+    - errname
+    - exptostd
+    - gocritic
+    - iface
+    - misspell
+    - modernize
+    - nolintlint
+    - recvcheck
+    - revive
+    - sloglint
+    - thelper
+    - tparallel
+    - unparam
+    - usestdlibvars
+    - usetesting
+  settings:
+    cyclop:
+      max-complexity: 15
+    exhaustive:
+      # A default case handles the values a switch leaves out on purpose.
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags: [diagnostic, style, performance]
+      disabled-checks:
+        # Small values such as config.Config are passed by value on purpose.
+        - hugeParam
+        # Naming results only for the sake of it adds nothing.
+        - unnamedResult
+    govet:
+      enable-all: true
+      disable:
+        # Field order is for readers, not for saving a few bytes.
+        - fieldalignment
+        # Shadowing err in `if err := …; err != nil` is idiomatic Go.
+        - shadow
+    nolintlint:
+      # Every //nolint names the linter and says why.
+      require-explanation: true
+      require-specific: true
+    sloglint:
+      no-mixed-args: true
+      static-msg: true
+      key-naming-case: snake
+  exclusions:
+    rules:
+      # Tests open the files they name themselves.
+      - path: _test\.go
+        linters: [gosec]
+        text: G304
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra:
+        # func(a, b string), not func(a string, b string).
+        group-params: true
+        # No naked returns in functions with named results.
+        clothe-returns: true
+    goimports:
+      local-prefixes:
+        - github.com/zarnautovic/tdeemon
+
+issues:
+  # Report everything, not the first few of each kind.
+  max-issues-per-linter: 0
+  max-same-issues: 0
