@@ -42,16 +42,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
-        with:
-          version: v2026.10.15
-          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
-          install_args: >-
-            go golangci-lint
-            go:golang.org/x/vuln/cmd/govulncheck
-            go:github.com/vladopajic/go-test-coverage/v2
-          # Only main saves the tool cache; pull requests read it.
-          cache_save: ${{ github.event_name == 'push' }}
+      # Before mise-action: it builds the Go tools from these modules, and
+      # the archive cannot unpack over modules it has already fetched.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -62,6 +54,16 @@ jobs:
           restore-keys: |
             go-${{ runner.os }}-${{ hashFiles('go.sum') }}-
             go-${{ runner.os }}-
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: v2026.10.15
+          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
+          install_args: >-
+            go golangci-lint
+            go:golang.org/x/vuln/cmd/govulncheck
+            go:github.com/vladopajic/go-test-coverage/v2
+          # Only main saves the tool cache; pull requests read it.
+          cache_save: ${{ github.event_name == 'push' }}
       - run: make lint-go
       - run: make test-go
         env:
@@ -87,13 +89,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
-        with:
-          version: v2026.10.15
-          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
-          install_args: node go golangci-lint
-          # Only main saves the tool cache; pull requests read it.
-          cache_save: ${{ github.event_name == 'push' }}
+      # Before mise-action: it builds the Go tools from these modules, and
+      # the archive cannot unpack over modules it has already fetched.
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -105,6 +102,13 @@ jobs:
           restore-keys: |
             web-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/codegen/package-lock.json', 'go.sum') }}-
             web-${{ runner.os }}-
+      - uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5.2.1
+        with:
+          version: v2026.10.15
+          sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
+          install_args: node go golangci-lint
+          # Only main saves the tool cache; pull requests read it.
+          cache_save: ${{ github.event_name == 'push' }}
       - run: make lint-web
       - run: make test-web
       - run: make api
@@ -195,6 +199,8 @@ jobs:
         with:
           context: .
           push: false
-          build-args: VERSION=ci-${{ github.sha }}
+          build-args: |
+            VERSION=ci-${{ github.sha }}
+            GOPROXY=${{ env.GOPROXY }}
           cache-from: type=gha
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}

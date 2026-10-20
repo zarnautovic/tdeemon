@@ -20,6 +20,9 @@ RUN npm run build
 
 FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.3-trixie@sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c AS build
 WORKDIR /src
+# CI passes https://proxy.golang.org|direct, so a module the proxy fails
+# to serve comes from its source; left empty, Go's default applies.
+ARG GOPROXY
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .

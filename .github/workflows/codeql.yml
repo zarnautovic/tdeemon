@@ -13,6 +13,10 @@ on:
 
 permissions: {}
 
+env:
+  # As in CI: a Go module the proxy fails to serve comes from its source.
+  GOPROXY: https://proxy.golang.org|direct
+
 concurrency:
   group: codeql-${{ github.event.pull_request.number || github.ref }}
   # A newer push to a pull request cancels its running run. On main a run
@@ -48,7 +52,7 @@ jobs:
           version: v2026.10.15
           sha256: e3b186d4c70627f27037be615becaf4acfb30e41fb6a1819486717dc94e4e2a9
           install_args: go
-          # Only Go: a cache saved here would shadow CI's full one.
+          # One tool, quicker to download than to keep in the cache.
           cache: false
       - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:

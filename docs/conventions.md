@@ -24,7 +24,10 @@ for the author and the reviewer.
   caches; pull requests read them. Each job installs only the tools it
   runs (`install_args`), and mise does not install the others on demand,
   so a tool that a job's make target starts using goes into that job's
-  list too; without it the job stops with "is not installed". A Go
+  list too. Without it mise warns that the tool "is not installed and
+  auto-install is disabled" and runs the runner's own copy if there is
+  one (Node, Python, yamllint and shellcheck are), at whatever version;
+  otherwise the job stops. In CI, CodeQL and the Docker build, a Go
   module or tool the proxy fails to serve comes from its source instead.
 - **`mise.lock`** pins each tool's version and, for the tools mise
   downloads as binaries, the URL and checksum for Linux and macOS on x64
