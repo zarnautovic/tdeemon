@@ -22,11 +22,13 @@ maintenance, bulk or recomp — within guardrails you control.
 
 ## Development
 
-The toolchain is pinned in `mise.toml`; install it with
-[mise](https://mise.jdx.dev):
+The toolchain and golangci-lint are pinned in `mise.toml`; install them
+with [mise](https://mise.jdx.dev). The rules for code and tests are in
+[docs/conventions.md](docs/conventions.md).
 
 ```sh
 mise install
+golangci-lint run
 go test -race ./...
 
 TDEEMON_BASE_URL=http://localhost:8080 \

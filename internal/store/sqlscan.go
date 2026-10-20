@@ -69,10 +69,10 @@ type statement struct {
 // literals and quoted identifiers.
 func splitStatements(script string) []statement {
 	var (
-		out  []statement
-		cur  strings.Builder
-		line = 1
-		at   = 0 // line of the current statement's first character
+		s   = sqlScanner{runes: []rune(script), line: 1}
+		out []statement
+		cur strings.Builder
+		at  int // line of the current statement's first character, 0 before it
 	)
 	flush := func() {
 		if strings.TrimSpace(cur.String()) != "" {
@@ -81,64 +81,96 @@ func splitStatements(script string) []statement {
 		cur.Reset()
 		at = 0
 	}
-	mark := func() {
-		if at == 0 {
-			at = line
-		}
-	}
 
-	runes := []rune(script)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
+	for ; s.i < len(s.runes); s.i++ {
+		r := s.runes[s.i]
 		switch {
 		case r == '\n':
-			line++
+			s.line++
 			cur.WriteRune(' ')
-		case r == '-' && i+1 < len(runes) && runes[i+1] == '-':
-			for i < len(runes) && runes[i] != '\n' {
-				i++
-			}
-			i-- // let the newline be counted above
-		case r == '/' && i+1 < len(runes) && runes[i+1] == '*':
-			i += 2
-			for i < len(runes) && (runes[i] != '*' || i+1 >= len(runes) || runes[i+1] != '/') {
-				if runes[i] == '\n' {
-					line++
-				}
-				i++
-			}
-			i++ // skip the closing "/"
+		case s.at("--"):
+			s.skipLineComment()
+		case s.at("/*"):
+			s.skipBlockComment()
 			cur.WriteRune(' ')
 		case r == '\'' || r == '"' || r == '`' || r == '[':
-			mark()
-			closing := r
-			if r == '[' {
-				closing = ']'
+			if at == 0 {
+				at = s.line
 			}
-			for i++; i < len(runes); i++ {
-				if runes[i] == '\n' {
-					line++
-				}
-				if runes[i] != closing {
-					continue
-				}
-				// A doubled quote is an escaped quote, not the end.
-				if closing != ']' && i+1 < len(runes) && runes[i+1] == closing {
-					i++
-					continue
-				}
-				break
-			}
+			s.skipQuoted()
 			cur.WriteRune(' ')
 		case r == ';':
 			flush()
 		default:
-			if !unicode.IsSpace(r) {
-				mark()
+			if at == 0 && !unicode.IsSpace(r) {
+				at = s.line
 			}
 			cur.WriteRune(r)
 		}
 	}
 	flush()
 	return out
+}
+
+// sqlScanner walks a script one rune at a time and counts its lines. The
+// skip methods leave i on the last rune of what they skip, for the caller
+// to step past.
+type sqlScanner struct {
+	runes []rune
+	i     int // the current rune
+	line  int // 1-based line of the current rune
+}
+
+// at reports whether the script continues with prefix from the current rune.
+func (s *sqlScanner) at(prefix string) bool {
+	j := s.i
+	for _, r := range prefix {
+		if j >= len(s.runes) || s.runes[j] != r {
+			return false
+		}
+		j++
+	}
+	return true
+}
+
+// skipLineComment stops before the newline, so the caller counts it.
+func (s *sqlScanner) skipLineComment() {
+	for s.i+1 < len(s.runes) && s.runes[s.i+1] != '\n' {
+		s.i++
+	}
+}
+
+// skipBlockComment stops on the "/" that closes the comment, or past the
+// end when it is not closed.
+func (s *sqlScanner) skipBlockComment() {
+	for s.i += 2; s.i < len(s.runes) && !s.at("*/"); s.i++ {
+		if s.runes[s.i] == '\n' {
+			s.line++
+		}
+	}
+	s.i++
+}
+
+// skipQuoted stops on the quote that closes the string or identifier
+// opened at the current rune, or at the end when it is not closed.
+func (s *sqlScanner) skipQuoted() {
+	closing := s.runes[s.i]
+	if closing == '[' {
+		closing = ']'
+	}
+	for s.i++; s.i < len(s.runes); s.i++ {
+		r := s.runes[s.i]
+		if r == '\n' {
+			s.line++
+		}
+		if r != closing {
+			continue
+		}
+		// A doubled quote is an escaped quote, not the end; [...] has none.
+		if closing != ']' && s.i+1 < len(s.runes) && s.runes[s.i+1] == closing {
+			s.i++
+			continue
+		}
+		return
+	}
 }

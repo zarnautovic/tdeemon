@@ -51,10 +51,10 @@ func exitCode(err error, w io.Writer) int {
 	case err == nil:
 		return 0
 	case errors.Is(err, errUsage):
-		fmt.Fprintf(w, "tdeemon: %v\n\n%s", err, usage)
+		_, _ = fmt.Fprintf(w, "tdeemon: %v\n\n%s", err, usage)
 		return 2
 	default:
-		fmt.Fprintf(w, "tdeemon: %v\n", err)
+		_, _ = fmt.Fprintf(w, "tdeemon: %v\n", err)
 		return 1
 	}
 }
@@ -86,8 +86,8 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, out, logO
 
 	logger := newLogger(cfg, logOut)
 	slog.SetDefault(logger)
-	version := buildVersion()
-	logger.Info("starting tdeemon", "version", version, "config", cfg)
+	serverVersion := buildVersion()
+	logger.Info("starting tdeemon", "version", serverVersion, "config", cfg)
 
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("data directory: %w", err)
@@ -111,7 +111,7 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, out, logO
 		return err
 	}
 	logger.Info("web app", "embedded", embedded)
-	handler, err := api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: version}, app)
+	handler, err := api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: serverVersion}, app)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}

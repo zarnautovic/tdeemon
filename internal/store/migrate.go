@@ -395,36 +395,49 @@ func checkSchema(ctx context.Context, tx *sql.Tx) error {
 
 // checkViews fails if a view cannot be read.
 func checkViews(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_schema WHERE type = 'view' ORDER BY name")
+	// All names first: the probes run on the same connection.
+	views, err := viewNames(ctx, tx)
 	if err != nil {
 		return fmt.Errorf("list views: %w", err)
 	}
-	var views []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("list views: %w", err)
-		}
-		views = append(views, name)
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return fmt.Errorf("list views: %w", err)
-	}
-
 	var broken []string
 	for _, name := range views {
-		r, err := tx.QueryContext(ctx, `SELECT * FROM "`+strings.ReplaceAll(name, `"`, `""`)+`" LIMIT 0`)
-		if err != nil {
+		if err := readView(ctx, tx, name); err != nil {
 			broken = append(broken, fmt.Sprintf("%s (%v)", name, err))
-			continue
 		}
-		_ = r.Close()
 	}
 	if len(broken) > 0 {
 		return fmt.Errorf("leaves views that cannot be read: %s", strings.Join(broken, "; "))
 	}
 	return nil
+}
+
+func viewNames(ctx context.Context, tx *sql.Tx) (names []string, err error) {
+	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_schema WHERE type = 'view' ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
+// readView selects no rows from the view, which fails when it refers to
+// something that no longer exists.
+func readView(ctx context.Context, tx *sql.Tx, name string) (err error) {
+	quoted := `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+	rows, err := tx.QueryContext(ctx, "SELECT * FROM "+quoted+" LIMIT 0") //nolint:gosec // G202: a view name from sqlite_schema, quoted as an identifier
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	return rows.Err()
 }
 
 // backup writes a consistent snapshot of the database at schema version
@@ -502,16 +515,16 @@ func pruneBackups(dir, current string) error {
 		seen[m[1]] = true
 	}
 	for _, e := range entries {
-		name, path := e.Name(), filepath.Join(dir, e.Name())
-		if e.IsDir() || path == current || !strings.HasPrefix(name, preMigratePrefix) {
+		name, file := e.Name(), filepath.Join(dir, e.Name())
+		if e.IsDir() || file == current || !strings.HasPrefix(name, preMigratePrefix) {
 			continue
 		}
 		if strings.HasSuffix(name, ".tmp") {
-			stale = append(stale, path)
+			stale = append(stale, file)
 			continue
 		}
 		if m := preMigrateFile.FindStringSubmatch(name); m != nil {
-			others = append(others, snapshot{path: path, version: m[1], at: m[2]})
+			others = append(others, snapshot{path: file, version: m[1], at: m[2]})
 		}
 	}
 
@@ -538,7 +551,7 @@ func pruneBackups(dir, current string) error {
 
 // syncPath flushes a file or directory to disk.
 func syncPath(name string) error {
-	f, err := os.Open(name)
+	f, err := os.Open(name) //nolint:gosec // G304: a path in the data directory, built by this package
 	if err != nil {
 		return err
 	}

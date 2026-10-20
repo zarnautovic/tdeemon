@@ -407,6 +407,11 @@ func TestMigrateRejectsViewsThatCannotBeRead(t *testing.T) {
 			"0001_t.sql":    "CREATE TABLE t (x INTEGER) STRICT;",
 			"0002_view.sql": "CREATE VIEW v AS SELECT no_such_function(x) AS y FROM t;",
 		},
+		// Every view is read, not only the first or last one by name.
+		"broken view between readable ones": {
+			"0001_t.sql":    "CREATE TABLE t (x INTEGER) STRICT;\nCREATE VIEW a AS SELECT x FROM t;\nCREATE VIEW w AS SELECT x FROM t;",
+			"0002_view.sql": "CREATE VIEW v AS SELECT no_such_function(x) AS y FROM t;",
+		},
 	}
 	for name, migrations := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -603,7 +608,7 @@ func TestBackupKeepsNewestSnapshotsOnly(t *testing.T) {
 	}
 
 	got := backups(t, db) // *.db, so it includes the unrelated file
-	want := append(made[len(made)-keepPreMigrateBackups:], other)
+	want := slices.Concat(made[len(made)-keepPreMigrateBackups:], []string{other})
 	slices.Sort(got)
 	slices.Sort(want)
 	if !slices.Equal(got, want) {

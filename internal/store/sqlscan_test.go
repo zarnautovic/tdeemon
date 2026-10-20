@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestTransactionControl(t *testing.T) {
 	t.Parallel()
@@ -57,6 +60,74 @@ END;`,
 			}
 			if !found || stmt != tt.wantStmt || line != tt.wantLine {
 				t.Errorf("got %q on line %d (found %v), want %q on line %d", stmt, line, found, tt.wantStmt, tt.wantLine)
+			}
+		})
+	}
+}
+
+func TestSplitStatements(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		script string
+		want   []statement
+	}{
+		{
+			name:   "statements and their lines",
+			script: "SELECT 1;\n\nSELECT 2",
+			want:   []statement{{"SELECT 1", 1}, {"  SELECT 2", 3}},
+		},
+		{
+			name:   "doubled quote inside a string",
+			script: "SELECT 'it''s; x' ; SELECT 2",
+			want:   []statement{{"SELECT   ", 1}, {" SELECT 2", 1}},
+		},
+		{
+			name:   "quoted identifiers",
+			script: "SELECT [a;b], `c;d`, \"e\"\";f\"; x",
+			want:   []statement{{"SELECT  ,  ,  ", 1}, {" x", 1}},
+		},
+		{
+			// SQLite ends [ at the first ]; ]] is no escape there.
+			name:   "a bracket identifier ends at the first ]",
+			script: "SELECT [a]]; x",
+			want:   []statement{{"SELECT  ]", 1}, {" x", 1}},
+		},
+		{
+			name:   "a statement that starts with a quote",
+			script: "'a\n' AS y;",
+			want:   []statement{{"  AS y", 1}},
+		},
+		{
+			name:   "a comment separates words",
+			script: "END/**/TRANSACTION;",
+			want:   []statement{{"END TRANSACTION", 1}},
+		},
+		{
+			// The "/" of the opening "/*" does not close the comment: /*/.
+			name:   "a slash right after the comment opener",
+			script: "/*/ ; */ SELECT 1",
+			want:   []statement{{"  SELECT 1", 1}},
+		},
+		{
+			name:   "comments are dropped",
+			script: "SELECT /* c */ 1 -- d\n;",
+			want:   []statement{{"SELECT   1  ", 1}},
+		},
+		{
+			name:   "unterminated string",
+			script: "SELECT 'x; y",
+			want:   []statement{{"SELECT  ", 1}},
+		},
+		{name: "unterminated comment", script: "/* x; y"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := splitStatements(tt.script); !slices.Equal(got, tt.want) {
+				t.Errorf("splitStatements(%q)\n got %#v\nwant %#v", tt.script, got, tt.want)
 			}
 		})
 	}

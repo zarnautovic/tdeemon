@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,19 +30,20 @@ func start(t *testing.T, h http.Handler) (string, context.CancelFunc, <-chan err
 	return "http://" + ln.Addr().String(), cancel, done
 }
 
-func get(t *testing.T, url string) *http.Response {
-	t.Helper()
-
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+// get fetches url and returns the status and the body, which it closes.
+// It returns errors instead of failing the test, so a goroutine can use it.
+func get(ctx context.Context, url string) (int, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		t.Fatalf("new request: %v", err)
+		return 0, "", err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
+		return 0, "", err
 	}
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	return resp
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body), err
 }
 
 func waitDone(t *testing.T, done <-chan error) {
@@ -65,10 +67,12 @@ func TestRunServesUntilCancelled(t *testing.T) {
 	})
 	base, cancel, done := start(t, h)
 
-	resp := get(t, base+"/")
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK || string(body) != "hello" {
-		t.Fatalf("got %d %q, want 200 \"hello\"", resp.StatusCode, body)
+	status, body, err := get(t.Context(), base+"/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	if status != http.StatusOK || body != "hello" {
+		t.Fatalf("got %d %q, want 200 \"hello\"", status, body)
 	}
 
 	cancel()
@@ -80,6 +84,8 @@ func TestRunWaitsForInFlightRequests(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce) // a failing test must not leave the handler waiting
 	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(started)
 		<-release
@@ -88,21 +94,22 @@ func TestRunWaitsForInFlightRequests(t *testing.T) {
 	base, cancel, done := start(t, h)
 
 	type result struct {
-		resp *http.Response
-		err  error
+		status int
+		body   string
+		err    error
 	}
 	resCh := make(chan result, 1)
 	go func() {
-		// t.Fatal must not be called from this goroutine; report the error.
-		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, base+"/slow", nil)
-		if err != nil {
-			resCh <- result{err: err}
-			return
-		}
-		resp, err := http.DefaultClient.Do(req)
-		resCh <- result{resp, err}
+		status, body, err := get(t.Context(), base+"/slow")
+		resCh <- result{status, body, err}
 	}()
-	<-started
+	select {
+	case <-started:
+	case res := <-resCh:
+		t.Fatalf("the request ended before the handler ran: %d %q, %v", res.status, res.body, res.err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handler did not start")
+	}
 
 	cancel()
 	select {
@@ -111,16 +118,18 @@ func TestRunWaitsForInFlightRequests(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	close(release)
-	res := <-resCh
+	releaseOnce()
+	var res result
+	select {
+	case res = <-resCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the in-flight request did not finish")
+	}
 	if res.err != nil {
 		t.Fatalf("in-flight request failed: %v", res.err)
 	}
-	resp := res.resp
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK || string(body) != "finished" {
-		t.Fatalf("in-flight request got %d %q, want 200 \"finished\"", resp.StatusCode, body)
+	if res.status != http.StatusOK || res.body != "finished" {
+		t.Fatalf("in-flight request got %d %q, want 200 \"finished\"", res.status, res.body)
 	}
 	waitDone(t, done)
 }
