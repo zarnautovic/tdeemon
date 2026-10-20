@@ -30,6 +30,11 @@ jobs:
           install_args: cocogitto
           # Only one tool: a cache saved here would shadow the full one.
           cache: false
+      # cog verify reads an author from the git config and aborts without
+      # one; the runner's checkout has none.
+      - run: |
+          git config --local user.name 'github-actions[bot]'
+          git config --local user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - run: cog verify "$TITLE"
         env:
           TITLE: ${{ github.event.pull_request.title }}
