@@ -368,21 +368,61 @@ func checkForeignKeyTargets(ctx context.Context, tx *sql.Tx) error {
 // schemaProbe is the throwaway table checkSchema creates and renames.
 const schemaProbe = "tdeemon_schema_probe"
 
-// checkSchema fails if a view or trigger refers to a table or column that
-// does not exist. SQLite resolves those only when they are used, so a
-// table rebuild that leaves one pointing at a dropped table would go
-// unnoticed until the first read or write that touches it fails. Renaming
-// a table makes SQLite re-check every view and trigger in the schema, so
-// a throwaway table is created, renamed and dropped. legacy_alter_table
-// is switched off first, in case a migration turned it on, because the
-// legacy rename skips that check.
+// checkSchema fails if a view or trigger refers to a table that does not
+// exist, or a view cannot be read. SQLite resolves those only when they
+// are used, so a table rebuild that leaves one pointing at a dropped table
+// would go unnoticed until the first read or write that touches it fails.
+//
+// Two checks, because neither covers the other:
+//   - Renaming a table makes SQLite re-check every view and trigger: the
+//     tables they use and the columns in their expressions. It does not
+//     check a trigger's INSERT column list or UPDATE SET targets. A
+//     throwaway table is created, renamed and dropped for it, with
+//     legacy_alter_table and writable_schema off first, because a
+//     migration may have turned them on and either one skips the check.
+//   - Reading every view (LIMIT 0) also catches a view whose column list
+//     no longer matches its query, or that calls a missing function.
 func checkSchema(ctx context.Context, tx *sql.Tx) error {
-	_, err := tx.ExecContext(ctx, "PRAGMA legacy_alter_table = OFF;"+
+	_, err := tx.ExecContext(ctx, "PRAGMA legacy_alter_table = OFF; PRAGMA writable_schema = OFF;"+
 		" CREATE TABLE "+schemaProbe+" (x INTEGER);"+
 		" ALTER TABLE "+schemaProbe+" RENAME TO "+schemaProbe+"_renamed;"+
 		" DROP TABLE "+schemaProbe+"_renamed")
 	if err != nil {
 		return fmt.Errorf("leaves views or triggers that refer to something missing: %w", err)
+	}
+	return checkViews(ctx, tx)
+}
+
+// checkViews fails if a view cannot be read.
+func checkViews(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "SELECT name FROM sqlite_schema WHERE type = 'view' ORDER BY name")
+	if err != nil {
+		return fmt.Errorf("list views: %w", err)
+	}
+	var views []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("list views: %w", err)
+		}
+		views = append(views, name)
+	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return fmt.Errorf("list views: %w", err)
+	}
+
+	var broken []string
+	for _, name := range views {
+		r, err := tx.QueryContext(ctx, `SELECT * FROM "`+strings.ReplaceAll(name, `"`, `""`)+`" LIMIT 0`)
+		if err != nil {
+			broken = append(broken, fmt.Sprintf("%s (%v)", name, err))
+			continue
+		}
+		_ = r.Close()
+	}
+	if len(broken) > 0 {
+		return fmt.Errorf("leaves views that cannot be read: %s", strings.Join(broken, "; "))
 	}
 	return nil
 }

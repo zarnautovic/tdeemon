@@ -391,6 +391,65 @@ DROP TABLE parent_old;`,
 	}
 }
 
+// TestMigrateRejectsViewsThatCannotBeRead covers broken views the rename
+// check does not see: SQLite re-checks their tables and columns, but not
+// whether the view's column list still matches its query or whether the
+// functions it calls exist.
+func TestMigrateRejectsViewsThatCannotBeRead(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]map[string]string{
+		"column list no longer matches": {
+			"0001_t.sql":      "CREATE TABLE t (x INTEGER, y INTEGER) STRICT;\nCREATE VIEW v (a, b) AS SELECT * FROM t;",
+			"0002_column.sql": "ALTER TABLE t ADD COLUMN z INTEGER;",
+		},
+		"missing function": {
+			"0001_t.sql":    "CREATE TABLE t (x INTEGER) STRICT;",
+			"0002_view.sql": "CREATE VIEW v AS SELECT no_such_function(x) AS y FROM t;",
+		},
+	}
+	for name, migrations := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			db := openEmpty(t)
+			err := db.migrate(t.Context(), files(migrations), discard())
+			if err == nil || !strings.Contains(err.Error(), "views that cannot be read: v") {
+				t.Fatalf("migrate returned %v, want the unreadable view reported", err)
+			}
+			if got := appliedVersions(t, db); len(got) != 1 {
+				t.Errorf("applied versions = %v, want [1]", got)
+			}
+		})
+	}
+}
+
+// TestSchemaCheckIgnoresPragmasThatDisableIt drops a table a trigger
+// writes to after turning on a pragma that makes SQLite's rename skip
+// its schema check; the runner switches both off before checking.
+func TestSchemaCheckIgnoresPragmasThatDisableIt(t *testing.T) {
+	t.Parallel()
+
+	for _, pragma := range []string{"legacy_alter_table", "writable_schema"} {
+		t.Run(pragma, func(t *testing.T) {
+			t.Parallel()
+
+			db := openEmpty(t)
+			err := db.migrate(t.Context(), files(map[string]string{
+				"0001_create_parent.sql": createParent,
+				"0002_other.sql": `CREATE TABLE other (x INTEGER NOT NULL) STRICT;
+CREATE TRIGGER other_ins AFTER INSERT ON other BEGIN
+	INSERT INTO parent (id, name) VALUES (new.x, 'from other');
+END;`,
+				"0003_drop.sql": "PRAGMA " + pragma + " = ON;\nDROP TABLE parent;",
+			}), discard())
+			if err == nil || !strings.Contains(err.Error(), "error in trigger other_ins") {
+				t.Fatalf("migrate returned %v, want the broken trigger reported", err)
+			}
+		})
+	}
+}
+
 // TestMigrationsStartFromTheSameConnectionState checks that a fresh
 // install, which runs every migration in one go, behaves like an upgrade,
 // which runs only the new one: state a migration leaves on its connection

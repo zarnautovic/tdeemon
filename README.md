@@ -63,9 +63,12 @@ newest snapshot of each schema version, for the three newest versions.
 To restore a snapshot:
 
 1. Stop tdeemon.
-2. Delete `tdeemon.db-wal` and `tdeemon.db-shm` next to the database if
-   they exist. They belong to the current database, and SQLite would
-   replay them onto the restored file.
+2. Move `tdeemon.db`, `tdeemon.db-wal` and `tdeemon.db-shm` aside
+   together, for example into a `before-restore/` folder. After an
+   unclean stop the `-wal` file holds the latest committed changes, so
+   the three files are only a complete copy of the current database
+   together. Left next to the restored file, SQLite would replay the old
+   `-wal` onto it.
 3. Copy the snapshot to `tdeemon.db`.
 4. Start tdeemon. A release newer than the snapshot migrates it again; to
    stay on the snapshot's schema, run the release that shipped it.

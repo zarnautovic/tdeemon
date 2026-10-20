@@ -25,11 +25,18 @@ the `schema_migrations` table.
   way. A file must not contain `BEGIN`, `COMMIT`, `END` or `ROLLBACK`; the
   runner rejects it before anything runs. `SAVEPOINT`, `RELEASE` and
   `ROLLBACK TO` are fine.
-- **The schema must hold before the commit:** every foreign key has to
-  name an existing table, `PRAGMA foreign_key_check` must come back
-  clean, and every view and trigger must still resolve, or the whole
-  migration rolls back. The runner checks views and triggers by renaming
-  a throwaway table, which makes SQLite re-check them all.
+- **The schema must hold before the commit,** or the whole migration
+  rolls back:
+  - every foreign key has to name an existing table, and
+    `PRAGMA foreign_key_check` must come back clean;
+  - views and triggers must not use missing tables, or missing columns
+    in their expressions (the runner renames a throwaway table, which
+    makes SQLite re-check them);
+  - every view must be readable.
+
+  Not checked: the column list of an `INSERT` and the targets of
+  `UPDATE … SET` inside a trigger. Review those by hand when a rebuild
+  or `DROP COLUMN` touches a table a trigger writes to.
 - **Rebuild tables in SQLite's order:**
   1. drop the views and triggers that use `x`, including triggers on
      other tables;
@@ -42,6 +49,7 @@ the `schema_migrations` table.
   other tables' foreign keys, views and triggers at the old name, which
   the runner rejects. Skipping step 1 fails as well: SQLite refuses the
   rename while a view or trigger still uses the dropped table.
+  Recreated triggers fall under the "not checked" note above.
 - **Keep the schema snapshot current.** After adding a migration, run
   `go test ./internal/store -run TestSchema -update` and commit
   `internal/store/testdata/schema.sql`. The test fails when the snapshot
