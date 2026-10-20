@@ -29,6 +29,7 @@ for the author and the reviewer.
 - **Git hooks** (lefthook, `lefthook install` once per clone):
   - pre-commit formats the staged files and stages what the formatters
     fixed, then lints them; Go is linted as packages, so the whole module;
+  - commit-msg checks the message is a Conventional Commit;
   - pre-push runs the Go and web tests (lefthook skips them when the
     checked-out branch adds or changes no files against its last push);
   - they are a convenience and CI is the gate: `git commit --no-verify`
@@ -36,6 +37,32 @@ for the author and the reviewer.
 - The Makefile needs GNU make: macOS's `/usr/bin/make` is GNU make 3.81,
   and on the BSDs it is `gmake`. GitHub's runners have it; the hooks do
   not need it.
+
+## Commits and pull requests
+
+- Every change reaches `main` through a pull request and is squash-merged,
+  so the pull request's title becomes the commit on `main`.
+- **Titles and commit messages are Conventional Commits:**
+  `type(scope)!: summary`.
+  - The types are feat, fix, perf, refactor, test, docs, ci, build, chore,
+    style and revert.
+  - The scope is optional.
+  - `!` after the type marks a breaking change, and so does a line that
+    starts with `BREAKING CHANGE:` or `BREAKING-CHANGE:`, even indented by
+    spaces, in the pull request's description, which becomes the commit's
+    body. cog counts such a line anywhere in the body, even in a code
+    block: write it once, in the footer at the end, and nowhere else.
+    Footers in the branch's commits are lost in the squash.
+  - The summary is short and ends without a full stop.
+  - `feat` and `fix` decide the next release, and from 1.0.0 on a
+    breaking change raises the major version whatever its type.
+  - GitHub's Revert button titles a pull request `Revert "feat: x"`;
+    rename it to `revert: feat: x`.
+- **The checks:** the "PR title" workflow runs `cog verify` (cocogitto,
+  `cog.toml`) on every pull request title, and the commit-msg hook runs it
+  on every commit message. Merge and fixup commits pass the hook, since
+  the squash merge replaces them; a title starting with "Merge" does not
+  pass.
 
 ## Go
 

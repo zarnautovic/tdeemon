@@ -2,8 +2,9 @@
 # mise at the versions in mise.toml, so only mise itself has to be on PATH.
 #
 # pre-commit formats the staged files and stages what the formatters
-# fixed, then lints; pre-push runs the tests. Hooks are a convenience, CI
-# is the gate: `git commit --no-verify` skips them.
+# fixed, then lints; commit-msg checks the message is a Conventional
+# Commit; pre-push runs the tests. Hooks are a convenience, CI is the
+# gate: `git commit --no-verify` skips them.
 pre-commit:
   jobs:
     # Formatters first, so the linters see what they wrote.
@@ -55,6 +56,11 @@ pre-commit:
       run: mise exec -- markdownlint-cli2 --no-globs {staged_files}
     - name: editorconfig
       run: mise exec -- editorconfig-checker {staged_files}
+
+commit-msg:
+  jobs:
+    - name: conventional-commit
+      run: mise exec -- cog verify --ignore-merge-commits --ignore-fixup-commits --file {1}
 
 # The tests, quickly; make check and CI run everything. lefthook skips the
 # jobs when HEAD adds or changes no files against what it was last pushed
