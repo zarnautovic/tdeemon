@@ -168,10 +168,14 @@ A change is done when:
   osv-scanner checks only licences here (`osv-scanner-licenses.toml`);
   known vulnerabilities are left to `make audit`.
 - **Secrets:** gitleaks scans the staged changes in the pre-commit hook
-  and the whole history in CI (`make secrets`). A finding anywhere in the
-  history fails every pull request: rotate the secret if it was real,
-  then list the finding's fingerprint, which gitleaks prints with the
-  secret redacted, in `.gitleaksignore`.
+  and the whole history in CI (`make secrets`), and prints each finding
+  with the secret redacted. Rotate a secret that was real. A finding in
+  a pull request's own commits comes out of the branch (amend or rebase,
+  then force-push it): the squash merge gives `main` new commits, so
+  ignoring it by fingerprint would not last. A finding already on
+  `main` stays in its history, so its fingerprint, which names the
+  commit, goes in `.gitleaksignore`; otherwise it fails every pull
+  request.
 - **CodeQL** scans Go, the TypeScript and the workflows on every pull
   request and weekly; the ruleset blocks merging a new error or a
   high-severity alert.

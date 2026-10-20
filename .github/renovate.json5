@@ -9,9 +9,10 @@
     // Pins digests and SHAs, waits a few days before taking a new npm
     // release, and groups packages released together.
     'config:best-practices',
-    // Conventional Commit titles: fix(deps) for the dependencies that
-    // ship, chore(deps) for the rest; the Go toolchain and the runtime
-    // image are marked fix below.
+    // Conventional Commit titles: fix(deps) for the Go modules and the
+    // npm dependencies, chore(deps) for the rest, devDependencies
+    // included; the Go version and the runtime image are marked fix
+    // below.
     ':semanticCommits',
   ],
   timezone: 'Europe/Zagreb',
