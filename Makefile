@@ -7,12 +7,12 @@ MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web api audit
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui api audit audit-go audit-npm
 
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: lint test api audit ## everything CI checks
+check: lint test test-webui api audit ## everything CI checks
 
 fmt: $(WEB_DEPS) ## format Go and the web app in place (a new migration: sqlfluff fix <file>)
 	$(MISE) golangci-lint fmt
@@ -55,8 +55,16 @@ test-web: $(WEB_DEPS)
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json
 	cd web/codegen && $(MISE) npm run --silent check:api
 
-audit: $(WEB_DEPS) $(CODEGEN_DEPS) ## known vulnerabilities in Go and npm dependencies
+test-webui: $(WEB_DEPS) ## the Go tests behind the webui tag, against a fresh build
+	cd web && $(MISE) npm run --silent build
+	$(MISE) go test -tags webui ./internal/webui/...
+
+audit: audit-go audit-npm ## known vulnerabilities in Go and npm dependencies
+
+audit-go:
 	$(MISE) govulncheck ./...
+
+audit-npm: $(WEB_DEPS) $(CODEGEN_DEPS)
 	cd web && $(MISE) npm audit --audit-level=high
 	cd web/codegen && $(MISE) npm audit --audit-level=high
 

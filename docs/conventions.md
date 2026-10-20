@@ -7,7 +7,8 @@ for the author and the reviewer.
 
 - **`make check`** runs every check CI runs:
   - the linters and format checks for every language;
-  - the Go and web tests, with coverage;
+  - the Go and web tests, with coverage, and the Go tests behind the
+    `webui` tag against a fresh build;
   - the check that the generated TypeScript types match the API spec;
   - `govulncheck` and `npm audit`.
   `make fmt` formats Go and the web app in place, and `make help` lists
@@ -16,10 +17,13 @@ for the author and the reviewer.
 - **CI** (`.github/workflows/ci.yml`) runs the same targets on every pull
   request and on `main`, in four parallel jobs: Go, the web app, the
   other files, and the Docker image, which is built with its tests but not
-  pushed.
-- **`mise.lock`** pins each tool's download and checksum for Linux and
-  macOS on x64 and arm64, and `.mise/locks/` pins the dependencies of the
-  Python and npm tools. CI installs with `--locked`. After changing a
+  pushed. Only pushes to `main` write the caches; pull requests read
+  them.
+- **`mise.lock`** pins each tool's version and, for the tools mise
+  downloads as binaries, the URL and checksum for Linux and macOS on x64
+  and arm64; `.mise/locks/` pins the dependencies of the Python and npm
+  tools. Go tools are built from source and checked against the Go
+  checksum database. CI installs with `--locked`. After changing a
   version in `mise.toml`, run
   `mise lock --platform linux-x64,linux-arm64,macos-arm64,macos-x64`.
 - **Git hooks** (lefthook, `lefthook install` once per clone):
