@@ -236,31 +236,40 @@ markdownlint-cli2
     snapshot and Go files, which gofumpt formats.
 - **SQL migrations:**
   - keywords and types are upper case; identifiers and functions lower
-    case;
+    case. sqlfluff reads `CURRENT_TIMESTAMP` and `RAISE` as functions and
+    `NOCASE` as an identifier; they may stay upper case;
   - four-space indentation, at most 100 columns;
-  - `sqlfluff fix` lays them out;
+  - `sqlfluff fix` lays out a **new** migration. An applied migration is
+    never rewritten, not even to its layout: the runner would report it
+    as changed. If a newer sqlfluff flags an old migration, list that file
+    in `.sqlfluffignore` with the reason;
+  - sqlfluff's SQLite dialect cannot parse `SAVEPOINT`, `RELEASE` or
+    `ROLLBACK TO`, which the runner allows. A migration that needs them
+    goes into `.sqlfluffignore` too;
   - the file name and the schema rules are in
     [`internal/store/migrations/README.md`](../internal/store/migrations/README.md);
   - every migration runs from an empty database in the tests
     (`TestSchema`);
   - the generated `internal/store/testdata/schema.sql` is not linted.
-- **Dockerfile:** hadolint at its strictest threshold (style). Base
-  images come only from Docker Hub and Google's registry, fully
-  qualified and pinned by digest.
+- **Dockerfile:** hadolint at its strictest threshold (style), with Docker
+  Hub and Google's registry as the only trusted registries. Base images
+  are also fully qualified and pinned by digest; hadolint does not check
+  that, so the reviewer does.
 - **GitHub Actions:**
   - actionlint checks the workflows;
   - zizmor audits them for security, for example credentials left in
     the checkout or permissions broader than the job needs;
   - every action, GitHub's own included, is pinned to a full commit SHA
     (zizmor's `unpinned-uses` with the `hash-pin` policy), with the
-    version in a comment for Renovate:
+    version in a comment, the form Renovate reads and writes:
 
     ```yaml
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     ```
 
 - **YAML:** yamllint's default rules, without the `---` document start,
-  with lines up to 120 columns, and with `on:` allowed as a key.
+  with lines up to 120 columns, `on:` allowed as a key, and one space
+  before a comment, as in the action pins.
 - **Markdown:** markdownlint's default rules.
   - Prose wraps at 80 columns; tables, code and headings may run longer.
   - Headings are real headings, not bold lines.

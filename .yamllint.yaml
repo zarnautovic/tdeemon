@@ -12,3 +12,7 @@ rules:
   # GitHub Actions' "on:" key is not a boolean.
   truthy:
     check-keys: false
+  # One space before a comment, as in the pins Renovate writes:
+  # uses: owner/action@<sha> # v1.2.3
+  comments:
+    min-spaces-from-content: 1

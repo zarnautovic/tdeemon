@@ -1,6 +1,7 @@
 # zizmor audits the GitHub Actions workflows. Every action, GitHub's own
-# included, is pinned to a full commit SHA (Renovate keeps the pins
-# current), so a moved tag cannot change what runs.
+# included, is pinned to a full commit SHA, so a moved tag cannot change
+# what runs. (hash-pin is zizmor's default; it is spelled out here so a
+# change of default cannot loosen it.)
 rules:
   unpinned-uses:
     config:

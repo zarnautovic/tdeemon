@@ -1,7 +1,9 @@
 # sqlfluff for the migrations: `sqlfluff lint` to check, `sqlfluff fix`
-# to format.
+# to lay out a new one (never an applied one; see docs/conventions.md).
 [sqlfluff]
 dialect = sqlite
+# Plain SQL: no Jinja, so a literal such as '{#' stays a literal.
+templater = raw
 max_line_length = 100
 
 [sqlfluff:indentation]
@@ -17,8 +19,13 @@ extended_capitalisation_policy = upper
 [sqlfluff:rules:capitalisation.literals]
 capitalisation_policy = upper
 
+# sqlfluff reads CURRENT_TIMESTAMP and RAISE as functions; written in
+# upper case, as SQLite's documentation does, they are left alone.
 [sqlfluff:rules:capitalisation.functions]
 extended_capitalisation_policy = lower
+ignore_words = current_timestamp,raise
 
+# NOCASE is a collation name, which sqlfluff reads as an identifier.
 [sqlfluff:rules:capitalisation.identifiers]
 extended_capitalisation_policy = lower
+ignore_words = nocase
