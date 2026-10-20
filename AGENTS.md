@@ -25,7 +25,7 @@ an empty web app exist.
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
 | `docs/` | the design and the conventions |
 | `.github/` | the CI workflows, the ruleset for `main`, issue and PR templates |
-| `scripts/` | `apply-github-settings.sh`, for the maintainer only |
+| `scripts/` | `next-version.sh` for releases, with its test; `apply-github-settings.sh`, for the maintainer only |
 
 ## Commands
 

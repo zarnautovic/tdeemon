@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tests scripts/next-version.sh against the release rules in
-# docs/conventions.md ("Releases"), each case in a scratch repository
-# with this repository's cog.toml. Run by `make test-scripts`.
+# docs/conventions.md ("Releases"), and the release notes template, each
+# case in a scratch repository with this repository's cog.toml. Run by
+# `make test-scripts`.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d)
@@ -106,9 +107,78 @@ touch untracked
 expect "untracked files" v0.1.0
 
 repo
+commit -m "feat: x"
+git tag v0.1.0
+commit -m "fix!: y"
+git tag v0.2.0
+commit -m "docs: z"
+expect "a breaking change behind the last tag, then docs" ""
+commit -m "fix: w"
+expect "a breaking change behind the last tag, then fix" v0.2.1
+
+repo
+commit -m "fix: x"
+git tag vnext
+expect "a tag that is not a version on HEAD" v0.0.1
+
+repo
 echo 'tag_prefix =' >>cog.toml
 git commit -q -am "feat: x"
 expect "a broken cog.toml" error
+
+# A cog that fails, or prints something unexpected, in one subcommand
+# and runs the real one otherwise: the script must fail, not report
+# that there is nothing to release.
+real_cog=$(command -v cog)
+mkdir "$tmp/stub"
+cat >"$tmp/stub/cog" <<STUB
+#!/usr/bin/env bash
+case "\$STUB:\$1" in
+  changelog-fails:changelog) exit 1 ;;
+  bump-prints-junk:bump) echo "Next version: v9.9.9"; exit 0 ;;
+esac
+exec "$real_cog" "\$@"
+STUB
+chmod +x "$tmp/stub/cog"
+for stub_case in "changelog-fails:fix!" "bump-prints-junk:fix" "bump-prints-junk:fix!"; do
+  stub=${stub_case%%:*}
+  type=${stub_case#*:}
+  repo
+  commit -m "feat: x"
+  git tag v0.1.0
+  commit -m "$type: y"
+  STUB=$stub PATH="$tmp/stub:$PATH" expect "cog $stub, after a $type" error
+done
+
+# The release notes (.github/release-notes.tera, set in cog.toml): a
+# breaking change's mark, scope and footer, the footer's later lines
+# indented under it.
+repo
+mkdir .github
+cp "$root/.github/release-notes.tera" .github/
+git add -A
+git commit -q -m "chore: notes template"
+commit -m "refactor(api)!: move the routes" -m $'BREAKING CHANGE: the routes moved:\n- /v1/x is now /x'
+git tag v0.1.0
+if ! notes=$(cog changelog --at v0.1.0 2>"$tmp/stderr"); then
+  echo "FAIL release notes: cog changelog failed"
+  sed 's/^/     /' "$tmp/stderr"
+  fails=$((fails + 1))
+else
+  missing=0
+  for line in '- **BREAKING:** **api:** move the routes ([' '  - the routes moved:' '    - /v1/x is now /x'; do
+    if ! grep -qF -- "$line" <<<"$notes"; then
+      echo "FAIL release notes: no line starting \"$line\""
+      missing=1
+    fi
+  done
+  if ((missing)); then
+    echo "     ${notes//$'\n'/$'\n'     }"
+    fails=$((fails + 1))
+  else
+    echo "ok   release notes: breaking mark, scope and footer"
+  fi
+fi
 
 if ((fails > 0)); then
   echo "$fails failed"

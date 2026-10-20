@@ -17,7 +17,7 @@ semver='^v[0-9]+\.[0-9]+\.[0-9]+$'
 
 # A commit that is in a release already makes no other: a re-run of a
 # release, or of an older run after a newer release, stops here.
-if [[ -n $(git tag --list 'v*' --contains HEAD) ]]; then
+if [[ -n $(git tag --list 'v[0-9]*' --contains HEAD) ]]; then
   exit 0
 fi
 
@@ -40,7 +40,9 @@ if [[ -z $last || $last == v0.* ]]; then
   template=$(mktemp)
   trap 'rm -f "$template"' EXIT
   printf '%s' '{% for commit in commits %}{% if commit.breaking_change %}breaking {% endif %}{% endfor %}' >"$template"
-  if [[ $(cog changelog --template "$template" "$last..HEAD") == *breaking* ]]; then
+  # Assigned first: a failure inside [[ ]] would not stop the script.
+  breaking=$(cog changelog --template "$template" "$last..HEAD")
+  if [[ $breaking == *breaking* ]]; then
     next=$(cog bump --minor --dry-run --skip-untracked)
     if [[ ! $next =~ $semver ]]; then
       printf 'next-version: unexpected output from cog bump --minor:\n%s\n' "$next" >&2
