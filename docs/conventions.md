@@ -5,7 +5,8 @@ for the author and the reviewer.
 
 ## Running the checks
 
-- **`make check`** runs every check CI runs:
+- **`make check`** runs every check CI runs, except the Docker image
+  build and the pull request title check:
   - the linters and format checks for every language;
   - the Go and web tests, with coverage, and the Go tests behind the
     `webui` tag against a fresh build;
@@ -91,6 +92,9 @@ A change is done when:
 
 - Every change reaches `main` through a pull request and is squash-merged,
   so the pull request's title becomes the commit on `main`.
+- Commit messages and pull requests are in English, like the code and
+  the docs, and carry no AI attribution: no `Co-Authored-By` trailers for
+  AI tools and no "Generated with" lines.
 - **The ruleset for `main`** (`.github/rulesets/main.json`, applied with
   `scripts/apply-github-settings.sh`), with no bypass:
   - no direct pushes, force pushes or deletion;

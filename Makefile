@@ -12,7 +12,7 @@ CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-11s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-check: lint test test-webui api audit ## everything CI checks
+check: lint test test-webui api audit ## what CI checks, except the image build and the PR title
 
 fmt: $(WEB_DEPS) ## format Go and the web app in place (a new migration: sqlfluff fix <file>)
 	$(MISE) golangci-lint fmt

@@ -17,24 +17,30 @@ an empty web app exist.
 | `cmd/tdeemon` | the binary: configuration, wiring, start and stop |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
-| `internal/api` | the HTTP API (huma), which writes `api/openapi.json` |
+| `internal/store/storetest` | a fresh, migrated database file for tests |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json` |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
+| `docs/` | the design and the conventions |
+| `.github/` | the CI workflows and the ruleset for `main` |
+| `scripts/` | `apply-github-settings.sh`, for the maintainer only |
 
 ## Commands
 
 ```sh
 mise install       # every tool at the pinned version (mise.toml, mise.lock)
 lefthook install   # git hooks, once per clone
-make check         # everything CI checks; run it before you finish
-make fmt           # format Go, the web app and SQL
+make check         # what CI checks, except the image build and the PR title
+make fmt           # Go and the web app; a new migration: sqlfluff fix <file>
 make help          # the other targets
 ```
 
-Run the server with `TDEEMON_BASE_URL`, `TDEEMON_SECRET_KEY` and
-`go run ./cmd/tdeemon`; the README has the details.
+Without mise activated in the shell, run the tools as
+`mise exec -- <tool>`. Run the server with `TDEEMON_BASE_URL`,
+`TDEEMON_SECRET_KEY` and `go run ./cmd/tdeemon`; the README has the
+details.
 
 ## Rules
 
@@ -47,6 +53,9 @@ Run the server with `TDEEMON_BASE_URL`, `TDEEMON_SECRET_KEY` and
 - **No personal data in the repo, ever.** The repo is public. Real
   weights, meals, health exports and chat sessions stay out of git; test
   fixtures are made up or anonymised. No secrets either.
+- **Never run `scripts/apply-github-settings.sh`**, except with
+  `--dry-run`. It changes the live repository's settings and the ruleset
+  for `main` with admin rights; the maintainer runs it.
 - **Tests come with every change in behaviour**, and they fail without
   it. Use a real SQLite file (`storetest.Open`), not mocks of the
   standard library. Coverage floors are in `.testcoverage.yml` and
@@ -54,20 +63,23 @@ Run the server with `TDEEMON_BASE_URL`, `TDEEMON_SECRET_KEY` and
 - **Generated files stay fresh:**
   - after changing the API, regenerate `api/openapi.json`
     (`go test ./internal/api -update`) and the TypeScript types
-    (`cd web/codegen && npm run gen:api`);
+    (`(cd web/codegen && npm ci && npm run gen:api)`);
   - after a migration, refresh the schema snapshot
     (`go test ./internal/store -run TestSchema -update`).
 - **Migrations only go forward.** Never edit an applied migration; add a
   new one. The rules are in `internal/store/migrations/README.md`.
-- **Follow the linters, do not silence them.** A `//nolint` (Go) or
-  `oxlint-disable` (web) names the rule and gives the reason.
+- **Follow the linters, do not silence them.** A disable is for a linter
+  that is wrong in that place, and it says which rule and why:
+  - Go: `//nolint:<linter> // why` (nolintlint enforces both);
+  - web: `// oxlint-disable-next-line <rule> -- why`, and the same for
+    `eslint-disable`; review checks these.
 - **Code, comments, docs and commit messages are in English.**
 - **Keep the docs true:** update the README, docs/conventions.md or
   docs/DESIGN.md when a change makes them wrong.
 
 ## Definition of Done
 
-A change is done when its behaviour is tested, `make check` passes,
-generated files and docs are up to date, nothing personal entered the
-repo, and the pull request says what changed, why and how it was
+A change is done when its behaviour is tested, `make check` and CI
+pass, generated files and docs are up to date, nothing personal entered
+the repo, and the pull request says what changed, why and how it was
 checked.

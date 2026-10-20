@@ -393,7 +393,8 @@ the first spec.
     lefthook.
   - Renovate, CodeQL, gitleaks and a license check guard dependencies
     and secrets.
-  - `CLAUDE.md` carries the conventions for AI agents.
+  - `AGENTS.md` carries the conventions for AI agents, and `CLAUDE.md`
+    imports it.
 - **Backend stack:** Go and `modernc.org/sqlite` (pure Go, WAL,
   busy_timeout) carry over from the predecessor. Migrations are versioned and
   embedded (no more "rebuild the index"). SQL stays portable, so Postgres
