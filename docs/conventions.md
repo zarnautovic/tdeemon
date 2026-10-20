@@ -70,10 +70,16 @@ in `web/`.
   - compare with `errors.Is` and `errors.As`, never by text;
   - messages are lower case, without final punctuation;
   - an error is either handled (logged) or returned, not both.
-- **`context.Context`** is the first parameter of anything that does I/O
-  or can block, and is never stored in a struct.
+- **`context.Context`** is the first parameter of anything that queries
+  the database, talks to the network or waits on other goroutines, and is
+  never stored in a struct. File system calls take none, as `os` has no
+  use for one.
 - **No global mutable state.** Dependencies are passed in: `cmd/tdeemon`'s
-  `run` takes the arguments, the environment lookup and the writers.
+  `run` takes the arguments, the environment lookup and the writers. The
+  one exception is `slog.SetDefault` in `run`: whatever a dependency logs
+  through `slog`'s default logger or the standard `log` package then
+  comes out in the configured format. Our own code takes its logger as a
+  parameter.
   Package-level variables only hold read-only values Go cannot declare
   as constants (sentinel errors, compiled regular expressions, embedded
   files, fixed lookup tables) and the version set at build time.

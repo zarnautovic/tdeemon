@@ -125,7 +125,7 @@ func (db *DB) verify(ctx context.Context) error {
 		return fmt.Errorf("open %s: %w", db.path, err)
 	}
 	if mode != "wal" {
-		return fmt.Errorf("open %s: journal mode is %q, want wal; is the data directory on a local disk?", db.path, mode)
+		return fmt.Errorf("open %s: journal mode is %q, want wal, which needs the data directory on a local disk", db.path, mode)
 	}
 
 	for _, p := range []struct {

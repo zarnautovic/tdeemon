@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -83,6 +84,8 @@ func TestRunWaitsForInFlightRequests(t *testing.T) {
 
 	started := make(chan struct{})
 	release := make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce) // a failing test must not leave the handler waiting
 	h := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		close(started)
 		<-release
@@ -100,7 +103,13 @@ func TestRunWaitsForInFlightRequests(t *testing.T) {
 		status, body, err := get(t.Context(), base+"/slow")
 		resCh <- result{status, body, err}
 	}()
-	<-started
+	select {
+	case <-started:
+	case res := <-resCh:
+		t.Fatalf("the request ended before the handler ran: %d %q, %v", res.status, res.body, res.err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the handler did not start")
+	}
 
 	cancel()
 	select {
@@ -109,8 +118,13 @@ func TestRunWaitsForInFlightRequests(t *testing.T) {
 	case <-time.After(100 * time.Millisecond):
 	}
 
-	close(release)
-	res := <-resCh
+	releaseOnce()
+	var res result
+	select {
+	case res = <-resCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the in-flight request did not finish")
+	}
 	if res.err != nil {
 		t.Fatalf("in-flight request failed: %v", res.err)
 	}

@@ -105,6 +105,12 @@ func TestSplitStatements(t *testing.T) {
 			want:   []statement{{"END TRANSACTION", 1}},
 		},
 		{
+			// The "/" of the opening "/*" does not close the comment.
+			name:   "a comment opened as /*/",
+			script: "/*/ ; */ SELECT 1",
+			want:   []statement{{"  SELECT 1", 1}},
+		},
+		{
 			name:   "comments are dropped",
 			script: "SELECT /* c */ 1 -- d\n;",
 			want:   []statement{{"SELECT   1  ", 1}},
