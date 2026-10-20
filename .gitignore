@@ -22,7 +22,7 @@ coverage.out
 
 # Web
 node_modules/
-/web/dist/
+/internal/webui/dist/
 /web/coverage/
 *.tsbuildinfo
 

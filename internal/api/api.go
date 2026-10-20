@@ -33,9 +33,14 @@ type ServerInfo struct {
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
-func NewHandler(info ServerInfo) (http.Handler, error) {
+// app, if not nil, answers every other GET request (the web app and its
+// client-side routes); requests under /api/ never reach it.
+func NewHandler(info ServerInfo, app http.Handler) (http.Handler, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
+	if app != nil {
+		mux.Handle("GET /", app)
+	}
 	a := newAPI(mux)
 	register(a, info)
 

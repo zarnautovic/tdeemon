@@ -406,11 +406,13 @@ the first spec.
   tools take their JSON Schemas and input validation from the same huma
   registry.
 - **Frontend stack:**
-  - React + TypeScript + Vite, built as a static SPA and embedded into
-    the binary with `go:embed`. No Node at runtime; self-host stays one
-    container (multi-stage Docker build).
-  - TanStack Query (server state) and TanStack Router.
-  - Tailwind + shadcn/ui (components owned in-repo).
+  - React (with the React Compiler) + TypeScript + Vite, built as a
+    static SPA and embedded into the binary with `go:embed` under the
+    `webui` build tag, so Go builds never need Node. No Node at runtime;
+    self-host stays one container (multi-stage Docker build).
+  - TanStack Query (server state, typed by the OpenAPI document through
+    openapi-fetch) and TanStack Router (routes declared in code).
+  - Tailwind + shadcn/ui on Base UI (components owned in-repo).
   - ECharts, keeping the validated palette.
   - `vite-plugin-pwa` for install and web push.
   - Later, Capacitor wraps the same app for iOS with a HealthKit plugin.

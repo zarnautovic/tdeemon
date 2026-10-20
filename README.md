@@ -8,7 +8,7 @@ intake and weight trend, and lets an AI coach adjust your goals — cut,
 maintenance, bulk or recomp — within guardrails you control.
 
 > **Status: early development.** Only the server skeleton, the database
-> layer and the API contract exist so far.
+> layer, the API contract and an empty web app exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights
@@ -35,6 +35,28 @@ TDEEMON_LOG_FORMAT=text \
 go run ./cmd/tdeemon
 ```
 
+### Web app
+
+The web app in `web/` (React, TypeScript, Vite) is compiled into the
+binary only with the `webui` build tag, so Go builds and tests never need
+Node; a binary built without the tag serves a short notice at `/`. To work
+on the app, run the server as above and the Vite dev server next to it,
+which forwards `/api` to the server (`TDEEMON_DEV_SERVER`, default
+`http://localhost:8080`):
+
+```sh
+cd web && npm ci
+npm run dev     # http://localhost:5173
+npm test        # Vitest
+```
+
+A binary with the app inside:
+
+```sh
+(cd web && npm ci && npm run build)   # writes internal/webui/dist
+go build -tags webui ./cmd/tdeemon
+```
+
 ### API contract
 
 The JSON API under `/api/v1` is described by an OpenAPI 3.1 document that
@@ -56,7 +78,7 @@ All settings come from environment variables:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `TDEEMON_BASE_URL` | — (required) | public URL of the instance, e.g. `https://tdeemon.example.com` |
+| `TDEEMON_BASE_URL` | — (required) | public URL of the instance, without a path (tdeemon is served at the root of its host), e.g. `https://tdeemon.example.com` |
 | `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; signs sessions and encrypts stored secrets |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
 | `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |
