@@ -24,7 +24,7 @@ an empty web app exist.
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
 | `docs/` | the design and the conventions |
-| `.github/` | the CI workflows and the ruleset for `main` |
+| `.github/` | the CI workflows, the ruleset for `main`, issue and PR templates |
 | `scripts/` | `apply-github-settings.sh`, for the maintainer only |
 
 ## Commands
