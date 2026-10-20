@@ -3,5 +3,6 @@
 # "PR title" workflow), since the title becomes the squash-merge commit.
 # The commit types are cocogitto's defaults: feat, fix, perf, refactor,
 # test, docs, ci, build, chore, style and revert; `!` marks a breaking
-# change.
-ignore_merge_commits = true
+# change. Merge commits are let through by the hook alone (it passes
+# --ignore-merge-commits): here it would also let any title starting
+# with "Merge " pass the PR title check.

@@ -29,6 +29,7 @@ for the author and the reviewer.
 - **Git hooks** (lefthook, `lefthook install` once per clone):
   - pre-commit formats the staged files and stages what the formatters
     fixed, then lints them; Go is linted as packages, so the whole module;
+  - commit-msg checks the message is a Conventional Commit;
   - pre-push runs the Go and web tests (lefthook skips them when the
     checked-out branch adds or changes no files against its last push);
   - they are a convenience and CI is the gate: `git commit --no-verify`
@@ -46,13 +47,19 @@ for the author and the reviewer.
   - The types are feat, fix, perf, refactor, test, docs, ci, build, chore,
     style and revert.
   - The scope is optional.
-  - `!`, or a `BREAKING CHANGE:` footer, marks a breaking change.
+  - `!` after the type marks a breaking change. A `BREAKING CHANGE:`
+    footer counts only in the last paragraph of the pull request's
+    description, which becomes the commit's body; footers in the branch's
+    commits are lost in the squash.
   - The summary is short and ends without a full stop.
-  - `feat`, `fix` and `perf` decide the next release.
+  - `feat` and `fix` decide the next release.
+  - GitHub's Revert button titles a pull request `Revert "feat: x"`;
+    rename it to `revert: feat: x`.
 - **The checks:** the "PR title" workflow runs `cog verify` (cocogitto,
   `cog.toml`) on every pull request title, and the commit-msg hook runs it
   on every commit message. Merge and fixup commits pass the hook, since
-  the squash merge replaces them.
+  the squash merge replaces them; a title starting with "Merge" does not
+  pass.
 
 ## Go
 
