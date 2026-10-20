@@ -1,3 +1,5 @@
 # Toolchain pinned for everyone working on the repo: `mise install`.
 [tools]
 go = "1.27.2"
+# Active LTS; the web build and code generation run on it.
+node = "24.22.0"

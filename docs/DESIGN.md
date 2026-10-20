@@ -399,8 +399,12 @@ the first spec.
   embedded (no more "rebuild the index"). SQL stays portable, so Postgres
   would be an adapter, not a rewrite.
 - **API contract:** the OpenAPI 3.1 spec is generated from the Go
-  handlers (e.g. huma) and the TypeScript client types are generated
-  from that spec. The frontend, REST and MCP tool schemas cannot drift.
+  handlers (huma v2), served at `/api/v1/openapi.json` and committed as
+  `api/openapi.json`; the TypeScript types are generated from that file
+  (openapi-typescript, in `web/codegen`). Checks fail when either is
+  stale, so the frontend, REST and MCP tool schemas cannot drift. MCP
+  tools take their JSON Schemas and input validation from the same huma
+  registry.
 - **Frontend stack:**
   - React + TypeScript + Vite, built as a static SPA and embedded into
     the binary with `go:embed`. No Node at runtime; self-host stays one

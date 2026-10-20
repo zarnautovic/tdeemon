@@ -47,7 +47,8 @@ func run(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error 
 
 	logger := newLogger(cfg, logOut)
 	slog.SetDefault(logger)
-	logger.Info("starting tdeemon", "version", buildVersion(), "config", cfg)
+	version := buildVersion()
+	logger.Info("starting tdeemon", "version", version, "config", cfg)
 
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("data directory: %w", err)
@@ -70,7 +71,7 @@ func run(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error 
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Listen, err)
 	}
-	return server.Run(ctx, ln, api.NewHandler(), logger)
+	return server.Run(ctx, ln, api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: version}), logger)
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

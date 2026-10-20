@@ -35,6 +35,21 @@ TDEEMON_LOG_FORMAT=text \
 go run ./cmd/tdeemon
 ```
 
+### API contract
+
+The JSON API under `/api/v1` is described by an OpenAPI 3.1 document that
+is generated from the Go handlers in `internal/api` (with
+[huma](https://huma.rocks)). It is served at `/api/v1/openapi.json` and
+committed as `api/openapi.json`, and the TypeScript types in
+`web/src/api/schema.d.ts` are generated from it. `go test` fails when
+`api/openapi.json` is stale, and `npm run check:api` in `web/codegen` when
+the types are. After changing the API:
+
+```sh
+go test ./internal/api -run TestOpenAPISpec -update
+cd web/codegen && npm ci && npm run gen:api
+```
+
 ## Configuration
 
 All settings come from environment variables:
