@@ -5,8 +5,9 @@ for the author and the reviewer.
 
 ## Running the checks
 
-- **`make check`** runs every check CI runs, except the Docker image
-  build and the pull request title check:
+- **`make check`** runs every check CI runs, except three that only CI
+  runs: the Docker image build, the pull request title check, and
+  zizmor's online audits, which need `GH_TOKEN` set:
   - the linters and format checks for every language;
   - the Go and web tests, with coverage, and the Go tests behind the
     `webui` tag against a fresh build;
@@ -375,10 +376,10 @@ markdownlint-cli2
     `FROM` for an unknown table (RF01). Put the condition in the
     trigger's `WHEN`, or mark that line `-- noqa: RF01`;
   - four-space indentation, at most 100 columns;
-  - `sqlfluff fix` lays out a **new** migration. An applied migration is
-    never rewritten, not even to its layout: the runner would report it
-    as changed. If a newer sqlfluff flags an old migration, list that file
-    in `.sqlfluffignore` with the reason;
+  - `sqlfluff fix` lays out a **new** migration. A merged migration is
+    never rewritten, not even to its layout: tdeemon would warn that its
+    checksum no longer matches. If a newer sqlfluff flags an old
+    migration, list that file in `.sqlfluffignore` with the reason;
   - sqlfluff's SQLite dialect cannot parse `SAVEPOINT`, `RELEASE` or
     `ROLLBACK TO`, which the runner allows. A migration that needs them
     goes into `.sqlfluffignore` too;

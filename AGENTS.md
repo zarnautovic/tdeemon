@@ -32,7 +32,7 @@ an empty web app exist.
 ```sh
 mise install       # every tool at the pinned version (mise.toml, mise.lock)
 lefthook install   # git hooks, once per clone
-make check         # what CI checks, except the image build and the PR title
+make check         # what CI checks, except a few that only CI runs
 make fmt           # Go and the web app; a new migration: sqlfluff fix <file>
 make help          # the other targets
 ```
@@ -49,7 +49,7 @@ details.
   (`feat: …`, `fix(store): …`, `!` for breaking changes), becomes the
   commit on `main`.
 - **No AI attribution** in commits or pull requests: no `Co-Authored-By`
-  trailers and no "Generated with" lines.
+  trailers for AI tools and no "Generated with" lines.
 - **No personal data in the repo, ever.** The repo is public. Real
   weights, meals, health exports and chat sessions stay out of git; test
   fixtures are made up or anonymised. No secrets either.
@@ -66,8 +66,9 @@ details.
     (`(cd web/codegen && npm ci && npm run gen:api)`);
   - after a migration, refresh the schema snapshot
     (`go test ./internal/store -run TestSchema -update`).
-- **Migrations only go forward.** Never edit an applied migration; add a
-  new one. The rules are in `internal/store/migrations/README.md`.
+- **Migrations only go forward.** Never edit a migration once it is
+  merged; add a new one. The rules are in
+  `internal/store/migrations/README.md`.
 - **Follow the linters, do not silence them.** A disable is for a linter
   that is wrong in that place, and it says which rule and why:
   - Go: `//nolint:<linter> // why` (nolintlint enforces both);
