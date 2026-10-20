@@ -1,6 +1,6 @@
 module github.com/zarnautovic/tdeemon
 
-go 1.27.2
+go 1.27.3
 
 // web/ is the Node project of the web app; its node_modules can hold .go
 // files that are no part of this module.

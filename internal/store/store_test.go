@@ -62,6 +62,7 @@ func TestOpenConfiguresWriteConnection(t *testing.T) {
 		"busy_timeout": "5000",
 		"synchronous":  "2", // FULL
 		"query_only":   "0",
+		"temp_store":   "2", // MEMORY
 	}
 	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 		for name, w := range want {
@@ -85,6 +86,7 @@ func TestOpenConfiguresEveryReadConnection(t *testing.T) {
 		"foreign_keys": "1",
 		"busy_timeout": "5000",
 		"query_only":   "1",
+		"temp_store":   "2", // MEMORY
 	}
 	// Hold several connections at once so the pool has to open new ones.
 	for i := range 3 {

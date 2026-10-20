@@ -96,20 +96,29 @@ one volume at `/data`, so the root filesystem can be read-only.
 
 ```sh
 docker build -t tdeemon .
-openssl rand -base64 32 > secret_key   # once; keep it
+
+# Once: the settings, readable by you only. Keep the secret key: it signs
+# sessions and encrypts stored secrets.
+(umask 077 && printf 'TDEEMON_BASE_URL=%s\nTDEEMON_SECRET_KEY=%s\n' \
+  http://localhost:8080 "$(openssl rand -base64 32)" > .env)
+
 docker run --read-only -v tdeemon-data:/data -p 8080:8080 \
-  -e TDEEMON_BASE_URL=http://localhost:8080 \
-  -e TDEEMON_SECRET_KEY="$(cat secret_key)" \
-  tdeemon
+  --env-file .env tdeemon
 ```
 
+- `--env-file` keeps the key out of the command line, where other users
+  could see it in the process list; `.env` is ignored by git and by the
+  image build.
 - Mount a volume at `/data`. The image declares none on purpose: without
   one, a read-only container stops at startup instead of keeping the
   database where it gets lost with the container. A named volume takes the
-  right ownership; a host directory must be writable by uid 65532.
-- Keep the secret key: it signs sessions and encrypts stored secrets.
+  right ownership; a host directory must be writable by uid 65532 (with
+  rootless Podman, add `:U` to the mount, e.g. `-v ./data:/data:U`).
+- Nothing else needs to be writable, so `--read-only` (or
+  `readOnlyRootFilesystem` in Kubernetes) works without a tmpfs.
 - `--build-arg VERSION=v1.2.3` sets the version the server reports
-  (default `dev`).
+  (default `dev`). The binary takes no arguments; with any it prints its
+  usage and exits, without touching the database.
 - The build runs `go vet` and the tests against the web app it embeds.
   Podman builds the same file.
 

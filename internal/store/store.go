@@ -76,6 +76,13 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	// transaction that starts by reading can never fail when it later
 	// upgrades to a write.
 	writeParams.Set("_txlock", "immediate")
+	// Temporary tables, indexes and sort spills stay in memory. With a
+	// file temp store, SQLite needs a writable temp directory for large
+	// sorts, index builds and table rebuilds, and a read-only container
+	// (Docker --read-only, Kubernetes readOnlyRootFilesystem) has none:
+	// such statements fail with "disk I/O error" once data outgrows the
+	// page cache. Everything tdeemon writes must go to the data directory.
+	writeParams.Add("_pragma", "temp_store(memory)")
 
 	write, err := sql.Open("sqlite", path+"?"+writeParams.Encode())
 	if err != nil {
@@ -91,6 +98,7 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	readParams.Set("_busy_timeout", strconv.Itoa(busyTimeoutMS))
 	readParams.Set("_foreign_keys", "1")
 	readParams.Set("_query_only", "1")
+	readParams.Add("_pragma", "temp_store(memory)")
 	read, err := sql.Open("sqlite", path+"?"+readParams.Encode())
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("open %s: %w", path, err), write.Close())

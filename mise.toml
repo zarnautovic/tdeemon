@@ -1,6 +1,6 @@
 # Toolchain pinned for everyone working on the repo: `mise install`.
 [tools]
-go = "1.27.2"
+go = "1.27.3"
 # LTS line the web build and code generation run on. Node 26 becomes the
 # active LTS on 2026-10-28; move to it then.
 node = "24.22.0"

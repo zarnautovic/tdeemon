@@ -1,17 +1,23 @@
-# The image build needs the sources only. Dependencies are installed and
-# the web app is built inside the image.
-.git
+# An allowlist: the build gets only what it needs, so nothing else in the
+# working tree (secrets, local databases, real health data, editor files)
+# can reach an image layer, not even an intermediate one.
+*
+!go.mod
+!go.sum
+!api/
+!cmd/
+!internal/
+!web/
+
+# Within the allowed directories: dependencies are installed and the web
+# app is built inside the image, and no data or secrets go in.
 **/node_modules
 internal/webui/dist
 web/codegen
-
-# Runtime data, secrets and local build output never enter the image.
-data
-*.db
-*.db-*
-.env
-.env.*
-coverage.out
-*.test
-/bin
-/dist
+web/coverage
+**/.env*
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.test
+**/coverage.out
