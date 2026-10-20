@@ -56,11 +56,14 @@ pre-commit:
     - name: editorconfig
       run: mise exec -- editorconfig-checker {staged_files}
 
-# The tests, quickly; make check and CI run everything. lefthook skips a
-# job when the push changes no files, as when it only deletes some.
+# The tests, quickly; make check and CI run everything. lefthook skips the
+# jobs when HEAD adds or changes no files against what it was last pushed
+# to, as for a push of only deletions or of a branch not checked out.
 pre-push:
   jobs:
     - name: go-test
       run: mise exec -- go test -race ./...
     - name: web-test
-      run: cd web && mise exec -- npm test --silent
+      run: >-
+        cd web && { test -d node_modules || { echo 'web/node_modules is missing: run npm ci in web/'; exit 1; }; };
+        mise exec -- npm test --silent
