@@ -363,4 +363,7 @@ func TestOpenFailsWithoutDirectory(t *testing.T) {
 		_ = db.Close()
 		t.Fatal("Open succeeded in a missing directory, want an error")
 	}
+	if n := strings.Count(err.Error(), path); n != 1 {
+		t.Errorf("error %q names the path %d times, want once", err, n)
+	}
 }

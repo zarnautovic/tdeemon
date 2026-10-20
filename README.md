@@ -88,6 +88,31 @@ All settings come from environment variables:
 
 Every invalid or missing variable is reported at startup in one go.
 
+## Docker
+
+The image holds one static binary with the web app inside, on distroless,
+and runs as an unprivileged user (uid 65532). Everything it writes goes to
+one volume at `/data`, so the root filesystem can be read-only.
+
+```sh
+docker build -t tdeemon .
+openssl rand -base64 32 > secret_key   # once; keep it
+docker run --read-only -v tdeemon-data:/data -p 8080:8080 \
+  -e TDEEMON_BASE_URL=http://localhost:8080 \
+  -e TDEEMON_SECRET_KEY="$(cat secret_key)" \
+  tdeemon
+```
+
+- Mount a volume at `/data`. The image declares none on purpose: without
+  one, a read-only container stops at startup instead of keeping the
+  database where it gets lost with the container. A named volume takes the
+  right ownership; a host directory must be writable by uid 65532.
+- Keep the secret key: it signs sessions and encrypts stored secrets.
+- `--build-arg VERSION=v1.2.3` sets the version the server reports
+  (default `dev`).
+- The build runs `go vet` and the tests against the web app it embeds.
+  Podman builds the same file.
+
 ## Data
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,

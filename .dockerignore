@@ -1,0 +1,17 @@
+# The image build needs the sources only. Dependencies are installed and
+# the web app is built inside the image.
+.git
+**/node_modules
+internal/webui/dist
+web/codegen
+
+# Runtime data, secrets and local build output never enter the image.
+data
+*.db
+*.db-*
+.env
+.env.*
+coverage.out
+*.test
+/bin
+/dist

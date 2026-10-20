@@ -55,12 +55,13 @@ func Open(ctx context.Context, path string) (*DB, error) {
 	// usual umask); it holds health data, so only its owner may read it.
 	// SQLite gives the -wal and -shm files the database file's mode. An
 	// existing file keeps the mode its operator chose.
+	// The *fs.PathError already names the operation and the path.
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return nil, err
 	}
 	if err := f.Close(); err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
+		return nil, err
 	}
 
 	writeParams := url.Values{}
