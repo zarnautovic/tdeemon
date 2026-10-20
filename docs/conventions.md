@@ -48,11 +48,11 @@ for the author and the reviewer.
     style and revert.
   - The scope is optional.
   - `!` after the type marks a breaking change, and so does a line that
-    starts with `BREAKING CHANGE:` in the pull request's description,
-    which becomes the commit's body. cog counts such a line anywhere in
-    the body, even in a code block: write it once, as the last paragraph,
-    and nowhere else. Footers in the branch's commits are lost in the
-    squash.
+    starts with `BREAKING CHANGE:` or `BREAKING-CHANGE:`, even indented by
+    spaces, in the pull request's description, which becomes the commit's
+    body. cog counts such a line anywhere in the body, even in a code
+    block: write it once, in the footer at the end, and nowhere else.
+    Footers in the branch's commits are lost in the squash.
   - The summary is short and ends without a full stop.
   - `feat` and `fix` decide the next release, and from 1.0.0 on a
     breaking change raises the major version whatever its type.
