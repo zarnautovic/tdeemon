@@ -12,13 +12,17 @@ accepted.
 
 ## Development
 
-The tools are pinned in `mise.toml`:
+The tools are pinned in `mise.toml`; install them with
+[mise](https://mise.jdx.dev):
 
 ```sh
 mise install       # Go, Node and every linter
-lefthook install   # git hooks
+lefthook install   # git hooks, once per clone
 make check         # what CI checks, except a few that only CI runs
 ```
+
+Without mise activated in the shell, run the tools as
+`mise exec -- <tool>`, such as `mise exec -- lefthook install`.
 
 The rules for code, tests, commits and pull requests are in
 [docs/conventions.md](docs/conventions.md); coding agents read
