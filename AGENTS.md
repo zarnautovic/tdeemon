@@ -53,9 +53,10 @@ details.
 - **No personal data in the repo, ever.** The repo is public. Real
   weights, meals, health exports and chat sessions stay out of git; test
   fixtures are made up or anonymised. No secrets either.
-- **A vulnerability stays out of public view.** One you find does not go
-  into an issue, a pull request or a commit message, which are all
-  public; tell the maintainer, as `SECURITY.md` describes.
+- **A vulnerability stays out of public view.** One you find stays out
+  of anything pushed to GitHub (issues, pull requests, branches and
+  commits) until the maintainer lands the fix, as docs/conventions.md
+  describes; tell the maintainer in the session.
 - **Never run `scripts/apply-github-settings.sh`**, except with
   `--dry-run`. It changes the live repository's settings and the ruleset
   for `main` with admin rights; the maintainer runs it.

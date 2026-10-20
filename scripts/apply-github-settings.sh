@@ -51,7 +51,7 @@ write --method PATCH "repos/$repo" --silent \
   -f squash_merge_commit_message=PR_BODY \
   -F delete_branch_on_merge=true
 
-# Vulnerabilities are reported privately, as draft security advisories.
+# Vulnerabilities are reported privately, as private security advisories.
 write --method PUT "repos/$repo/private-vulnerability-reporting" --silent
 
 if [[ -n "$id" ]]; then
