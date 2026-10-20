@@ -49,8 +49,14 @@ for the author and the reviewer.
   - every required check green on a branch that is up to date with
     `main`: Go, Web app, Other files, Docker image and Conventional Commit
     title, each from GitHub Actions;
-  - review threads resolved.
-  No approvals are required, since the project has one maintainer.
+  - review threads resolved;
+  - no approvals, since the project has one maintainer.
+  The squash commit's title is the pull request's title unless it is
+  edited in the merge dialog; leave it as it is. A renamed CI job must be
+  renamed in `main.json` too, or every pull request waits for the old
+  name. In an emergency the ruleset can be switched off in the
+  repository settings (or with `"enforcement": "disabled"` and the
+  script), and back on with the script.
 - **Titles and commit messages are Conventional Commits:**
   `type(scope)!: summary`.
   - The types are feat, fix, perf, refactor, test, docs, ci, build, chore,

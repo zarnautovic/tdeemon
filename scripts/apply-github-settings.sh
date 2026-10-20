@@ -1,19 +1,33 @@
 #!/usr/bin/env bash
 # Applies the GitHub settings kept in the repo: the merge settings and the
 # ruleset for main (.github/rulesets/main.json). It needs gh logged in
-# with admin rights on the repo, and the required checks must already run
-# on pull requests, or nothing could be merged.
+# with admin rights on the repo, and jq; the required checks must already
+# run on pull requests, or nothing could be merged.
 #
 #   scripts/apply-github-settings.sh             # apply
-#   scripts/apply-github-settings.sh --dry-run   # show what would change
+#   scripts/apply-github-settings.sh --dry-run   # print the writes instead
 set -euo pipefail
 
+dry_run=false
+case "$#:${1:-}" in
+  0:) ;;
+  1:--dry-run) dry_run=true ;;
+  *)
+    echo "usage: $0 [--dry-run]" >&2
+    exit 2
+    ;;
+esac
+
+# Paths are relative to the repository root, wherever this is run from.
+cd "$(dirname "$0")/.."
 repo="${GITHUB_REPOSITORY:-zarnautovic/tdeemon}"
 ruleset=.github/rulesets/main.json
-dry_run=false
-if [[ "${1:-}" == "--dry-run" ]]; then
-  dry_run=true
-fi
+
+# Everything is read and checked before the first write, so a failure
+# leaves the settings as they were.
+command -v jq >/dev/null || { echo "jq is needed" >&2; exit 1; }
+name=$(jq -er .name "$ruleset")
+id=$(gh api "repos/$repo/rulesets" --jq ".[] | select(.name == \"$name\") | .id")
 
 # Writes go through here, so --dry-run prints them instead.
 write() {
@@ -34,8 +48,6 @@ write --method PATCH "repos/$repo" --silent \
   -f squash_merge_commit_message=PR_BODY \
   -F delete_branch_on_merge=true
 
-name=$(jq -r .name "$ruleset")
-id=$(gh api "repos/$repo/rulesets" --jq ".[] | select(.name == \"$name\") | .id")
 if [[ -n "$id" ]]; then
   write --method PUT "repos/$repo/rulesets/$id" --silent --input "$ruleset"
 else
