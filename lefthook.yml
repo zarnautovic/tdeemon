@@ -39,6 +39,13 @@ pre-commit:
       run: >-
         test -d node_modules || { echo 'web/node_modules is missing: run npm ci in web/'; exit 1; };
         mise exec -- npx --no-install oxlint --no-error-on-unmatched-pattern {staged_files}
+    # A disable comment gives its reason after " -- ". The paths are the
+    # repo root's, so this job has no root of its own.
+    - name: disable-comments
+      glob:
+        - "web/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+        - "web/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}"
+      run: scripts/check-disable-comments.sh {staged_files}
     - name: sql-lint
       glob: "*.sql"
       exclude:

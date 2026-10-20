@@ -115,6 +115,10 @@
     "typescript/prefer-return-this-type": "error",
     "typescript/prefer-string-starts-ends-with": "error",
 
+    // A disable comment names the rules it turns off; its reason after
+    // " -- " is checked by scripts/check-disable-comments.sh.
+    "unicorn/no-abusive-eslint-disable": "error",
+
     // The hooks and React Compiler rules are in the correctness category;
     // these complete the set.
     "react/rules-of-hooks": "error",

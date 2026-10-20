@@ -32,10 +32,11 @@ lint: lint-go lint-web lint-webui lint-other ## every linter and format check
 lint-go: ## golangci-lint, formatting included
 	$(MISE) golangci-lint run
 
-lint-web: $(WEB_DEPS) ## oxlint, Prettier and tsc for the web app
+lint-web: $(WEB_DEPS) ## oxlint, Prettier, tsc and the reasons of disable comments for the web app
 	cd web && $(MISE) npm run --silent lint
 	cd web && $(MISE) npm run --silent format:check
 	cd web && $(MISE) npm run --silent typecheck
+	scripts/check-disable-comments.sh
 
 lint-webui: webui-build ## golangci-lint on the files behind the webui tag, against a fresh build
 	$(MISE) golangci-lint run --build-tags webui
@@ -63,6 +64,7 @@ test-web: $(WEB_DEPS) ## Vitest; coverage must meet the thresholds in web/vite.c
 
 test-scripts: ## the tests of the shell scripts (scripts/*-test.sh)
 	$(MISE) scripts/next-version-test.sh
+	scripts/check-disable-comments-test.sh
 
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json
 	cd web/codegen && $(MISE) npm run --silent check:api
