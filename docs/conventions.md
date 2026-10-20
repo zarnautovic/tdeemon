@@ -1,8 +1,7 @@
 # Conventions
 
 The rules every change follows. Tools check what they can; the rest is
-for the author and the reviewer. The other files (SQL, Docker, workflows)
-get their section with their own tooling.
+for the author and the reviewer.
 
 ## Go
 
@@ -205,3 +204,65 @@ generator writes it.
   own modules, and the stubs are undone after each test.
 - A change in behaviour comes with a test that fails without it.
 - Asynchronous UI is awaited with `findBy…` queries, never with sleeps.
+
+## Other files
+
+Every tool here is pinned in `mise.toml`; `mise install` brings them all.
+
+| Files | Tool | Configuration |
+| --- | --- | --- |
+| everything | editorconfig-checker | `.editorconfig`, `.editorconfig-checker.json` |
+| SQL migrations | sqlfluff (SQLite dialect) | `.sqlfluff`, `.sqlfluffignore` |
+| `Dockerfile` | hadolint | `.hadolint.yaml` |
+| GitHub Actions workflows | actionlint, zizmor | `.github/zizmor.yml` |
+| YAML | yamllint | `.yamllint.yaml` |
+| Markdown | markdownlint-cli2 | `.markdownlint-cli2.jsonc` |
+| shell scripts | shellcheck | none |
+
+```sh
+editorconfig-checker
+sqlfluff lint            # sqlfluff fix to format
+hadolint Dockerfile
+actionlint && zizmor .github/workflows
+yamllint -s .
+markdownlint-cli2
+```
+
+- **EditorConfig:** UTF-8, LF line endings, a final newline, no trailing
+  whitespace, and two spaces of indentation. Go and Makefiles use tabs,
+  and SQL uses four spaces.
+  - In Markdown, list markers set the indentation.
+  - The checker skips `LICENSE` (verbatim text), the generated schema
+    snapshot and Go files, which gofumpt formats.
+- **SQL migrations:**
+  - keywords and types are upper case; identifiers and functions lower
+    case;
+  - four-space indentation, at most 100 columns;
+  - `sqlfluff fix` lays them out;
+  - the file name and the schema rules are in
+    [`internal/store/migrations/README.md`](../internal/store/migrations/README.md);
+  - every migration runs from an empty database in the tests
+    (`TestSchema`);
+  - the generated `internal/store/testdata/schema.sql` is not linted.
+- **Dockerfile:** hadolint at its strictest threshold (style). Base
+  images come only from Docker Hub and Google's registry, fully
+  qualified and pinned by digest.
+- **GitHub Actions:**
+  - actionlint checks the workflows;
+  - zizmor audits them for security, for example credentials left in
+    the checkout or permissions broader than the job needs;
+  - every action, GitHub's own included, is pinned to a full commit SHA
+    (zizmor's `unpinned-uses` with the `hash-pin` policy), with the
+    version in a comment for Renovate:
+
+    ```yaml
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    ```
+
+- **YAML:** yamllint's default rules, without the `---` document start,
+  with lines up to 120 columns, and with `on:` allowed as a key.
+- **Markdown:** markdownlint's default rules.
+  - Prose wraps at 80 columns; tables, code and headings may run longer.
+  - Headings are real headings, not bold lines.
+  - Fenced code blocks name their language (`text` for plain text).
+- **Shell scripts:** shellcheck, when the repo gets any.

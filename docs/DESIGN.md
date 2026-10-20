@@ -25,7 +25,7 @@ LLM only decides *what* was eaten and *how much*. Code does the rest.**
 
 ## 2. Goals and non-goals
 
-**Goals (v1)**
+### Goals (v1)
 
 - AI-first food logging, by chat or by photo, with deterministic math.
 - Adaptive targets for **any goal: cut, maintenance, bulk or recomp**.
@@ -42,7 +42,7 @@ LLM only decides *what* was eaten and *how much*. Code does the rest.**
 - English everywhere in code, API and tool descriptions. The UI and bot
   replies are localised (en, hr).
 
-**Non-goals (v1)**
+### Non-goals (v1)
 
 - Training and strength. This becomes an optional module in v2 (§11).
 - Logging workouts in the app (replacing Strong). Far future.
@@ -52,7 +52,7 @@ LLM only decides *what* was eaten and *how much*. Code does the rest.**
 
 ## 3. Architecture
 
-```
+```text
             ┌──────────── single Go binary, SQLite (/data) ────────────┐
  HAE ──────▶│ ingest            domain: users, foods, recipes, meals,  │
  JSON ─────▶│                   metrics, days, targets, calibration    │
@@ -87,7 +87,7 @@ Every user-owned table carries `user_id`. Isolation is enforced in the
 store layer and covered by tests that run every query as the wrong user.
 
 | table | key columns | notes |
-|---|---|---|
+| --- | --- | --- |
 | `users` | id, name, email, role (admin/user), locale, timezone, day_start_hour | invites; password (argon2) and/or OIDC subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
 | `foods` | id, user_id, name, brand, kcal/protein/carbs/fat per 100 g, serving_g, serving_name, source (label/estimate/user/off), note, archived | the user's food DB; "same name + same portion" upsert rule enforced in code |
@@ -122,7 +122,7 @@ shrink on a partial sync.
 answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 
 | tool | purpose |
-|---|---|
+| --- | --- |
 | `get_profile` | current phase and goal, current targets (day-type aware), profile notes, locale, units |
 | `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
 | `log_meal(eaten_at?, description, items[], note?)` | stores the meal; returns breakdown + day status |
@@ -240,12 +240,12 @@ is a strong model through MCP, paid for by the user's own
 Claude/ChatGPT subscription.
 
 | layer | who | how often | may change |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot) | on request, e.g. monthly | phase timeline, target rate band, goal/milestone weight, protein g/kg, day-type split, autopilot bounds, profile notes, later the training program |
 | **Autopilot** | server, deterministic | weekly check-in | kcal within the plan's bounds, from the calibration verdict (§7) |
 | **Logging** | any client, `fast` model | many times a day | meals, metrics, check-ins — never the plan |
 
-**Proposals, not direct writes**
+### Proposals, not direct writes
 
 1. **Propose.** `propose_changes` submits a diff (phases, targets,
    settings, notes) with a rationale and the analysed window. The
@@ -259,14 +259,14 @@ Claude/ChatGPT subscription.
    model name, client), when, why, before → after. `revert` creates the
    inverse proposal.
 
-**Autonomy, per user**
+### Autonomy, per user
 
 - `propose` (default): the autopilot and the coach only propose.
 - `autopilot`: weekly adjustments within the bounds apply automatically
   and are reported.
 - A plan change never applies without consent.
 
-**Guardrails live in code, not in prompts**
+### Guardrails live in code, not in prompts
 
 The server cannot trust the model. MCP means *any* client and *any*
 model, and a model can be talked into things, misread data, or follow
@@ -309,7 +309,7 @@ it read while researching. So limits are enforced by the server.
   self-host this, so the defaults must be safe for someone who is not
   the author.
 
-**What the coach reads**
+### What the coach reads
 
 The coach gets enough to reason with, without raw dumps:
 
@@ -322,7 +322,7 @@ The coach gets enough to reason with, without raw dumps:
 - `get_summary`: the deterministic calibration. The server computes, the
   model interprets.
 
-**MCP extras**
+### MCP extras
 
 - **Prompts as ready-made sessions** ("Monthly review", "Plateau check",
   "Plan a new phase"). They show up as slash commands in clients and
@@ -332,7 +332,7 @@ The coach gets enough to reason with, without raw dumps:
 - **Tool annotations:** `readOnlyHint` on reads and `destructiveHint` on
   apply/revert, so clients ask before writes.
 
-**Training uses the same pattern (P3+)**
+### Training uses the same pattern (P3+)
 
 The coach researches a program with the user in their own AI client
 (web search, back-and-forth), then submits it as a proposal. On
@@ -459,7 +459,7 @@ the first spec.
 ## 11. Phases
 
 | phase | scope |
-|---|---|
+| --- | --- |
 | **P0 — replace the predecessor** | schema + migrations, foods/meals/days/metrics/phases/targets, tool registry, MCP (token auth), REST, HAE ingest, calibration v2, **proposals + coaching tools + guardrails**, importer, minimal web UI (day view, food DB, pending proposals, login), **deterministic morning summary + watchdog via Telegram**; training days read from the old service; the agent on MCP; cut-over |
 | **P1 — v0.1 open source** | multi-user + invites, built-in chat with BYO key (`fast`/`smart` slots) and photos, **autopilot weekly check-in**, MCP coaching prompts, PWA, morning summary + watchdog, recipes, i18n (en/hr), docker compose, docs, CI |
 | **P2** | Telegram adapter, OAuth for Claude/ChatGPT connectors, shopping list, generic CSV history import, barcode → Open Food Facts lookup |

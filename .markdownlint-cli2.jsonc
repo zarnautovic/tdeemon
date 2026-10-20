@@ -1,0 +1,12 @@
+// markdownlint for the documentation.
+{
+  "config": {
+    "default": true,
+    // Prose wraps at 80 columns; tables, code and headings may run longer.
+    "MD013": { "line_length": 80, "tables": false, "code_blocks": false, "headings": false },
+    // The same heading may appear under different parents.
+    "MD024": { "siblings_only": true }
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["**/node_modules/**", "web/dist/**", "internal/webui/dist/**"]
+}
