@@ -88,8 +88,12 @@ func (in *instance) do(t *testing.T, method, path, body string, cookies []*http.
 		req.AddCookie(c)
 	}
 	for k, v := range header {
-		if k == "Host" {
+		switch k {
+		case "Host":
 			req.Host = v
+			continue
+		case "RemoteAddr": // where the request comes from, not a header
+			req.RemoteAddr = v
 			continue
 		}
 		req.Header.Set(k, v)
@@ -312,10 +316,17 @@ func TestSessionWithoutACookie(t *testing.T) {
 	t.Parallel()
 
 	in := newInstance(t, "http://localhost", passwordHash(t))
-	for _, cookies := range [][]*http.Cookie{nil, {sessionRequestCookie("forged")}, {sessionRequestCookie("")}} {
-		if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", cookies, nil); rec.Code != http.StatusUnauthorized {
-			t.Errorf("session with %v: %d, want 401", cookies, rec.Code)
-		}
+	for name, cookies := range map[string][]*http.Cookie{
+		"none":   nil,
+		"forged": {sessionRequestCookie("forged")},
+		"empty":  {sessionRequestCookie("")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", cookies, nil); rec.Code != http.StatusUnauthorized {
+				t.Errorf("session: %d, want 401", rec.Code)
+			}
+		})
 	}
 }
 
@@ -486,13 +497,16 @@ func TestCrossOriginRequests(t *testing.T) {
 		{"own origin behind a proxy", map[string]string{"Origin": "https://tdeemon.example", "Host": "tdeemon:8080"}, http.StatusOK},
 		{"no browser", nil, http.StatusOK},
 	} {
-		rec := in.do(t, http.MethodPost, "/api/v1/auth/login", string(body), nil, tc.header)
-		if rec.Code != tc.want {
-			t.Errorf("%s: %d %s, want %d", tc.name, rec.Code, rec.Body.String(), tc.want)
-		}
-		if tc.want == http.StatusForbidden && !strings.Contains(rec.Body.String(), "cross-origin request refused") {
-			t.Errorf("%s: body %s, want the problem", tc.name, rec.Body.String())
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := in.do(t, http.MethodPost, "/api/v1/auth/login", string(body), nil, tc.header)
+			if rec.Code != tc.want {
+				t.Errorf("%d %s, want %d", rec.Code, rec.Body.String(), tc.want)
+			}
+			if tc.want == http.StatusForbidden && !strings.Contains(rec.Body.String(), "cross-origin request refused") {
+				t.Errorf("body %s, want the problem", rec.Body.String())
+			}
+		})
 	}
 	// Reads are never refused.
 	rec := in.do(t, http.MethodGet, "/api/v1/info", "", nil, map[string]string{"Sec-Fetch-Site": "cross-site"})
@@ -512,9 +526,12 @@ func TestNewHandlerNeedsItsDependencies(t *testing.T) {
 		"no base URL": {DB: db, Logger: logger},
 		"no logger":   {DB: db, BaseURL: base},
 	} {
-		if _, err := api.NewHandler(cfg); err == nil {
-			t.Errorf("%s: NewHandler succeeded", name)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := api.NewHandler(cfg); err == nil {
+				t.Error("NewHandler succeeded")
+			}
+		})
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCheckPassword(t *testing.T) {
@@ -62,10 +63,13 @@ func TestHashAndVerify(t *testing.T) {
 		{"different case", strings.ToUpper(password), false},
 		{"empty", "", false},
 	} {
-		ok, err := VerifyPassword(tc.password, hash)
-		if err != nil || ok != tc.want {
-			t.Errorf("%s: VerifyPassword = %v, %v; want %v, nil", tc.name, ok, err, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ok, err := VerifyPassword(tc.password, hash)
+			if err != nil || ok != tc.want {
+				t.Errorf("VerifyPassword = %v, %v; want %v, nil", ok, err, tc.want)
+			}
+		})
 	}
 }
 
@@ -83,21 +87,24 @@ func TestHashPasswordAppliesTheRules(t *testing.T) {
 func TestNormalization(t *testing.T) {
 	t.Parallel()
 
-	forms := []string{
-		"čaša mlijeka 1234",                     // composed č (U+010D)
-		"c\u030caša mlijeka 1234",               // c + combining caron (U+030C)
-		"čaša mlijeka \uff11\uff12\uff13\uff14", // full-width digits
+	forms := []struct{ name, password string }{
+		{"composed", "čaša mlijeka 1234"},         // č is U+010D
+		{"decomposed", "c\u030caša mlijeka 1234"}, // c + combining caron (U+030C)
+		{"full-width digits", "čaša mlijeka \uff11\uff12\uff13\uff14"},
 	}
 	for _, set := range forms {
-		hash, err := HashPassword(set)
-		if err != nil {
-			t.Fatalf("HashPassword(%q): %v", set, err)
-		}
-		for _, typed := range forms {
-			if ok, err := VerifyPassword(typed, hash); err != nil || !ok {
-				t.Errorf("set %q, verify %q = %v, %v; want true", set, typed, ok, err)
+		t.Run("set "+set.name, func(t *testing.T) {
+			t.Parallel()
+			hash, err := HashPassword(set.password)
+			if err != nil {
+				t.Fatalf("HashPassword: %v", err)
 			}
-		}
+			for _, typed := range forms {
+				if ok, err := VerifyPassword(typed.password, hash); err != nil || !ok {
+					t.Errorf("verify %s = %v, %v; want true", typed.name, ok, err)
+				}
+			}
+		})
 	}
 }
 
@@ -108,9 +115,12 @@ func TestParseHashLimits(t *testing.T) {
 
 	salt, key := strings.Repeat("A", 22), strings.Repeat("A", 1366) // 16 and 1024 bytes
 	for _, params := range []string{"m=262144,t=10,p=1", "m=8,t=1,p=1", "m=2040,t=1,p=255"} {
-		if _, err := parseHash("$argon2id$v=19$" + params + "$" + salt + "$" + key); err != nil {
-			t.Errorf("parseHash with %s: %v", params, err)
-		}
+		t.Run(params, func(t *testing.T) {
+			t.Parallel()
+			if _, err := parseHash("$argon2id$v=19$" + params + "$" + salt + "$" + key); err != nil {
+				t.Errorf("parseHash: %v", err)
+			}
+		})
 	}
 }
 
@@ -167,10 +177,13 @@ func TestVerifyRejectsInvalidHashes(t *testing.T) {
 		{"short hash", with(5, "c2hvcnQ")},
 		{"long hash", with(5, strings.Repeat("A", 1367))}, // 1025 bytes
 	} {
-		ok, err := VerifyPassword("correct horse battery staple", tc.hash)
-		if ok || !errors.Is(err, ErrInvalidHash) {
-			t.Errorf("%s: VerifyPassword = %v, %v; want false, ErrInvalidHash", tc.name, ok, err)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ok, err := VerifyPassword("correct horse battery staple", tc.hash)
+			if ok || !errors.Is(err, ErrInvalidHash) {
+				t.Errorf("VerifyPassword = %v, %v; want false, ErrInvalidHash", ok, err)
+			}
+		})
 	}
 }
 
@@ -186,5 +199,38 @@ func TestGeneratePassword(t *testing.T) {
 	}
 	if err := CheckPassword(a); err != nil {
 		t.Errorf("a generated password breaks the rules: %v", err)
+	}
+}
+
+// A hash waits for a free slot: with every slot taken, a check (here the
+// dummy one of an unknown address) does not run until one is released.
+func TestHashingWaitsForASlot(t *testing.T) {
+	t.Parallel()
+
+	for range cap(hashSlots) {
+		hashSlots <- struct{}{}
+	}
+	held := cap(hashSlots)
+	t.Cleanup(func() {
+		for range held {
+			<-hashSlots
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		_, _ = VerifyLogin("correct horse battery staple", "")
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("a hash ran with every slot taken")
+	case <-time.After(500 * time.Millisecond):
+	}
+	<-hashSlots
+	held--
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the hash did not run after a slot was released")
 	}
 }

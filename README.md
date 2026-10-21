@@ -95,6 +95,7 @@ All settings come from environment variables:
 | `TDEEMON_OIDC_CLIENT_ID` | — | tdeemon's client ID there; required with the issuer |
 | `TDEEMON_OIDC_CLIENT_SECRET` | — | its client secret, for a confidential client |
 | `TDEEMON_OIDC_NAME` | `Single sign-on` | what the sign-in page calls the provider |
+| `TDEEMON_TRUSTED_PROXIES` | — | reverse proxies whose `X-Forwarded-For` names the client, as addresses or CIDR ranges (`10.42.0.0/16, fd00::/8`); set it behind a proxy, or the limits on failed sign-ins count the proxy's address, that is everyone together |
 | `TZ` | system | default time zone of the instance |
 
 Every invalid or missing variable is reported at startup in one go.
@@ -172,6 +173,30 @@ an HttpOnly session cookie for 30 days; the web app's sign-in page comes
 with the web UI. Cross-origin browser requests that change something are
 refused (Go's `http.CrossOriginProtection`), and over HTTPS the cookie is
 a `__Host-` cookie.
+
+Against guessing and floods:
+
+- **Failed sign-ins:** after 10 in 15 minutes from one client address
+  (an IPv6 address counts by its /64), or for one account (from
+  anywhere, and the same for an address no account has), sign-ins from
+  there or for it answer 429 with `Retry-After` until the 15 minutes
+  have passed, the right password included. A successful sign-in starts
+  the account's count over. Single sign-on is not counted.
+- **Bad API tokens:** after 50 in 15 minutes from one address, every
+  request with a Bearer token from there answers 429, a good token
+  included, until the 15 minutes have passed.
+- **Behind a reverse proxy**, set `TDEEMON_TRUSTED_PROXIES` to its
+  addresses, so the limits count the client it forwards
+  (`X-Forwarded-For`, the right-most address that is not a trusted
+  proxy) and not the proxy; tdeemon logs a warning when forwarded
+  requests come in without it. The counts live in memory and start over
+  when the server restarts.
+- **Password hashing** runs at most one hash per CPU at a time; more
+  sign-ins at once wait their turn instead of adding 19 MiB each.
+- **Security headers** on every response: a content security policy
+  that loads nothing from other sites and forbids framing
+  (`default-src 'self'; frame-ancestors 'none'`), `nosniff`,
+  `Referrer-Policy: no-referrer`, and HSTS over HTTPS.
 
 ### Single sign-on (OpenID Connect)
 

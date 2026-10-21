@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,40 @@ type sessions struct {
 	// afterVerify, for tests, runs once a sign-in has checked the password
 	// and before it writes anything.
 	afterVerify func(context.Context)
+
+	// Failures per client address and per account (limit.go).
+	signInByAddr, signInByAccount, badTokens *limiter
+}
+
+func newSessions(cfg Config) *sessions {
+	return &sessions{
+		db: cfg.DB, logger: cfg.Logger, now: cfg.Now, secure: cfg.BaseURL.Scheme == "https",
+		signInByAddr:    newLimiter(signInFailures, signInWindow, cfg.Now),
+		signInByAccount: newLimiter(signInFailures, signInWindow, cfg.Now),
+		badTokens:       newLimiter(badTokenFailures, badTokenWindow, cfg.Now),
+	}
+}
+
+// accountKey is what the sign-in limit counts an account under: a hash of
+// the normalized address, so the limiter keeps no addresses and a key's
+// size does not depend on what was typed.
+func accountKey(email string) string {
+	sum := sha256.Sum256([]byte(email))
+	return string(sum[:])
+}
+
+// signInAllowed refuses a sign-in from an address, or for an account,
+// with too many failed sign-ins lately: 429 with Retry-After.
+func (s *sessions) signInAllowed(ctx context.Context, addr, account string) error {
+	wait, blocked := s.signInByAddr.blocked(addr)
+	if w, b := s.signInByAccount.blocked(account); b && (!blocked || w > wait) {
+		wait, blocked = w, true
+	}
+	if !blocked {
+		return nil
+	}
+	s.logger.InfoContext(ctx, "sign-in refused: too many failed sign-ins", "addr", addr)
+	return huma.ErrorWithHeaders(huma.NewError(http.StatusTooManyRequests, "too many failed sign-ins; try again later"), retryAfter(wait))
 }
 
 // cookieName is the session cookie's name. Over HTTPS it carries the
@@ -169,10 +204,12 @@ func (s *sessions) register(a huma.API) {
 		Summary:     "Sign in with a password",
 		Description: "Checks the email and password and starts a web session: the response sets the session cookie. " +
 			"A session the request already carries ends. A wrong address or password answers 401, always with the same " +
-			"message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent.",
+			"message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent. " +
+			"After 10 failed sign-ins in 15 minutes from one address, or for one account, sign-ins from there or for it " +
+			"answer 429 with Retry-After until the 15 minutes have passed.",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusOK,
-		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden},
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests},
 	}, s.login)
 	huma.Register(a, huma.Operation{
 		OperationID:   "logout",
@@ -196,7 +233,12 @@ func (s *sessions) register(a huma.API) {
 }
 
 func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, error) {
-	u, hash, err := s.db.UserCredentials(ctx, user.NormalizeEmail(in.Body.Email))
+	email := user.NormalizeEmail(in.Body.Email)
+	addr, account := addrKey(clientAddrFrom(ctx)), accountKey(email)
+	if err := s.signInAllowed(ctx, addr, account); err != nil {
+		return nil, err
+	}
+	u, hash, err := s.db.UserCredentials(ctx, email)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.logger.ErrorContext(ctx, "reading credentials failed", "error", err)
 		return nil, huma.Error500InternalServerError("signing in failed")
@@ -207,7 +249,9 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 		s.logger.ErrorContext(ctx, "a stored password hash cannot be read", "user_id", u.ID.String(), "error", err)
 	}
 	if !ok {
-		s.logger.InfoContext(ctx, "sign-in failed")
+		s.signInByAddr.fail(addr)
+		s.signInByAccount.fail(account)
+		s.logger.InfoContext(ctx, "sign-in failed", "addr", addr)
 		return nil, errBadLogin()
 	}
 	if s.afterVerify != nil {
@@ -230,6 +274,9 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 	if err != nil {
 		return nil, huma.Error500InternalServerError("signing in failed")
 	}
+	// The account's count starts over; the address's does not, or signing
+	// in to one's own account would wipe the failures against others.
+	s.signInByAccount.reset(account)
 	return &sessionOutput{
 		SetCookie:    cookie,
 		CacheControl: "no-store",
@@ -277,6 +324,14 @@ func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password st
 		s.logger.WarnContext(ctx, "updating a password hash failed", "user_id", u.ID.String(), "error", err)
 	}
 	if !replaced {
+		// Another sign-in may have rehashed it first: a stored hash that
+		// takes this password is the one to go on with. Otherwise a reset
+		// came in between, and the sign-in fails on oldHash.
+		if _, current, err := s.db.UserCredentials(ctx, u.Email); err == nil && current != oldHash {
+			if ok, _ := auth.VerifyPassword(password, current); ok {
+				return current
+			}
+		}
 		return oldHash
 	}
 	return newHash

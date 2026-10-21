@@ -225,14 +225,17 @@ func TestUserCreateHelp(t *testing.T) {
 		{"user", "create", "-h"},
 		{"user", "create", "--email", "ana@example.com", "--help"},
 	} {
-		var out bytes.Buffer
-		// No configuration: help must not need any.
-		if err := run(t.Context(), args, lookup(nil), noInput(), &out, io.Discard); err != nil {
-			t.Errorf("run(%q) = %v, want the usage", args, err)
-		}
-		if !strings.Contains(out.String(), "Flags of user create:") {
-			t.Errorf("run(%q) printed %q, want the usage", args, out.String())
-		}
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			// No configuration: help must not need any.
+			if err := run(t.Context(), args, lookup(nil), noInput(), &out, io.Discard); err != nil {
+				t.Errorf("run = %v, want the usage", err)
+			}
+			if !strings.Contains(out.String(), "Flags of user create:") {
+				t.Errorf("printed %q, want the usage", out.String())
+			}
+		})
 	}
 }
 
@@ -349,10 +352,13 @@ func TestNewUserTimeZone(t *testing.T) {
 		{"UTC when TZ is not set", "", time.Local, "UTC"},
 		{"UTC without a location", "", nil, "UTC"},
 	} {
-		got := newUser(createUserFlags{email: "ana@example.com", timeZone: tc.flag}, tc.instance, now).TimeZone
-		if got != tc.want {
-			t.Errorf("%s: time zone %q, want %q", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := newUser(createUserFlags{email: "ana@example.com", timeZone: tc.flag}, tc.instance, now).TimeZone
+			if got != tc.want {
+				t.Errorf("time zone %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

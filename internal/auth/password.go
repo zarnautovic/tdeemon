@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -87,7 +88,7 @@ func HashPassword(password string) (string, error) {
 	}
 	salt := make([]byte, argonSaltLen)
 	_, _ = rand.Read(salt) // crypto/rand.Read never fails.
-	key := argon2.IDKey([]byte(normalize(password)), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
+	key := idKey([]byte(normalize(password)), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version,
 		argonMemoryKiB, argonTime, argonThreads,
 		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key)), nil
@@ -102,7 +103,7 @@ func VerifyPassword(password, encoded string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	key := argon2.IDKey([]byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length at maxKeyLen
+	key := idKey([]byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length at maxKeyLen
 	return subtle.ConstantTimeCompare(key, h.key) == 1, nil
 }
 
@@ -150,6 +151,20 @@ func NeedsRehash(encoded string) bool {
 	}
 	return h.memoryKiB != argonMemoryKiB || h.time != argonTime || h.threads != argonThreads ||
 		len(h.salt) != argonSaltLen || len(h.key) != argonKeyLen
+}
+
+// hashSlots caps the argon2id hashes computed at once at one per CPU.
+// Each takes its memory cost (argonMemoryKiB today, up to maxMemoryKiB
+// for a stored hash), and more at once would only share the CPUs while
+// the memory adds up: 64 sign-ins at once took 1.24 GB without it. The
+// dummy hash of a sign-in for an unknown address waits its turn too.
+var hashSlots = make(chan struct{}, max(1, runtime.GOMAXPROCS(0)))
+
+// idKey is argon2.IDKey in a hashing slot.
+func idKey(password, salt []byte, passes, memoryKiB uint32, lanes uint8, keyLen uint32) []byte {
+	hashSlots <- struct{}{}
+	defer func() { <-hashSlots }()
+	return argon2.IDKey(password, salt, passes, memoryKiB, lanes, keyLen)
 }
 
 // GeneratePassword returns a random password with 130 bits of entropy:

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -52,6 +53,9 @@ type Config struct {
 	// OIDC is the OpenID Connect provider users may sign in with; nil when
 	// none is configured.
 	OIDC *OIDC
+	// TrustedProxies are the reverse proxies whose X-Forwarded-For names
+	// the client; a request from anywhere else is its own client.
+	TrustedProxies []netip.Prefix
 }
 
 // OIDC configures sign-in through an OpenID Connect provider such as
@@ -85,7 +89,6 @@ func Load(lookup LookupFunc) (Config, error) {
 		Listen:    get("LISTEN", ":8080"),
 		DataDir:   get("DATA_DIR", "./data"),
 		LogFormat: LogFormat(strings.ToLower(get("LOG_FORMAT", string(LogFormatJSON)))),
-		Location:  time.Local,
 	}
 
 	if _, _, err := net.SplitHostPort(cfg.Listen); err != nil {
@@ -122,16 +125,29 @@ func Load(lookup LookupFunc) (Config, error) {
 	}
 	cfg.OIDC = oidc
 
-	if tz, ok := lookup("TZ"); ok && strings.TrimSpace(tz) != "" {
-		loc, err := time.LoadLocation(strings.TrimSpace(tz))
-		if err != nil {
-			errs = append(errs, fmt.Errorf("TZ: %w", err))
-		} else {
-			cfg.Location = loc
-		}
+	if cfg.TrustedProxies, err = parseTrustedProxies(get("TRUSTED_PROXIES", "")); err != nil {
+		errs = append(errs, err)
+	}
+
+	if cfg.Location, err = loadLocation(lookup); err != nil {
+		errs = append(errs, err)
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// loadLocation reads TZ, the instance's default time zone; time.Local
+// without it.
+func loadLocation(lookup LookupFunc) (*time.Location, error) {
+	tz, ok := lookup("TZ")
+	if !ok || strings.TrimSpace(tz) == "" {
+		return time.Local, nil
+	}
+	loc, err := time.LoadLocation(strings.TrimSpace(tz))
+	if err != nil {
+		return time.Local, fmt.Errorf("TZ: %w", err)
+	}
+	return loc, nil
 }
 
 // loadOIDC reads the OIDC_* variables: none of them for no provider, or
@@ -159,6 +175,24 @@ func loadOIDC(get func(name, fallback string) string) (*OIDC, error) {
 		return nil, fmt.Errorf("%sOIDC_ISSUER %q: must use https (http only for localhost)", Prefix, o.Issuer)
 	}
 	return o, nil
+}
+
+// parseTrustedProxies reads addresses and CIDR ranges, separated by
+// commas or spaces: 10.0.0.0/8, 192.168.1.10, fd00::/8.
+func parseTrustedProxies(raw string) ([]netip.Prefix, error) {
+	var out []netip.Prefix
+	for f := range strings.FieldsFuncSeq(raw, func(r rune) bool { return r == ',' || r == ' ' }) {
+		p, err := netip.ParsePrefix(f)
+		if err != nil {
+			a, aerr := netip.ParseAddr(f)
+			if aerr != nil || a.Zone() != "" {
+				return nil, fmt.Errorf("%sTRUSTED_PROXIES %q: want addresses or CIDR ranges, e.g. 10.42.0.0/16", Prefix, f)
+			}
+			p = netip.PrefixFrom(a.Unmap(), a.Unmap().BitLen())
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
 }
 
 func isLoopback(host string) bool {
@@ -214,6 +248,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("tz", tz),
 		slog.String("secret_key", "[redacted]"),
 		slog.Any("oidc", c.OIDC),
+		slog.Any("trusted_proxies", c.TrustedProxies),
 	)
 }
 

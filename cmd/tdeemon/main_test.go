@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -187,5 +190,63 @@ func waitFor(t *testing.T, logs *syncBuffer, want string) {
 			t.Fatalf("no log line with %s within 30s; logs:\n%s", want, logs.String())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TDEEMON_TRUSTED_PROXIES reaches the server: behind a trusted proxy,
+// the limit on failed sign-ins counts the forwarded client, so ten
+// failures from one client do not lock out the next one.
+func TestRunTrustsTheConfiguredProxies(t *testing.T) {
+	t.Parallel()
+
+	env := lookup(map[string]string{
+		"TDEEMON_LISTEN":          "127.0.0.1:0",
+		"TDEEMON_BASE_URL":        "http://localhost",
+		"TDEEMON_SECRET_KEY":      strings.Repeat("s", 32),
+		"TDEEMON_DATA_DIR":        filepath.Join(t.TempDir(), "data"),
+		"TDEEMON_TRUSTED_PROXIES": "127.0.0.1",
+	})
+	ctx, cancel := context.WithCancel(t.Context())
+	var logs syncBuffer
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, nil, env, noInput(), io.Discard, &logs) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("run returned %v, want nil", err)
+		}
+	})
+	waitFor(t, &logs, `"msg":"listening"`)
+	addr := regexp.MustCompile(`"msg":"listening","addr":"([^"]+)"`).FindStringSubmatch(logs.String())
+	if addr == nil {
+		t.Fatalf("no address in the logs:\n%s", logs.String())
+	}
+
+	signIn := func(client string, i int) int {
+		t.Helper()
+		body := fmt.Sprintf(`{"email":"guess%d@example.com","password":"wrong password, surely"}`, i)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+addr[1]+"/api/v1/auth/login", strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Forwarded-For", client)
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("sign-in: %v", err)
+		}
+		_ = res.Body.Close()
+		return res.StatusCode
+	}
+	for i := range 10 {
+		if code := signIn("203.0.113.9", i); code != http.StatusUnauthorized {
+			t.Fatalf("failure %d: %d, want 401", i+1, code)
+		}
+	}
+	if code := signIn("203.0.113.9", 10); code != http.StatusTooManyRequests {
+		t.Errorf("the same client after ten failures: %d, want 429", code)
+	}
+	if code := signIn("203.0.113.10", 11); code != http.StatusUnauthorized {
+		t.Errorf("another client behind the proxy: %d, want 401, not the first one's 429", code)
 	}
 }

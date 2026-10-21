@@ -153,12 +153,15 @@ func TestVerifyLoginSpendsAHash(t *testing.T) {
 		{"no account", "correct horse battery staple", ""},
 		{"overlong", strings.Repeat("a", MaxPasswordBytes+1), hash},
 	} {
-		var before, after runtime.MemStats
-		runtime.ReadMemStats(&before)
-		_, _ = VerifyLogin(tc.password, tc.hash)
-		runtime.ReadMemStats(&after)
-		if got := after.TotalAlloc - before.TotalAlloc; got < argonMemoryKiB*1024 {
-			t.Errorf("%s: VerifyLogin allocated %d bytes, want at least %d (one argon2id hash)", tc.name, got, argonMemoryKiB*1024)
-		}
+		// One after the other, for the same reason.
+		t.Run(tc.name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			_, _ = VerifyLogin(tc.password, tc.hash)
+			runtime.ReadMemStats(&after)
+			if got := after.TotalAlloc - before.TotalAlloc; got < argonMemoryKiB*1024 {
+				t.Errorf("VerifyLogin allocated %d bytes, want at least %d (one argon2id hash)", got, argonMemoryKiB*1024)
+			}
+		})
 	}
 }

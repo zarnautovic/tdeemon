@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -99,15 +100,27 @@ func writeBadToken(w http.ResponseWriter) {
 	writeProblem(w, http.StatusUnauthorized, "the API token is not valid")
 }
 
-// authenticateToken handles a request with a Bearer token.
+// authenticateToken handles a request with a Bearer token. An address
+// that sent too many bad tokens lately gets 429 for every Bearer request,
+// a good token included, until its window passes (limit.go).
 func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, token string, next http.Handler) {
-	if !strings.HasPrefix(token, auth.TokenPrefix) {
+	addr := addrKey(clientAddrFrom(r.Context()))
+	if wait, blocked := s.badTokens.blocked(addr); blocked {
+		maps.Copy(w.Header(), retryAfter(wait))
+		writeProblem(w, http.StatusTooManyRequests, "too many invalid API tokens from this address; try again later")
+		return
+	}
+	bad := func() {
+		s.badTokens.fail(addr)
 		writeBadToken(w)
+	}
+	if !strings.HasPrefix(token, auth.TokenPrefix) {
+		bad()
 		return
 	}
 	t, u, err := s.db.APITokenUser(r.Context(), auth.SessionID(token))
 	if errors.Is(err, store.ErrNotFound) {
-		writeBadToken(w)
+		bad()
 		return
 	}
 	if err != nil {

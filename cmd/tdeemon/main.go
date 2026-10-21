@@ -151,6 +151,8 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		Logger:    logger,
 		OIDC:      cfg.OIDC,
 		SecretKey: cfg.SecretKey,
+		// The limits on failed sign-ins count the client behind these.
+		TrustedProxies: cfg.TrustedProxies,
 	})
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
