@@ -128,10 +128,39 @@ docker run --read-only --stop-timeout 20 -v tdeemon-data:/data \
   `--stop-timeout 20` waits for that, where the default of 10 would kill
   the process first.
 - `--build-arg VERSION=v1.2.3` sets the version the server reports
-  (default `dev`). The binary takes no arguments; with any it prints its
-  usage and exits, without touching the database.
+  (default `dev`). Without arguments the binary runs the server, and
+  `user create` adds a user ([Users](#users)); anything else prints the
+  usage and exits without touching the database.
 - The build runs `go vet` and the tests against the web app it embeds.
   Podman builds the same file.
+
+## Users
+
+tdeemon has no sign-up page: an admin adds users with the binary itself.
+It works on the database of a server that has started at least once,
+which creates and migrates it, and the server may keep running:
+
+```sh
+docker exec <container> /tdeemon user create --admin \
+  --email you@example.com --timezone Europe/Zagreb
+# or, in Kubernetes:
+kubectl exec deploy/tdeemon -- /tdeemon user create --admin --email you@example.com
+```
+
+- It prints a generated password once; keep it in a password manager.
+  To choose the password instead, add `--password-stdin` and pass it on
+  the first line of standard input (`docker exec -i`).
+- A password has at least 15 characters, as NIST SP 800-63B-4 advises
+  when it is the only factor, and at most 256. tdeemon stores only its
+  argon2id hash.
+- `--name` sets the name the app shows (by default, the part of the
+  address before the @), and `--timezone` the user's time zone (by
+  default `TZ`, or UTC). `tdeemon help` lists the flags.
+- The command reads the same `TDEEMON_*` variables as the server, and it
+  refuses a database the server has not migrated to its version yet.
+
+Signing in to the web app is not built yet: users exist, but nothing
+reads them.
 
 ## Data
 

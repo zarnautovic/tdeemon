@@ -25,7 +25,7 @@ func lookup(m map[string]string) func(string) (string, bool) {
 func TestRunRejectsInvalidConfig(t *testing.T) {
 	t.Parallel()
 
-	err := run(t.Context(), nil, lookup(nil), io.Discard, io.Discard)
+	err := run(t.Context(), nil, lookup(nil), noInput(), io.Discard, io.Discard)
 	if err == nil {
 		t.Fatal("run succeeded without configuration, want an error")
 	}
@@ -50,7 +50,7 @@ func TestRunStartsAndStops(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var logs syncBuffer
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, nil, env, io.Discard, &logs) }()
+	go func() { done <- run(ctx, nil, env, noInput(), io.Discard, &logs) }()
 
 	// Stop only once run has opened the database and is serving.
 	waitFor(t, &logs, `"msg":"listening"`)
@@ -81,8 +81,9 @@ func TestRunStartsAndStops(t *testing.T) {
 	}
 }
 
-// TestRunRejectsArguments runs with a valid configuration: an argument
-// must stop run before it creates the data directory or the database.
+// TestRunRejectsArguments runs with a valid configuration: a command line
+// tdeemon does not accept must stop run before it creates the data
+// directory or the database.
 func TestRunRejectsArguments(t *testing.T) {
 	t.Parallel()
 
@@ -98,18 +99,28 @@ func TestRunRejectsArguments(t *testing.T) {
 	// deadline turns that into a failure instead of a hung test.
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 	defer cancel()
-	for _, args := range [][]string{{"healthcheck"}, {"serve", "--port", "1"}, {"-v"}} {
-		err := run(ctx, args, env, io.Discard, io.Discard)
+	for _, args := range [][]string{
+		{"healthcheck"},
+		{"serve", "--port", "1"},
+		{"-v"},
+		{"user"},
+		{"user", "delete"},
+		{"user", "create"},
+		{"user", "create", "--email"},
+		{"user", "create", "--email", "ana@example.com", "--role", "admin"},
+		{"user", "create", "--email", "ana@example.com", "extra"},
+	} {
+		err := run(ctx, args, env, noInput(), io.Discard, io.Discard)
 		if !errors.Is(err, errUsage) {
 			t.Errorf("run(%q) = %v, want errUsage", args, err)
 		}
 	}
 	for _, help := range []string{"-h", "--help", "help"} {
 		var out bytes.Buffer
-		if err := run(ctx, []string{help}, env, &out, io.Discard); err != nil {
+		if err := run(ctx, []string{help}, env, noInput(), &out, io.Discard); err != nil {
 			t.Errorf("run(%q) = %v, want the usage", help, err)
 		}
-		if !strings.Contains(out.String(), "Usage: tdeemon") {
+		if !strings.Contains(out.String(), "Usage:\n  tdeemon ") {
 			t.Errorf("run(%q) printed %q, want the usage", help, out.String())
 		}
 	}
@@ -121,7 +132,7 @@ func TestRunRejectsArguments(t *testing.T) {
 func TestExitCode(t *testing.T) {
 	t.Parallel()
 
-	usageErr := run(t.Context(), []string{"healthcheck"}, lookup(nil), io.Discard, io.Discard)
+	usageErr := run(t.Context(), []string{"healthcheck"}, lookup(nil), noInput(), io.Discard, io.Discard)
 	for _, tc := range []struct {
 		name string
 		err  error
@@ -129,7 +140,7 @@ func TestExitCode(t *testing.T) {
 		out  string
 	}{
 		{"success", nil, 0, ""},
-		{"arguments", usageErr, 2, "tdeemon: takes no arguments, got [\"healthcheck\"]\n\n" + usage},
+		{"arguments", usageErr, 2, "tdeemon: invalid command line: unknown command \"healthcheck\"\n\n" + usage},
 		{"failure", errors.New("database: disk full"), 1, "tdeemon: database: disk full\n"},
 	} {
 		var out bytes.Buffer
@@ -141,6 +152,9 @@ func TestExitCode(t *testing.T) {
 		}
 	}
 }
+
+// noInput is standard input with nothing on it.
+func noInput() io.Reader { return strings.NewReader("") }
 
 // syncBuffer is a bytes.Buffer that run's logger and the test can use
 // from different goroutines.
