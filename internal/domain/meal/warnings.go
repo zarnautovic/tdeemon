@@ -88,8 +88,11 @@ const DuplicateWindow = 10 * time.Minute
 // again: eaten within DuplicateWindow of it, with the same items in the
 // same amounts. A client that retries without the meal's ID, or a model
 // that logs twice, would otherwise double the day. The message gives the
-// earlier meal's time in loc, the user's time zone.
+// earlier meal's time in loc, the user's time zone (UTC when nil).
 func DuplicateOf(m Meal, recent []Meal, loc *time.Location) (Warning, bool) {
+	if loc == nil {
+		loc = time.UTC
+	}
 	for i := range recent {
 		r := &recent[i]
 		if r.ID == m.ID || absDuration(r.EatenAt.Sub(m.EatenAt)) > DuplicateWindow || !sameItems(r.Items, m.Items) {

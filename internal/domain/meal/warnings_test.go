@@ -107,6 +107,9 @@ func TestDuplicateOf(t *testing.T) {
 	if w, _ := DuplicateOf(again, []Meal{first}, zagreb); !strings.Contains(w.Message, "at 10:30;") {
 		t.Errorf("DuplicateOf in Zagreb = %q, want the time 10:30", w.Message)
 	}
+	if w, _ := DuplicateOf(again, []Meal{first}, nil); !strings.Contains(w.Message, "at 08:30;") {
+		t.Errorf("DuplicateOf without a zone = %q, want the time in UTC", w.Message)
+	}
 	// Estimates compare by name.
 	a, _ := Estimate("Burger", food.Nutrients{Kcal: 900}, "")
 	b, _ := Estimate("Burger", food.Nutrients{Kcal: 900}, "")
