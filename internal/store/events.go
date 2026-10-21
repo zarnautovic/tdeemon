@@ -16,21 +16,24 @@ import (
 // ErrNothingToUndo reports that the user has no change left to undo.
 var ErrNothingToUndo = errors.New("nothing to undo")
 
-// errUndoBlocked is what a way back returns, before it writes anything,
-// when putting the entity back would clash with what came since (another
-// food took the name): UndoLast reports it as a conflict.
-var errUndoBlocked = errors.New("undo blocked")
+// errUndoBlocked is what a way back returns when putting the entity back
+// would clash with what came since (another food took the name).
+var errUndoBlocked = errors.New("another food has taken its name or an alias since")
 
 // UndoConflictError reports that the latest change could not be taken
-// back: the entity changed since (an import wrote it), and putting it back
+// back: the entity changed since (an import wrote it), or putting it back
+// clashes with what came since (another food took the name), and undoing
 // would lose that. The change is passed over from then on, so the next
 // undo takes back the one before it.
 type UndoConflictError struct {
 	Event event.Event
+	// Reason says why, for the user: "it changed since", or what it
+	// clashes with.
+	Reason string
 }
 
 func (e *UndoConflictError) Error() string {
-	return fmt.Sprintf("%s of %s cannot be undone: it changed since", e.Event.Action, e.Event.Entity)
+	return fmt.Sprintf("%s of %s cannot be undone: %s", e.Event.Action, e.Event.Entity, e.Reason)
 }
 
 // MaxEvents bounds Events.
@@ -164,27 +167,12 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 		if err != nil {
 			return err
 		}
-		current, err := stateNow(ctx, tx, userID, e)
-		if err != nil {
-			return fmt.Errorf("state of %s: %w", e.Entity, err)
-		}
-		if c, err := stateJSON(current); err != nil {
-			return err
-		} else if want, _ := stateJSON(e.After); c != want {
-			conflict = &UndoConflictError{Event: e}
-			_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
+		after, c, err := takeBackChecked(ctx, tx, userID, e, now)
+		if err != nil || c != nil {
+			conflict = c
 			return err
 		}
-		err = takeBack(ctx, tx, userID, e, now)
-		if errors.Is(err, errUndoBlocked) {
-			conflict = &UndoConflictError{Event: e}
-			_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
-			return err
-		}
-		if err != nil {
-			return fmt.Errorf("take back %s of %s: %w", e.Action, e.Entity, err)
-		}
-		undoID, err := record(ctx, tx, userID, a, event.Undo, e.ID.String(), e.After, e.Before, now)
+		undoID, err := record(ctx, tx, userID, a, event.Undo, e.ID.String(), e.After, after, now)
 		if err != nil {
 			return err
 		}
@@ -206,6 +194,46 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 		return event.Event{}, conflict
 	}
 	return undone, nil
+}
+
+// takeBackChecked puts e's entity back when it is as e left it, and
+// returns the state the undo left. When it is not, or the way back fails,
+// it changes nothing but the event, which it marks stale, and returns the
+// conflict: one change that cannot be taken back must not keep undo from
+// the ones before it.
+func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) (any, *UndoConflictError, error) {
+	passOver := func(reason string) (any, *UndoConflictError, error) {
+		_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
+		return nil, &UndoConflictError{Event: e, Reason: reason}, err
+	}
+	current, err := stateNow(ctx, tx, userID, e)
+	if err != nil {
+		return passOver(fmt.Sprintf("its state cannot be read (%v)", err))
+	}
+	if c, err := stateJSON(current); err != nil {
+		return nil, nil, err
+	} else if want, _ := stateJSON(e.After); c != want {
+		return passOver("it changed since")
+	}
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT take_back"); err != nil {
+		return nil, nil, err
+	}
+	if err := takeBack(ctx, tx, userID, e, now); err != nil {
+		if _, rerr := tx.ExecContext(ctx, "ROLLBACK TO take_back"); rerr != nil {
+			return nil, nil, rerr
+		}
+		if errors.Is(err, errUndoBlocked) {
+			return passOver(err.Error())
+		}
+		return passOver(fmt.Sprintf("it cannot be put back (%v)", err))
+	}
+	if _, err := tx.ExecContext(ctx, "RELEASE take_back"); err != nil {
+		return nil, nil, err
+	}
+	// The state the undo left, as read back (a food a meal uses is
+	// archived rather than gone).
+	after, err := stateNow(ctx, tx, userID, e)
+	return after, nil, err
 }
 
 // stateNow returns the state of e's entity now, as e's kind of event

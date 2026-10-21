@@ -32,6 +32,10 @@ func (db *DB) MergeMetrics(ctx context.Context, userID uuid.UUID, a event.Actor,
 	if err := metric.ValidateDay(vs); err != nil {
 		return nil, fmt.Errorf("invalid metrics: %w", err)
 	}
+	vs = append([]metric.Value(nil), vs...)
+	for i := range vs {
+		vs[i].Value += 0 // -0 is 0, as the table reads it back
+	}
 	if d.IsZero() {
 		return nil, errors.New("invalid metrics: the day is missing")
 	}
@@ -101,6 +105,7 @@ func (db *DB) SetMetric(ctx context.Context, userID uuid.UUID, a event.Actor, d 
 	if d.IsZero() {
 		return nil, errors.New("invalid metric: the day is missing")
 	}
+	v.Value += 0 // -0 is 0, as the table reads it back
 	if err := a.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid actor: %w", err)
 	}

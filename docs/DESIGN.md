@@ -106,7 +106,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `phases` | user_id, type (cut/maintain/bulk/recomp), started_at, ends_at?, target_rate_pct_week (signed), goal_weight?, milestone_weight? | the user's goal timeline; a phase start anchors the water/glycogen window; a diet break or a deload maintenance week is just a short `maintain` phase; goal and milestone may sit above or below the current weight |
 | `profile_notes` | user_id, text | free-text preferences and guidance (e.g. food dislikes, schedule constraints) handed to the AI as context |
 | `shopping_items` | user_id, text, done | |
-| `events` | id, user_id, at, actor (user/import), client, model, operation, entity, before_state, after_state, undone_by | every write, with the state before and after (JSON); the audit trail, the tombstone of a deleted meal, and what `undo_last` takes back |
+| `events` | id, user_id, at, actor (user/import), client, model, operation, entity, before_state, after_state, undone_by, stale | every write, with the state before and after (JSON); the audit trail, the tombstone of a deleted meal, and what `undo_last` takes back |
 
 A table of a user's rows carries `user_id` even when its parent row has
 it too (`meal_items`, `food_servings`, `food_aliases`), with a foreign

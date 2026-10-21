@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -568,5 +569,65 @@ func TestEventsAtMost(t *testing.T) {
 	}
 	if es, _ := db.Events(t.Context(), ana, store.MaxEvents+50); len(es) != store.MaxEvents {
 		t.Errorf("Events = %d, want at most %d", len(es), store.MaxEvents)
+	}
+}
+
+// An alias taken by another food since: the rename's undo is a conflict,
+// not a failure that every later undo meets again.
+func TestUndoAfterTheAliasWasTaken(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	if err := db.ExcludeDay(t.Context(), ana, testActor, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	a := saveFood(t, db, ana, bar())
+	renamed := a
+	renamed.Aliases = []string{"salted bar"}
+	saveFood(t, db, ana, renamed)
+	other := food.Food{
+		ID: uuid.NewV7(), Name: "Caramel wafer", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 500, Protein: 6, Carbs: 60, Fat: 25}, Aliases: []string{"caramel bar"},
+	}
+	if _, err := db.SaveFood(t.Context(), ana, importer, other, t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || !strings.Contains(conflict.Reason, "alias") {
+		t.Fatalf("undo = %v, want an UndoConflictError about the alias", err)
+	}
+	if got, _ := db.FoodByID(t.Context(), ana, a.ID); !reflect.DeepEqual(got.Aliases, []string{"salted bar"}) {
+		t.Errorf("the food's aliases became %v", got.Aliases)
+	}
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) { // the create: the food changed since
+		t.Fatalf("the second undo = %v", err)
+	}
+	if e := undo(t, db, ana); e.Action != event.DayExclude {
+		t.Errorf("the third undo took back %s, want the exclusion", e.Action)
+	}
+}
+
+// A real clock has nanoseconds and a zone: the state recorded is the
+// state read back, so undo finds no false conflict.
+func TestUndoWithARealClock(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	now := time.Date(2026, 10, 21, 10, 15, 30, 123456789, time.FixedZone("CEST", 2*3600))
+	f, err := db.SaveFood(t.Context(), ana, testActor, bar(), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.CreateMeal(t.Context(), ana, testActor, breakfast(t, f, now), now); err != nil {
+		t.Fatal(err)
+	}
+	d := day.DateOf(now)
+	if _, err := db.SetMetric(t.Context(), ana, testActor, d, metric.Value{Kind: metric.Steps, Value: math.Copysign(0, -1), Source: metric.Manual}, now); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if _, err := db.UndoLast(t.Context(), ana, testActor, now); err != nil {
+			t.Fatalf("undo with a real clock: %v", err)
+		}
 	}
 }
