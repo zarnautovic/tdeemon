@@ -28,6 +28,9 @@ import (
 
 const clientID = "tdeemon"
 
+// secretKey is the test instances' TDEEMON_SECRET_KEY.
+func secretKey() []byte { return []byte(strings.Repeat("k", 32)) }
+
 // grant is what the fake provider remembers about a code it issued.
 type grant struct {
 	challenge, nonce string
@@ -197,7 +200,7 @@ func newOIDCInstanceAt(t *testing.T, p *idp, base *url.URL) *instance {
 		Info: testInfo, DB: db, BaseURL: base,
 		Logger: slog.New(slog.DiscardHandler), Now: c.Now,
 		OIDC:      &config.OIDC{Issuer: p.srv.URL, ClientID: clientID, ClientSecret: "s3cret", Name: "Authentik"},
-		SecretKey: []byte(strings.Repeat("k", 32)),
+		SecretKey: secretKey(),
 	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
@@ -326,7 +329,7 @@ func TestOIDCCallbackRefusesForeignFlows(t *testing.T) {
 	flow, callback := in.begin(t, p, "")
 	_, otherCallback := in.begin(t, p, "") // someone else's flow
 	// The real flow, sealed with another key: only the MAC is wrong.
-	genuine, err := auth.Open([]byte(strings.Repeat("k", 32)), "oidc flow", flow.Value)
+	genuine, err := auth.Open(secretKey(), "oidc flow", flow.Value)
 	if err != nil {
 		t.Fatalf("open the real flow: %v", err)
 	}
@@ -342,15 +345,52 @@ func TestOIDCCallbackRefusesForeignFlows(t *testing.T) {
 		{"a cookie sealed with another key", callback, []*http.Cookie{forged}},
 		{"a cookie that is not sealed", callback, []*http.Cookie{requestCookie("tdeemon_oidc", "x")}},
 	} {
-		rec := in.finish(t, tc.callback, tc.cookies...)
-		if rec.Code != http.StatusBadRequest || cookieNamed(rec, "tdeemon_session") != nil {
-			t.Errorf("%s: %d %s, want 400 and no session", tc.name, rec.Code, rec.Body.String())
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := in.finish(t, tc.callback, tc.cookies...)
+			if rec.Code != http.StatusBadRequest || cookieNamed(rec, "tdeemon_session") != nil {
+				t.Errorf("callback: %d %s, want 400 and no session", rec.Code, rec.Body.String())
+			}
+		})
 	}
 
-	in.clock.Set(in.clock.Now().Add(10 * time.Minute))
-	if rec := in.finish(t, callback, flow); rec.Code != http.StatusBadRequest {
-		t.Errorf("after ten minutes: %d, want 400", rec.Code)
+	// On an instance of its own: the clock moves.
+	t.Run("after ten minutes", func(t *testing.T) {
+		t.Parallel()
+		p := newIDP(t)
+		in := newOIDCInstance(t, p)
+		flow, callback := in.begin(t, p, "")
+		in.clock.Set(in.clock.Now().Add(10 * time.Minute))
+		if rec := in.finish(t, callback, flow); rec.Code != http.StatusBadRequest {
+			t.Errorf("callback: %d, want 400", rec.Code)
+		}
+	})
+}
+
+// The seal vouches for the flow cookie, not for the target in it: the
+// callback checks return_to again, so a flow sealed with a leaked key
+// cannot send the browser away.
+func TestOIDCCallbackChecksTheReturnToAgain(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	in := newOIDCInstance(t, p)
+	flow, callback := in.begin(t, p, "")
+	value, err := auth.Open(secretKey(), "oidc flow", flow.Value)
+	if err != nil {
+		t.Fatalf("open the flow: %v", err)
+	}
+	var f map[string]any
+	if err := json.Unmarshal(value, &f); err != nil {
+		t.Fatalf("decode the flow: %v", err)
+	}
+	f["return_to"] = "//evil.example"
+	if value, err = json.Marshal(f); err != nil {
+		t.Fatalf("encode the flow: %v", err)
+	}
+	resealed := requestCookie(flow.Name, auth.Seal(secretKey(), "oidc flow", value))
+	if rec := in.finish(t, callback, resealed); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/" {
+		t.Errorf("callback: %d to %q, want 303 to /", rec.Code, rec.Header().Get("Location"))
 	}
 }
 
@@ -458,12 +498,39 @@ func TestReturnToStaysOnTheInstance(t *testing.T) {
 		"foods":                 "/",
 		"/x\r\nSet-Cookie: a=b": "/",
 		"/%2F%2Fevil.example":   "/%2F%2Fevil.example",
+		"/\xff":                 "/",
 	} {
-		flow, callback := in.begin(t, p, returnTo)
-		rec := in.finish(t, callback, flow)
-		if got := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || got != want {
-			t.Errorf("return_to %q: %d to %q, want %q", returnTo, rec.Code, got, want)
-		}
+		t.Run(returnTo, func(t *testing.T) {
+			t.Parallel()
+			flow, callback := in.begin(t, p, returnTo)
+			rec := in.finish(t, callback, flow)
+			if got := rec.Header().Get("Location"); rec.Code != http.StatusSeeOther || got != want {
+				t.Errorf("return_to %q: %d to %q, want %q", returnTo, rec.Code, got, want)
+			}
+		})
+	}
+}
+
+// JSON escapes some characters into several bytes; at the longest
+// return_to the flow cookie must still fit the 4 KB a browser keeps, or
+// the sign-in fails without a word.
+func TestOIDCFlowCookieFits(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	in := newOIDCInstance(t, p)
+	for _, char := range []string{"a", "&", "<", `"`, "\u2028", "č"} {
+		t.Run(char, func(t *testing.T) {
+			t.Parallel()
+			returnTo := "/" + strings.Repeat(char, 1023/len(char))
+			flow, callback := in.begin(t, p, returnTo)
+			if n := len(flow.Name) + len(flow.Value); n > 4096 {
+				t.Errorf("flow cookie is %d bytes, want at most 4096", n)
+			}
+			if rec := in.finish(t, callback, flow); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") == "/" {
+				t.Errorf("callback: %d to %.40q…, want 303 to the return_to", rec.Code, rec.Header().Get("Location"))
+			}
+		})
 	}
 }
 
@@ -498,13 +565,16 @@ func TestOIDCStoreFailures(t *testing.T) {
 	t.Parallel()
 
 	for _, table := range []string{"user_identities", "sessions"} {
-		p := newIDP(t)
-		in := newOIDCInstance(t, p)
-		flow, callback := in.begin(t, p, "")
-		in.failWrites(t, "INSERT", table)
-		if rec := in.finish(t, callback, flow); rec.Code != http.StatusInternalServerError || cookieNamed(rec, "tdeemon_session") != nil {
-			t.Errorf("callback when writing %s fails: %d, want 500 and no session", table, rec.Code)
-		}
+		t.Run(table, func(t *testing.T) {
+			t.Parallel()
+			p := newIDP(t)
+			in := newOIDCInstance(t, p)
+			flow, callback := in.begin(t, p, "")
+			in.failWrites(t, "INSERT", table)
+			if rec := in.finish(t, callback, flow); rec.Code != http.StatusInternalServerError || cookieNamed(rec, "tdeemon_session") != nil {
+				t.Errorf("callback when writing %s fails: %d, want 500 and no session", table, rec.Code)
+			}
+		})
 	}
 }
 
@@ -598,8 +668,9 @@ func TestOIDCLookAlikeAddressDoesNotLink(t *testing.T) {
 	}
 	flow, callback := in.begin(t, p, "")
 	rec := in.finish(t, callback, flow)
-	if rec.Code != http.StatusForbidden || cookieNamed(rec, "tdeemon_session") != nil {
-		t.Errorf("callback: %d %s, want 403 and no session", rec.Code, rec.Body.String())
+	if rec.Code != http.StatusForbidden || cookieNamed(rec, "tdeemon_session") != nil ||
+		!strings.Contains(rec.Body.String(), "written differently from the one on your account here") {
+		t.Errorf("callback: %d %s, want 403 saying the address is written differently, and no session", rec.Code, rec.Body.String())
 	}
 	// The same address in plain ASCII, in another case, links.
 	p.mu.Lock()

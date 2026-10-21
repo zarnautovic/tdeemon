@@ -14,6 +14,9 @@ import (
 var (
 	// ErrNoAccount: no user has the identity's email, or it has none.
 	ErrNoAccount = errors.New("no account on this instance")
+	// ErrEmailNotLinkable: the provider gives an address that is written
+	// differently from any here in more than ASCII letter case.
+	ErrEmailNotLinkable = errors.New("the provider's email address is not written as addresses here are")
 	// ErrEmailNotVerified: the provider does not vouch for the email.
 	ErrEmailNotVerified = errors.New("the provider did not verify the email address")
 	// ErrAlreadyLinked: the user with that email already has another
@@ -25,8 +28,11 @@ var (
 type Identity struct {
 	Issuer, Subject string
 	// Email is the address the provider gives, normalized
-	// (user.NormalizeEmail); "" when it gave none.
+	// (user.NormalizeEmail); "" when it gave none or EmailNotLinkable.
 	Email string
+	// EmailNotLinkable: the provider gave an address that normalizing
+	// changes in more than ASCII letter case, so it links nothing.
+	EmailNotLinkable bool
 	// EmailVerified is the provider's word that the user controls Email.
 	EmailVerified bool
 }
@@ -34,8 +40,8 @@ type Identity struct {
 // SignInWithIdentity returns the user that id belongs to. An identity
 // seen before leads to its user. A new one is linked to the user with
 // the same email, if the provider verified that email and the user has no
-// identity at this issuer yet; otherwise it returns ErrEmailNotVerified,
-// ErrNoAccount or ErrAlreadyLinked. Nobody gets an account by signing in:
+// identity at this issuer yet; otherwise it returns ErrEmailNotLinkable,
+// ErrNoAccount, ErrEmailNotVerified or ErrAlreadyLinked. Nobody gets an account by signing in:
 // an admin creates users.
 func (db *DB) SignInWithIdentity(ctx context.Context, id Identity, now time.Time) (user.User, error) {
 	var u user.User
@@ -50,6 +56,9 @@ func (db *DB) SignInWithIdentity(ctx context.Context, id Identity, now time.Time
 			return err
 		}
 
+		if id.EmailNotLinkable {
+			return ErrEmailNotLinkable
+		}
 		if id.Email == "" {
 			return ErrNoAccount
 		}
@@ -73,7 +82,8 @@ func (db *DB) SignInWithIdentity(ctx context.Context, id Identity, now time.Time
 			id.Issuer, id.Subject, u.ID.String(), formatTime(now))
 		return err
 	})
-	if errors.Is(err, ErrNoAccount) || errors.Is(err, ErrEmailNotVerified) || errors.Is(err, ErrAlreadyLinked) {
+	if errors.Is(err, ErrNoAccount) || errors.Is(err, ErrEmailNotLinkable) || errors.Is(err, ErrEmailNotVerified) ||
+		errors.Is(err, ErrAlreadyLinked) {
 		return user.User{}, err
 	}
 	if err != nil {

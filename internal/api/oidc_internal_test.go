@@ -42,8 +42,7 @@ func TestProviderEndpointsMustBeHTTPS(t *testing.T) {
 			now := time.Now()
 			s := &sessions{logger: slog.New(slog.DiscardHandler), now: func() time.Time { return now }}
 			o := newOIDCLogin(s, config.OIDC{Issuer: srv.URL, ClientID: "tdeemon"}, []byte(strings.Repeat("k", 32)), "https://tdeemon.example/cb")
-			o.client = srv.Client() // trusts the test server's certificate
-			o.client.CheckRedirect = refuseInsecureRedirects(false)
+			o.client.Transport = srv.Client().Transport // trusts the test server's certificate
 			if _, err := o.getProvider(t.Context()); err == nil || !strings.Contains(err.Error(), "not https") {
 				t.Errorf("getProvider = %v, want a refusal of the plain HTTP endpoint", err)
 			}
@@ -51,6 +50,22 @@ func TestProviderEndpointsMustBeHTTPS(t *testing.T) {
 				t.Error("the refused provider was kept")
 			}
 		})
+	}
+}
+
+// The client newOIDCLogin builds follows no redirect off https: the
+// discovery document would come over plain HTTP otherwise.
+func TestOIDCClientRefusesInsecureRedirects(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewTLSServer(http.RedirectHandler("http://127.0.0.1:1/.well-known/openid-configuration", http.StatusFound))
+	t.Cleanup(srv.Close)
+	now := time.Now()
+	s := &sessions{logger: slog.New(slog.DiscardHandler), now: func() time.Time { return now }}
+	o := newOIDCLogin(s, config.OIDC{Issuer: srv.URL, ClientID: "tdeemon"}, []byte(strings.Repeat("k", 32)), "https://tdeemon.example/cb")
+	o.client.Transport = srv.Client().Transport // trusts the test server's certificate; the rest is newOIDCLogin's
+	if _, err := o.getProvider(t.Context()); err == nil || !strings.Contains(err.Error(), "which is not https") {
+		t.Errorf("getProvider = %v, want the redirect to plain HTTP refused", err)
 	}
 }
 

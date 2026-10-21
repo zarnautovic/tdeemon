@@ -38,6 +38,7 @@ func TestSignInWithIdentity(t *testing.T) {
 	for _, id := range []store.Identity{
 		{Issuer: issuer, Subject: "s1", Email: "ana.new@example.com", EmailVerified: true},
 		{Issuer: issuer, Subject: "s1"},
+		{Issuer: issuer, Subject: "s1", EmailNotLinkable: true},
 	} {
 		if u, err := db.SignInWithIdentity(t.Context(), id, t0); err != nil || u.ID != ana.ID || u.Email != "ana@example.com" {
 			t.Errorf("sign-in with %+v = %v %q, %v; want ana", id, u.ID, u.Email, err)
@@ -72,6 +73,7 @@ func TestSignInWithIdentityRefuses(t *testing.T) {
 	}{
 		{"unverified email", store.Identity{Issuer: issuer, Subject: "s2", Email: "ivo@example.com"}, store.ErrEmailNotVerified},
 		{"no email", store.Identity{Issuer: issuer, Subject: "s2", EmailVerified: true}, store.ErrNoAccount},
+		{"an address that cannot link", store.Identity{Issuer: issuer, Subject: "s2", EmailNotLinkable: true, EmailVerified: true}, store.ErrEmailNotLinkable},
 		{"unknown email", store.Identity{Issuer: issuer, Subject: "s2", Email: "eva@example.com", EmailVerified: true}, store.ErrNoAccount},
 		// ana already has an identity at this issuer: a second account
 		// there with her address does not take hers over.

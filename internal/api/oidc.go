@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/danielgtaylor/huma/v2"
@@ -49,6 +51,8 @@ const discoveryRetry = 30 * time.Second
 
 // maxReturnTo caps return_to: it rides in the flow cookie, and a browser
 // drops a cookie over 4 KB, which would fail the sign-in without a word.
+// JSON without HTML escaping at most doubles it (a quote, U+2028) and
+// base64 adds a third, so the cookie stays near 3 KB.
 const maxReturnTo = 1024
 
 // oidcLogin signs users in through an OpenID Connect provider.
@@ -208,8 +212,13 @@ func (o *oidcLogin) start(w http.ResponseWriter, r *http.Request) {
 		ReturnTo:  safeReturnTo(r.URL.Query().Get("return_to")),
 		ExpiresAt: o.sessions.now().Add(flowLifetime),
 	}
-	value, _ := json.Marshal(f) // A struct of strings and a time always marshals.
-	http.SetCookie(w, o.flowCookie(auth.Seal(o.secret, sealPurpose, value), int(flowLifetime.Seconds())))
+	// Without HTML escaping: it would turn every & or < of return_to into
+	// six bytes. A struct of strings and a time always encodes.
+	var value bytes.Buffer
+	enc := json.NewEncoder(&value)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(f)
+	http.SetCookie(w, o.flowCookie(auth.Seal(o.secret, sealPurpose, value.Bytes()), int(flowLifetime.Seconds())))
 	w.Header().Set("Cache-Control", "no-store")
 	to := o.oauth2Config(p).AuthCodeURL(f.State, oidc.Nonce(f.Nonce), oauth2.S256ChallengeOption(f.Verifier))
 	http.Redirect(w, r, to, http.StatusFound)
@@ -281,6 +290,9 @@ func refusal(err error) (string, bool) {
 			"to an account here; ask the admin (see the README on single sign-on)", true
 	case errors.Is(err, store.ErrAlreadyLinked):
 		return "your account here is linked to another account at this sign-in provider; ask the admin", true
+	case errors.Is(err, store.ErrEmailNotLinkable):
+		return "the sign-in provider gives your email address written differently from the one on your account here " +
+			"(beyond letter case), so it cannot be linked; ask the admin", true
 	case errors.Is(err, store.ErrNoAccount):
 		return "there is no account for you on this instance; ask its admin to add you", true
 	}
@@ -347,9 +359,10 @@ func (o *oidcLogin) verify(ctx context.Context, code string, f flow) (store.Iden
 	if err := idt.Claims(&claims); err != nil {
 		return store.Identity{}, err
 	}
+	email, linkable := linkableEmail(claims.Email)
 	return store.Identity{
 		Issuer: idt.Issuer, Subject: idt.Subject,
-		Email: linkableEmail(claims.Email), EmailVerified: bool(claims.EmailVerified),
+		Email: email, EmailNotLinkable: !linkable, EmailVerified: bool(claims.EmailVerified),
 	}, nil
 }
 
@@ -387,17 +400,18 @@ func (b *flexBool) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// linkableEmail returns the provider's address normalized, if
-// normalizing changes nothing but ASCII letter case; otherwise "", so the
-// identity cannot be linked by email. Case folding maps some other
-// characters onto ASCII (the Kelvin sign onto k), and an address written
-// that way at the provider must not land on another user's account.
-func linkableEmail(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if asciiLower(trimmed) != user.NormalizeEmail(raw) {
-		return ""
+// linkableEmail returns the provider's address normalized and true, if
+// normalizing changes nothing but ASCII letter case; otherwise "" and
+// false, so the identity cannot be linked by email. Case folding maps
+// some other characters onto ASCII (the Kelvin sign onto k), and an
+// address written that way at the provider must not land on another
+// user's account.
+func linkableEmail(raw string) (string, bool) {
+	email := user.NormalizeEmail(raw)
+	if asciiLower(strings.TrimSpace(raw)) != email {
+		return "", false
 	}
-	return user.NormalizeEmail(raw)
+	return email, true
 }
 
 func asciiLower(s string) string {
@@ -409,11 +423,13 @@ func asciiLower(s string) string {
 	}, s)
 }
 
-// safeReturnTo keeps a return_to that is a path on this instance and
-// replaces anything else with "/", so the sign-in cannot send the browser
-// to another site.
+// safeReturnTo keeps a return_to that is a path on this instance, in
+// UTF-8, and replaces anything else with "/", so the sign-in cannot send
+// the browser to another site (and JSON does not triple stray bytes into
+// U+FFFD).
 func safeReturnTo(s string) string {
-	if len(s) > maxReturnTo || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.ContainsAny(s, "\\\r\n\t") {
+	if len(s) > maxReturnTo || !utf8.ValidString(s) || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") ||
+		strings.ContainsAny(s, "\\\r\n\t") {
 		return "/"
 	}
 	u, err := url.Parse(s)

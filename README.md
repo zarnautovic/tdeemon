@@ -185,29 +185,35 @@ for when the provider is down):
    `https://<authentik>/application/o/<slug>/`.
 2. Make the provider say whether an address is verified
    (`email_verified`): tdeemon links an account by its address only when
-   it is. Authentik sends `false` by default since 2025.10. If its users
-   cannot change their address without verifying it, add a scope mapping
+   it is. Authentik sends `false` by default since 2025.10. Its guide
+   ([Verify email addresses](https://docs.goauthentik.io/add-secure-apps/providers/oauth2/verify-email-address))
+   records the address a user confirmed through an email link in the
+   `email_verified_address` attribute; then a scope mapping
    (Customization → Property Mappings → Scope Mapping, scope name
-   `email`) and choose it for the provider instead of the default one:
+   `email`), chosen for the provider instead of the default one, vouches
+   for exactly that address:
 
    ```python
+   email = request.user.email
+   verified_address = request.user.attributes.get("email_verified_address")
    return {
-       "email": request.user.email,
-       "email_verified": request.user.attributes.get("email_verified", False),
+       "email": email,
+       "email_verified": bool(email and verified_address == email),
    }
    ```
 
-   with the `email_verified` attribute set on the users whose address is
-   known to be theirs, or `True` instead of the lookup if every address
-   is. Authentik's own warning applies: do not assert verified addresses
-   when users can change theirs freely, or one of them could take over
-   another's tdeemon account at the first sign-in.
+   An address that changes afterwards (by the user, an admin or a source
+   sync) is no longer vouched for until it is confirmed again. If only
+   the admin sets addresses, `"email_verified": True` does instead.
+   Authentik's own warning applies: do not assert verified addresses
+   that users can change freely, or one of them could take over another's
+   tdeemon account at the first sign-in.
 3. Create the user in tdeemon (`tdeemon user create --email …`) with the
    address they have at the provider. Nobody gets an account by signing
    in.
 4. The first sign-in links the provider's account to that user, if the
    provider says the address is verified, the address matches exactly
-   (letter case aside) and the user has no other account at that
+   (ASCII letter case aside) and the user has no other account at that
    provider; after that the provider's subject identifies them, whatever
    the address becomes. A refused sign-in says why, and the log records
    the reason. There is no command yet to undo a link.
