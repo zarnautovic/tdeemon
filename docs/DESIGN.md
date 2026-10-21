@@ -89,6 +89,8 @@ store layer and covered by tests that run every query as the wrong user.
 | table | key columns | notes |
 | --- | --- | --- |
 | `users` | id, name, email, role (admin/user), locale, timezone, day_start_hour | invites; password (argon2) and/or OIDC subject |
+| `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
+| `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
 | `foods` | id, user_id, name, brand, kcal/protein/carbs/fat per 100 g, serving_g, serving_name, source (label/estimate/user/off), note, archived | the user's food DB; "same name + same portion" upsert rule enforced in code |
 | `food_aliases` | food_id, alias | "the dessert from last Sunday", "my bread" |
@@ -366,7 +368,7 @@ the first spec.
 - **Deploy:**
   - Docker image with one volume, `/data`.
   - Env, all prefixed `TDEEMON_`: `BASE_URL`, `SECRET_KEY`, `LISTEN`,
-    `DATA_DIR`, `LOG_LEVEL`, `LOG_FORMAT`, later optional `OIDC_*` and
+    `DATA_DIR`, `LOG_LEVEL`, `LOG_FORMAT`, the optional `OIDC_*`, later
     `TELEGRAM_BOT_TOKEN`; plus the standard `TZ`. The README has the
     current table.
   - Ships a `docker-compose.yml`; the homelab gets its own manifests.
@@ -463,7 +465,7 @@ the first spec.
 
 | phase | scope |
 | --- | --- |
-| **P0 — replace the predecessor** | schema + migrations, foods/meals/days/metrics/phases/targets, tool registry, MCP (token auth), REST, HAE ingest, calibration v2, **proposals + coaching tools + guardrails**, importer, minimal web UI (day view, food DB, pending proposals, login), **deterministic morning summary + watchdog via Telegram**; training days read from the old service; the agent on MCP; cut-over |
+| **P0 — replace the predecessor** | schema + migrations, foods/meals/days/metrics/phases/targets, tool registry, MCP (token auth), REST, HAE ingest, calibration v2, **proposals + coaching tools + guardrails**, importer, minimal web UI (day view, food DB, pending proposals, login), sign-in with a password or OIDC (Authentik), **deterministic morning summary + watchdog via Telegram**; training days read from the old service; the agent on MCP; cut-over |
 | **P1 — v0.1 open source** | multi-user + invites, built-in chat with BYO key (`fast`/`smart` slots) and photos, **autopilot weekly check-in**, MCP coaching prompts, PWA, morning summary + watchdog, recipes, i18n (en/hr), docker compose, docs, CI |
 | **P2** | Telegram adapter, OAuth for Claude/ChatGPT connectors, shopping list, generic CSV history import, barcode → Open Food Facts lookup |
 | **P3 — training module** | generic workout data (exercise, sets, reps, weight, RPE, duration, distance) + import adapters (Strong, others); **programs as declarative specs** over a library of progression rules, created by the coach through proposals (§8); the RTS program is the first spec; `training_day` derived from any workout source |

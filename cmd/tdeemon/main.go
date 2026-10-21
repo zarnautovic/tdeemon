@@ -144,11 +144,13 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 	}
 	logger.Info("web app", "embedded", embedded)
 	handler, err := api.NewHandler(api.Config{
-		Info:    api.ServerInfo{Name: "tdeemon", Version: serverVersion},
-		App:     app,
-		DB:      db,
-		BaseURL: cfg.BaseURL,
-		Logger:  logger,
+		Info:      api.ServerInfo{Name: "tdeemon", Version: serverVersion},
+		App:       app,
+		DB:        db,
+		BaseURL:   cfg.BaseURL,
+		Logger:    logger,
+		OIDC:      cfg.OIDC,
+		SecretKey: cfg.SecretKey,
 	})
 	if err != nil {
 		return fmt.Errorf("api: %w", err)

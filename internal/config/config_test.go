@@ -207,3 +207,94 @@ func TestConfigLogValueRedactsSecret(t *testing.T) {
 		t.Errorf("log output is missing the base URL: %s", out)
 	}
 }
+
+func TestLoadOIDC(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(env(required()))
+	if err != nil || cfg.OIDC != nil {
+		t.Fatalf("without OIDC_*: OIDC = %+v, err %v; want none", cfg.OIDC, err)
+	}
+
+	for _, tc := range []struct {
+		name   string
+		vars   map[string]string
+		issuer string
+		secret string
+		label  string
+	}{
+		{"confidential client", map[string]string{
+			"TDEEMON_OIDC_ISSUER": " https://auth.example.com/application/o/tdeemon/ ", "TDEEMON_OIDC_CLIENT_ID": "tdeemon",
+			"TDEEMON_OIDC_CLIENT_SECRET": "s3cret", "TDEEMON_OIDC_NAME": "Authentik",
+		}, "https://auth.example.com/application/o/tdeemon/", "s3cret", "Authentik"},
+		{"public client, default name", map[string]string{
+			"TDEEMON_OIDC_ISSUER": "https://auth.example.com", "TDEEMON_OIDC_CLIENT_ID": "tdeemon",
+		}, "https://auth.example.com", "", "Single sign-on"},
+		{"plain HTTP on localhost", map[string]string{
+			"TDEEMON_OIDC_ISSUER": "http://127.0.0.1:9000/", "TDEEMON_OIDC_CLIENT_ID": "tdeemon",
+		}, "http://127.0.0.1:9000/", "", "Single sign-on"},
+	} {
+		vars := required()
+		maps.Copy(vars, tc.vars)
+		cfg, err := config.Load(env(vars))
+		if err != nil {
+			t.Errorf("%s: %v", tc.name, err)
+			continue
+		}
+		o := cfg.OIDC
+		if o == nil || o.Issuer != tc.issuer || o.ClientID != "tdeemon" || o.ClientSecret != tc.secret || o.Name != tc.label {
+			t.Errorf("%s: OIDC = %+v", tc.name, o)
+		}
+	}
+}
+
+func TestLoadOIDCErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		vars map[string]string
+		want string
+	}{
+		{"issuer without client", map[string]string{"TDEEMON_OIDC_ISSUER": "https://auth.example.com"}, "go together"},
+		{"client without issuer", map[string]string{"TDEEMON_OIDC_CLIENT_ID": "tdeemon"}, "go together"},
+		{"only a secret", map[string]string{"TDEEMON_OIDC_CLIENT_SECRET": "s3cret"}, "go together"},
+		{"not a URL", map[string]string{"TDEEMON_OIDC_ISSUER": "auth.example.com", "TDEEMON_OIDC_CLIENT_ID": "tdeemon"}, "issuer URL"},
+		{"query", map[string]string{"TDEEMON_OIDC_ISSUER": "https://auth.example.com/?x=1", "TDEEMON_OIDC_CLIENT_ID": "tdeemon"}, "issuer URL"},
+		{"plain HTTP", map[string]string{"TDEEMON_OIDC_ISSUER": "http://auth.example.com", "TDEEMON_OIDC_CLIENT_ID": "tdeemon"}, "must use https"},
+		{"other scheme", map[string]string{"TDEEMON_OIDC_ISSUER": "ftp://localhost", "TDEEMON_OIDC_CLIENT_ID": "tdeemon"}, "must use https"},
+	} {
+		vars := required()
+		maps.Copy(vars, tc.vars)
+		_, err := config.Load(env(vars))
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: error %v, want one containing %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+func TestOIDCLogValueRedactsSecret(t *testing.T) {
+	t.Parallel()
+
+	vars := required()
+	maps.Copy(vars, map[string]string{
+		"TDEEMON_OIDC_ISSUER": "https://auth.example.com", "TDEEMON_OIDC_CLIENT_ID": "tdeemon", "TDEEMON_OIDC_CLIENT_SECRET": "s3cret-value",
+	})
+	cfg, err := config.Load(env(vars))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("config", "config", cfg)
+	if strings.Contains(buf.String(), "s3cret-value") || !strings.Contains(buf.String(), "config.oidc.client_secret=[redacted]") ||
+		!strings.Contains(buf.String(), "config.oidc.issuer=https://auth.example.com") {
+		t.Errorf("logged %s, want the issuer and the secret redacted", buf.String())
+	}
+
+	buf.Reset()
+	cfg, _ = config.Load(env(required()))
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("config", "config", cfg)
+	if !strings.Contains(buf.String(), "config.oidc=off") {
+		t.Errorf("logged %s, want oidc=off", buf.String())
+	}
+}

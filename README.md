@@ -86,11 +86,15 @@ All settings come from environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TDEEMON_BASE_URL` | — (required) | public URL of the instance, without a path (tdeemon is served at the root of its host), e.g. `https://tdeemon.example.com` |
-| `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; kept for sealing and encrypting what tdeemon stores (sessions do not depend on it) |
+| `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; seals the single sign-on state, and will encrypt stored secrets (sessions do not depend on it) |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
 | `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |
 | `TDEEMON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `TDEEMON_LOG_FORMAT` | `json` | `json` or `text` |
+| `TDEEMON_OIDC_ISSUER` | — | issuer URL of an OpenID Connect provider for single sign-on (https; http only for localhost) |
+| `TDEEMON_OIDC_CLIENT_ID` | — | tdeemon's client ID there; required with the issuer |
+| `TDEEMON_OIDC_CLIENT_SECRET` | — | its client secret, for a confidential client |
+| `TDEEMON_OIDC_NAME` | `Single sign-on` | what the sign-in page calls the provider |
 | `TZ` | system | default time zone of the instance |
 
 Every invalid or missing variable is reported at startup in one go.
@@ -104,9 +108,9 @@ one volume at `/data`, so the root filesystem can be read-only.
 ```sh
 docker build -t tdeemon .
 
-# Once: the settings, readable by you only. Keep the secret key: features
-# that seal or encrypt what tdeemon stores use it. set -C refuses to
-# replace an existing .env, so running this again keeps the key.
+# Once: the settings, readable by you only. Keep the secret key: it seals
+# the single sign-on state and will encrypt stored secrets. set -C refuses
+# to replace an existing .env, so running this again keeps the key.
 (umask 077 && set -C && printf 'TDEEMON_BASE_URL=%s\nTDEEMON_SECRET_KEY=%s\n' \
   http://localhost:8080 "$(openssl rand -base64 32)" > .env)
 
@@ -167,6 +171,31 @@ an HttpOnly session cookie for 30 days; the web app's sign-in page comes
 with the web UI. Cross-origin browser requests that change something are
 refused (Go's `http.CrossOriginProtection`), and over HTTPS the cookie is
 a `__Host-` cookie.
+
+### Single sign-on (OpenID Connect)
+
+With `TDEEMON_OIDC_*` set, users can sign in through a provider such as
+Authentik or Keycloak instead of a password (the password keeps working,
+for when the provider is down):
+
+1. At the provider, create an OAuth2/OpenID Connect application: a
+   confidential client with the redirect URI
+   `<TDEEMON_BASE_URL>/api/v1/auth/oidc/callback` and the scopes
+   `openid`, `email` and `profile`. In Authentik the issuer is
+   `https://<authentik>/application/o/<slug>/`.
+2. Create the user in tdeemon (`tdeemon user create --email …`) with the
+   address they have at the provider. Nobody gets an account by signing
+   in.
+3. The first sign-in links the provider's account to that user, if the
+   provider says the address is verified; after that the provider's
+   subject identifies them, whatever the address becomes.
+
+The browser starts at `/api/v1/auth/oidc/login` (add `?return_to=/path`
+to land somewhere else on the instance); `GET /api/v1/auth/methods` says
+whether the instance has a provider. The flow uses PKCE, a nonce and a
+state bound to the browser in a short-lived sealed cookie. tdeemon finds
+the provider on the first sign-in, so it starts while the provider is
+down.
 
 ## Data
 
