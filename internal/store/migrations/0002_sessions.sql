@@ -3,7 +3,7 @@
 -- nobody in.
 CREATE TABLE sessions (
     -- The hex SHA-256 of the session token.
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY CHECK (length(id) = 64),
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     created_at TEXT NOT NULL,
     -- When the user last used the session, to the hour or so: the server

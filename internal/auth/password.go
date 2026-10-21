@@ -108,7 +108,7 @@ func VerifyPassword(password, encoded string) (bool, error) {
 
 // MaxPasswordBytes is the longest password input VerifyLogin considers:
 // MaxPasswordLen characters of four bytes each. Anything longer fails
-// before normalization, which can make a string many times longer (one
+// without being normalized, which can make a string many times longer (one
 // U+FDFA becomes 18 characters). A password typed in a decomposed form
 // takes more bytes than its normal form, so near the length limit one can
 // be refused: 1,024 bytes hold 113 Hangul syllables typed as separate
@@ -122,11 +122,16 @@ const MaxPasswordBytes = 4 * MaxPasswordLen
 // password, which never matches.
 func VerifyLogin(password, encoded string) (bool, error) {
 	if encoded == "" || len(password) > MaxPasswordBytes {
-		_, _ = VerifyPassword(password, dummyHash())
+		// A fixed input: an overlong password is not normalized either.
+		_, _ = VerifyPassword("", dummyHash())
 		return false, nil
 	}
 	return VerifyPassword(password, encoded)
 }
+
+// PrepareLogin computes what VerifyLogin needs once, now, so the first
+// sign-in for an unknown address takes no longer than the others.
+func PrepareLogin() { _ = dummyHash() }
 
 // dummyHash is a hash of a password nobody knows, with the current
 // parameters, for VerifyLogin to spend the time on.

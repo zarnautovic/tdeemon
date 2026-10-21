@@ -27,6 +27,9 @@ type sessions struct {
 	now    func() time.Time
 	// secure is true when the instance is served over HTTPS.
 	secure bool
+	// afterVerify, for tests, runs once a sign-in has checked the password
+	// and before it writes anything.
+	afterVerify func(context.Context)
 }
 
 // cookieName is the session cookie's name. Over HTTPS it carries the
@@ -121,10 +124,14 @@ type sessionBody struct {
 	ExpiresAt time.Time `json:"expires_at" doc:"When the session ends; then the user signs in again."`
 }
 
+// loginInput checks little on purpose: a validation error echoes the
+// value back, and a password has no business in a response. A missing or
+// overlong email or password fails like a wrong one, with a 401.
 type loginInput struct {
 	Body struct {
-		Email    string `json:"email" maxLength:"254" doc:"The address the user signs in with; case does not matter."`
-		Password string `json:"password" minLength:"1" maxLength:"1024"`
+		_        struct{} `additionalProperties:"true"`
+		Email    string   `json:"email" required:"false" doc:"The address the user signs in with; case does not matter. Required."`
+		Password string   `json:"password" required:"false" doc:"Required."`
 	}
 }
 
@@ -195,43 +202,76 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 		s.logger.InfoContext(ctx, "sign-in failed")
 		return nil, errBadLogin()
 	}
+	if s.afterVerify != nil {
+		s.afterVerify(ctx)
+	}
 
 	now := s.now()
 	if auth.NeedsRehash(hash) {
-		s.rehash(ctx, u, in.Body.Password, now)
+		hash = s.rehash(ctx, u, hash, in.Body.Password, now)
 	}
-	// A session the browser already had ends, so a token planted before
-	// sign-in never becomes a signed-in one.
-	if p, ok := auth.PrincipalFrom(ctx); ok {
-		if err := s.db.DeleteSession(ctx, p.SessionID); err != nil {
-			s.logger.WarnContext(ctx, "ending the previous session failed", "error", err)
-		}
+	// The session goes in only while the password is still the one just
+	// checked: a reset that committed meanwhile wins.
+	cookie, sess, err := s.start(ctx, u, now, "password", func(sess store.Session) error {
+		return s.db.CreatePasswordSession(ctx, sess, hash)
+	})
+	if errors.Is(err, store.ErrCredentialsChanged) {
+		s.logger.InfoContext(ctx, "sign-in failed: the password changed meanwhile", "user_id", u.ID.String())
+		return nil, errBadLogin()
 	}
-	token, id := auth.NewSessionToken()
-	sess := store.Session{ID: id, UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(auth.SessionLifetime)}
-	if err := s.db.CreateSession(ctx, sess); err != nil {
-		s.logger.ErrorContext(ctx, "starting a session failed", "error", err)
+	if err != nil {
 		return nil, huma.Error500InternalServerError("signing in failed")
 	}
-	s.logger.InfoContext(ctx, "signed in", "user_id", u.ID.String())
 	return &sessionOutput{
-		SetCookie:    s.cookie(token, now, sess.ExpiresAt),
+		SetCookie:    cookie,
 		CacheControl: "no-store",
 		Body:         sessionBody{User: newUserBody(u), ExpiresAt: sess.ExpiresAt.UTC()},
 	}, nil
 }
 
-// rehash stores a hash with today's parameters after a sign-in proved the
-// password. A password set under older, laxer rules cannot be hashed
-// under today's and keeps its old hash.
-func (s *sessions) rehash(ctx context.Context, u user.User, password string, now time.Time) {
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		return
+// start signs u in: it ends the session the request came with, if any, so
+// a token planted before sign-in never becomes a signed-in one, and
+// stores a new session with create. Times are kept to the second, as the
+// database keeps them. method (password, oidc) only goes to the log.
+func (s *sessions) start(ctx context.Context, u user.User, now time.Time, method string,
+	create func(store.Session) error,
+) (http.Cookie, store.Session, error) {
+	if p, ok := auth.PrincipalFrom(ctx); ok {
+		if err := s.db.DeleteSession(ctx, p.SessionID); err != nil {
+			s.logger.WarnContext(ctx, "ending the previous session failed", "error", err)
+		}
 	}
-	if err := s.db.SetPasswordHash(ctx, u.ID, hash, now, false); err != nil {
+	now = now.Truncate(time.Second)
+	token, id := auth.NewSessionToken()
+	sess := store.Session{ID: id, UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(auth.SessionLifetime)}
+	if err := create(sess); err != nil {
+		if !errors.Is(err, store.ErrCredentialsChanged) {
+			s.logger.ErrorContext(ctx, "starting a session failed", "error", err)
+		}
+		return http.Cookie{}, store.Session{}, err
+	}
+	s.logger.InfoContext(ctx, "signed in", "user_id", u.ID.String(), "method", method)
+	return s.cookie(token, now, sess.ExpiresAt), sess, nil
+}
+
+// rehash stores a hash with today's parameters after a sign-in proved the
+// password, and returns the hash the user has now. It replaces only
+// oldHash: a reset that came in between stays. A password set under
+// older, laxer rules cannot be hashed under today's and keeps its old
+// hash.
+func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password string, now time.Time) string {
+	newHash, err := auth.HashPassword(password)
+	if err != nil {
+		return oldHash
+	}
+	replaced, err := s.db.ReplacePasswordHash(ctx, u.ID, oldHash, newHash, now)
+	if err != nil {
 		s.logger.WarnContext(ctx, "updating a password hash failed", "user_id", u.ID.String(), "error", err)
 	}
+	if !replaced {
+		return oldHash
+	}
+	return newHash
 }
 
 func (s *sessions) logout(ctx context.Context, _ *struct{}) (*logoutOutput, error) {

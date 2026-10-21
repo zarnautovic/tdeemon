@@ -379,7 +379,7 @@ func TestUserSetPassword(t *testing.T) {
 				t.Fatalf("open: %v", err)
 			}
 			now := time.Now()
-			if err := db.CreateSession(t.Context(), store.Session{ID: "s", UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+			if err := db.CreateSession(t.Context(), store.Session{ID: auth.SessionID("s"), UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
 				t.Fatalf("CreateSession: %v", err)
 			}
 			if err := db.Close(); err != nil {
@@ -412,7 +412,7 @@ func TestUserSetPassword(t *testing.T) {
 				t.Fatalf("open: %v", err)
 			}
 			defer func() { _ = db.Close() }()
-			if _, _, err := db.SessionUser(t.Context(), "s", now); !errors.Is(err, store.ErrNotFound) {
+			if _, _, err := db.SessionUser(t.Context(), auth.SessionID("s"), now); !errors.Is(err, store.ErrNotFound) {
 				t.Errorf("the session outlived the new password: %v", err)
 			}
 		})

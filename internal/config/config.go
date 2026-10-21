@@ -38,7 +38,8 @@ type Config struct {
 	Listen string
 	// BaseURL is the public URL of the instance, without a trailing slash.
 	BaseURL *url.URL
-	// SecretKey signs sessions and encrypts stored secrets. Never log it.
+	// SecretKey is for sealing and encrypting what tdeemon stores; sessions
+	// do not depend on it. Never log it.
 	SecretKey []byte
 	// DataDir holds the database, backups and upload archives.
 	DataDir string

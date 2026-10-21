@@ -74,23 +74,17 @@
         "type": "object"
       },
       "LoginInputBody": {
-        "additionalProperties": false,
+        "additionalProperties": true,
         "properties": {
           "email": {
-            "description": "The address the user signs in with; case does not matter.",
-            "maxLength": 254,
+            "description": "The address the user signs in with; case does not matter. Required.",
             "type": "string"
           },
           "password": {
-            "maxLength": 1024,
-            "minLength": 1,
+            "description": "Required.",
             "type": "string"
           }
         },
-        "required": [
-          "email",
-          "password"
-        ],
         "type": "object"
       },
       "ServerInfo": {

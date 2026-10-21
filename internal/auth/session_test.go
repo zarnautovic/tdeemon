@@ -2,6 +2,7 @@ package auth
 
 import (
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -127,6 +128,31 @@ func TestNeedsRehash(t *testing.T) {
 	} {
 		if got := NeedsRehash(tc.hash); got != tc.want {
 			t.Errorf("%s: NeedsRehash = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// VerifyLogin must spend one argon2id hash, with today's memory, when no
+// account matches or the input is overlong; otherwise how long a sign-in
+// takes would tell which addresses have accounts. The allocation counter
+// shows the hash ran, without timing anything. Not parallel: the counter
+// is the whole process's.
+func TestVerifyLoginSpendsAHash(t *testing.T) {
+	PrepareLogin()
+	hash, err := HashPassword("correct horse battery staple")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	for _, tc := range []struct{ name, password, hash string }{
+		{"no account", "correct horse battery staple", ""},
+		{"overlong", strings.Repeat("a", MaxPasswordBytes+1), hash},
+	} {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		_, _ = VerifyLogin(tc.password, tc.hash)
+		runtime.ReadMemStats(&after)
+		if got := after.TotalAlloc - before.TotalAlloc; got < argonMemoryKiB*1024 {
+			t.Errorf("%s: VerifyLogin allocated %d bytes, want at least %d (one argon2id hash)", tc.name, got, argonMemoryKiB*1024)
 		}
 	}
 }

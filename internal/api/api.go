@@ -21,6 +21,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
+	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -70,6 +71,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		cfg.Now = time.Now
 	}
 	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, secure: cfg.BaseURL.Scheme == "https"}
+	auth.PrepareLogin()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)

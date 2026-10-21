@@ -138,6 +138,28 @@ func (db *DB) SetPasswordHash(ctx context.Context, id uuid.UUID, passwordHash st
 	})
 }
 
+// ReplacePasswordHash stores newHash for the user with id if their hash
+// is still oldHash, and reports whether it did. A sign-in uses it to store
+// a rehash: a reset that came in between wins, instead of being undone by
+// a hash of the old password.
+func (db *DB) ReplacePasswordHash(ctx context.Context, id uuid.UUID, oldHash, newHash string, now time.Time) (bool, error) {
+	var replaced bool
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ?",
+			newHash, formatTime(now), id.String(), oldHash)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		replaced = n == 1
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("replace password hash: %w", err)
+	}
+	return replaced, nil
+}
+
 // formatTime writes t as the schema stores timestamps: RFC 3339 in UTC,
 // to the second.
 func formatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }

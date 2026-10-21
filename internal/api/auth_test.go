@@ -251,8 +251,34 @@ func TestLoginFailures(t *testing.T) {
 	if !strings.Contains(first, "wrong email or password") {
 		t.Errorf("failure body %s does not say wrong email or password", first)
 	}
-	if rec := in.login(t, "ana@example.com", ""); rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("empty password: %d, want 422", rec.Code)
+}
+
+// Malformed sign-ins fail like wrong ones, and never echo the password
+// back, as a validation error would.
+func TestLoginWithMissingOrOddFields(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", passwordHash(t))
+	long := strings.Repeat("p", 5000)
+	for name, body := range map[string]string{ //nolint:gosec // G101: made-up passwords of a test user.
+		"no password":         `{"email":"ana@example.com"}`,
+		"empty password":      `{"email":"ana@example.com","password":""}`,
+		"no email":            `{"password":"correct horse battery staple"}`,
+		"overlong password":   `{"email":"ana@example.com","password":"` + long + `"}`,
+		"an unexpected field": `{"email":"ana@example.com","password":"wrong horse battery staple","remember":true}`,
+	} {
+		rec := in.do(t, http.MethodPost, "/api/v1/auth/login", body, nil, nil)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s: %d %s, want 401", name, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "horse") || strings.Contains(rec.Body.String(), long[:100]) {
+			t.Errorf("%s: the response echoes the password: %s", name, rec.Body.String())
+		}
+	}
+	// The extra field does not get in the way of a right password.
+	body := `{"email":"ana@example.com","password":"` + password + `","remember":true}`
+	if rec := in.do(t, http.MethodPost, "/api/v1/auth/login", body, nil, nil); rec.Code != http.StatusOK {
+		t.Errorf("right password with an extra field: %d, want 200", rec.Code)
 	}
 }
 
@@ -377,8 +403,15 @@ func TestLoginRehashes(t *testing.T) {
 		oldCostShort = "$argon2id$v=19$m=8,t=1,p=1$MDEyMzQ1Njc4OWFiY2RlZg$SDvn1ahgbEqoZxYWl4nLdCrT350l3ejghSpaRC0ZMXQ" // tooshort
 	)
 	in := newInstance(t, "http://localhost", oldCost)
+	// A session from before the rehash, which must survive it.
+	before := in.do(t, http.MethodPost, "/api/v1/auth/login",
+		`{"email":"ana@example.com","password":"`+password+`"}`, nil, nil)
+	earlier := sessionCookie(t, before)
 	if rec := in.login(t, "ana@example.com", password); rec.Code != http.StatusOK {
 		t.Fatalf("login: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{earlier}, nil); rec.Code != http.StatusOK {
+		t.Errorf("a session from before the rehash: %d, want 200", rec.Code)
 	}
 	if h := storedHash(t, in); !strings.HasPrefix(h, "$argon2id$v=19$m=19456,t=2,p=1$") || auth.NeedsRehash(h) {
 		t.Errorf("hash after sign-in = %q, want today's parameters", h)
@@ -529,4 +562,20 @@ func TestDatabaseFailures(t *testing.T) {
 			t.Errorf("session: %d %s, want the 500 problem", rec.Code, rec.Body.String())
 		}
 	})
+}
+
+// The database keeps times to the second; the sign-in's answer must give
+// the same end of session as a later read.
+func TestSessionTimesAreToTheSecond(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", passwordHash(t))
+	in.clock.Set(in.clock.Now().Add(123456789 * time.Nanosecond))
+	rec := in.login(t, "ana@example.com", password)
+	login := decodeSession(t, rec)
+	c := sessionCookie(t, rec)
+	read := decodeSession(t, in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{c}, nil))
+	if !login.ExpiresAt.Equal(read.ExpiresAt) || login.ExpiresAt.Nanosecond() != 0 {
+		t.Errorf("expires_at at sign-in %v, read back %v; want the same whole second", login.ExpiresAt, read.ExpiresAt)
+	}
 }
