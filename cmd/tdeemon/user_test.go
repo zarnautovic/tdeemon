@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -427,6 +428,20 @@ func TestUserSetPasswordRejects(t *testing.T) {
 		strings.NewReader("the old passphrase\n"), io.Discard, io.Discard); err != nil {
 		t.Fatalf("user create: %v", err)
 	}
+	// The old password still works after every failed attempt; cleanups
+	// run once the parallel subtests are done.
+	t.Cleanup(func() {
+		ctx := context.WithoutCancel(t.Context()) // t.Context is done by the time cleanups run.
+		db, err := store.Open(ctx, dbPath)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		defer func() { _ = db.Close() }()
+		_, hash, err := db.UserCredentials(ctx, "ana@example.com")
+		if ok, _ := auth.VerifyPassword("the old passphrase", hash); err != nil || !ok {
+			t.Errorf("a failed set-password changed the password (err %v)", err)
+		}
+	})
 	for _, tc := range []struct {
 		name, input string
 		args        []string
@@ -439,23 +454,22 @@ func TestUserSetPasswordRejects(t *testing.T) {
 		{"extra argument", "", []string{"--email", "ana@example.com", "now"}, errUsage, ""},
 		{"unknown flag", "", []string{"--email", "ana@example.com", "--admin"}, errUsage, ""},
 	} {
-		var out bytes.Buffer
-		err := run(t.Context(), append([]string{"user", "set-password"}, tc.args...), env, strings.NewReader(tc.input), &out, io.Discard)
-		switch {
-		case err == nil:
-			t.Errorf("%s: succeeded, want an error", tc.name)
-		case tc.want != nil && !errors.Is(err, tc.want):
-			t.Errorf("%s: error %v, want %v", tc.name, err, tc.want)
-		case tc.wantText != "" && !strings.Contains(err.Error(), tc.wantText):
-			t.Errorf("%s: error %v, want it to contain %q", tc.name, err, tc.wantText)
-		}
-		if out.Len() > 0 {
-			t.Errorf("%s: printed %q on failure", tc.name, out.String())
-		}
-	}
-	// The old password still works after every failed attempt.
-	if _, hash := stored(t, dbPath, "ana@example.com"); func() bool { ok, _ := auth.VerifyPassword("the old passphrase", hash); return !ok }() {
-		t.Error("a failed set-password changed the password")
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			err := run(t.Context(), append([]string{"user", "set-password"}, tc.args...), env, strings.NewReader(tc.input), &out, io.Discard)
+			switch {
+			case err == nil:
+				t.Error("succeeded, want an error")
+			case tc.want != nil && !errors.Is(err, tc.want):
+				t.Errorf("error %v, want %v", err, tc.want)
+			case tc.wantText != "" && !strings.Contains(err.Error(), tc.wantText):
+				t.Errorf("error %v, want it to contain %q", err, tc.wantText)
+			}
+			if out.Len() > 0 {
+				t.Errorf("printed %q on failure", out.String())
+			}
+		})
 	}
 	var out bytes.Buffer
 	if err := run(t.Context(), []string{"user", "set-password", "--help"}, lookup(nil), noInput(), &out, io.Discard); err != nil || !strings.Contains(out.String(), "Flags of user set-password:") {

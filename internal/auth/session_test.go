@@ -95,10 +95,13 @@ func TestVerifyLogin(t *testing.T) {
 		{"overlong form of the right password", jamo, hangulHash, false},
 		{"longest input", longest, longestHash, true},
 	} {
-		ok, err := VerifyLogin(tc.password, tc.hash)
-		if err != nil || ok != tc.want {
-			t.Errorf("%s: VerifyLogin = %v, %v; want %v, nil", tc.name, ok, err, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ok, err := VerifyLogin(tc.password, tc.hash)
+			if err != nil || ok != tc.want {
+				t.Errorf("VerifyLogin = %v, %v; want %v, nil", ok, err, tc.want)
+			}
+		})
 	}
 	// No account must still cost a hash with today's parameters.
 	if NeedsRehash(dummyHash()) || !phc.MatchString(dummyHash()) {
@@ -126,9 +129,12 @@ func TestNeedsRehash(t *testing.T) {
 		{"other lanes", "$argon2id$v=19$m=19456,t=2,p=2$MDEyMzQ1Njc4OWFiY2RlZg$XdTJKPvVpEdCNu922dgwQXj+XfOITS04PpG3cDMn5sE", true},
 		{"other passes", "$argon2id$v=19$m=19456,t=3,p=1$MDEyMzQ1Njc4OWFiY2RlZg$XdTJKPvVpEdCNu922dgwQXj+XfOITS04PpG3cDMn5sE", true},
 	} {
-		if got := NeedsRehash(tc.hash); got != tc.want {
-			t.Errorf("%s: NeedsRehash = %v, want %v", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NeedsRehash(tc.hash); got != tc.want {
+				t.Errorf("NeedsRehash = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

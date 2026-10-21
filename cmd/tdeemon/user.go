@@ -179,7 +179,7 @@ func setPassword(ctx context.Context, args []string, lookup config.LookupFunc, i
 		} else if err != nil {
 			return err
 		}
-		return db.SetPasswordHash(ctx, u.ID, hash, time.Now(), true)
+		return db.SetPasswordHash(ctx, u.ID, hash, time.Now())
 	})
 	if err != nil {
 		return err

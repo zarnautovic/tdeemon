@@ -130,12 +130,9 @@ export interface components {
             type?: string;
         };
         LoginInputBody: {
-            /** @description The address the user signs in with; case does not matter. Required. */
-            email?: string;
-            /** @description Required. */
-            password?: string;
-        } & {
-            [key: string]: unknown;
+            /** @description The address the user signs in with; case does not matter. */
+            email: string;
+            password: string;
         };
         ServerInfo: {
             /**

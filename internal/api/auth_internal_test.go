@@ -13,7 +13,6 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
-	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
 
@@ -51,7 +50,7 @@ func TestLoginLosesToAConcurrentReset(t *testing.T) {
 			}
 			s := &sessions{db: db, logger: slog.New(slog.DiscardHandler), now: func() time.Time { return now }}
 			s.afterVerify = func(ctx context.Context) {
-				if err := db.SetPasswordHash(ctx, u.ID, "reset-hash", now, true); err != nil {
+				if err := db.SetPasswordHash(ctx, u.ID, "reset-hash", now); err != nil {
 					t.Errorf("reset: %v", err)
 				}
 			}
@@ -104,5 +103,4 @@ func TestLoginWithoutAReset(t *testing.T) {
 	if err != nil || !called || out.SetCookie.Value == "" || !strings.HasPrefix(out.SetCookie.Name, "tdeemon_session") {
 		t.Errorf("login = %+v, %v (hook called %v); want a session", out, err, called)
 	}
-	var _ store.Session
 }

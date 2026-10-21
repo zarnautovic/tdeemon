@@ -124,14 +124,10 @@ type sessionBody struct {
 	ExpiresAt time.Time `json:"expires_at" doc:"When the session ends; then the user signs in again."`
 }
 
-// loginInput checks little on purpose: a validation error echoes the
-// value back, and a password has no business in a response. A missing or
-// overlong email or password fails like a wrong one, with a 401.
 type loginInput struct {
 	Body struct {
-		_        struct{} `additionalProperties:"true"`
-		Email    string   `json:"email" required:"false" doc:"The address the user signs in with; case does not matter. Required."`
-		Password string   `json:"password" required:"false" doc:"Required."`
+		Email    string `json:"email" maxLength:"254" doc:"The address the user signs in with; case does not matter."`
+		Password string `json:"password" minLength:"1" maxLength:"1024"`
 	}
 }
 

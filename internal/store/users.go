@@ -111,10 +111,10 @@ func scanUser(scan func(dest ...any) error, extra ...any) (user.User, error) {
 	return u, nil
 }
 
-// SetPasswordHash stores a new password hash for the user with id, or
-// returns ErrNotFound. With endSessions it also ends every session of the
-// user, as a reset should; a rehash at sign-in keeps them.
-func (db *DB) SetPasswordHash(ctx context.Context, id uuid.UUID, passwordHash string, now time.Time, endSessions bool) error {
+// SetPasswordHash gives the user with id a new password hash and ends
+// every session of theirs, as a reset should, or returns ErrNotFound. A
+// rehash at sign-in, which keeps the sessions, is ReplacePasswordHash.
+func (db *DB) SetPasswordHash(ctx context.Context, id uuid.UUID, passwordHash string, now time.Time) error {
 	if passwordHash == "" {
 		return errors.New("set password: the hash is empty")
 	}
@@ -129,10 +129,8 @@ func (db *DB) SetPasswordHash(ctx context.Context, id uuid.UUID, passwordHash st
 		} else if n == 0 {
 			return ErrNotFound
 		}
-		if endSessions {
-			if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id.String()); err != nil {
-				return fmt.Errorf("set password: end sessions: %w", err)
-			}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id.String()); err != nil {
+			return fmt.Errorf("set password: end sessions: %w", err)
 		}
 		return nil
 	})

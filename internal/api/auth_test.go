@@ -105,9 +105,10 @@ func (in *instance) login(t *testing.T, email, pw string, cookies ...*http.Cooki
 	return in.do(t, http.MethodPost, "/api/v1/auth/login", string(body), cookies, nil)
 }
 
-// requestCookie is a cookie as a client sends it: a name and a value.
-func requestCookie(name, value string) *http.Cookie {
-	return &http.Cookie{Name: name, Value: value} //nolint:gosec // G124: a request's cookie carries no attributes.
+// sessionRequestCookie is a plain-HTTP session cookie as a client sends
+// it: a name and a value.
+func sessionRequestCookie(value string) *http.Cookie {
+	return &http.Cookie{Name: "tdeemon_session", Value: value} //nolint:gosec // G124: a request's cookie carries no attributes.
 }
 
 func sessionCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
@@ -206,7 +207,7 @@ func TestLoginOverHTTPSUsesAHostCookie(t *testing.T) {
 		t.Errorf("cookie = %+v, want __Host-tdeemon_session, Secure, Path=/, no Domain", c)
 	}
 	// The plain name means nothing over HTTPS.
-	plain := requestCookie("tdeemon_session", c.Value)
+	plain := sessionRequestCookie(c.Value)
 	if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{plain}, nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("session with the plain cookie name: %d, want 401", rec.Code)
 	}
@@ -227,58 +228,59 @@ func TestLoginFailures(t *testing.T) {
 	if err := in.db.CreateUser(t.Context(), noPassword, ""); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	var first string
+	// Every failure must answer exactly like a wrong password.
+	want := in.login(t, "ana@example.com", "wrong horse battery staple").Body.String()
+	if !strings.Contains(want, "wrong email or password") {
+		t.Fatalf("failure body %s does not say wrong email or password", want)
+	}
 	for _, tc := range []struct{ name, email, password string }{
 		{"wrong password", "ana@example.com", "wrong horse battery staple"},
 		{"unknown address", "nobody@example.com", password},
 		{"no password on the account", "ivo@example.com", password},
 		{"address not UTF-8", "ana\xff@example.com", password},
 	} {
-		rec := in.login(t, tc.email, tc.password)
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s: %d %s, want 401", tc.name, rec.Code, rec.Body.String())
-			continue
-		}
-		if len(rec.Result().Cookies()) != 0 {
-			t.Errorf("%s: a failed sign-in set a cookie", tc.name)
-		}
-		if first == "" {
-			first = rec.Body.String()
-		} else if rec.Body.String() != first {
-			t.Errorf("%s: body %s differs from %s", tc.name, rec.Body.String(), first)
-		}
-	}
-	if !strings.Contains(first, "wrong email or password") {
-		t.Errorf("failure body %s does not say wrong email or password", first)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := in.login(t, tc.email, tc.password)
+			if rec.Code != http.StatusUnauthorized || rec.Body.String() != want {
+				t.Errorf("%d %s, want 401 %s", rec.Code, rec.Body.String(), want)
+			}
+			if len(rec.Result().Cookies()) != 0 {
+				t.Error("a failed sign-in set a cookie")
+			}
+		})
 	}
 }
 
-// Malformed sign-ins fail like wrong ones, and never echo the password
-// back, as a validation error would.
-func TestLoginWithMissingOrOddFields(t *testing.T) {
+// A sign-in the API cannot read is refused, and the answer never echoes
+// the password back, as huma's error details would.
+func TestLoginRefusesMalformedBodies(t *testing.T) {
 	t.Parallel()
 
 	in := newInstance(t, "http://localhost", passwordHash(t))
-	long := strings.Repeat("p", 5000)
-	for name, body := range map[string]string{ //nolint:gosec // G101: made-up passwords of a test user.
-		"no password":         `{"email":"ana@example.com"}`,
-		"empty password":      `{"email":"ana@example.com","password":""}`,
-		"no email":            `{"password":"correct horse battery staple"}`,
-		"overlong password":   `{"email":"ana@example.com","password":"` + long + `"}`,
-		"an unexpected field": `{"email":"ana@example.com","password":"wrong horse battery staple","remember":true}`,
+	const pw = "correct horse battery staple"
+	for _, tc := range []struct {
+		name, contentType, body string
+		want                    int
+	}{
+		{"no password", "application/json", `{"email":"ana@example.com"}`, http.StatusUnprocessableEntity},
+		{"empty password", "application/json", `{"email":"ana@example.com","password":""}`, http.StatusUnprocessableEntity},
+		{"overlong password", "application/json", `{"email":"ana@example.com","password":"` + strings.Repeat(pw, 40) + `"}`, http.StatusUnprocessableEntity},
+		{"an unexpected field", "application/json", `{"email":"ana@example.com","password":"` + pw + `","remember":"` + pw + `"}`, http.StatusUnprocessableEntity},
+		{"a password of the wrong type", "application/json", `{"email":"ana@example.com","password":["` + pw + `"]}`, http.StatusUnprocessableEntity},
+		{"JSON cut short", "application/json", `{"email":"ana@example.com","password":"` + pw + `"`, http.StatusBadRequest},
+		{"a form", "application/x-www-form-urlencoded", "email=ana@example.com&password=" + url.QueryEscape(pw), http.StatusUnsupportedMediaType},
 	} {
-		rec := in.do(t, http.MethodPost, "/api/v1/auth/login", body, nil, nil)
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("%s: %d %s, want 401", name, rec.Code, rec.Body.String())
-		}
-		if strings.Contains(rec.Body.String(), "horse") || strings.Contains(rec.Body.String(), long[:100]) {
-			t.Errorf("%s: the response echoes the password: %s", name, rec.Body.String())
-		}
-	}
-	// The extra field does not get in the way of a right password.
-	body := `{"email":"ana@example.com","password":"` + password + `","remember":true}`
-	if rec := in.do(t, http.MethodPost, "/api/v1/auth/login", body, nil, nil); rec.Code != http.StatusOK {
-		t.Errorf("right password with an extra field: %d, want 200", rec.Code)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := in.do(t, http.MethodPost, "/api/v1/auth/login", tc.body, nil, map[string]string{"Content-Type": tc.contentType})
+			if rec.Code != tc.want {
+				t.Errorf("%d %s, want %d", rec.Code, rec.Body.String(), tc.want)
+			}
+			if strings.Contains(rec.Body.String(), "horse") {
+				t.Errorf("the response echoes the password: %s", rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -310,7 +312,7 @@ func TestSessionWithoutACookie(t *testing.T) {
 	t.Parallel()
 
 	in := newInstance(t, "http://localhost", passwordHash(t))
-	for _, cookies := range [][]*http.Cookie{nil, {requestCookie("tdeemon_session", "forged")}, {requestCookie("tdeemon_session", "")}} {
+	for _, cookies := range [][]*http.Cookie{nil, {sessionRequestCookie("forged")}, {sessionRequestCookie("")}} {
 		if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", cookies, nil); rec.Code != http.StatusUnauthorized {
 			t.Errorf("session with %v: %d, want 401", cookies, rec.Code)
 		}
@@ -403,13 +405,17 @@ func TestLoginRehashes(t *testing.T) {
 		oldCostShort = "$argon2id$v=19$m=8,t=1,p=1$MDEyMzQ1Njc4OWFiY2RlZg$SDvn1ahgbEqoZxYWl4nLdCrT350l3ejghSpaRC0ZMXQ" // tooshort
 	)
 	in := newInstance(t, "http://localhost", oldCost)
-	// A session from before the rehash, which must survive it.
-	before := in.do(t, http.MethodPost, "/api/v1/auth/login",
-		`{"email":"ana@example.com","password":"`+password+`"}`, nil, nil)
-	earlier := sessionCookie(t, before)
+	// A session from before the rehash (another device), which must
+	// survive it.
+	token, id := auth.NewSessionToken()
+	now := in.clock.Now()
+	if err := in.db.CreateSession(t.Context(), store.Session{ID: id, UserID: in.user.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
 	if rec := in.login(t, "ana@example.com", password); rec.Code != http.StatusOK {
 		t.Fatalf("login: %d %s", rec.Code, rec.Body.String())
 	}
+	earlier := sessionRequestCookie(token)
 	if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{earlier}, nil); rec.Code != http.StatusOK {
 		t.Errorf("a session from before the rehash: %d, want 200", rec.Code)
 	}

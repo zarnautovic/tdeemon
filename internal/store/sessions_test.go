@@ -184,14 +184,14 @@ func TestSetPasswordHash(t *testing.T) {
 	later := t0.Add(time.Minute)
 
 	// A rehash keeps the sessions.
-	if err := db.SetPasswordHash(t.Context(), u.ID, "rehashed", later, false); err != nil {
-		t.Fatalf("SetPasswordHash: %v", err)
+	if ok, err := db.ReplacePasswordHash(t.Context(), u.ID, "old", "rehashed", later); err != nil || !ok {
+		t.Fatalf("ReplacePasswordHash = %v, %v", ok, err)
 	}
 	if n := sessionCount(t, db); n != 2 {
 		t.Errorf("%d sessions after a rehash, want 2", n)
 	}
 	// A reset ends them.
-	if err := db.SetPasswordHash(t.Context(), u.ID, "reset", later, true); err != nil {
+	if err := db.SetPasswordHash(t.Context(), u.ID, "reset", later); err != nil {
 		t.Fatalf("SetPasswordHash: %v", err)
 	}
 	if n := sessionCount(t, db); n != 0 {
@@ -202,10 +202,10 @@ func TestSetPasswordHash(t *testing.T) {
 		t.Errorf("after the reset: hash %q, updated %v, err %v", hash, got.UpdatedAt, err)
 	}
 
-	if err := db.SetPasswordHash(t.Context(), uuid.NewV7(), "x", later, true); !errors.Is(err, store.ErrNotFound) {
+	if err := db.SetPasswordHash(t.Context(), uuid.NewV7(), "x", later); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SetPasswordHash for nobody = %v, want ErrNotFound", err)
 	}
-	if err := db.SetPasswordHash(t.Context(), u.ID, "", later, true); err == nil {
+	if err := db.SetPasswordHash(t.Context(), u.ID, "", later); err == nil {
 		t.Error("an empty hash was stored")
 	}
 }
@@ -214,12 +214,15 @@ func TestSessionIDsAreHashes(t *testing.T) {
 	t.Parallel()
 
 	db, userID := withSession(t)
-	for _, id := range []string{"", "short", strings.Repeat("a", 65)} {
-		s := session("x", userID, t0, time.Hour)
-		s.ID = id
-		if err := db.CreateSession(t.Context(), s); err == nil {
-			t.Errorf("a session with the id %q was stored", id)
-		}
+	for name, id := range map[string]string{"empty": "", "short": "short", "one too long": strings.Repeat("a", 65)} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			s := session("x", userID, t0, time.Hour)
+			s.ID = id
+			if err := db.CreateSession(t.Context(), s); err == nil {
+				t.Errorf("a session with the id %q was stored", id)
+			}
+		})
 	}
 }
 
@@ -236,7 +239,7 @@ func TestCreatePasswordSession(t *testing.T) {
 	if err := db.CreatePasswordSession(t.Context(), session("a", u.ID, t0, time.Hour), "checked"); err != nil {
 		t.Fatalf("CreatePasswordSession with the current hash: %v", err)
 	}
-	if err := db.SetPasswordHash(t.Context(), u.ID, "reset", t0, true); err != nil {
+	if err := db.SetPasswordHash(t.Context(), u.ID, "reset", t0); err != nil {
 		t.Fatalf("SetPasswordHash: %v", err)
 	}
 	err := db.CreatePasswordSession(t.Context(), session("b", u.ID, t0, time.Hour), "checked")
@@ -269,7 +272,7 @@ func TestReplacePasswordHash(t *testing.T) {
 		t.Fatalf("ReplacePasswordHash = %v, %v; want it done", ok, err)
 	}
 	// A reset in between: the rehash of the old password must not undo it.
-	if err := db.SetPasswordHash(t.Context(), u.ID, "reset", later, true); err != nil {
+	if err := db.SetPasswordHash(t.Context(), u.ID, "reset", later); err != nil {
 		t.Fatalf("SetPasswordHash: %v", err)
 	}
 	if ok, err := db.ReplacePasswordHash(t.Context(), u.ID, "rehashed", "stale", later); err != nil || ok {
@@ -292,7 +295,7 @@ func TestResetEndsOnlyTheUsersSessions(t *testing.T) {
 	if err := db.CreateSession(t.Context(), session("ivo", ivo.ID, t0, time.Hour)); err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
-	if err := db.SetPasswordHash(t.Context(), anaID, "reset", t0, true); err != nil {
+	if err := db.SetPasswordHash(t.Context(), anaID, "reset", t0); err != nil {
 		t.Fatalf("SetPasswordHash: %v", err)
 	}
 	if _, _, err := db.SessionUser(t.Context(), sid("s1"), t0); !errors.Is(err, store.ErrNotFound) {

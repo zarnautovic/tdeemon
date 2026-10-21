@@ -196,7 +196,23 @@ func newAPI(mux *http.ServeMux) huma.API {
 	cfg.CreateHooks = nil
 	// A misspelled query parameter is an error, not silently ignored.
 	cfg.RejectUnknownQueryParameters = true
+	cfg.Transformers = append(cfg.Transformers, dropErrorValues)
 	return humago.New(mux, cfg)
+}
+
+// dropErrorValues keeps an error response from echoing what the request
+// sent: huma puts the offending value into each error detail, and for a
+// sign-in that is the password (a body that does not parse, a field of
+// the wrong type). The location and the message say enough.
+func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
+	if e, ok := v.(*huma.ErrorModel); ok {
+		for _, d := range e.Errors {
+			if d != nil {
+				d.Value = nil
+			}
+		}
+	}
+	return v, nil
 }
 
 // register adds every API operation to a.
