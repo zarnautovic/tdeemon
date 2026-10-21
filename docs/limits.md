@@ -18,9 +18,12 @@ page changes with it.
    - never 800 kcal a day or less;
    - never less than 0.8 g of protein per kg of the reference mass;
    - no plan for someone under 18;
-   - no loss of weight below a BMI of 18.5, by the trend weight now (a
-     cut, a recomp below 0, a kcal target that implies a loss), and no
-     goal or milestone weight below it.
+   - no change that starts or deepens a loss of weight below a BMI of
+     18.5, by the trend weight now (a cut, a recomp below 0, a kcal
+     target that implies a loss), and no goal or milestone weight below
+     it. A loss under way when the trend crosses 18.5 is not changed
+     without the user: the autopilot applies no more steps and proposes
+     maintenance, and the summary flags it.
 2. **The instance's limits**, set by the admin in the configuration
    within that floor: the outer bound for everyone on the instance. The
    column "Hard limit" below holds their defaults.
@@ -58,8 +61,8 @@ only the warning on energy availability.
 - **The rate a kcal target implies** is the weekly average less the
   measured TDEE, times 7, over 7700 kcal per kg, as a share of the trend
   weight. It counts once calibration trusts the measured TDEE enough for
-  a verdict (DESIGN.md §7); until then only the kcal floor checks a
-  target. Whatever the phase, it is held to the limits of loss and
+  a verdict (DESIGN.md §7); until then a target's kcal meet only the
+  kcal floor. Whatever the phase, it is held to the limits of loss and
   gain: no faster loss than a cut's limit for the BMI, no faster gain
   than a bulk's.
 - **"Default"** is the user's limit at the start, and the value a phase
@@ -75,10 +78,11 @@ only the warning on energy availability.
   review's recommendation among others.
 - **Limits are inclusive** ("at most", "at least"), but for the code's
   floor of 800 kcal, which 800 itself breaks.
-- **The BMI** that picks a cut's row is the trend weight's when the
-  phase starts, and does not change during the phase. The code's floor
-  of 18.5 is the trend weight's now, at every check, the autopilot's
-  steps included.
+- **The BMI** that picks a cut's row, also for the loss a kcal target
+  implies, is the trend weight's when the current phase started,
+  whatever its type, and does not change during the phase. The code's
+  floor of 18.5 is the trend weight's now, at every check, the
+  autopilot's steps included.
 - **The trend weight** is the one now, for the reference mass and to
   turn a rate in % into kg.
 - **A default never passes a limit:** it is cut at the instance's or
@@ -88,11 +92,13 @@ only the warning on energy availability.
 - **The floors of kcal and fat** hold for each day type, on every
   level, not only for the weekly average; fat is a share of that day's
   kcal.
-- **`Validate` refuses a change for the values it sets.** A value that
-  new data put outside a limit (the measured TDEE moved, the weight fell
-  so that the protein in grams is short) does not stop other changes,
-  and a change that brings it toward the limit passes; the summary
-  flags it.
+- **`Validate` refuses a change for the values it sets:** those it
+  changes, and those derived from them (a kcal step sets the fat share
+  and the implied rate); a value carried over unchanged is not one it
+  sets. A value that new data put outside a limit (the measured TDEE
+  moved, or the weight rose so that the protein in grams falls short of
+  the floor) does not stop other changes, and a change that brings it
+  toward the limit passes; the summary flags it.
 
 ## The defaults
 
@@ -185,26 +191,28 @@ The protein a phase starts with, between the floor and the ceiling:
   does not allow.
 - **Autopilot, step:** only the autopilot's steps are limited; a
   coach's proposal meets every limit but the autopilot's step,
-  interval, data and drift. A step
-  moves the weekly average, and the difference between training and
-  rest days stays as it is (the coach can change that split, DESIGN.md
-  §8). MacroFactor publishes no caps; it smooths a step over weeks.
+  interval, data and drift. A step moves the weekly average, and the
+  difference between training and rest days stays as it is (the coach
+  can change that split, DESIGN.md §8). MacroFactor publishes no caps;
+  it smooths a step over weeks.
 - **Autopilot, interval and data:** MacroFactor needs at least 4 logged
   days and 1 weigh-in in 7, 3 weigh-ins being its ideal, which tdeemon
   requires. Its estimate of the TDEE settles after about 14 to 30 days
   (Nuckols 2024).
-- **Autopilot, drift:** the autopilot's changes of the weekly average,
-  up and down, add up from the last target the user agreed to (the
-  phase's start, or a proposal they applied), as a share of the TDEE
-  then: the measured one, else the equation's estimate. Past the user's
-  limit the autopilot applies nothing more and proposes instead; the
-  user may raise the limit, in a web session, up to 25 %. The bounds
-  start from the error of the estimate: the best
-  equation for the resting rate is within 10 % of the measured rate for
-  most people (Frankenfield et al.), and the TDEE adapts to a diet
-  (Müller et al.). The TDEE's expected fall, about 22 to 24 kcal a day
-  for each kg lost once the weight has settled (Hall et al. 2011), is
-  modelled apart and is not drift.
+- **Autopilot, drift:** the autopilot's net change of the weekly
+  average (a step up and a step down cancel), from the last kcal target
+  the user agreed to (the phase's start, or an applied proposal that
+  set the kcal), as a share of the TDEE then: the measured one, else the
+  equation's estimate. Past the user's limit the autopilot applies
+  nothing more and proposes instead; the user may raise the limit, in a
+  web session, up to 25 %. The autopilot's own proposals meet its step,
+  interval and data, not its drift, and applying one sets a new base.
+  The bounds start from the error of the estimate: the best equation
+  for the resting rate is within 10 % of the measured rate for most
+  people (Frankenfield et al.), and the TDEE adapts to a diet (Müller et
+  al.). The TDEE's expected fall, about 22 to 24 kcal a day for each kg
+  lost once the weight has settled (Hall et al. 2011), is modelled
+  apart and is not drift.
 
 ## Warnings, not limits
 
@@ -213,8 +221,9 @@ These show in a proposal's preview without refusing it:
 - **Below the estimated BMR:** a kcal target under the resting rate by
   the Mifflin–St Jeor equation (Frankenfield et al.), with the trend
   weight. It is no floor: the BMR grows with the whole weight, so at a
-  BMI of 30 or more it lies above the guidelines' own 1200 to 1800
-  kcal, which a floor would refuse.
+  BMI of 30 or more it often lies above the guidelines' own 1200 to
+  1500 kcal for women and 1500 to 1800 for men, which a floor would
+  refuse.
 - **Low energy availability:** below 30 kcal per kg of fat-free mass a
   day, intake less the energy of exercise, when the fat-free mass is
   known. The threshold was found in women (Loucks and Thuma 2003), and
@@ -231,9 +240,10 @@ These show in a proposal's preview without refusing it:
 
 tdeemon does not plan for these. The code refuses what it can tell from
 the profile, the plan and the trend weight (a plan for someone under
-18; a loss, a goal or a milestone weight under a BMI of 18.5; 800 kcal
-a day or less); for the rest, P0 has this page, and questions at
-sign-up come later:
+18; a change that starts or deepens a loss under a BMI of 18.5, or a
+goal or milestone weight under it; 800 kcal a day or less), and a loss
+under way that crosses 18.5 makes the autopilot propose maintenance.
+For the rest, P0 has this page, and questions at sign-up come later:
 
 - a very-low-calorie diet, under 800 kcal a day (NICE 2025; Jensen et
   al. 2014);

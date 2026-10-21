@@ -320,9 +320,8 @@ Claude/ChatGPT subscription.
 
 1. **Propose.** `propose_changes` submits a diff (phases, targets,
    settings, the profile, notes) with a rationale and the analysed
-   window. The
-   server validates it and returns a preview: daily targets per day
-   type, the expected rate, any guardrail violations.
+   window. The server validates it and returns a preview: daily targets
+   per day type, the expected rate, any guardrail violations.
 2. **Consent.** The user agrees in plain language ("može", "yes") and the
    AI calls `apply_proposal`. Pending proposals also show in the web UI
    with Accept/Reject, so a proposal made in Claude can be accepted in
@@ -348,11 +347,13 @@ it read while researching. So limits are enforced by the server.
 
 - **One function.** A pure, unit-tested `Validate(change, state,
   limits) → []Violation`, the state being the profile and what the data
-  say now (the trend weight, the measured TDEE, the autopilot's drift
-  and last step, the days logged), runs on `propose_changes` (the preview shows
-  violations), again on `apply_proposal` (the data or the limits may
-  have changed since the proposal), on every autopilot step, and on
-  manual target edits in the UI.
+  say now (among them the trend weight now and when the phase started,
+  the measured TDEE and whether calibration trusts it, the autopilot's
+  drift and last step, the days logged and the weigh-ins), runs on
+  `propose_changes` (the preview shows violations), again on
+  `apply_proposal` (the data or the limits may have changed since the
+  proposal), on every autopilot step, and on manual target edits in the
+  UI.
 - **Machine-readable violations.** A violation names the rule, the limit
   and the proposed value, e.g. `{rule: "kcal_floor", limit: 1800,
   proposed: 1500}`. The model can then explain the refusal and propose
@@ -386,8 +387,10 @@ it read while researching. So limits are enforced by the server.
 - **Three levels.**
   - A floor in the code that nobody can lower, the admin included: never
     800 kcal a day or less, never less than 0.8 g/kg of protein, no plan
-    for someone under 18, and no loss, goal or milestone weight below a
-    BMI of 18.5.
+    for someone under 18, no change that starts or deepens a loss below
+    a BMI of 18.5, and no goal or milestone weight below it; a loss
+    under way that crosses 18.5 makes the autopilot propose
+    maintenance.
   - Instance limits (admin, in config) within it are the outer bound for
     everyone on the instance. Someone hosting friends can set a floor
     nobody goes below.
