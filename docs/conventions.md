@@ -21,7 +21,14 @@ for the author and the reviewer.
   request and on `main`, in five parallel jobs: Go, the web app, the
   other files, the dependencies and secrets, and the Docker image, which
   is built with its tests but not pushed. Only pushes to `main` write the
-  caches; pull requests read them.
+  caches; pull requests read them. Each job installs only the tools it
+  runs (`install_args`), and mise does not install the others on demand,
+  so a tool that a job's make target starts using goes into that job's
+  list too. Without it mise warns that the tool "is not installed and
+  auto-install is disabled" and runs the runner's own copy if there is
+  one (Node, Python, yamllint and shellcheck are), at whatever version;
+  otherwise the job stops. In CI, CodeQL and the Docker build, a Go
+  module or tool the proxy fails to serve comes from its source instead.
 - **`mise.lock`** pins each tool's version and, for the tools mise
   downloads as binaries, the URL and checksum for Linux and macOS on x64
   and arm64; `.mise/locks/` pins the dependencies of the Python and npm
