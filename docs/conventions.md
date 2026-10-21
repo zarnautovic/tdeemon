@@ -336,8 +336,8 @@ in `web/`.
     (used and unused, archived or not), with text unique to each user
     (as the token names are). The test fails when a table of user data
     has no rows for one of them, and for a table without a `user_id`
-    that is not listed as no one's data: rows that belong to a user
-    through a parent row (meal items) are compared through it;
+    that is not listed as no one's data: every table of a user's rows has
+    a `user_id` column (`internal/store/migrations/README.md`);
   - routes outside the OpenAPI document are not covered: the OpenID
     Connect browser flow has its own tests (`internal/api/oidc_test.go`),
     and MCP needs its own list of cases over the tool registry.

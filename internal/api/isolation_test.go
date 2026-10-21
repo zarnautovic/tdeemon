@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"slices"
 	"strings"
@@ -80,12 +81,17 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
-		if p.spare, rec = in.createToken(t, p.session, `{"name":"`+p.user.Name+`'s spare","scopes":["read"]}`); rec.Code != http.StatusCreated {
-			t.Fatalf("create %s's spare token: %d %s", p.user.Name, rec.Code, rec.Body.String())
-		}
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
+		}
+	}
+	// The never-used tokens after every use above, so a use that marks
+	// other tokens cannot spoil the state that is to catch it.
+	for _, p := range []*party{&ana, &ivos} {
+		var rec *httptest.ResponseRecorder
+		if p.spare, rec = in.createToken(t, p.session, `{"name":"`+p.user.Name+`'s spare","scopes":["read"]}`); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s's spare token: %d %s", p.user.Name, rec.Code, rec.Body.String())
 		}
 	}
 
@@ -141,10 +147,9 @@ type userTable struct{ name, column string }
 var noOnesData = []string{"schema_migrations"}
 
 // userTables lists users and every table with a user_id column, from the
-// schema itself. A table with neither fails the test: it must name its
-// user (the rule in docs/conventions.md), or be listed in noOnesData, or,
-// for rows that belong to a user through a parent row, be compared here
-// through that parent.
+// schema itself. A table with neither fails the test: every table of a
+// user's rows has a user_id (internal/store/migrations/README.md), and
+// the others are listed in noOnesData.
 func (e isolationEnv) userTables(t *testing.T) []userTable {
 	t.Helper()
 	res, err := e.in.db.Read().QueryContext(t.Context(), `
