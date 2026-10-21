@@ -60,24 +60,45 @@ func accountKey(email string) string {
 // account (limit.go), or refuses one from an address, or for an account,
 // with too many failed sign-ins lately: 429 with Retry-After. The
 // attempts count as failures until giveBack returns them.
-func (s *sessions) reserveSignIn(ctx context.Context, addr, account string) error {
-	wait, ok := s.signInByAddr.take(addr)
-	if ok {
-		if wait, ok = s.signInByAccount.take(account); !ok {
-			s.signInByAddr.release(addr)
+func (s *sessions) reserveSignIn(ctx context.Context, addr, account string) (signInAttempt, error) {
+	var a signInAttempt
+	var wait time.Duration
+	a.addr, wait, a.ok = s.signInByAddr.take(addr)
+	if a.ok {
+		if a.account, wait, a.ok = s.signInByAccount.take(account); !a.ok {
+			s.signInByAddr.release(a.addr)
 		}
 	}
-	if ok {
-		return nil
+	if a.ok {
+		return a, nil
 	}
 	s.logger.DebugContext(ctx, "sign-in refused: too many failed sign-ins", "addr", addr)
-	return huma.ErrorWithHeaders(huma.NewError(http.StatusTooManyRequests, "too many failed sign-ins; try again later"), retryAfter(wait))
+	return a, huma.ErrorWithHeaders(huma.NewError(http.StatusTooManyRequests, "too many failed sign-ins; try again later"), retryAfter(wait))
+}
+
+// signInAttempt is what reserveSignIn reserved.
+type signInAttempt struct {
+	addr, account reservation
+	ok            bool
 }
 
 // giveBack returns the attempts of a sign-in that did not fail.
-func (s *sessions) giveBack(addr, account string) {
-	s.signInByAddr.release(addr)
-	s.signInByAccount.release(account)
+func (s *sessions) giveBack(a signInAttempt) {
+	s.signInByAddr.release(a.addr)
+	s.signInByAccount.release(a.account)
+}
+
+// logLevel is the level to log a sign-in that ended in err at: debug
+// when the client went away (it says nothing about the server, and a
+// client can do it at will), warn when hashing was busy, error otherwise.
+func logLevel(err error) slog.Level {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return slog.LevelDebug
+	case errors.Is(err, auth.ErrBusy):
+		return slog.LevelWarn
+	}
+	return slog.LevelError
 }
 
 // errBusy answers a sign-in that found no hashing slot in time (or whose
@@ -256,21 +277,24 @@ func (s *sessions) register(a huma.API) {
 func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 	email := user.NormalizeEmail(in.Body.Email)
 	addr, account := addrKey(clientAddrFrom(ctx)), accountKey(email)
-	if err := s.reserveSignIn(ctx, addr, account); err != nil {
+	attempt, err := s.reserveSignIn(ctx, addr, account)
+	if err != nil {
 		return nil, err
 	}
 	u, hash, err := s.db.UserCredentials(ctx, email)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		s.giveBack(addr, account)
-		s.logger.ErrorContext(ctx, "reading credentials failed", "error", err)
+		s.giveBack(attempt)
+		s.logger.Log(ctx, logLevel(err), "reading credentials failed", "error", err)
 		return nil, huma.Error500InternalServerError("signing in failed")
 	}
 	// hash is "" for an unknown address: VerifyLogin still spends a hash.
 	ok, err := s.verifyLogin(ctx, in.Body.Password, hash)
 	switch {
-	case errors.Is(err, auth.ErrBusy), ctx.Err() != nil:
-		s.giveBack(addr, account)
-		s.logger.WarnContext(ctx, "a sign-in was not checked", "error", err)
+	case errors.Is(err, auth.ErrBusy), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// No hash ran, so this is no failure. A client that leaves while
+		// its hash runs gets no error here: that attempt counts.
+		s.giveBack(attempt)
+		s.logger.Log(ctx, logLevel(err), "a sign-in was not checked", "error", err)
 		return nil, errBusy()
 	case err != nil:
 		s.logger.ErrorContext(ctx, "a stored password hash cannot be read", "user_id", u.ID.String(), "error", err)
@@ -298,13 +322,13 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 		return nil, errBadLogin()
 	}
 	if err != nil {
-		s.giveBack(addr, account)
+		s.giveBack(attempt)
 		return nil, huma.Error500InternalServerError("signing in failed")
 	}
 	// The account's count starts over; the address gets its attempt back
 	// but keeps its failures, or signing in to one's own account would
 	// wipe the failures against others.
-	s.signInByAddr.release(addr)
+	s.signInByAddr.release(attempt.addr)
 	s.signInByAccount.reset(account)
 	return &sessionOutput{
 		SetCookie:    cookie,

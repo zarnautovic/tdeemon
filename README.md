@@ -191,12 +191,15 @@ Against guessing and floods:
   addresses, so the limits count the client it forwards
   (`X-Forwarded-For`, the right-most address that is not a trusted
   proxy) and not the proxy; tdeemon logs a warning when forwarded
-  requests come in without it. The counts live in memory and start over
-  when the server restarts.
+  requests come in without it. The counts live in memory, at most 100,000
+  addresses or accounts per limit (past that, new ones go uncounted
+  until older ones expire), and start over when the server restarts.
 - **Password hashing** runs at most one hash per CPU at a time; more
   sign-ins at once wait their turn instead of adding 19 MiB each, for up
-  to 10 seconds, then answer 503 with `Retry-After`. A client that goes
-  away gives up its place.
+  to 10 seconds, then answer 503 with `Retry-After`; such a sign-in does
+  not count as a failure. A client that goes away while it waits gives up
+  its place; one that leaves while its password is being checked counts
+  as a failed sign-in.
 - **Security headers** on every response: a content security policy
   that loads nothing from other sites and forbids framing
   (`default-src 'self'; frame-ancestors 'none'`), `nosniff`,

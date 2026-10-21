@@ -40,10 +40,22 @@ type limiter struct {
 
 	mu   sync.Mutex
 	keys map[string]*failures
+	// oldest is the earliest start of a window in keys, or before it: no
+	// key can expire before oldest+window, so a full map is swept only
+	// from then on.
+	oldest time.Time
 }
 
 type failures struct {
 	n     int
+	since time.Time
+}
+
+// reservation is an attempt take reserved: its key, and the window it
+// counts in, so giving it back once that window has passed changes
+// nothing.
+type reservation struct {
+	key   string
 	since time.Time
 }
 
@@ -55,38 +67,56 @@ func newLimiter(maxFailures int, window time.Duration, now func() time.Time) *li
 // gives it back, so attempts still in flight count against the limit as
 // much as those that failed: a burst sent at once cannot slip past it. It
 // reports false, and how long to wait, when key is blocked.
-func (l *limiter) take(key string) (time.Duration, bool) {
+func (l *limiter) take(key string) (reservation, time.Duration, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
 	if f, ok := l.keys[key]; ok && now.Before(f.since.Add(l.window)) {
 		if f.n >= l.max {
-			return f.since.Add(l.window).Sub(now), false
+			return reservation{}, f.since.Add(l.window).Sub(now), false
 		}
 		f.n++
-		return 0, true
+		return reservation{key, f.since}, 0, true
 	}
 	delete(l.keys, key)
+	if len(l.keys) >= l.maxKeys && !now.Before(l.oldest.Add(l.window)) {
+		l.sweep(now)
+	}
 	if len(l.keys) >= l.maxKeys {
-		for k, f := range l.keys {
-			if !now.Before(f.since.Add(l.window)) {
-				delete(l.keys, k)
-			}
-		}
-		if len(l.keys) >= l.maxKeys {
-			return 0, true
-		}
+		return reservation{}, 0, true // Not counted: see maxLimitKeys.
+	}
+	if len(l.keys) == 0 || now.Before(l.oldest) {
+		l.oldest = now
 	}
 	l.keys[key] = &failures{n: 1, since: now}
-	return 0, true
+	return reservation{key, now}, 0, true
 }
 
-// release gives back an attempt take reserved that did not fail.
-func (l *limiter) release(key string) {
+// sweep removes the keys whose window has passed and finds the oldest of
+// the others.
+func (l *limiter) sweep(now time.Time) {
+	l.oldest = now
+	for k, f := range l.keys {
+		if !now.Before(f.since.Add(l.window)) {
+			delete(l.keys, k)
+		} else if f.since.Before(l.oldest) {
+			l.oldest = f.since
+		}
+	}
+}
+
+// release gives back an attempt take reserved that did not fail. A key
+// with no attempts left goes, so attempts given back fill no map.
+func (l *limiter) release(r reservation) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if f, ok := l.keys[key]; ok && f.n > 0 {
-		f.n--
+	f, ok := l.keys[r.key]
+	if !ok || !f.since.Equal(r.since) || f.n == 0 {
+		return
+	}
+	f.n--
+	if f.n == 0 {
+		delete(l.keys, r.key)
 	}
 }
 

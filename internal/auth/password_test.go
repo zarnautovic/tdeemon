@@ -238,6 +238,7 @@ func TestHashingWaitsForASlot(t *testing.T) { //nolint:paralleltest // It holds 
 // The wait for a slot ends with the request: a client that went away, or
 // a wait past the limit (ErrBusy), gets no hash.
 func TestHashingGivesUpWaiting(t *testing.T) { //nolint:paralleltest // It holds the process's hashing slots.
+	PrepareLogin() // as the server does before it serves
 	for range cap(hashSlots) {
 		hashSlots <- struct{}{}
 	}
@@ -260,5 +261,33 @@ func TestHashingGivesUpWaiting(t *testing.T) { //nolint:paralleltest // It holds
 	}
 	if waited := time.Since(start); waited > 5*time.Second {
 		t.Errorf("waited %v for a 50ms limit", waited)
+	}
+}
+
+// The dummy hash takes no slot: with every slot taken it still comes out
+// a hash, never "" (which would let unknown addresses answer faster).
+func TestDummyHashNeedsNoSlot(t *testing.T) { //nolint:paralleltest // It holds the process's hashing slots.
+	for range cap(hashSlots) {
+		hashSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range cap(hashSlots) {
+			<-hashSlots
+		}
+	})
+	if h := newDummyHash(); !strings.HasPrefix(h, "$argon2id$") {
+		t.Errorf("the dummy hash with every slot taken = %q, want a hash", h)
+	}
+}
+
+// A client already gone gets no hash, though a slot is free: the wait
+// does not pick between the two at random.
+func TestHashingSkipsAGoneClient(t *testing.T) { //nolint:paralleltest // It needs a free hashing slot.
+	gone, cancel := context.WithCancel(t.Context())
+	cancel()
+	for range 20 {
+		if _, err := idKeyWithin(gone, time.Second, []byte("p"), []byte("saltsalt"), 1, 8, 1, 16); !errors.Is(err, context.Canceled) {
+			t.Fatalf("idKeyWithin for a gone client = %v, want context.Canceled", err)
+		}
 	}
 }

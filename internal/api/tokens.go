@@ -105,7 +105,8 @@ func writeBadToken(w http.ResponseWriter) {
 // a good token included, until its window passes (limit.go).
 func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, token string, next http.Handler) {
 	addr := addrKey(clientAddrFrom(r.Context()))
-	if wait, ok := s.badTokens.take(addr); !ok {
+	attempt, wait, ok := s.badTokens.take(addr)
+	if !ok {
 		maps.Copy(w.Header(), retryAfter(wait))
 		writeProblem(w, http.StatusTooManyRequests, "too many invalid API tokens from this address; try again later")
 		return
@@ -120,7 +121,7 @@ func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, tok
 		writeBadToken(w)
 		return
 	}
-	s.badTokens.release(addr)
+	s.badTokens.release(attempt)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "looking up an API token failed", "error", err)
 		writeProblem(w, http.StatusInternalServerError, "the API token could not be checked")

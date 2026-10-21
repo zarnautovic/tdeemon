@@ -201,3 +201,32 @@ func TestLoginNotCheckedGivesBack(t *testing.T) {
 		})
 	}
 }
+
+// A client that leaves while its password is being checked gets no
+// attempt back: the hash ran, and the attempt counts as the failure it
+// was, or one address could keep the hashing slots busy for free.
+func TestLoginCheckedAfterTheClientLeftCounts(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSessions(storetest.Open(t), time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC))
+	ctx, cancel := context.WithCancel(t.Context())
+	s.verifyLogin = func(context.Context, string, string) (bool, error) {
+		cancel() // the client leaves while the hash runs
+		return false, nil
+	}
+	in := &loginInput{}
+	in.Body.Email, in.Body.Password = "ana@example.com", "wrong password, surely"
+	_, err := s.login(ctx, in)
+	if se, ok := errors.AsType[huma.StatusError](err); !ok || se.GetStatus() != http.StatusUnauthorized {
+		t.Errorf("login = %v, want 401", err)
+	}
+	for name, l := range map[string]*limiter{"address": s.signInByAddr, "account": s.signInByAccount} {
+		kept := 0
+		for _, f := range l.keys {
+			kept += f.n
+		}
+		if kept != 1 {
+			t.Errorf("%s: %d attempts kept, want 1", name, kept)
+		}
+	}
+}

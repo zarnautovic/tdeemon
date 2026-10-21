@@ -96,9 +96,14 @@ func HashPassword(ctx context.Context, password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return encodeHash(salt, key), nil
+}
+
+// encodeHash writes a hash with today's parameters in the PHC format.
+func encodeHash(salt, key []byte) string {
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version,
 		argonMemoryKiB, argonTime, argonThreads,
-		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key)), nil
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key))
 }
 
 // VerifyPassword reports whether password matches encoded, a hash from
@@ -136,7 +141,7 @@ const MaxPasswordBytes = 4 * MaxPasswordLen
 func VerifyLogin(ctx context.Context, password, encoded string) (bool, error) {
 	if encoded == "" || len(password) > MaxPasswordBytes {
 		// A fixed input: an overlong password is not normalized either.
-		if _, err := VerifyPassword(ctx, "", dummyHash()); errors.Is(err, ErrBusy) || ctx.Err() != nil {
+		if _, err := VerifyPassword(ctx, "", dummyHash()); err != nil {
 			return false, err
 		}
 		return false, nil
@@ -150,12 +155,17 @@ func PrepareLogin() { _ = dummyHash() }
 
 // dummyHash is a hash of a password nobody knows, with the current
 // parameters, for VerifyLogin to spend the time on.
-var dummyHash = sync.OnceValue(func() string {
-	// Once, at startup (PrepareLogin), with no request to wait for. A
-	// generated password always meets the rules.
-	h, _ := HashPassword(context.Background(), GeneratePassword())
-	return h
-})
+var dummyHash = sync.OnceValue(newDummyHash)
+
+// newDummyHash hashes a random password, outside the hashing slots: it
+// runs once, at startup (PrepareLogin), and must never come out empty, or
+// an unknown address would answer faster than a known one for the life
+// of the process.
+func newDummyHash() string {
+	salt := make([]byte, argonSaltLen)
+	_, _ = rand.Read(salt) // crypto/rand.Read never fails.
+	return encodeHash(salt, argon2.IDKey([]byte(GeneratePassword()), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen))
+}
 
 // NeedsRehash reports whether encoded was made with other parameters than
 // HashPassword uses now, so a successful sign-in should store a new hash.
@@ -192,6 +202,10 @@ func idKey(ctx context.Context, password, salt []byte, passes, memoryKiB uint32,
 }
 
 func idKeyWithin(ctx context.Context, wait time.Duration, password, salt []byte, passes, memoryKiB uint32, lanes uint8, keyLen uint32) ([]byte, error) {
+	// A client already gone gets no hash, even with a slot free.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
