@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"math"
@@ -156,8 +157,18 @@ func TestUndoFoodInUse(t *testing.T) {
 	if e := undo(t, db, ana); e.Action != event.FoodSave {
 		t.Fatalf("undone %s, want the food's save (the import's meal is not undone)", e.Action)
 	}
-	if got, err := db.FoodByID(t.Context(), ana, f.ID); err != nil || !got.Archived {
+	got, err := db.FoodByID(t.Context(), ana, f.ID)
+	if err != nil || !got.Archived {
 		t.Errorf("the food in use = %+v, %v; want it kept, archived", got, err)
+	}
+	// The undo's event records the state it left: the food, archived.
+	es, err := db.Events(t.Context(), ana, 1)
+	if err != nil || len(es) != 1 || es[0].Action != event.Undo {
+		t.Fatalf("Events = %+v, %v; want the undo", es, err)
+	}
+	var left food.Food
+	if err := json.Unmarshal(es[0].After, &left); err != nil || !reflect.DeepEqual(left, got) {
+		t.Errorf("the undo's event after = %+v, %v; want %+v", left, err, got)
 	}
 }
 
@@ -607,6 +618,73 @@ func TestUndoAfterTheAliasWasTaken(t *testing.T) {
 	}
 }
 
+// A change whose way back cannot run, whatever the reason, is a conflict
+// that leaves its entity as it is (the writes of a way back that failed
+// halfway are rolled back) and is passed over, so the undos after it go
+// on to the changes before.
+func TestUndoThatCannotRun(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, update, reason string
+		value                func(t *testing.T, edit food.Food) any
+	}{
+		// The food goes back to its name, then fails on its serving.
+		{"put back", "UPDATE events SET before_state = ? WHERE id = ?", "cannot be put back", func(t *testing.T, edit food.Food) any {
+			t.Helper()
+			before := edit
+			before.Name, before.Servings = "Protein bar Caramel", []food.Serving{{Name: "bar", Amount: -1}}
+			b, err := json.Marshal(before)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(b)
+		}},
+		{"read", "UPDATE events SET entity = ? WHERE id = ?", "cannot be read", func(*testing.T, food.Food) any { return "not a food id" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			db, ana, _ := withTwoUsers(t)
+			if err := db.ExcludeDay(t.Context(), ana, testActor, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
+				t.Fatal(err)
+			}
+			f, err := db.SaveFood(t.Context(), ana, importer, bar(), t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			edit := f
+			edit.Name, edit.Servings = "Protein bar Cookies", []food.Serving{{Name: "bar", Amount: 55}, {Name: "half", Amount: 27.5}}
+			saveFood(t, db, ana, edit)
+			es, err := db.Events(t.Context(), ana, 1)
+			if err != nil || len(es) != 1 {
+				t.Fatalf("Events = %v, %v", es, err)
+			}
+			edited, err := db.FoodByID(t.Context(), ana, f.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(t.Context(), tc.update, tc.value(t, edited), es[0].ID.String())
+				return err
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var conflict *store.UndoConflictError
+			_, err = db.UndoLast(t.Context(), ana, testActor, t0)
+			if !errors.As(err, &conflict) || !strings.Contains(conflict.Reason, tc.reason) || !strings.Contains(err.Error(), tc.reason) {
+				t.Fatalf("undo = %v, want an UndoConflictError that says it %s", err, tc.reason)
+			}
+			if got, _ := db.FoodByID(t.Context(), ana, f.ID); !reflect.DeepEqual(got, edited) {
+				t.Errorf("the food became %+v, want it as edited: %+v", got, edited)
+			}
+			if e := undo(t, db, ana); e.Action != event.DayExclude {
+				t.Errorf("the next undo took back %s, want the exclusion", e.Action)
+			}
+		})
+	}
+}
+
 // A real clock has nanoseconds and a zone: the state recorded is the
 // state read back, so undo finds no false conflict.
 func TestUndoWithARealClock(t *testing.T) {
@@ -622,10 +700,14 @@ func TestUndoWithARealClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := day.DateOf(now)
-	if _, err := db.SetMetric(t.Context(), ana, testActor, d, metric.Value{Kind: metric.Steps, Value: math.Copysign(0, -1), Source: metric.Manual}, now); err != nil {
+	minusZero := math.Copysign(0, -1)
+	if _, err := db.SetMetric(t.Context(), ana, testActor, d, metric.Value{Kind: metric.Steps, Value: minusZero, Source: metric.Manual}, now); err != nil {
 		t.Fatal(err)
 	}
-	for range 3 {
+	if _, err := db.MergeMetrics(t.Context(), ana, testActor, d, []metric.Value{{Kind: metric.ExerciseMin, Value: minusZero, Source: metric.Manual}}, now); err != nil {
+		t.Fatal(err)
+	}
+	for range 4 {
 		if _, err := db.UndoLast(t.Context(), ana, testActor, now); err != nil {
 			t.Fatalf("undo with a real clock: %v", err)
 		}
