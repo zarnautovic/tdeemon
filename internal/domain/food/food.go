@@ -16,6 +16,9 @@ import (
 	"strings"
 	"uuid"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
 
@@ -68,6 +71,8 @@ const (
 	MaxBrandLen = 100
 	MaxNoteLen  = 2000
 	MaxServings = 20
+	MaxAliases  = 20
+	MaxAliasLen = 100
 	// MaxKcalPer100 is pure fat: nothing has more energy per 100 g.
 	MaxKcalPer100 = 900
 	// MaxKcalPerPortion bounds one portion: a feast, not a typo.
@@ -88,6 +93,9 @@ type Food struct {
 	// Servings are named amounts of a food measured by weight or volume:
 	// "piece" is 60 g, "slice" 40 g.
 	Servings []Serving
+	// Aliases are other names the user calls the food by: "my bread", "the
+	// dessert from Sunday". Search finds a food by them too.
+	Aliases  []string
 	Source   Source
 	Note     string
 	Archived bool
@@ -99,10 +107,10 @@ type Serving struct {
 	Amount float64
 }
 
-// Serving returns the serving called name, ignoring letter case.
+// Serving returns the serving called name, compared by Key.
 func (f Food) Serving(name string) (Serving, bool) {
 	for _, s := range f.Servings {
-		if strings.EqualFold(s.Name, strings.TrimSpace(name)) {
+		if Key(s.Name) == Key(name) {
 			return s, true
 		}
 	}
@@ -145,7 +153,34 @@ func (f Food) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("basis %q: want 100g, 100ml or portion", f.Basis))
 	}
+	errs = append(errs, validateAliases(f.Aliases))
 	return errors.Join(errs...)
+}
+
+func validateAliases(as []string) error {
+	if len(as) > MaxAliases {
+		return fmt.Errorf("%d aliases, want at most %d", len(as), MaxAliases)
+	}
+	var errs []error
+	seen := map[string]bool{}
+	for _, a := range as {
+		if err := text.Check("alias", a, MaxAliasLen, true); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if seen[Key(a)] {
+			errs = append(errs, fmt.Errorf("alias %q is given twice", a))
+		}
+		seen[Key(a)] = true
+	}
+	return errors.Join(errs...)
+}
+
+// Key returns the form names are compared in: Unicode NFC, letter case
+// folded, runs of space collapsed. "Greek  yoghurt" and "greek Yoghurt"
+// are the same name; "Cevapi" and "Ćevapi" are not (search finds both).
+func Key(s string) string {
+	return strings.Join(strings.Fields(cases.Fold().String(norm.NFC.String(s))), " ")
 }
 
 func validSource(s Source) bool { return slices.Contains(Sources(), s) }
@@ -161,7 +196,7 @@ func validateServings(ss []Serving) error {
 			errs = append(errs, err)
 			continue
 		}
-		key := strings.ToLower(strings.TrimSpace(s.Name))
+		key := Key(s.Name)
 		if seen[key] {
 			errs = append(errs, fmt.Errorf("serving %q is named twice", s.Name))
 		}

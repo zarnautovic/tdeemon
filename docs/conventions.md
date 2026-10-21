@@ -509,8 +509,10 @@ markdownlint-cli2
     checksum no longer matches. If a newer sqlfluff flags an old
     migration, list that file in `.sqlfluffignore` with the reason;
   - sqlfluff's SQLite dialect cannot parse `SAVEPOINT`, `RELEASE` or
-    `ROLLBACK TO`, which the runner allows. A migration that needs them
-    goes into `.sqlfluffignore` too;
+    `ROLLBACK TO`, which the runner allows, nor the arguments of an FTS5
+    table. A migration that needs them goes into `.sqlfluffignore` too,
+    kept to the statements sqlfluff cannot read, so the others stay
+    linted;
   - the file name and the schema rules are in
     [`internal/store/migrations/README.md`](../internal/store/migrations/README.md);
   - every migration runs from an empty database in the tests

@@ -153,6 +153,17 @@ func (db *DB) verify(ctx context.Context) error {
 // it (BeginTx) reads one consistent snapshot, even while writes commit.
 func (db *DB) Read() *sql.DB { return db.read }
 
+// readTx runs fn in a read transaction, so the reads in it see one
+// snapshot: a row and its children as one write left them.
+func (db *DB) readTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	tx, err := db.read.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	return fn(tx)
+}
+
 // WriteTx runs fn inside a write transaction and commits it if fn
 // returns nil; otherwise, or if fn panics, the transaction is rolled
 // back. Calls are serialised: while fn runs, other writers wait.

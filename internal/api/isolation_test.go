@@ -14,6 +14,7 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -81,6 +82,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
+		saveIsolationFoods(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
@@ -143,17 +145,47 @@ func (e isolationEnv) rowsOf(t *testing.T, id uuid.UUID) (rows, values []string)
 // user.
 type userTable struct{ name, column string }
 
+// saveIsolationFoods gives u a food with a serving and an alias, and an
+// archived one per portion, their names u's own.
+func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) {
+	t.Helper()
+	// A food with a serving and an alias, its name the party's own.
+	bread := food.Food{
+		ID: uuid.NewV7(), Name: u.Name + "'s rye bread", Basis: food.Per100g, Source: food.User,
+		Nutrients: food.Nutrients{Kcal: 259, Protein: 8.5, Carbs: 48, Fat: 3.3, Fiber: new(6.0)},
+		Servings:  []food.Serving{{Name: "slice", Amount: 40}}, Aliases: []string{u.Name + "'s loaf"},
+	}
+	if _, err := db.SaveFood(t.Context(), u.ID, bread, now); err != nil {
+		t.Fatalf("save %s's food: %v", u.Name, err)
+	}
+	// And an archived one, a portion.
+	stew := food.Food{
+		ID: uuid.NewV7(), Name: u.Name + "'s canteen stew", Basis: food.PerPortion, Source: food.Estimate,
+		Nutrients: food.Nutrients{Kcal: 780, Protein: 38, Carbs: 85, Fat: 28}, PortionGrams: 450,
+	}
+	if _, err := db.SaveFood(t.Context(), u.ID, stew, now); err != nil {
+		t.Fatalf("save %s's food: %v", u.Name, err)
+	}
+	if err := db.SetFoodArchived(t.Context(), u.ID, stew.ID, true, now); err != nil {
+		t.Fatalf("archive %s's food: %v", u.Name, err)
+	}
+}
+
 // noOnesData are the tables that hold no user's data.
 var noOnesData = []string{"schema_migrations"}
 
 // userTables lists users and every table with a user_id column, from the
 // schema itself. A table with neither fails the test: every table of a
 // user's rows has a user_id (internal/store/migrations/README.md), and
-// the others are listed in noOnesData.
+// the others are listed in noOnesData, or are the shadow tables of a
+// full-text index.
 func (e isolationEnv) userTables(t *testing.T) []userTable {
 	t.Helper()
 	res, err := e.in.db.Read().QueryContext(t.Context(), `
-		SELECT m.name, EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'user_id')
+		SELECT m.name, EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'user_id'),
+			EXISTS (SELECT 1 FROM sqlite_master AS v
+				WHERE v.type = 'table' AND v.sql LIKE 'CREATE VIRTUAL TABLE%' AND m.name IN
+					(v.name || '_data', v.name || '_idx', v.name || '_content', v.name || '_docsize', v.name || '_config'))
 		FROM sqlite_master AS m WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY m.name`)
 	if err != nil {
 		t.Fatalf("list the tables: %v", err)
@@ -162,11 +194,12 @@ func (e isolationEnv) userTables(t *testing.T) []userTable {
 	var out []userTable
 	for res.Next() {
 		var name string
-		var hasUserID bool
-		if err := res.Scan(&name, &hasUserID); err != nil {
+		var hasUserID, shadow bool
+		if err := res.Scan(&name, &hasUserID, &shadow); err != nil {
 			t.Fatalf("scan a table: %v", err)
 		}
 		switch {
+		case shadow: // compared through its virtual table, which has a user_id
 		case name == "users":
 			out = append(out, userTable{name, "id"})
 		case hasUserID:

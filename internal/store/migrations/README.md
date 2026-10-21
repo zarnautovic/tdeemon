@@ -58,8 +58,28 @@ the `schema_migrations` table.
 ## Conventions
 
 - `STRICT` tables.
-- Every user-owned table has a `user_id` column.
-- Rows that clients create carry a UUIDv7 primary key stored as `TEXT`.
+- Every user-owned table has a `user_id` column, child tables included
+  (`food_servings` next to its `food_id`), with a composite foreign key
+  to the parent's `(user_id, id)` so a child row cannot name another
+  user's parent.
+- A full-text (FTS5) table has a `user_id` column too (`UNINDEXED`); the
+  shadow tables SQLite keeps its index in (`<name>_data`, `_idx`,
+  `_content`, `_docsize`, `_config`) are read only through it, and
+  `TestIsolation` compares the virtual table instead of them. The store
+  keeps such an index in step with its source tables in the same
+  transaction, and an `AFTER DELETE` trigger on the source table removes
+  its rows however the source row goes (a user's deletion cascades
+  without the store). Rank its results by the user's rows alone, not
+  `bm25()`, whose statistics span every user's rows. Turn on
+  `secure-delete` (`INSERT INTO <name> (<name>, rank) VALUES
+  ('secure-delete', 1)`), so a deleted row's words leave the index's
+  pages; it is a setting kept in `<name>_config`, so a rebuilt virtual
+  table needs it again.
+- Rows that clients create carry a UUIDv7 id stored as `TEXT`. Where
+  clients choose it (for idempotent writes), the primary key is
+  `(user_id, id)`: ids are per user, so another user's row under the
+  same id is no row of this one's, and no answer (a conflict, a new id)
+  tells that it is there.
 - Timestamps are `TEXT` in RFC 3339, UTC (`2026-10-20T08:15:00Z`);
   calendar days are `TEXT` in `YYYY-MM-DD`.
 - Queries stay portable SQL where practical. A Postgres port would need

@@ -132,6 +132,15 @@ time; the code does the arithmetic. A food is one of:
   after recipes come: a recipe stores its ingredients for a dish cooked
   again, and produces the same kind of food, with `source: recipe`.
 
+The same name and brand (compared without regard to case or runs of
+space) are the same food: saving it again corrects it rather than adding
+a second. An alias leads to one food. Search runs over names, brands and
+aliases through a full-text index that ignores case and diacritics
+("cevapi" finds "Ćevapi") and matches word prefixes: foods whose name
+holds every word first, then name and aliases, then the rest, shorter
+names first, from the user's own foods alone; archived foods stay out
+of it but keep their history.
+
 A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
 present; nobody has to enter them. Values are stored as they are and
