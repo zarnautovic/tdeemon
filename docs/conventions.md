@@ -306,22 +306,31 @@ in `web/`.
   - every store method that reads or writes a user's rows takes the
     user's ID as a parameter and filters by it (`WHERE user_id = ?`).
     The compiler makes sure the ID is passed rather than hidden in a
-    context; `TestIsolation` makes sure the query uses it. The
-    exceptions are how a request learns its user (a lookup by the hash
-    of a session's or an API token's secret; by address for the sign-in
-    and the admin's commands) and housekeeping that shows or changes no
-    one's data (removing expired sessions);
+    context; `TestIsolation` makes sure the queries the operations reach
+    use it. Writes always filter by the user, also those keyed by a
+    secret's hash (touching or ending a session). The only reads without
+    it are how a request learns its user (by the hash of a session's or
+    an API token's secret; by address for the sign-in and the admin's
+    commands), and the only other exception is housekeeping that shows
+    or changes no one's data (removing expired sessions);
   - a handler takes the user from the request's principal
-    (`auth.PrincipalFrom`), never from the path, the query or the body;
+    (`auth.PrincipalFrom`), never from the path, the query or the body
+    (the sign-in, which finds the user by the address it is given,
+    aside);
   - another user's row answers exactly like one that does not exist
     (the same 404, or a list without it);
   - `TestIsolation` in `internal/api` runs every operation in the
     OpenAPI document as the other of two users, both ways (an admin and
-    a user acting), and checks that the answer shows nothing of the
-    owner's and that what the owner sees has not changed;
-    `TestIsolationCoversEveryOperation` fails for an operation without a
-    case in `isolationCases`, so a new operation adds its case. Routes
-    outside the OpenAPI document are not covered by it: the OpenID
+    a user acting). Each case must get a 2xx from its own operation;
+    then the owner's rows in the database (`users` and every table with
+    a `user_id`) and what the owner sees through the API must be as they
+    were, and no answer may show one of the owner's values from the
+    database. `TestIsolationCoversEveryOperation` fails for an operation
+    without a case in `isolationCases`, so a new operation adds its case;
+  - a new kind of data (foods, meals) also goes into `newIsolationEnv`:
+    rows of it for both users, with values unique to each (as the token
+    names are), so the comparison and the search cover it;
+  - routes outside the OpenAPI document are not covered: the OpenID
     Connect browser flow has its own tests (`internal/api/oidc_test.go`),
     and MCP needs its own list of cases over the tool registry.
 

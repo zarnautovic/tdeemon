@@ -1,14 +1,25 @@
 package api_test
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/store"
 )
+
+// isolationHash is both users' password hash: a reference hash
+// (argon2-cffi 25.1.0, m=8, t=1, p=1) of password. It is quick to check,
+// and a sign-in replaces it, so the sign-in case writes a hash too.
+const isolationHash = "$argon2id$v=19$m=8,t=1,p=1$MDEyMzQ1Njc4OWFiY2RlZg$XdTJKPvVpEdCNu922dgwQXj+XfOITS04PpG3cDMn5sE"
 
 // party is one user of an isolationEnv and what they own: a session and
 // an API token with every scope.
@@ -27,40 +38,153 @@ func (p party) tokenName() string { return p.user.Name + "'s phone" }
 // more than their own fails as well as a user who does.
 type isolationEnv struct {
 	in           *instance
+	hits         *hits
 	owner, other party
+	// ownerValues are the owner's values in the database that the other
+	// has none of: no answer to the other may show them.
+	ownerValues []string
 }
 
 func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 	t.Helper()
 
-	in, anaSession := signedIn(t)
+	in := newInstance(t, "http://localhost", isolationHash)
+	h := &hits{next: in.h}
+	in.h = h
+	now := in.clock.Now()
 	ivo := user.User{
 		ID: uuid.NewV7(), Email: "ivo@example.com", Name: "Ivo", Role: user.RoleUser,
-		Locale: "en", TimeZone: "UTC", DayStartHour: 4, CreatedAt: in.clock.Now(), UpdatedAt: in.clock.Now(),
+		Locale: "en", TimeZone: "UTC", DayStartHour: 4, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := in.db.CreateUser(t.Context(), ivo, passwordHash(t)); err != nil {
+	if err := in.db.CreateUser(t.Context(), ivo, isolationHash); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	ana := party{user: in.user, session: anaSession}
-	ivos := party{user: ivo, session: sessionCookie(t, in.login(t, ivo.Email, password))}
+	ana, ivos := party{user: in.user}, party{user: ivo}
 	for _, p := range []*party{&ana, &ivos} {
+		// A session straight in the store: no sign-in to spend a hash on.
+		token, id := auth.NewSessionToken()
+		s := store.Session{ID: id, UserID: p.user.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(auth.SessionLifetime)}
+		if err := in.db.CreateSession(t.Context(), s); err != nil {
+			t.Fatalf("CreateSession: %v", err)
+		}
+		p.session = sessionRequestCookie(token)
 		tok, rec := in.createToken(t, p.session, `{"name":"`+p.tokenName()+`","scopes":["ingest","read","tools"]}`)
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("create %s's token: %d %s", p.user.Name, rec.Code, rec.Body.String())
 		}
 		p.token = tok
+		// Used once, so the token has a last use a case could overwrite.
+		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
+			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
+		}
 	}
+
+	e := isolationEnv{in: in, hits: h, owner: ana, other: ivos}
 	if adminActs {
-		return isolationEnv{in: in, owner: ivos, other: ana}
+		e.owner, e.other = ivos, ana
 	}
-	return isolationEnv{in: in, owner: ana, other: ivos}
+	_, ownerValues := e.rowsOf(t, e.owner.user.ID)
+	_, otherValues := e.rowsOf(t, e.other.user.ID)
+	for _, v := range ownerValues {
+		if len(v) >= 8 && !slices.Contains(otherValues, v) {
+			e.ownerValues = append(e.ownerValues, v)
+		}
+	}
+	return e
+}
+
+// rowsOf returns every row of the database that belongs to the user with
+// id (the users row, and the rows of every table with a user_id column),
+// one string per row, sorted, and the text values in them.
+func (e isolationEnv) rowsOf(t *testing.T, id uuid.UUID) (rows, values []string) {
+	t.Helper()
+	for _, tb := range e.userTables(t) {
+		r, v := e.tableRows(t, tb, id)
+		rows, values = append(rows, r...), append(values, v...)
+	}
+	slices.Sort(rows)
+	return rows, values
+}
+
+// userTable is a table with a user's rows, and the column that names the
+// user.
+type userTable struct{ name, column string }
+
+// userTables lists users and every table with a user_id column, from the
+// schema itself, so a new table is covered without a word here.
+func (e isolationEnv) userTables(t *testing.T) []userTable {
+	t.Helper()
+	res, err := e.in.db.Read().QueryContext(t.Context(), `
+		SELECT m.name, EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'user_id')
+		FROM sqlite_master AS m WHERE m.type = 'table' ORDER BY m.name`)
+	if err != nil {
+		t.Fatalf("list the tables: %v", err)
+	}
+	defer func() { _ = res.Close() }()
+	var out []userTable
+	for res.Next() {
+		var name string
+		var hasUserID bool
+		if err := res.Scan(&name, &hasUserID); err != nil {
+			t.Fatalf("scan a table: %v", err)
+		}
+		switch {
+		case name == "users":
+			out = append(out, userTable{name, "id"})
+		case hasUserID:
+			out = append(out, userTable{name, "user_id"})
+		}
+	}
+	if err := res.Err(); err != nil {
+		t.Fatalf("list the tables: %v", err)
+	}
+	return out
+}
+
+// tableRows returns the rows of tb that belong to the user with id, as
+// rowsOf does.
+func (e isolationEnv) tableRows(t *testing.T, tb userTable, id uuid.UUID) (rows, values []string) {
+	t.Helper()
+	// The names come from the schema, not from input.
+	q := `SELECT * FROM "` + tb.name + `" WHERE ` + tb.column + ` = ?`
+	res, err := e.in.db.Read().QueryContext(t.Context(), q, id.String())
+	if err != nil {
+		t.Fatalf("read %s: %v", tb.name, err)
+	}
+	defer func() { _ = res.Close() }()
+	cols, err := res.Columns()
+	if err != nil {
+		t.Fatalf("columns of %s: %v", tb.name, err)
+	}
+	for res.Next() {
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := res.Scan(ptrs...); err != nil {
+			t.Fatalf("scan %s: %v", tb.name, err)
+		}
+		var row strings.Builder
+		row.WriteString(tb.name)
+		for i, v := range vals {
+			fmt.Fprintf(&row, " %s=%v", cols[i], v)
+			if s, ok := v.(string); ok {
+				values = append(values, s)
+			}
+		}
+		rows = append(rows, row.String())
+	}
+	if err := res.Err(); err != nil {
+		t.Fatalf("read %s: %v", tb.name, err)
+	}
+	return rows, values
 }
 
 // noneOfTheOwners fails if body shows anything of the owner's.
 func (e isolationEnv) noneOfTheOwners(t *testing.T, what, body string) {
 	t.Helper()
-	o := e.owner
-	for _, s := range []string{o.user.ID.String(), o.user.Email, o.token.ID, o.token.Token, o.tokenName()} {
+	for _, s := range append([]string{e.owner.token.Token}, e.ownerValues...) {
 		if strings.Contains(body, s) {
 			t.Errorf("%s shows the owner's %q: %s", what, s, body)
 		}
@@ -83,12 +207,55 @@ func (e isolationEnv) ownerSees(t *testing.T) string {
 }
 
 // ownersTokenWorks fails if the other's request ended the owner's token.
-// It uses the token, so it comes after ownerSees compares.
+// It uses the token, so it comes after the comparisons.
 func (e isolationEnv) ownersTokenWorks(t *testing.T) {
 	t.Helper()
 	if rec := e.in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(e.owner.token.Token)); rec.Code != http.StatusOK {
 		t.Errorf("the owner's token after the other's request: %d, want 200", rec.Code)
 	}
+}
+
+// hits records, while on, the requests that got a 2xx answer, so a case
+// can be held to reaching its own operation.
+type hits struct {
+	next http.Handler
+	mu   sync.Mutex
+	on   bool
+	got  []string // "METHOD /path"
+}
+
+func (h *hits) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
+	h.next.ServeHTTP(sw, r)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.on && sw.code < 300 {
+		h.got = append(h.got, r.Method+" "+r.URL.Path)
+	}
+}
+
+func (h *hits) record(on bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.on = on
+}
+
+// reached reports whether a recorded request matched op.
+func (h *hits) reached(op operation) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	route := regexp.MustCompile(`^` + op.method + ` ` + regexp.MustCompile(`\\\{[^}]+\\\}`).ReplaceAllString(regexp.QuoteMeta(op.route), `[^/]+`) + `$`)
+	return slices.ContainsFunc(h.got, route.MatchString)
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
 }
 
 // isolationCase runs one operation as the other user, against what the
@@ -97,8 +264,9 @@ type isolationCase func(t *testing.T, e isolationEnv)
 
 // read is the case of a GET: with the other's session and, withToken,
 // their token too, it must answer 200 (so the request got to the query,
-// not stuck at a check), show nothing of the owner's, and show what shows
-// returns of the other's own (so an empty answer does not pass).
+// not stuck at a check), show nothing of the owner's, and, where the
+// answer has user data, show what shows returns of the other's own (so
+// an empty answer does not pass).
 //
 //nolint:thelper // A case is a test, not a helper: a failure should point into it.
 func read(path string, withToken bool, shows func(e isolationEnv) []string) isolationCase {
@@ -134,8 +302,9 @@ func read(path string, withToken bool, shows func(e isolationEnv) []string) isol
 }
 
 // isolationCases has one case for every operation in the OpenAPI
-// document. TestIsolation checks after each that what the owner sees has
-// not changed and that their token still works;
+// document. TestIsolation checks after each that the case got a 2xx from
+// its operation, that the owner's rows in the database and what the
+// owner sees have not changed, and that the owner's token still works;
 // TestIsolationCoversEveryOperation fails for an operation without a
 // case, and for a case without an operation.
 //
@@ -151,7 +320,8 @@ func isolationCases() map[string]isolationCase {
 			return []string{e.other.token.ID, e.other.tokenName()}
 		}),
 		"login": func(t *testing.T, e isolationEnv) {
-			// With the other's session, which the sign-in ends.
+			// With the other's session, which the sign-in ends; the
+			// password's old hash is replaced, a write of its own.
 			rec := e.in.login(t, e.other.user.Email, password, e.other.session)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("the other's sign-in: %d %s", rec.Code, rec.Body.String())
@@ -160,10 +330,17 @@ func isolationCases() map[string]isolationCase {
 			if old := e.in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{e.other.session}, nil); old.Code != http.StatusUnauthorized {
 				t.Errorf("the other's previous session after signing in again: %d, want 401", old.Code)
 			}
+			fresh := e.in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{sessionCookie(t, rec)}, nil)
+			if !strings.Contains(fresh.Body.String(), e.other.user.Email) {
+				t.Errorf("the new session is not the other's: %d %s", fresh.Code, fresh.Body.String())
+			}
 		},
 		"logout": func(t *testing.T, e isolationEnv) {
 			if rec := e.in.do(t, http.MethodPost, "/api/v1/auth/logout", "", []*http.Cookie{e.other.session}, nil); rec.Code != http.StatusNoContent {
 				t.Errorf("the other's sign-out: %d, want 204", rec.Code)
+			}
+			if rec := e.in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{e.other.session}, nil); rec.Code != http.StatusUnauthorized {
+				t.Errorf("the other's session after signing out: %d, want 401", rec.Code)
 			}
 		},
 		"create-token": func(t *testing.T, e isolationEnv) {
@@ -184,6 +361,10 @@ func isolationCases() map[string]isolationCase {
 				t.Errorf("revoking the owner's token: %d %s; a token that does not exist: %d %s; want the same 404",
 					theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
 			}
+			// Their own goes.
+			if own := e.in.do(t, http.MethodDelete, "/api/v1/tokens/"+e.other.token.ID, "", []*http.Cookie{e.other.session}, nil); own.Code != http.StatusNoContent {
+				t.Errorf("revoking their own token: %d, want 204", own.Code)
+			}
 		},
 	}
 }
@@ -191,6 +372,10 @@ func isolationCases() map[string]isolationCase {
 func TestIsolation(t *testing.T) {
 	t.Parallel()
 
+	ops := map[string]operation{}
+	for _, op := range operations(t) {
+		ops[op.id] = op
+	}
 	for who, adminActs := range map[string]bool{"a user acts": false, "an admin acts": true} {
 		t.Run(who, func(t *testing.T) {
 			t.Parallel()
@@ -198,10 +383,23 @@ func TestIsolation(t *testing.T) {
 				t.Run(op, func(t *testing.T) {
 					t.Parallel()
 					e := newIsolationEnv(t, adminActs)
-					before := e.ownerSees(t)
+					sees := e.ownerSees(t)
+					rows, _ := e.rowsOf(t, e.owner.user.ID)
+					// Two hours on, a request records the use of its session
+					// or token again: the case's requests write, and a write
+					// to one of the owner's rows shows.
+					e.in.clock.Set(e.in.clock.Now().Add(2 * time.Hour))
+					e.hits.record(true)
 					run(t, e)
-					if after := e.ownerSees(t); after != before {
-						t.Errorf("what the owner sees changed:\nbefore %s\nafter  %s", before, after)
+					e.hits.record(false)
+					if o, ok := ops[op]; ok && !e.hits.reached(o) {
+						t.Errorf("the case got no 2xx from %s %s, its operation", o.method, o.route)
+					}
+					if after, _ := e.rowsOf(t, e.owner.user.ID); !slices.Equal(after, rows) {
+						t.Errorf("the owner's rows changed:\nbefore %s\nafter  %s", strings.Join(rows, "\n       "), strings.Join(after, "\n       "))
+					}
+					if after := e.ownerSees(t); after != sees {
+						t.Errorf("what the owner sees changed:\nbefore %s\nafter  %s", sees, after)
 					}
 					e.ownersTokenWorks(t)
 				})
@@ -223,7 +421,7 @@ func TestIsolationCoversEveryOperation(t *testing.T) {
 	for _, op := range operations(t) {
 		inSpec[op.id] = true
 		if _, ok := cases[op.id]; !ok {
-			missing = append(missing, op.method+" "+op.path+" ("+op.id+")")
+			missing = append(missing, op.method+" "+op.route+" ("+op.id+")")
 		}
 	}
 	var stale []string

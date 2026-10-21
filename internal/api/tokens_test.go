@@ -86,6 +86,8 @@ func TestCreateAndUseAToken(t *testing.T) {
 // operation is one operation of the API, as the OpenAPI document has it.
 type operation struct {
 	id, method, path string
+	// route is the path as the document has it, with {parameters}.
+	route string
 	// statuses are the response codes the document lists for it.
 	statuses []string
 }
@@ -112,7 +114,7 @@ func operations(t *testing.T) []operation {
 	for path, methods := range spec.Paths {
 		for method, op := range methods {
 			ops = append(ops, operation{
-				op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String()),
+				op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String()), path,
 				slices.Collect(maps.Keys(op.Responses)),
 			})
 		}

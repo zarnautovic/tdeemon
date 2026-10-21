@@ -102,7 +102,7 @@ func (s *sessions) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		if now.Sub(sess.LastSeenAt) >= touchEvery {
-			if err := s.db.TouchSession(r.Context(), id, now); err != nil {
+			if err := s.db.TouchSession(r.Context(), u.ID, id, now); err != nil {
 				s.logger.WarnContext(r.Context(), "recording session use failed", "error", err)
 			}
 		}
@@ -245,7 +245,7 @@ func (s *sessions) start(ctx context.Context, u user.User, now time.Time, method
 	create func(store.Session) error,
 ) (http.Cookie, store.Session, error) {
 	if p, ok := auth.PrincipalFrom(ctx); ok && p.Via == auth.ViaSession {
-		if err := s.db.DeleteSession(ctx, p.SessionID); err != nil {
+		if err := s.db.DeleteSession(ctx, p.User.ID, p.SessionID); err != nil {
 			s.logger.WarnContext(ctx, "ending the previous session failed", "error", err)
 		}
 	}
@@ -284,7 +284,7 @@ func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password st
 
 func (s *sessions) logout(ctx context.Context, _ *struct{}) (*logoutOutput, error) {
 	if p, ok := auth.PrincipalFrom(ctx); ok && p.Via == auth.ViaSession {
-		if err := s.db.DeleteSession(ctx, p.SessionID); err != nil {
+		if err := s.db.DeleteSession(ctx, p.User.ID, p.SessionID); err != nil {
 			s.logger.ErrorContext(ctx, "ending a session failed", "error", err)
 			return nil, huma.Error500InternalServerError("signing out failed")
 		}
