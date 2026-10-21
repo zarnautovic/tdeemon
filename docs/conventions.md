@@ -317,10 +317,11 @@ in `web/`.
   alike: read it back in the transaction, or normalise it as the table
   does (-0 to 0, a time to the second in UTC). A way back that clashes
   with what came since returns a `clash` with its `UndoReason` (a new
-  kind of clash is a new reason), and a way back reads the change's own
-  data through `decode`, `entityID` and `entityDay`: those failures pass
-  the change over, while any other error, a bug included, is returned
-  and passes over nothing.
+  kind of clash is a new reason), and a way back and the reading in
+  `stateNow` read the change's own data through `decode`, `entityID` and
+  `entityDay`. Those failures, a clash, and a constraint the state
+  before breaks now pass the change over; any other error, a bug
+  included, is returned and passes over nothing.
 - **One user's data stays theirs:**
   - every store method that reads or writes a user's rows takes the
     user's ID as a parameter and filters by it (`WHERE user_id = ?`).

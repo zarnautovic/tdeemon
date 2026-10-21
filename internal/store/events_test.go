@@ -827,6 +827,103 @@ func TestUndoOfADayThatDoesNotRead(t *testing.T) {
 	}
 }
 
+// Each kind of change whose own data does not decode (valid JSON of
+// the wrong shape, an entity that is no id) is passed over as one that
+// cannot be read, and the next undo moves on.
+func TestUndoOfEveryKindThatDoesNotDecode(t *testing.T) {
+	t.Parallel()
+
+	const (
+		before = "UPDATE events SET before_state = ? WHERE id = ?"
+		after  = "UPDATE events SET after_state = ? WHERE id = ?"
+		entity = "UPDATE events SET entity = ? WHERE id = ?"
+	)
+	d := day.DateOf(t0)
+	steps := func(v float64) metric.Value { return metric.Value{Kind: metric.Steps, Value: v, Source: metric.Manual} }
+	weight := []metric.Value{{Kind: metric.Weight, Value: 80, Source: metric.Manual}}
+	for _, tc := range []struct {
+		name, update, value string
+		write               func(t *testing.T, db *store.DB, userID uuid.UUID) error
+	}{
+		{"food archive", before, `{"Archived": "x"}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			return db.SetFoodArchived(t.Context(), userID, testActor, saveFood(t, db, userID, bar()).ID, true, t0)
+		}},
+		{"meal create", entity, "not a meal id", func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			createMeal(t, db, userID, breakfast(t, saveFood(t, db, userID, bar()), t0))
+			return nil
+		}},
+		{"meal replace", before, `{"Meal": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			m := createMeal(t, db, userID, breakfast(t, saveFood(t, db, userID, bar()), t0))
+			m.Note = "changed"
+			_, err := db.ReplaceMeal(t.Context(), userID, testActor, m, t0)
+			return err
+		}},
+		{"meal delete", before, `{"Meal": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			m := createMeal(t, db, userID, breakfast(t, saveFood(t, db, userID, bar()), t0))
+			return db.DeleteMeal(t.Context(), userID, testActor, m.ID, t0)
+		}},
+		{"day exclude", before, `{"Reason": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			if err := db.ExcludeDay(t.Context(), userID, testActor, d, day.Exclusion{Reason: "sick"}, t0); err != nil {
+				return err
+			}
+			return db.ExcludeDay(t.Context(), userID, testActor, d, day.Exclusion{Reason: "travel"}, t0)
+		}},
+		{"metric set", before, `"x"`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			if _, err := db.SetMetric(t.Context(), userID, testActor, d, steps(4000), t0); err != nil {
+				return err
+			}
+			_, err := db.SetMetric(t.Context(), userID, testActor, d, steps(5000), t0)
+			return err
+		}},
+		{"metrics merge, after", after, `{"weight": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			_, err := db.MergeMetrics(t.Context(), userID, testActor, d, weight, t0)
+			return err
+		}},
+		{"metrics merge, before", before, `{"weight": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			_, err := db.MergeMetrics(t.Context(), userID, testActor, d, weight, t0)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			db, ana, _ := withTwoUsers(t)
+			if err := db.ExcludeDay(t.Context(), ana, testActor, d.AddDays(10), day.Exclusion{Reason: "sick"}, t0); err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.write(t, db, ana); err != nil {
+				t.Fatal(err)
+			}
+			es, err := db.Events(t.Context(), ana, 1)
+			if err != nil || len(es) != 1 {
+				t.Fatalf("Events = %v, %v", es, err)
+			}
+			exec(t, db, tc.update, tc.value, es[0].ID.String())
+			var conflict *store.UndoConflictError
+			if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Reason != store.UndoUnreadable {
+				t.Fatalf("undo = %v, want an UndoConflictError: %s", err, store.UndoUnreadable)
+			}
+			next, err := db.UndoLast(t.Context(), ana, testActor, t0)
+			if errors.As(err, &conflict) {
+				next = conflict.Event
+			} else if err != nil {
+				t.Fatalf("the next undo = %v", err)
+			}
+			if next.ID == es[0].ID {
+				t.Error("the next undo met the same change again")
+			}
+		})
+	}
+}
+
 // A row of the entity's that does not read is the database's failure,
 // not the change's: undo returns it and passes over nothing.
 func TestUndoWhenARowDoesNotRead(t *testing.T) {

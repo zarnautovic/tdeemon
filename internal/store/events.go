@@ -36,14 +36,15 @@ const (
 	// UndoItemTaken: another meal took one of the meal's item ids.
 	UndoItemTaken UndoReason = "another meal has taken one of its items since"
 	// UndoUnreadable: the change's entity or a state of it does not
-	// decode, or the entity's state cannot be read.
+	// decode.
 	UndoUnreadable UndoReason = "its state cannot be read"
 	// UndoStuck: the state before breaks a rule of a table now.
 	UndoStuck UndoReason = "it cannot be put back"
 )
 
-// clash is what a way back returns, before it writes anything, when
-// putting the entity back would clash with what came since.
+// clash is what a way back returns when putting the entity back would
+// clash with what came since; what it wrote by then is rolled back to
+// the savepoint.
 type clash struct{ reason UndoReason }
 
 func (c clash) Error() string { return string(c.reason) }
@@ -183,13 +184,13 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 // Undoing again takes back the change before: undo walks back, it does
 // not redo. When the entity is no longer as the change left it (an import
 // wrote it, or a later change that undo passed over), putting it back
-// would lose that; when putting it back
-// clashes with what came since, or the change cannot be read or put
-// back, it cannot be undone. Then UndoLast changes nothing, returns an
-// *UndoConflictError, and passes over that change from then on. A failure
-// of the database or of ctx is returned as it is and passes over nothing,
-// so a later undo tries the same change again. With nothing left it
-// returns ErrNothingToUndo.
+// would lose that; when putting it back clashes with what came since, or
+// the change cannot be read or put back, it cannot be undone. Then
+// UndoLast changes nothing, returns an *UndoConflictError, and passes
+// over that change from then on. Any other failure (of the database, of
+// ctx) is returned as it is and passes over nothing, so a later undo
+// tries the same change again. With nothing left it returns
+// ErrNothingToUndo.
 func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, error) {
 	if err := a.Validate(); err != nil {
 		return event.Event{}, fmt.Errorf("invalid actor: %w", err)
