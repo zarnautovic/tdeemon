@@ -302,6 +302,21 @@ in `web/`.
   snake_case keys (`"data_dir", dir`), no `fmt.Sprintf` in the message.
 - **Database:** the schema and migration rules are in
   [`internal/store/migrations/README.md`](../internal/store/migrations/README.md).
+- **One user's data stays theirs:**
+  - every store method that reads or writes a user's rows takes the
+    user's ID as a parameter and filters by it (`WHERE user_id = ?`), so
+    the compiler, not a value hidden in a context, makes sure no query
+    goes without it. Lookups by a secret (a session token's or an API
+    token's hash) are how a request learns its user, and filter by the
+    secret;
+  - a handler takes the user from the request's principal
+    (`auth.PrincipalFrom`), never from the path, the query or the body;
+  - another user's row answers exactly like one that does not exist
+    (404, or an empty list);
+  - `TestIsolation` in `internal/api` runs every operation of the API as
+    a second user against what the first one owns, and
+    `TestIsolationCoversEveryOperation` fails for an operation in the
+    OpenAPI document without a case there. A new endpoint adds its case.
 
 ### Tests
 
