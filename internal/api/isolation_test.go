@@ -14,7 +14,9 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -82,7 +84,8 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
-		saveIsolationFoods(t, in.db, p.user, now)
+		bread := saveIsolationFoods(t, in.db, p.user, now)
+		saveIsolationMeals(t, in.db, p.user, bread, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
@@ -146,8 +149,8 @@ func (e isolationEnv) rowsOf(t *testing.T, id uuid.UUID) (rows, values []string)
 type userTable struct{ name, column string }
 
 // saveIsolationFoods gives u a food with a serving and an alias, and an
-// archived one per portion, their names u's own.
-func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) {
+// archived one per portion, their names u's own, and returns the first.
+func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) food.Food {
 	t.Helper()
 	// A food with a serving and an alias, its name the party's own.
 	bread := food.Food{
@@ -168,6 +171,31 @@ func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) 
 	}
 	if err := db.SetFoodArchived(t.Context(), u.ID, stew.ID, true, now); err != nil {
 		t.Fatalf("archive %s's food: %v", u.Name, err)
+	}
+	return bread
+}
+
+// saveIsolationMeals gives u a meal of bread and a one-off estimate, and
+// an excluded day, their text u's own.
+func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food, now time.Time) {
+	t.Helper()
+	toast, err := meal.FromFood(bread, meal.Quantity{Servings: 2, Serving: "slice"}, u.Name+"'s toast")
+	if err != nil {
+		t.Fatal(err)
+	}
+	soup, err := meal.Estimate(u.Name+"'s canteen soup", food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := meal.Meal{
+		ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: u.Name + "'s lunch", Client: meal.ClientMCP,
+		Items: []meal.Item{toast, soup},
+	}
+	if _, _, err := db.CreateMeal(t.Context(), u.ID, m, now); err != nil {
+		t.Fatalf("log %s's meal: %v", u.Name, err)
+	}
+	if err := db.ExcludeDay(t.Context(), u.ID, day.DateOf(now).AddDays(-1), day.Exclusion{Reason: u.Name + "'s birthday dinner"}, now); err != nil {
+		t.Fatalf("exclude %s's day: %v", u.Name, err)
 	}
 }
 

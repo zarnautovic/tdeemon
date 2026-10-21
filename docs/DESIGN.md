@@ -470,8 +470,16 @@ the first spec.
   - ECharts, keeping the validated palette.
   - `vite-plugin-pwa` for install and web push.
   - Later, Capacitor wraps the same app for iOS with a HealthKit plugin.
-- **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals, items
-  and later sets, and writes are idempotent on that ID. The future
+- **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals and
+  later sets, and writes are idempotent on that ID: the same write sent
+  again returns what was stored, and other content under the ID is a
+  conflict (409). IDs are per user (the key is the user and the ID), so
+  another user's row under the same ID is not there for this one, and
+  no answer tells it is. "The same" is what the client said (a meal's
+  `Fingerprint`: time, text, foods and quantities, an estimate's values),
+  not what the server worked out, so a retry after a food was corrected
+  is still a retry. A meal is written whole, so its items' IDs are the
+  server's; an edit keeps the IDs of the items it keeps. The future
   in-gym workout logger can queue writes offline and sync without
   duplicates.
 

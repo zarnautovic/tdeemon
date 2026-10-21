@@ -7,6 +7,8 @@
 package meal
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -50,6 +52,9 @@ type Quantity struct {
 // nutrients it brought, computed when it was logged. Editing the food
 // later does not change the item.
 type Item struct {
+	// ID names the item within its meal, for an edit of one item; the
+	// store gives one to an item stored without.
+	ID uuid.UUID
 	// FoodID is the food the item came from; uuid.Nil for a one-off
 	// estimate.
 	FoodID uuid.UUID
@@ -257,7 +262,47 @@ func (m Meal) Validate() error {
 	case len(m.Items) > MaxItems:
 		errs = append(errs, fmt.Errorf("%d items, want at most %d", len(m.Items), MaxItems))
 	}
+	seen := map[uuid.UUID]bool{}
+	for i := range m.Items {
+		if id := m.Items[i].ID; id != uuid.Nil() && seen[id] {
+			errs = append(errs, fmt.Errorf("item id %s is given twice", id))
+		} else {
+			seen[id] = true
+		}
+	}
 	return errors.Join(errs...)
+}
+
+// Fingerprint returns a digest of what a client said the meal is: when
+// it was eaten, its description and note, and each item's food and
+// quantity, or an estimate's name and values, with its note. What the
+// code works out (the day, a food's values and name) and the ids of
+// items are left out, so the same meal sent again has the same
+// fingerprint even after its foods changed, and the store can tell a
+// retry from a different meal under the same id.
+func (m Meal) Fingerprint() string {
+	// Each value quoted or in its shortest exact form, one item to a line,
+	// so no two meals write the same text.
+	lines := []string{fmt.Sprintf("%q %q %q %d", m.EatenAt.UTC().Format(time.RFC3339Nano), m.Description, m.Note, len(m.Items))}
+	for i := range m.Items {
+		it := &m.Items[i]
+		q := it.Quantity
+		line := []string{fmt.Sprintf("%s %v %q %v %q %v %q", it.FoodID, q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Note)}
+		if it.FoodID == uuid.Nil() {
+			n := it.Nutrients
+			line = append(line, fmt.Sprintf("%q %v %v %v %v", it.Name, n.Kcal, n.Protein, n.Carbs, n.Fat))
+			for _, v := range []*float64{n.Fiber, n.SaturatedFat, n.Sugars, n.Salt, n.Polyols, n.Alcohol} {
+				if v == nil {
+					line = append(line, "-")
+				} else {
+					line = append(line, fmt.Sprint(*v))
+				}
+			}
+		}
+		lines = append(lines, strings.Join(line, " "))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:])
 }
 
 // Total returns the nutrients of every item of m.

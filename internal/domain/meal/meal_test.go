@@ -256,3 +256,81 @@ func TestMealValidate(t *testing.T) {
 		})
 	}
 }
+
+// The fingerprint is what the client said: the same meal sent again has
+// the same one, whatever the code worked out since; anything the client
+// changed gives another.
+func TestFingerprint(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
+	e, m := egg(), milk()
+	est, _ := Estimate("Cake", food.Nutrients{Kcal: 300, Protein: 5, Carbs: 40, Fat: 14, Sugars: new(20.0)}, "")
+	base := func() Meal {
+		return meal(t, at, item(t, e, Quantity{Servings: 2, Serving: "piece"}), item(t, m, Quantity{Amount: 200, Unit: "ml"}), est)
+	}
+	fp := base().Fingerprint()
+	if len(fp) != 64 {
+		t.Fatalf("fingerprint %q, want 64 hex digits", fp)
+	}
+	same := map[string]func(*Meal){
+		"another id":           func(x *Meal) { x.ID = uuid.NewV7() },
+		"another day":          func(x *Meal) { x.Day = x.Day.AddDays(1) },
+		"another client":       func(x *Meal) { x.Client = ClientWeb },
+		"the time in a zone":   func(x *Meal) { x.EatenAt = x.EatenAt.In(time.FixedZone("CEST", 2*3600)) },
+		"item ids":             func(x *Meal) { x.Items[0].ID = uuid.NewV7() },
+		"the food's new kcal":  func(x *Meal) { x.Items[0].Nutrients.Kcal = 999 },
+		"the food's new name":  func(x *Meal) { x.Items[1].Name = "Milk 3.2 %" },
+		"a food item's source": func(x *Meal) { x.Items[1].Source = food.User },
+	}
+	for name, change := range same {
+		x := base()
+		change(&x)
+		if x.Fingerprint() != fp {
+			t.Errorf("%s changed the fingerprint", name)
+		}
+	}
+	other := map[string]func(*Meal){
+		"another time":           func(x *Meal) { x.EatenAt = x.EatenAt.Add(time.Second) },
+		"a description":          func(x *Meal) { x.Description = "breakfast" },
+		"a note":                 func(x *Meal) { x.Note = "late" },
+		"another food":           func(x *Meal) { x.Items[0].FoodID = uuid.NewV7() },
+		"more servings":          func(x *Meal) { x.Items[0].Quantity.Servings = 3 },
+		"another serving":        func(x *Meal) { x.Items[0].Quantity.Serving = "Piece" },
+		"another amount":         func(x *Meal) { x.Items[1].Quantity.Amount = 250 },
+		"another unit":           func(x *Meal) { x.Items[1].Quantity.Unit = "g" },
+		"portions":               func(x *Meal) { x.Items[2].Quantity.Portions = 0.5 },
+		"an item's note":         func(x *Meal) { x.Items[1].Note = "cold" },
+		"an estimate's name":     func(x *Meal) { x.Items[2].Name = "Pie" },
+		"an estimate's kcal":     func(x *Meal) { x.Items[2].Nutrients.Kcal = 301 },
+		"an estimate's fat":      func(x *Meal) { x.Items[2].Nutrients.Fat = 15 },
+		"an estimate's sugars":   func(x *Meal) { x.Items[2].Nutrients.Sugars = new(21.0) },
+		"an estimate's no salt":  func(x *Meal) { x.Items[2].Nutrients.Salt = new(0.0) },
+		"no sugars known":        func(x *Meal) { x.Items[2].Nutrients.Sugars = nil },
+		"another order":          func(x *Meal) { x.Items[0], x.Items[1] = x.Items[1], x.Items[0] },
+		"an item less":           func(x *Meal) { x.Items = x.Items[:2] },
+		"a note moved to a line": func(x *Meal) { x.Note, x.Description = "", "\"\"\n\"\"" },
+	}
+	for name, change := range other {
+		x := base()
+		change(&x)
+		if x.Fingerprint() == fp {
+			t.Errorf("%s left the fingerprint as it was", name)
+		}
+	}
+}
+
+func TestMealValidateItemIDs(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
+	a, b := item(t, egg(), Quantity{Amount: 50, Unit: "g"}), item(t, egg(), Quantity{Amount: 60, Unit: "g"})
+	a.ID, b.ID = uuid.NewV7(), uuid.NewV7()
+	if err := meal(t, at, a, b, item(t, egg(), Quantity{Amount: 70, Unit: "g"}), item(t, egg(), Quantity{Amount: 80, Unit: "g"})).Validate(); err != nil {
+		t.Errorf("distinct ids and items without one: %v", err)
+	}
+	b.ID = a.ID
+	if err := meal(t, at, a, b).Validate(); err == nil || !strings.Contains(err.Error(), "given twice") {
+		t.Errorf("an item id twice = %v", err)
+	}
+}
