@@ -104,7 +104,7 @@ func TestUserCreateAdminWithGeneratedPassword(t *testing.T) {
 	if m == nil {
 		t.Fatalf("output %q prints no password", out.String())
 	}
-	if ok, err := auth.VerifyPassword(m[1], hash); err != nil || !ok {
+	if ok, err := auth.VerifyPassword(t.Context(), m[1], hash); err != nil || !ok {
 		t.Errorf("the printed password does not match the stored hash (ok %v, err %v)", ok, err)
 	}
 }
@@ -134,7 +134,7 @@ func TestUserCreatePasswordFromStdin(t *testing.T) {
 			if u.Role != user.RoleUser || u.Name != "Ivo" || u.TimeZone != "America/New_York" {
 				t.Errorf("stored user = %+v, want a user named Ivo in TZ's zone", u)
 			}
-			if ok, err := auth.VerifyPassword("correct horse battery staple", hash); err != nil || !ok {
+			if ok, err := auth.VerifyPassword(t.Context(), "correct horse battery staple", hash); err != nil || !ok {
 				t.Errorf("the password from stdin does not match the stored hash (ok %v, err %v)", ok, err)
 			}
 		})
@@ -225,14 +225,17 @@ func TestUserCreateHelp(t *testing.T) {
 		{"user", "create", "-h"},
 		{"user", "create", "--email", "ana@example.com", "--help"},
 	} {
-		var out bytes.Buffer
-		// No configuration: help must not need any.
-		if err := run(t.Context(), args, lookup(nil), noInput(), &out, io.Discard); err != nil {
-			t.Errorf("run(%q) = %v, want the usage", args, err)
-		}
-		if !strings.Contains(out.String(), "Flags of user create:") {
-			t.Errorf("run(%q) printed %q, want the usage", args, out.String())
-		}
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			var out bytes.Buffer
+			// No configuration: help must not need any.
+			if err := run(t.Context(), args, lookup(nil), noInput(), &out, io.Discard); err != nil {
+				t.Errorf("run = %v, want the usage", err)
+			}
+			if !strings.Contains(out.String(), "Flags of user create:") {
+				t.Errorf("printed %q, want the usage", out.String())
+			}
+		})
 	}
 }
 
@@ -349,10 +352,13 @@ func TestNewUserTimeZone(t *testing.T) {
 		{"UTC when TZ is not set", "", time.Local, "UTC"},
 		{"UTC without a location", "", nil, "UTC"},
 	} {
-		got := newUser(createUserFlags{email: "ana@example.com", timeZone: tc.flag}, tc.instance, now).TimeZone
-		if got != tc.want {
-			t.Errorf("%s: time zone %q, want %q", tc.name, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := newUser(createUserFlags{email: "ana@example.com", timeZone: tc.flag}, tc.instance, now).TimeZone
+			if got != tc.want {
+				t.Errorf("time zone %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -405,7 +411,7 @@ func TestUserSetPassword(t *testing.T) {
 				t.Errorf("output %q prints a password the user typed", out.String())
 			}
 			_, hash := stored(t, dbPath, "ana@example.com")
-			if ok, err := auth.VerifyPassword(want, hash); err != nil || !ok {
+			if ok, err := auth.VerifyPassword(t.Context(), want, hash); err != nil || !ok {
 				t.Errorf("the new password does not match the stored hash (ok %v, err %v)", ok, err)
 			}
 			db, err = store.Open(t.Context(), dbPath)
@@ -438,7 +444,7 @@ func TestUserSetPasswordRejects(t *testing.T) {
 		}
 		defer func() { _ = db.Close() }()
 		_, hash, err := db.UserCredentials(ctx, "ana@example.com")
-		if ok, _ := auth.VerifyPassword("the old passphrase", hash); err != nil || !ok {
+		if ok, _ := auth.VerifyPassword(ctx, "the old passphrase", hash); err != nil || !ok {
 			t.Errorf("a failed set-password changed the password (err %v)", err)
 		}
 	})

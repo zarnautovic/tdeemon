@@ -11,10 +11,12 @@ import (
 
 const issuer = "https://auth.example.com/application/o/tdeemon/"
 
-func identityCount(t *testing.T, db *store.DB) int {
+// identityCount counts the stored identities. It takes ctx so that a
+// cleanup can call it: t.Context is done by the time cleanups run.
+func identityCount(ctx context.Context, t *testing.T, db *store.DB) int {
 	t.Helper()
 	var n int
-	if err := db.Read().QueryRowContext(t.Context(), "SELECT count(*) FROM user_identities").Scan(&n); err != nil {
+	if err := db.Read().QueryRowContext(ctx, "SELECT count(*) FROM user_identities").Scan(&n); err != nil {
 		t.Fatalf("count identities: %v", err)
 	}
 	return n
@@ -35,18 +37,27 @@ func TestSignInWithIdentity(t *testing.T) {
 		t.Fatalf("first sign-in = %v, %v; want ana", u.ID, err)
 	}
 	// Later ones go by the subject, whatever the email says now.
-	for _, id := range []store.Identity{
-		{Issuer: issuer, Subject: "s1", Email: "ana.new@example.com", EmailVerified: true},
-		{Issuer: issuer, Subject: "s1"},
-		{Issuer: issuer, Subject: "s1", EmailNotLinkable: true},
+	for _, tc := range []struct {
+		name string
+		id   store.Identity
+	}{
+		{"another email", store.Identity{Issuer: issuer, Subject: "s1", Email: "ana.new@example.com", EmailVerified: true}},
+		{"no email", store.Identity{Issuer: issuer, Subject: "s1"}},
+		{"an address that cannot link", store.Identity{Issuer: issuer, Subject: "s1", EmailNotLinkable: true}},
 	} {
-		if u, err := db.SignInWithIdentity(t.Context(), id, t0); err != nil || u.ID != ana.ID || u.Email != "ana@example.com" {
-			t.Errorf("sign-in with %+v = %v %q, %v; want ana", id, u.ID, u.Email, err)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if u, err := db.SignInWithIdentity(t.Context(), tc.id, t0); err != nil || u.ID != ana.ID || u.Email != "ana@example.com" {
+				t.Errorf("SignInWithIdentity = %v %q, %v; want ana", u.ID, u.Email, err)
+			}
+		})
+	}
+	// After the parallel subtests: none of them linked another identity.
+	t.Cleanup(func() {
+		if n := identityCount(context.WithoutCancel(t.Context()), t, db); n != 1 {
+			t.Errorf("%d identities, want 1", n)
 		}
-	}
-	if n := identityCount(t, db); n != 1 {
-		t.Errorf("%d identities, want 1", n)
-	}
+	})
 }
 
 func TestSignInWithIdentityRefuses(t *testing.T) {
@@ -86,13 +97,10 @@ func TestSignInWithIdentityRefuses(t *testing.T) {
 			}
 		})
 	}
-	// After the parallel subtests: no refusal linked anything. t.Context is
-	// done by the time cleanups run.
+	// After the parallel subtests: no refusal linked anything.
 	t.Cleanup(func() {
-		var n int
-		err := db.Read().QueryRowContext(context.WithoutCancel(t.Context()), "SELECT count(*) FROM user_identities").Scan(&n)
-		if err != nil || n != 1 {
-			t.Errorf("%d identities (err %v), want 1", n, err)
+		if n := identityCount(context.WithoutCancel(t.Context()), t, db); n != 1 {
+			t.Errorf("%d identities, want 1", n)
 		}
 	})
 }

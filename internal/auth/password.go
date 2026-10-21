@@ -2,14 +2,17 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -81,28 +84,42 @@ func CheckPassword(password string) error {
 //	$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>
 //
 // with the salt and the hash in unpadded standard base64.
-func HashPassword(password string) (string, error) {
+//
+// The error is ErrBusy, or ctx's, when no hashing slot comes free in time.
+func HashPassword(ctx context.Context, password string) (string, error) {
 	if err := CheckPassword(password); err != nil {
 		return "", err
 	}
 	salt := make([]byte, argonSaltLen)
 	_, _ = rand.Read(salt) // crypto/rand.Read never fails.
-	key := argon2.IDKey([]byte(normalize(password)), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
+	key, err := idKey(ctx, []byte(normalize(password)), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
+	if err != nil {
+		return "", err
+	}
+	return encodeHash(salt, key), nil
+}
+
+// encodeHash writes a hash with today's parameters in the PHC format.
+func encodeHash(salt, key []byte) string {
 	return fmt.Sprintf("$argon2id$v=%d$m=%d,t=%d,p=%d$%s$%s", argon2.Version,
 		argonMemoryKiB, argonTime, argonThreads,
-		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key)), nil
+		base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key))
 }
 
 // VerifyPassword reports whether password matches encoded, a hash from
 // HashPassword, with the parameters stored in it. It does not apply the
 // rules for new passwords: a password set under older rules still works.
-// The error is ErrInvalidHash when encoded cannot be read.
-func VerifyPassword(password, encoded string) (bool, error) {
+// The error is ErrInvalidHash when encoded cannot be read, and ErrBusy,
+// or ctx's, when no hashing slot comes free in time.
+func VerifyPassword(ctx context.Context, password, encoded string) (bool, error) {
 	h, err := parseHash(encoded)
 	if err != nil {
 		return false, err
 	}
-	key := argon2.IDKey([]byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length at maxKeyLen
+	key, err := idKey(ctx, []byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length at maxKeyLen
+	if err != nil {
+		return false, err
+	}
 	return subtle.ConstantTimeCompare(key, h.key) == 1, nil
 }
 
@@ -119,14 +136,17 @@ const MaxPasswordBytes = 4 * MaxPasswordLen
 // account signing in, or "" when there is no such account or it has no
 // password. Either way it runs one argon2id hash, so the time a sign-in
 // takes does not tell which addresses have accounts; so does an overlong
-// password, which never matches.
-func VerifyLogin(password, encoded string) (bool, error) {
+// password, which never matches. The error is ErrBusy, or ctx's, when no
+// hashing slot comes free in time, for an unknown account too.
+func VerifyLogin(ctx context.Context, password, encoded string) (bool, error) {
 	if encoded == "" || len(password) > MaxPasswordBytes {
 		// A fixed input: an overlong password is not normalized either.
-		_, _ = VerifyPassword("", dummyHash())
+		if _, err := VerifyPassword(ctx, "", dummyHash()); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
-	return VerifyPassword(password, encoded)
+	return VerifyPassword(ctx, password, encoded)
 }
 
 // PrepareLogin computes what VerifyLogin needs once, now, so the first
@@ -135,10 +155,17 @@ func PrepareLogin() { _ = dummyHash() }
 
 // dummyHash is a hash of a password nobody knows, with the current
 // parameters, for VerifyLogin to spend the time on.
-var dummyHash = sync.OnceValue(func() string {
-	h, _ := HashPassword(GeneratePassword()) // A generated password always meets the rules.
-	return h
-})
+var dummyHash = sync.OnceValue(newDummyHash)
+
+// newDummyHash hashes a random password, outside the hashing slots: it
+// runs once, at startup (PrepareLogin), and must never come out empty, or
+// an unknown address would answer faster than a known one for the life
+// of the process.
+func newDummyHash() string {
+	salt := make([]byte, argonSaltLen)
+	_, _ = rand.Read(salt) // crypto/rand.Read never fails.
+	return encodeHash(salt, argon2.IDKey([]byte(GeneratePassword()), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen))
+}
 
 // NeedsRehash reports whether encoded was made with other parameters than
 // HashPassword uses now, so a successful sign-in should store a new hash.
@@ -150,6 +177,46 @@ func NeedsRehash(encoded string) bool {
 	}
 	return h.memoryKiB != argonMemoryKiB || h.time != argonTime || h.threads != argonThreads ||
 		len(h.salt) != argonSaltLen || len(h.key) != argonKeyLen
+}
+
+// hashSlots caps the argon2id hashes computed at once at one per CPU.
+// Each takes its memory cost (argonMemoryKiB today, up to maxMemoryKiB
+// for a stored hash), and more at once would only share the CPUs while
+// the memory adds up: 64 sign-ins at once took 1.24 GB without it. The
+// dummy hash of a sign-in for an unknown address waits its turn too. It
+// is the process's own resource, the one package variable that changes
+// (docs/conventions.md).
+var hashSlots = make(chan struct{}, max(1, runtime.GOMAXPROCS(0)))
+
+// maxHashWait bounds the wait for a hashing slot, so a flood of
+// sign-ins queues for seconds, not minutes.
+const maxHashWait = 10 * time.Second
+
+// ErrBusy reports that no hashing slot came free in time.
+var ErrBusy = errors.New("too many passwords are being checked at once; try again shortly")
+
+// idKey is argon2.IDKey in a hashing slot. It waits for one at most
+// maxHashWait, and not past ctx: a client that went away frees its place.
+func idKey(ctx context.Context, password, salt []byte, passes, memoryKiB uint32, lanes uint8, keyLen uint32) ([]byte, error) {
+	return idKeyWithin(ctx, maxHashWait, password, salt, passes, memoryKiB, lanes, keyLen)
+}
+
+func idKeyWithin(ctx context.Context, wait time.Duration, password, salt []byte, passes, memoryKiB uint32, lanes uint8, keyLen uint32) ([]byte, error) {
+	// A client already gone gets no hash, even with a slot free.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case hashSlots <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-timer.C:
+		return nil, ErrBusy
+	}
+	defer func() { <-hashSlots }()
+	return argon2.IDKey(password, salt, passes, memoryKiB, lanes, keyLen), nil
 }
 
 // GeneratePassword returns a random password with 130 bits of entropy:

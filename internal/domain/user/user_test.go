@@ -125,11 +125,14 @@ func TestValidateAcceptsEdges(t *testing.T) {
 		{"letters with diacritics", func(u *User) { u.Email = "\u010daba@primjer.hr" }},
 		{"Etc zone", func(u *User) { u.TimeZone = "Etc/GMT-2" }},
 	} {
-		u := valid()
-		tc.change(&u)
-		if err := u.Validate(); err != nil {
-			t.Errorf("%s: %v", tc.name, err)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			u := valid()
+			tc.change(&u)
+			if err := u.Validate(); err != nil {
+				t.Errorf("Validate = %v, want nil", err)
+			}
+		})
 	}
 }
 
@@ -141,16 +144,19 @@ func TestNormalizeEmail(t *testing.T) {
 		t.Errorf("NormalizeEmail changed input that is not UTF-8 into %q", got)
 	}
 
-	for in, want := range map[string]string{
-		"ana@example.com":       "ana@example.com",
-		"  Ana@Example.COM \t":  "ana@example.com",
-		"ŽELJKA@primjer.hr":     "željka@primjer.hr",
-		"C\u030cABA@primjer.hr": "\u010daba@primjer.hr", // decomposed Č becomes one character
-		"":                      "",
+	for _, tc := range []struct{ name, in, want string }{
+		{"normalized already", "ana@example.com", "ana@example.com"},
+		{"spaces and capitals", "  Ana@Example.COM \t", "ana@example.com"},
+		{"capitals with diacritics", "ŽELJKA@primjer.hr", "željka@primjer.hr"},
+		{"decomposed letter", "C\u030cABA@primjer.hr", "\u010daba@primjer.hr"}, // decomposed Č becomes one character
+		{"empty", "", ""},
 	} {
-		if got := NormalizeEmail(in); got != want {
-			t.Errorf("NormalizeEmail(%q) = %q, want %q", in, got, want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := NormalizeEmail(tc.in); got != tc.want {
+				t.Errorf("NormalizeEmail(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 

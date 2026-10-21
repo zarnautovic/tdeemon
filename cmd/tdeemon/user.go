@@ -100,7 +100,7 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 	if err != nil {
 		return err
 	}
-	hash, err := auth.HashPassword(password)
+	hash, err := auth.HashPassword(ctx, password)
 	if err != nil {
 		return err
 	}
@@ -166,7 +166,7 @@ func setPassword(ctx context.Context, args []string, lookup config.LookupFunc, i
 	if err != nil {
 		return err
 	}
-	hash, err := auth.HashPassword(password)
+	hash, err := auth.HashPassword(ctx, password)
 	if err != nil {
 		return err
 	}

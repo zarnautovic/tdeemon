@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,81 @@ type sessions struct {
 	// afterVerify, for tests, runs once a sign-in has checked the password
 	// and before it writes anything.
 	afterVerify func(context.Context)
+	// verifyLogin is auth.VerifyLogin; tests replace it.
+	verifyLogin func(ctx context.Context, password, encoded string) (bool, error)
+
+	// Failures per client address and per account (limit.go).
+	signInByAddr, signInByAccount, badTokens *limiter
+}
+
+func newSessions(cfg Config) *sessions {
+	return &sessions{
+		db: cfg.DB, logger: cfg.Logger, now: cfg.Now, secure: cfg.BaseURL.Scheme == "https",
+		verifyLogin:     auth.VerifyLogin,
+		signInByAddr:    newLimiter(signInFailures, signInWindow, cfg.Now),
+		signInByAccount: newLimiter(signInFailures, signInWindow, cfg.Now),
+		badTokens:       newLimiter(badTokenFailures, badTokenWindow, cfg.Now),
+	}
+}
+
+// accountKey is what the sign-in limit counts an account under: a hash of
+// the normalized address, so the limiter keeps no addresses and a key's
+// size does not depend on what was typed.
+func accountKey(email string) string {
+	sum := sha256.Sum256([]byte(email))
+	return string(sum[:])
+}
+
+// reserveSignIn reserves a sign-in attempt for the address and for the
+// account (limit.go), or refuses one from an address, or for an account,
+// with too many failed sign-ins lately: 429 with Retry-After. The
+// attempts count as failures until giveBack returns them.
+func (s *sessions) reserveSignIn(ctx context.Context, addr, account string) (signInAttempt, error) {
+	var a signInAttempt
+	var wait time.Duration
+	a.addr, wait, a.ok = s.signInByAddr.take(addr)
+	if a.ok {
+		if a.account, wait, a.ok = s.signInByAccount.take(account); !a.ok {
+			s.signInByAddr.release(a.addr)
+		}
+	}
+	if a.ok {
+		return a, nil
+	}
+	s.logger.DebugContext(ctx, "sign-in refused: too many failed sign-ins", "addr", addr)
+	return a, huma.ErrorWithHeaders(huma.NewError(http.StatusTooManyRequests, "too many failed sign-ins; try again later"), retryAfter(wait))
+}
+
+// signInAttempt is what reserveSignIn reserved.
+type signInAttempt struct {
+	addr, account reservation
+	ok            bool
+}
+
+// giveBack returns the attempts of a sign-in that did not fail.
+func (s *sessions) giveBack(a signInAttempt) {
+	s.signInByAddr.release(a.addr)
+	s.signInByAccount.release(a.account)
+}
+
+// logLevel is the level to log a request that failed with err at: debug
+// when the client went away (it says nothing about the server, and a
+// client can do it at will), warn when hashing was busy, error otherwise.
+func logLevel(err error) slog.Level {
+	switch {
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return slog.LevelDebug
+	case errors.Is(err, auth.ErrBusy):
+		return slog.LevelWarn
+	}
+	return slog.LevelError
+}
+
+// errBusy answers a sign-in that found no hashing slot in time (or whose
+// client went away).
+func errBusy() error {
+	return huma.ErrorWithHeaders(huma.NewError(http.StatusServiceUnavailable, "too many sign-ins at once; try again shortly"),
+		http.Header{"Retry-After": {"5"}})
 }
 
 // cookieName is the session cookie's name. Over HTTPS it carries the
@@ -97,7 +173,7 @@ func (s *sessions) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
-			s.logger.ErrorContext(r.Context(), "looking up a session failed", "error", err)
+			s.logger.Log(r.Context(), logLevel(err), "looking up a session failed", "error", err)
 			writeProblem(w, http.StatusInternalServerError, "the session could not be checked")
 			return
 		}
@@ -169,10 +245,13 @@ func (s *sessions) register(a huma.API) {
 		Summary:     "Sign in with a password",
 		Description: "Checks the email and password and starts a web session: the response sets the session cookie. " +
 			"A session the request already carries ends. A wrong address or password answers 401, always with the same " +
-			"message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent.",
+			"message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent. " +
+			"After 10 failed sign-ins in 15 minutes from one address, or for one account, sign-ins from there or for it " +
+			"answer 429 with Retry-After until the 15 minutes have passed; sign-ins still being checked count too. When too " +
+			"many passwords are being checked at once, a sign-in that waited 10 seconds answers 503 with Retry-After.",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusOK,
-		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden},
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 	}, s.login)
 	huma.Register(a, huma.Operation{
 		OperationID:   "logout",
@@ -196,18 +275,33 @@ func (s *sessions) register(a huma.API) {
 }
 
 func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, error) {
-	u, hash, err := s.db.UserCredentials(ctx, user.NormalizeEmail(in.Body.Email))
+	email := user.NormalizeEmail(in.Body.Email)
+	addr, account := addrKey(clientAddrFrom(ctx)), accountKey(email)
+	attempt, err := s.reserveSignIn(ctx, addr, account)
+	if err != nil {
+		return nil, err
+	}
+	u, hash, err := s.db.UserCredentials(ctx, email)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
-		s.logger.ErrorContext(ctx, "reading credentials failed", "error", err)
+		s.giveBack(attempt)
+		s.logger.Log(ctx, logLevel(err), "reading credentials failed", "error", err)
 		return nil, huma.Error500InternalServerError("signing in failed")
 	}
 	// hash is "" for an unknown address: VerifyLogin still spends a hash.
-	ok, err := auth.VerifyLogin(in.Body.Password, hash)
-	if err != nil {
+	ok, err := s.verifyLogin(ctx, in.Body.Password, hash)
+	switch {
+	case errors.Is(err, auth.ErrBusy), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// No hash ran, so this is no failure. A client that leaves while
+		// its hash runs gets no error here: that attempt counts.
+		s.giveBack(attempt)
+		s.logger.Log(ctx, logLevel(err), "a sign-in was not checked", "error", err)
+		return nil, errBusy()
+	case err != nil:
 		s.logger.ErrorContext(ctx, "a stored password hash cannot be read", "user_id", u.ID.String(), "error", err)
 	}
 	if !ok {
-		s.logger.InfoContext(ctx, "sign-in failed")
+		// The attempts stay reserved: they are the failures.
+		s.logger.InfoContext(ctx, "sign-in failed", "addr", addr)
 		return nil, errBadLogin()
 	}
 	if s.afterVerify != nil {
@@ -228,8 +322,14 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 		return nil, errBadLogin()
 	}
 	if err != nil {
+		s.giveBack(attempt)
 		return nil, huma.Error500InternalServerError("signing in failed")
 	}
+	// The account's count starts over; the address gets its attempt back
+	// but keeps its failures, or signing in to one's own account would
+	// wipe the failures against others.
+	s.signInByAddr.release(attempt.addr)
+	s.signInByAccount.reset(account)
 	return &sessionOutput{
 		SetCookie:    cookie,
 		CacheControl: "no-store",
@@ -254,7 +354,7 @@ func (s *sessions) start(ctx context.Context, u user.User, now time.Time, method
 	sess := store.Session{ID: id, UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(auth.SessionLifetime)}
 	if err := create(sess); err != nil {
 		if !errors.Is(err, store.ErrCredentialsChanged) {
-			s.logger.ErrorContext(ctx, "starting a session failed", "error", err)
+			s.logger.Log(ctx, logLevel(err), "starting a session failed", "error", err)
 		}
 		return http.Cookie{}, store.Session{}, err
 	}
@@ -268,7 +368,7 @@ func (s *sessions) start(ctx context.Context, u user.User, now time.Time, method
 // older, laxer rules cannot be hashed under today's and keeps its old
 // hash.
 func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password string, now time.Time) string {
-	newHash, err := auth.HashPassword(password)
+	newHash, err := auth.HashPassword(ctx, password)
 	if err != nil {
 		return oldHash
 	}
@@ -277,6 +377,14 @@ func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password st
 		s.logger.WarnContext(ctx, "updating a password hash failed", "user_id", u.ID.String(), "error", err)
 	}
 	if !replaced {
+		// Another sign-in may have rehashed it first: a stored hash that
+		// takes this password is the one to go on with. Otherwise a reset
+		// came in between, and the sign-in fails on oldHash.
+		if _, current, err := s.db.UserCredentials(ctx, u.Email); err == nil && current != oldHash {
+			if ok, _ := auth.VerifyPassword(ctx, password, current); ok {
+				return current
+			}
+		}
 		return oldHash
 	}
 	return newHash

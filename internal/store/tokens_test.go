@@ -120,9 +120,12 @@ func TestTouchAPITokenTouchesOnlyItsToken(t *testing.T) {
 		t.Fatalf("TouchAPIToken of ivo's token as ana: %v", err)
 	}
 	for hash, want := range map[string]time.Time{"used": t0.Add(time.Hour), "other": {}, "ivos": {}} {
-		if got, _, err := db.APITokenUser(t.Context(), sid(hash)); err != nil || !got.LastUsedAt.Equal(want) {
-			t.Errorf("token %s: last used %v, %v; want %v", got.Name, got.LastUsedAt, err, want)
-		}
+		t.Run(hash, func(t *testing.T) {
+			t.Parallel()
+			if got, _, err := db.APITokenUser(t.Context(), sid(hash)); err != nil || !got.LastUsedAt.Equal(want) {
+				t.Errorf("last used %v, %v; want %v", got.LastUsedAt, err, want)
+			}
+		})
 	}
 }
 

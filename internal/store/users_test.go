@@ -189,16 +189,19 @@ func TestUserByEmailRejectsCorruptRows(t *testing.T) {
 func TestUsersTableChecksTheID(t *testing.T) {
 	t.Parallel()
 
-	for _, id := range []string{"", "1234", uuid.NewV7().String() + "0"} {
-		db := storetest.Open(t)
-		err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(t.Context(), `INSERT INTO users
-				(id, email, name, role, locale, timezone, day_start_hour, created_at, updated_at)
-				VALUES (?, 'ana@example.com', 'Ana', 'user', 'en', 'UTC', 4, '2026-10-21T08:00:00Z', '2026-10-21T08:00:00Z')`, id)
-			return err
+	for name, id := range map[string]string{"empty": "", "short": "1234", "one too long": uuid.NewV7().String() + "0"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			db := storetest.Open(t)
+			err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(t.Context(), `INSERT INTO users
+					(id, email, name, role, locale, timezone, day_start_hour, created_at, updated_at)
+					VALUES (?, 'ana@example.com', 'Ana', 'user', 'en', 'UTC', 4, '2026-10-21T08:00:00Z', '2026-10-21T08:00:00Z')`, id)
+				return err
+			})
+			if err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
+				t.Errorf("insert with id %q = %v, want a CHECK constraint error", id, err)
+			}
 		})
-		if err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
-			t.Errorf("insert with id %q = %v, want a CHECK constraint error", id, err)
-		}
 	}
 }

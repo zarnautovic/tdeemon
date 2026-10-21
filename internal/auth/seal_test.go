@@ -45,8 +45,11 @@ func TestOpenRefuses(t *testing.T) {
 		{"MAC not base64", "oidc", v + ".!!!", secret},
 		{"value not base64", "oidc", notBase64 + "." + rightMAC, secret},
 	} {
-		if _, err := Open(tc.secret, tc.purpose, tc.sealed); !errors.Is(err, ErrBadSeal) {
-			t.Errorf("%s: Open = %v, want ErrBadSeal", tc.name, err)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := Open(tc.secret, tc.purpose, tc.sealed); !errors.Is(err, ErrBadSeal) {
+				t.Errorf("Open = %v, want ErrBadSeal", err)
+			}
+		})
 	}
 }

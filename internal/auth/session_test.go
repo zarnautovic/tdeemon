@@ -59,25 +59,25 @@ func TestPrincipalContext(t *testing.T) {
 func TestVerifyLogin(t *testing.T) {
 	t.Parallel()
 
-	hash, err := HashPassword("correct horse battery staple")
+	hash, err := HashPassword(t.Context(), "correct horse battery staple")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
 	// The most a password may be: 256 characters of four bytes.
 	longest := strings.Repeat("😀", MaxPasswordLen)
-	longestHash, err := HashPassword(longest)
+	longestHash, err := HashPassword(t.Context(), longest)
 	if err != nil {
-		t.Fatalf("HashPassword(longest): %v", err)
+		t.Fatalf("HashPassword(t.Context(), longest): %v", err)
 	}
 	// 120 Hangul syllables (한, 360 bytes), set in that form and typed as
 	// three jamo each (1,080 bytes), which NFKC composes back.
 	hangul := strings.Repeat("\ud55c", 120)
 	jamo := strings.Repeat("\u1112\u1161\u11ab", 120)
-	hangulHash, err := HashPassword(hangul)
+	hangulHash, err := HashPassword(t.Context(), hangul)
 	if err != nil {
-		t.Fatalf("HashPassword(hangul): %v", err)
+		t.Fatalf("HashPassword(t.Context(), hangul): %v", err)
 	}
-	if ok, _ := VerifyPassword(jamo, hangulHash); !ok {
+	if ok, _ := VerifyPassword(t.Context(), jamo, hangulHash); !ok {
 		t.Fatal("the jamo form does not verify without the length cap; the test proves nothing")
 	}
 	for _, tc := range []struct {
@@ -97,7 +97,7 @@ func TestVerifyLogin(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ok, err := VerifyLogin(tc.password, tc.hash)
+			ok, err := VerifyLogin(t.Context(), tc.password, tc.hash)
 			if err != nil || ok != tc.want {
 				t.Errorf("VerifyLogin = %v, %v; want %v, nil", ok, err, tc.want)
 			}
@@ -112,7 +112,7 @@ func TestVerifyLogin(t *testing.T) {
 func TestNeedsRehash(t *testing.T) {
 	t.Parallel()
 
-	current, err := HashPassword("correct horse battery staple")
+	current, err := HashPassword(t.Context(), "correct horse battery staple")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestNeedsRehash(t *testing.T) {
 // is the whole process's.
 func TestVerifyLoginSpendsAHash(t *testing.T) {
 	PrepareLogin()
-	hash, err := HashPassword("correct horse battery staple")
+	hash, err := HashPassword(t.Context(), "correct horse battery staple")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -153,12 +153,15 @@ func TestVerifyLoginSpendsAHash(t *testing.T) {
 		{"no account", "correct horse battery staple", ""},
 		{"overlong", strings.Repeat("a", MaxPasswordBytes+1), hash},
 	} {
-		var before, after runtime.MemStats
-		runtime.ReadMemStats(&before)
-		_, _ = VerifyLogin(tc.password, tc.hash)
-		runtime.ReadMemStats(&after)
-		if got := after.TotalAlloc - before.TotalAlloc; got < argonMemoryKiB*1024 {
-			t.Errorf("%s: VerifyLogin allocated %d bytes, want at least %d (one argon2id hash)", tc.name, got, argonMemoryKiB*1024)
-		}
+		// One after the other, for the same reason.
+		t.Run(tc.name, func(t *testing.T) {
+			var before, after runtime.MemStats
+			runtime.ReadMemStats(&before)
+			_, _ = VerifyLogin(t.Context(), tc.password, tc.hash)
+			runtime.ReadMemStats(&after)
+			if got := after.TotalAlloc - before.TotalAlloc; got < argonMemoryKiB*1024 {
+				t.Errorf("VerifyLogin allocated %d bytes, want at least %d (one argon2id hash)", got, argonMemoryKiB*1024)
+			}
+		})
 	}
 }

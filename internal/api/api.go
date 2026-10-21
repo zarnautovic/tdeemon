@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strconv"
 	"strings"
@@ -59,16 +60,20 @@ type Config struct {
 	OIDC *config.OIDC
 	// SecretKey seals the OIDC flow cookie. Required with OIDC.
 	SecretKey []byte
+	// TrustedProxies are the reverse proxies whose X-Forwarded-For names
+	// the client, for the limits on failed sign-ins and bad tokens.
+	TrustedProxies []netip.Prefix
 	// Now returns the current time; time.Now when nil.
 	Now func() time.Time
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
 //
-// Every request goes through, in order: http.CrossOriginProtection,
-// which refuses a cross-origin browser request that is not GET, HEAD or
-// OPTIONS (CSRF); the session or token lookup for API requests; the
-// routes.
+// Every request goes through, in order: the security headers; finding the
+// client's address (behind TrustedProxies, the forwarded one);
+// http.CrossOriginProtection, which refuses a cross-origin browser
+// request that is not GET, HEAD or OPTIONS (CSRF); the session or token
+// lookup for API requests; the routes.
 func NewHandler(cfg Config) (http.Handler, error) {
 	if cfg.DB == nil || cfg.BaseURL == nil || cfg.Logger == nil {
 		return nil, errors.New("api: the database, the base URL and the logger are required")
@@ -76,7 +81,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, secure: cfg.BaseURL.Scheme == "https"}
+	s := newSessions(cfg)
 	auth.PrepareLogin()
 	var o *oidcLogin
 	if cfg.OIDC != nil {
@@ -118,7 +123,8 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeProblem(w, http.StatusForbidden, "cross-origin request refused")
 	}))
-	return cop.Handler(s.authenticate(withAPIErrors(mux))), nil
+	cl := &clients{trusted: cfg.TrustedProxies, logger: cfg.Logger}
+	return securityHeaders(s.secure, cl.resolve(cop.Handler(s.authenticate(withAPIErrors(mux))))), nil
 }
 
 // apiMethods are the methods withAPIErrors probes for an Allow header.
@@ -247,7 +253,9 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 		Summary:     "Get server info",
 		Description: "Name and version of the running server.",
 		Tags:        []string{"meta"},
-		Metadata:    openToAnyToken(),
+		// A Bearer request from an address with too many bad tokens.
+		Errors:   []int{http.StatusTooManyRequests},
+		Metadata: openToAnyToken(),
 	}, func(context.Context, *struct{}) (*infoOutput, error) {
 		return &infoOutput{Body: info}, nil
 	})

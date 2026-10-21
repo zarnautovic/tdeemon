@@ -77,9 +77,12 @@ func TestRequireCurrentSchemaChangesNothing(t *testing.T) {
 		t.Fatalf("requireCurrentSchema = %v, want ErrSchemaOutdated", err)
 	}
 	for _, table := range []string{"schema_migrations", "a", "b"} {
-		if tableExists(t, db, table) {
-			t.Errorf("table %s exists after the check", table)
-		}
+		t.Run(table, func(t *testing.T) {
+			t.Parallel()
+			if tableExists(t, db, table) {
+				t.Error("the table exists after the check")
+			}
+		})
 	}
 }
 
