@@ -191,6 +191,12 @@ func (db *DB) requireCurrentSchema(ctx context.Context, fsys fs.FS) error {
 			return fmt.Errorf("check schema: %w", err)
 		}
 	}
+	if len(applied) > len(known) {
+		// pendingMigrations would advise a restore, which is wrong for a
+		// command next to a newer server that is running.
+		return fmt.Errorf("%w: the database is at version %04d and this binary knows %04d; run the command from the tdeemon version the server runs",
+			ErrSchemaTooNew, len(applied), len(known))
+	}
 	// A changed migration file is the server's to warn about.
 	pending, err := pendingMigrations(known, applied, slog.New(slog.DiscardHandler))
 	if err != nil {

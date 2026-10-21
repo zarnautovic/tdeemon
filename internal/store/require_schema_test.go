@@ -46,11 +46,20 @@ func TestRequireCurrentSchema(t *testing.T) {
 func TestRequireCurrentSchemaSaysWhatToDo(t *testing.T) {
 	t.Parallel()
 
+	ahead := openEmpty(t)
+	if err := ahead.migrate(t.Context(), files(twoMigrations), discard()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	err := ahead.requireCurrentSchema(t.Context(), files(map[string]string{"0001_a.sql": twoMigrations["0001_a.sql"]}))
+	if err == nil || !strings.Contains(err.Error(), "the tdeemon version the server runs") || strings.Contains(err.Error(), "restore") {
+		t.Errorf("error for a newer database = %v, want advice to match the server's version and no restore", err)
+	}
+
 	db := openEmpty(t)
 	if err := db.migrate(t.Context(), files(map[string]string{"0001_a.sql": twoMigrations["0001_a.sql"]}), discard()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	err := db.requireCurrentSchema(t.Context(), files(twoMigrations))
+	err = db.requireCurrentSchema(t.Context(), files(twoMigrations))
 	for _, want := range []string{"version 0001", "expects 0002", "start the server once"} {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("error %v does not contain %q", err, want)

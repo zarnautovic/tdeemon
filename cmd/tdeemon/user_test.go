@@ -159,6 +159,12 @@ func TestUserCreateRejects(t *testing.T) {
 		// would pass the rules, so the overlong input must be noticed.
 		{"overlong in bytes", strings.Repeat("😀", 300), "", []string{"--password-stdin"}, auth.ErrPasswordTooLong, ""},
 		{"zero-width space in the address", "", "ana@example.com\u200b", nil, nil, "invisible character"},
+		{"combining grapheme joiner in the address", "", "ana\u034f@example.com", nil, nil, "invisible character"},
+		{"variation selector in the address", "", "ana\ufe0f@example.com", nil, nil, "invisible character"},
+		// "čaba" typed in a Latin-2 terminal: one byte that is not UTF-8.
+		{"address not UTF-8", "", "\xe8aba@primjer.hr", nil, nil, "not valid UTF-8"},
+		// A bad address is reported as such, not as a name to set.
+		{"control character in the address", "", "ana\x01@example.com", nil, nil, "email"},
 		{"long local part without a name", "", strings.Repeat("a", 101) + "@example.com", nil, nil, "set one with --name"},
 		{"no password", "", "", []string{"--password-stdin"}, nil, "no password on standard input"},
 		{"empty line", "\n", "", []string{"--password-stdin"}, nil, "no password on standard input"},

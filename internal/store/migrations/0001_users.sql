@@ -12,8 +12,8 @@ CREATE TABLE users (
     -- An argon2id hash in the PHC string format. NULL means the user
     -- cannot sign in with a password (single sign-on comes later).
     password_hash TEXT,
-    locale TEXT NOT NULL,
-    timezone TEXT NOT NULL,
+    locale TEXT NOT NULL CHECK (locale <> ''),
+    timezone TEXT NOT NULL CHECK (timezone <> ''),
     -- The hour at which the user's day starts: a meal before it belongs
     -- to the day before.
     day_start_hour INTEGER NOT NULL CHECK (day_start_hour BETWEEN 0 AND 23),

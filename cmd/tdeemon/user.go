@@ -84,7 +84,9 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 	}
 
 	u := newUser(f, cfg.Location, time.Now())
-	if f.name == "" {
+	// The hint only helps when the address itself is fine; otherwise
+	// Validate reports the address.
+	if f.name == "" && user.ValidateEmail(u.Email) == nil {
 		if err := user.ValidateName(u.Name); err != nil {
 			return fmt.Errorf("invalid user: the name comes from the part of the address before the @, and %w; set one with --name", err)
 		}

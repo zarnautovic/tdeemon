@@ -68,7 +68,13 @@ type User struct {
 // Mail providers treat the part before the @ without regard to case, even
 // where RFC 5321 allows otherwise, and two accounts that differ only in
 // case are a mistake.
+//
+// Input that is not valid UTF-8 comes back unchanged, so Validate reports
+// it instead of a stand-in character taking its place.
 func NormalizeEmail(email string) string {
+	if !utf8.ValidString(email) {
+		return email
+	}
 	return norm.NFC.String(strings.ToLower(strings.TrimSpace(email)))
 }
 
@@ -79,7 +85,7 @@ func (u User) Validate() error {
 	if u.ID == uuid.Nil() {
 		errs = append(errs, errors.New("id is missing"))
 	}
-	if err := validateEmail(u.Email); err != nil {
+	if err := ValidateEmail(u.Email); err != nil {
 		errs = append(errs, err)
 	}
 	if err := ValidateName(u.Name); err != nil {
@@ -103,7 +109,9 @@ func (u User) Validate() error {
 	return errors.Join(errs...)
 }
 
-func validateEmail(email string) error {
+// ValidateEmail reports whether email is a plain address in
+// NormalizeEmail's form, without spaces or invisible characters.
+func ValidateEmail(email string) error {
 	if email == "" {
 		return errors.New("email is required")
 	}
@@ -117,9 +125,9 @@ func validateEmail(email string) error {
 		return fmt.Errorf("email is %d bytes long, want at most %d", len(email), MaxEmailLen)
 	}
 	// An invisible character (a zero-width space pasted from a chat, a
-	// direction mark) would make an address nobody can type at sign-in
+	// variation selector) would make an address nobody can type at sign-in
 	// that looks like another user's.
-	if strings.IndexFunc(email, func(r rune) bool { return !unicode.IsGraphic(r) || unicode.IsSpace(r) }) >= 0 {
+	if strings.IndexFunc(email, func(r rune) bool { return invisible(r) || unicode.IsSpace(r) }) >= 0 {
 		return fmt.Errorf("email %q: contains a space or an invisible character", email)
 	}
 	// A bare address only: no display name ("Ana <ana@example.com>"), no
@@ -136,18 +144,32 @@ func validateEmail(email string) error {
 // characters.
 func ValidateName(name string) error {
 	switch {
+	case !utf8.ValidString(name):
+		return errors.New("name is not valid UTF-8")
+	// Spaces are fine inside a name; a tab, a line break, a direction
+	// override that reorders the list of users, or a blank that only
+	// looks like a name are not.
+	case strings.IndexFunc(name, invisible) >= 0:
+		return fmt.Errorf("name %q: contains a control or invisible character", name)
 	case strings.TrimSpace(name) == "":
 		return errors.New("name is required")
 	case name != strings.TrimSpace(name):
 		return fmt.Errorf("name %q: has space at the start or end", name)
-	case !utf8.ValidString(name):
-		return errors.New("name is not valid UTF-8")
 	case utf8.RuneCountInString(name) > MaxNameLen:
 		return fmt.Errorf("name is %d characters long, want at most %d", utf8.RuneCountInString(name), MaxNameLen)
-	case strings.IndexFunc(name, unicode.IsControl) >= 0:
-		return errors.New("name contains a control character")
 	}
 	return nil
+}
+
+// invisible reports a character that shows as nothing, or as a blank:
+// control and format characters (a tab, a zero-width space, a byte order
+// mark, direction marks), line and paragraph separators, characters
+// Unicode says to ignore when not supported (a combining grapheme joiner,
+// Hangul fillers), variation selectors, the blank Braille pattern, and
+// U+FFFD, which stands in for bytes that were not text.
+func invisible(r rune) bool {
+	return !unicode.IsGraphic(r) || r == utf8.RuneError || r == '\u2800' ||
+		unicode.In(r, unicode.Other_Default_Ignorable_Code_Point, unicode.Variation_Selector)
 }
 
 // ValidateTimeZone accepts an IANA time zone name, such as

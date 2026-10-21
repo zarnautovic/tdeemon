@@ -115,22 +115,24 @@ func TestUsersTableChecks(t *testing.T) {
 	t.Parallel()
 
 	const insert = `INSERT INTO users (id, email, name, role, password_hash, locale, timezone, day_start_hour, created_at, updated_at)
-		VALUES (?, ?, ?, ?, NULL, 'en', 'UTC', ?, '2026-10-21T08:00:00Z', '2026-10-21T08:00:00Z')`
+		VALUES (?, ?, ?, ?, NULL, ?, ?, ?, '2026-10-21T08:00:00Z', '2026-10-21T08:00:00Z')`
 	for _, tc := range []struct {
-		name, id, email, userName, role string
-		dayStart                        int
+		name, email, userName, role, locale, timeZone string
+		dayStart                                      int
 	}{
-		{"empty email", uuid.NewV7().String(), "", "Ana", "user", 4},
-		{"empty name", uuid.NewV7().String(), "ana@example.com", "", "user", 4},
-		{"unknown role", uuid.NewV7().String(), "ana@example.com", "Ana", "owner", 4},
-		{"day starts at 24", uuid.NewV7().String(), "ana@example.com", "Ana", "user", 24},
-		{"day starts before 0", uuid.NewV7().String(), "ana@example.com", "Ana", "user", -1},
+		{"empty email", "", "Ana", "user", "en", "UTC", 4},
+		{"empty name", "ana@example.com", "", "user", "en", "UTC", 4},
+		{"unknown role", "ana@example.com", "Ana", "owner", "en", "UTC", 4},
+		{"empty locale", "ana@example.com", "Ana", "user", "", "UTC", 4},
+		{"empty time zone", "ana@example.com", "Ana", "user", "en", "", 4},
+		{"day starts at 24", "ana@example.com", "Ana", "user", "en", "UTC", 24},
+		{"day starts before 0", "ana@example.com", "Ana", "user", "en", "UTC", -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			db := storetest.Open(t)
 			err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-				_, err := tx.ExecContext(t.Context(), insert, tc.id, tc.email, tc.userName, tc.role, tc.dayStart)
+				_, err := tx.ExecContext(t.Context(), insert, uuid.NewV7().String(), tc.email, tc.userName, tc.role, tc.locale, tc.timeZone, tc.dayStart)
 				return err
 			})
 			if err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
@@ -142,7 +144,7 @@ func TestUsersTableChecks(t *testing.T) {
 	db := storetest.Open(t)
 	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 		for range 2 {
-			if _, err := tx.ExecContext(t.Context(), insert, uuid.NewV7().String(), "ana@example.com", "Ana", "user", 4); err != nil {
+			if _, err := tx.ExecContext(t.Context(), insert, uuid.NewV7().String(), "ana@example.com", "Ana", "user", "en", "UTC", 4); err != nil {
 				return err
 			}
 		}

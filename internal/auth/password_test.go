@@ -106,7 +106,7 @@ func TestNormalization(t *testing.T) {
 func TestParseHashLimits(t *testing.T) {
 	t.Parallel()
 
-	salt, key := strings.Repeat("A", 22), strings.Repeat("A", 1364) // 16 and 1023 bytes
+	salt, key := strings.Repeat("A", 22), strings.Repeat("A", 1366) // 16 and 1024 bytes
 	for _, params := range []string{"m=262144,t=10,p=1", "m=8,t=1,p=1", "m=2040,t=1,p=255"} {
 		if _, err := parseHash("$argon2id$v=19$" + params + "$" + salt + "$" + key); err != nil {
 			t.Errorf("parseHash with %s: %v", params, err)
@@ -165,7 +165,7 @@ func TestVerifyRejectsInvalidHashes(t *testing.T) {
 		{"short salt", with(4, "c2FsdA")},
 		{"hash not base64", with(5, "!!!!")},
 		{"short hash", with(5, "c2hvcnQ")},
-		{"long hash", with(5, strings.Repeat("A", 1368))}, // 1026 bytes
+		{"long hash", with(5, strings.Repeat("A", 1367))}, // 1025 bytes
 	} {
 		ok, err := VerifyPassword("correct horse battery staple", tc.hash)
 		if ok || !errors.Is(err, ErrInvalidHash) {

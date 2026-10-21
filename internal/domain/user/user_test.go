@@ -47,12 +47,22 @@ func TestValidate(t *testing.T) {
 		{"email with a direction mark", func(u *User) { u.Email = "ana\u202e@example.com" }, "an invisible character"},
 		{"email with a no-break space", func(u *User) { u.Email = "ana\u00a0x@example.com" }, "a space"},
 		{"email not UTF-8", func(u *User) { u.Email = "ana\xff@example.com" }, "not valid UTF-8"},
+		{"email with a combining grapheme joiner", func(u *User) { u.Email = "ana\u034f@example.com" }, "an invisible character"},
+		{"email with a variation selector", func(u *User) { u.Email = "ana\ufe0f@example.com" }, "an invisible character"},
+		{"email with a supplementary variation selector", func(u *User) { u.Email = "ana\U000e0100@example.com" }, "an invisible character"},
+		{"email with a Hangul filler", func(u *User) { u.Email = "ana\u3164@example.com" }, "an invisible character"},
+		{"email with a blank Braille pattern", func(u *User) { u.Email = "ana\u2800@example.com" }, "an invisible character"},
+		{"email with a replacement character", func(u *User) { u.Email = "\ufffdaba@primjer.hr" }, "an invisible character"},
 		{"email decomposed", func(u *User) { u.Email = "c\u030caba@example.com" }, "not normalized"},
 		{"email too long", func(u *User) { u.Email = strings.Repeat("a", 64) + "@" + strings.Repeat("b", 186) + ".com" }, "at most 254"},
 		{"no name", func(u *User) { u.Name = "  " }, "name is required"},
 		{"name with space around", func(u *User) { u.Name = " Ana" }, "space at the start or end"},
 		{"name too long", func(u *User) { u.Name = strings.Repeat("ž", MaxNameLen+1) }, "at most 100"},
-		{"name with a control character", func(u *User) { u.Name = "Ana\nMarić" }, "control character"},
+		{"name with a control character", func(u *User) { u.Name = "Ana\nMarić" }, "control or invisible"},
+		{"name of a zero-width space", func(u *User) { u.Name = "\u200b" }, "control or invisible"},
+		{"name with a direction override", func(u *User) { u.Name = "Ana\u202eMarić" }, "control or invisible"},
+		{"name with a line separator", func(u *User) { u.Name = "Ana\u2028Marić" }, "control or invisible"},
+		{"name of a Hangul filler", func(u *User) { u.Name = "\u3164" }, "control or invisible"},
 		{"name not UTF-8", func(u *User) { u.Name = "Ana\xff" }, "not valid UTF-8"},
 		{"unknown role", func(u *User) { u.Role = "owner" }, `role "owner"`},
 		{"unknown locale", func(u *User) { u.Locale = "de" }, `locale "de"`},
@@ -108,6 +118,8 @@ func TestValidateAcceptsEdges(t *testing.T) {
 		{"Croatian", func(u *User) { u.Locale = "hr" }},
 		{"plain user", func(u *User) { u.Role = RoleUser }},
 		{"longest name", func(u *User) { u.Name = strings.Repeat("ž", MaxNameLen) }},
+		{"name with spaces and marks", func(u *User) { u.Name = "Ana-Marija O'Brien Ćosić" }},
+		{"accented address", func(u *User) { u.Email = "jos\u00e9@example.com" }},
 		{"plus address", func(u *User) { u.Email = "ana+tdeemon@example.com" }},
 		{"no dot in the domain", func(u *User) { u.Email = "ana@localhost" }},
 		{"letters with diacritics", func(u *User) { u.Email = "\u010daba@primjer.hr" }},
@@ -123,6 +135,11 @@ func TestValidateAcceptsEdges(t *testing.T) {
 
 func TestNormalizeEmail(t *testing.T) {
 	t.Parallel()
+
+	// Bytes that are not UTF-8 stay as they are, for Validate to report.
+	if got := NormalizeEmail(" \xe8aba@primjer.hr"); got != " \xe8aba@primjer.hr" {
+		t.Errorf("NormalizeEmail changed input that is not UTF-8 into %q", got)
+	}
 
 	for in, want := range map[string]string{
 		"ana@example.com":       "ana@example.com",
