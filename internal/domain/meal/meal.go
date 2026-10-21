@@ -255,8 +255,11 @@ func (m Meal) Validate() error {
 	case y < MinYear || y > MaxYear:
 		errs = append(errs, fmt.Errorf("eaten in %d: want %d to %d", y, MinYear, MaxYear))
 	}
-	if m.Day.IsZero() {
+	switch {
+	case m.Day.IsZero():
 		errs = append(errs, errors.New("the day is missing"))
+	case m.Day.Year < MinYear || m.Day.Year > MaxYear:
+		errs = append(errs, fmt.Errorf("day %s: want a year from %d to %d", m.Day, MinYear, MaxYear))
 	}
 	switch m.Client {
 	case ClientMCP, ClientChat, ClientWeb, ClientTelegram, ClientImport:

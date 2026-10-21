@@ -481,9 +481,11 @@ the first spec.
     values), not what the server worked out, so a retry after a food was
     corrected is still a retry. A client gives the meal's `id`; when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
-    the clock, so a retry has the same one. The API takes only a version
-    7 ID whose time is near the clock, so a model cannot reuse yesterday's
-    meal ID or one made up.
+    the clock, so a retry has the same one. A new meal's ID must be a
+    version 7 ID whose time is near the clock, so a model cannot reuse
+    yesterday's meal ID or make one up; an ID already stored goes to the
+    fingerprint instead, so an offline queue's late retry still finds its
+    meal.
   - The fingerprint is the create's: an edit leaves it, so a late retry
     of the create (an offline queue that lost the answer) returns the
     meal as it is now.
