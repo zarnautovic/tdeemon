@@ -106,7 +106,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `phases` | user_id, type (cut/maintain/bulk/recomp), started_at, ends_at?, target_rate_pct_week (signed), goal_weight?, milestone_weight? | the user's goal timeline; a phase start anchors the water/glycogen window; a diet break or a deload maintenance week is just a short `maintain` phase; goal and milestone may sit above or below the current weight |
 | `profile_notes` | user_id, text | free-text preferences and guidance (e.g. food dislikes, schedule constraints) handed to the AI as context |
 | `shopping_items` | user_id, text, done | |
-| `events` | id, user_id, at, actor (user/import), client, model, operation, entity, before_state, after_state, undone_by | every write, with the state before and after (JSON); the audit trail, the tombstone of a deleted meal, and what `undo_last` takes back |
+| `events` | id, user_id, at, actor (user/import), client, model, operation, entity, before_state, after_state, undone_by, stale | every write, with the state before and after (JSON); the audit trail, the tombstone of a deleted meal, and what `undo_last` takes back; `stale` marks a change undo passed over (§5) |
 
 A table of a user's rows carries `user_id` even when its parent row has
 it too (`meal_items`, `food_servings`, `food_aliases`), with a foreign
@@ -178,7 +178,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
 | `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
-| `delete_meal(meal_id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left), newest first: undoing again goes further back, it does not redo. A change whose entity an import wrote since is not taken back (that would lose the import): the answer says so, and the next undo goes on to the change before |
+| `delete_meal(meal_id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
 | `upsert_food(...)` | save or correct a food (label values); same-name-same-portion rule |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(metric, value, date?)` | weight and other manual measurements |

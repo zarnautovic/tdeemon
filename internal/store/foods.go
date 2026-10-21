@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -384,14 +383,14 @@ func setArchived(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, archived
 // before, or as saved before. A food that e added goes, unless a meal
 // uses it, which keeps it, archived.
 func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
-	id, err := uuid.Parse(e.Entity)
+	id, err := entityID(e)
 	if err != nil {
-		return fmt.Errorf("food id %q: %w", e.Entity, err)
+		return err
 	}
 	switch {
 	case e.Action == event.FoodArchive:
 		var s archivedState
-		if err := json.Unmarshal(e.Before, &s); err != nil {
+		if err := decode(e.Before, &s); err != nil {
 			return err
 		}
 		return setArchived(ctx, tx, userID, id, s.Archived, now)
@@ -408,7 +407,7 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 		return err
 	}
 	var f food.Food
-	if err := json.Unmarshal(e.Before, &f); err != nil {
+	if err := decode(e.Before, &f); err != nil {
 		return err
 	}
 	// Another food may have taken the name or an alias since.
@@ -418,10 +417,10 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 		return err
 	}
 	if other > 0 {
-		return errUndoBlocked
+		return clash{UndoNameTaken}
 	}
 	if err := checkAliases(ctx, tx, userID, f); errors.Is(err, ErrAliasTaken) {
-		return errUndoBlocked
+		return fmt.Errorf("%w: %w", clash{UndoAliasTaken}, err)
 	} else if err != nil {
 		return err
 	}
@@ -434,7 +433,7 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 // foodStateNow returns the state of e's food now, as e's kind of event
 // records it: the food (nil when gone), or whether it is archived.
 func foodStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
-	id, err := uuid.Parse(e.Entity)
+	id, err := entityID(e)
 	if err != nil {
 		return nil, err
 	}

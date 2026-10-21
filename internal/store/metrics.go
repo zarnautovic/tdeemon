@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +30,10 @@ type MetricChange struct {
 func (db *DB) MergeMetrics(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, vs []metric.Value, now time.Time) ([]MetricChange, error) {
 	if err := metric.ValidateDay(vs); err != nil {
 		return nil, fmt.Errorf("invalid metrics: %w", err)
+	}
+	vs = append([]metric.Value(nil), vs...)
+	for i := range vs {
+		vs[i].Value += 0 // -0 is 0, as the table reads it back
 	}
 	if d.IsZero() {
 		return nil, errors.New("invalid metrics: the day is missing")
@@ -101,6 +104,7 @@ func (db *DB) SetMetric(ctx context.Context, userID uuid.UUID, a event.Actor, d 
 	if d.IsZero() {
 		return nil, errors.New("invalid metric: the day is missing")
 	}
+	v.Value += 0 // -0 is 0, as the table reads it back
 	if err := a.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid actor: %w", err)
 	}
@@ -226,7 +230,7 @@ func dropMetric(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, k
 // records them: the value (nil when none) of a single kind, or each kind's.
 func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
 	dayPart, kind, single := strings.Cut(e.Entity, "/")
-	d, err := day.ParseDate(dayPart)
+	d, err := entityDay(dayPart)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +242,7 @@ func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 		return v, nil
 	}
 	var after metricsState
-	if err := json.Unmarshal(e.After, &after); err != nil {
+	if err := decode(e.After, &after); err != nil {
 		return nil, err
 	}
 	now := metricsState{}
@@ -260,7 +264,7 @@ func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 // value e changed as before, or gone where the day had none.
 func takeBackMetrics(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
 	dayPart, kind, single := strings.Cut(e.Entity, "/")
-	d, err := day.ParseDate(dayPart)
+	d, err := entityDay(dayPart)
 	if err != nil {
 		return err
 	}
@@ -268,12 +272,12 @@ func takeBackMetrics(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 	if single {
 		var v *metric.Value
 		if e.Before != nil {
-			if err := json.Unmarshal(e.Before, &v); err != nil {
+			if err := decode(e.Before, &v); err != nil {
 				return err
 			}
 		}
 		before[metric.Kind(kind)] = v
-	} else if err := json.Unmarshal(e.Before, &before); err != nil {
+	} else if err := decode(e.Before, &before); err != nil {
 		return err
 	}
 	for k, v := range before {

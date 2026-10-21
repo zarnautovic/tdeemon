@@ -310,8 +310,18 @@ in `web/`.
   model) and records an event in the same transaction, with the state
   before and after, which undo puts back. A write that changes nothing (a
   retry, a merge of nothing new) records nothing. A new kind of write
-  adds its `event.Action`, the operation to the `events` table's CHECK
-  and its way back to `takeBack`.
+  adds its `event.Action`, the operation to the `events` table's CHECK,
+  its way back to `takeBack` and the reading of its state to `stateNow`
+  (what undo compares with the state the change left). The state an
+  event records must be what `stateNow` reads back, so the two compare
+  alike: read it back in the transaction, or normalise it as the table
+  does (-0 to 0, a time to the second in UTC). A way back that clashes
+  with what came since returns a `clash` with its `UndoReason` (a new
+  kind of clash is a new reason), and a way back and the reading in
+  `stateNow` read the change's own data through `decode`, `entityID` and
+  `entityDay`. Those failures, a clash, and a constraint the state
+  before breaks now pass the change over; any other error, a bug
+  included, is returned and passes over nothing.
 - **One user's data stays theirs:**
   - every store method that reads or writes a user's rows takes the
     user's ID as a parameter and filters by it (`WHERE user_id = ?`).
