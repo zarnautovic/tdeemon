@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,6 +42,15 @@ const sealPurpose = "oidc flow"
 // providerTimeout bounds every request to the provider.
 const providerTimeout = 10 * time.Second
 
+// discoveryRetry is how long a failed discovery answers for itself before
+// the next sign-in tries again, so a provider that hangs costs one wait,
+// not one per request.
+const discoveryRetry = 30 * time.Second
+
+// maxReturnTo caps return_to: it rides in the flow cookie, and a browser
+// drops a cookie over 4 KB, which would fail the sign-in without a word.
+const maxReturnTo = 1024
+
 // oidcLogin signs users in through an OpenID Connect provider.
 type oidcLogin struct {
 	sessions    *sessions
@@ -50,10 +60,23 @@ type oidcLogin struct {
 	client      *http.Client
 
 	// The provider is discovered on first use and kept, so tdeemon starts
-	// while the provider is down (the password still works) and tries
-	// again on the next sign-in.
+	// while the provider is down (the password still works); after a
+	// failure, sign-ins answer with it for discoveryRetry, then try again.
 	mu       sync.Mutex
 	provider *oidc.Provider
+	failed   error
+	failedAt time.Time
+	insecure bool // the issuer is plain HTTP on loopback
+}
+
+func newOIDCLogin(s *sessions, cfg config.OIDC, secret []byte, redirectURL string) *oidcLogin {
+	// config.Load allows plain HTTP only for an issuer on loopback; then
+	// its endpoints may be plain HTTP too.
+	insecure := strings.HasPrefix(cfg.Issuer, "http://")
+	return &oidcLogin{
+		sessions: s, cfg: cfg, secret: secret, redirectURL: redirectURL, insecure: insecure,
+		client: &http.Client{Timeout: providerTimeout, CheckRedirect: refuseInsecureRedirects(insecure)},
+	}
 }
 
 // flow is what the flow cookie carries between the two requests.
@@ -90,9 +113,10 @@ func (o *oidcLogin) flowCookie(value string, maxAge int) *http.Cookie {
 	}
 }
 
-// ctx returns a context for requests to the provider: with the timeout
-// client, and not cancelled with the request, because go-oidc keeps the
-// discovery context to fetch the provider's keys later.
+// ctx returns a context for requests to the provider: with the client
+// (its timeout and redirect rule; go-oidc also keeps it to fetch the keys
+// later), and not cancelled with the request, so a client that goes away
+// mid-discovery does not count as the provider failing.
 func (o *oidcLogin) ctx(ctx context.Context) context.Context {
 	return oidc.ClientContext(context.WithoutCancel(ctx), o.client)
 }
@@ -103,12 +127,59 @@ func (o *oidcLogin) getProvider(ctx context.Context) (*oidc.Provider, error) {
 	if o.provider != nil {
 		return o.provider, nil
 	}
+	now := o.sessions.now()
+	if o.failed != nil && now.Sub(o.failedAt) < discoveryRetry {
+		return nil, o.failed
+	}
 	p, err := oidc.NewProvider(o.ctx(ctx), o.cfg.Issuer)
+	if err == nil {
+		err = o.checkEndpoints(p)
+	}
 	if err != nil {
+		o.failed, o.failedAt = err, now
 		return nil, err
 	}
-	o.provider = p
+	o.provider, o.failed = p, nil
 	return p, nil
+}
+
+// checkEndpoints refuses a provider whose discovery document points the
+// token exchange or the keys at plain HTTP, which would undo the https
+// the issuer had to use.
+func (o *oidcLogin) checkEndpoints(p *oidc.Provider) error {
+	var doc struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := p.Claims(&doc); err != nil {
+		return err
+	}
+	for _, raw := range []string{p.Endpoint().AuthURL, p.Endpoint().TokenURL, doc.JWKSURI} {
+		u, err := url.Parse(raw)
+		if err != nil || !allowedScheme(u.Scheme, o.insecure) {
+			return fmt.Errorf("the provider's discovery document has an endpoint that is not https: %q", raw)
+		}
+	}
+	return nil
+}
+
+// allowedScheme reports whether a URL of the provider may use scheme:
+// https, or http when the issuer itself is plain HTTP on loopback.
+func allowedScheme(scheme string, insecure bool) bool {
+	return scheme == "https" || (insecure && scheme == "http")
+}
+
+// refuseInsecureRedirects is the client's CheckRedirect: a redirect from
+// the provider may not leave https.
+func refuseInsecureRedirects(insecure bool) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if !allowedScheme(req.URL.Scheme, insecure) {
+			return fmt.Errorf("refused a redirect to %s, which is not https", req.URL.Redacted())
+		}
+		return nil
+	}
 }
 
 func (o *oidcLogin) oauth2Config(p *oidc.Provider) *oauth2.Config {
@@ -178,9 +249,10 @@ func (o *oidcLogin) callback(w http.ResponseWriter, r *http.Request) {
 
 	now := o.sessions.now()
 	u, err := o.sessions.db.SignInWithIdentity(ctx, id, now)
-	if errors.Is(err, store.ErrNoAccount) {
-		o.sessions.logger.InfoContext(ctx, "an OIDC sign-in has no account", "issuer", id.Issuer)
-		writeProblem(w, http.StatusForbidden, "there is no account for you on this instance; ask its admin to add you")
+	if msg, refused := refusal(err); refused {
+		// The reason, never the address: the log is no place for it.
+		o.sessions.logger.InfoContext(ctx, "an OIDC sign-in was refused", "issuer", id.Issuer, "reason", err.Error())
+		writeProblem(w, http.StatusForbidden, msg)
 		return
 	}
 	if err != nil {
@@ -196,7 +268,23 @@ func (o *oidcLogin) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &cookie)
-	http.Redirect(w, r, f.ReturnTo, http.StatusSeeOther)
+	// Checked again: the seal vouches for the cookie, this for the target.
+	http.Redirect(w, r, safeReturnTo(f.ReturnTo), http.StatusSeeOther)
+}
+
+// refusal returns what to tell a person whose identity cannot be linked,
+// and whether err is such a refusal.
+func refusal(err error) (string, bool) {
+	switch {
+	case errors.Is(err, store.ErrEmailNotVerified):
+		return "the sign-in provider does not confirm that your email address is verified, so it cannot be linked " +
+			"to an account here; ask the admin (see the README on single sign-on)", true
+	case errors.Is(err, store.ErrAlreadyLinked):
+		return "your account here is linked to another account at this sign-in provider; ask the admin", true
+	case errors.Is(err, store.ErrNoAccount):
+		return "there is no account for you on this instance; ask its admin to add you", true
+	}
+	return "", false
 }
 
 // readFlow returns the flow the request's flow cookie carries, if it is
@@ -241,29 +329,91 @@ func (o *oidcLogin) verify(ctx context.Context, code string, f flow) (store.Iden
 	}
 	idt, err := p.Verifier(&oidc.Config{ClientID: o.cfg.ClientID}).Verify(o.ctx(ctx), raw)
 	if err != nil {
+		// go-oidc does not wrap a failure to fetch the keys, so ask the key
+		// endpoint directly: if it does not answer, the provider is at
+		// fault, not the token.
+		if !o.keysReachable(ctx, p) {
+			return store.Identity{}, providerError{fmt.Errorf("%w (the provider's keys cannot be fetched)", err)}
+		}
 		return store.Identity{}, err
 	}
 	if subtle.ConstantTimeCompare([]byte(idt.Nonce), []byte(f.Nonce)) != 1 {
 		return store.Identity{}, errors.New("the ID token's nonce is not this sign-in's")
 	}
 	var claims struct {
-		Email         string `json:"email"`
-		EmailVerified bool   `json:"email_verified"`
+		Email         string   `json:"email"`
+		EmailVerified flexBool `json:"email_verified"`
 	}
 	if err := idt.Claims(&claims); err != nil {
 		return store.Identity{}, err
 	}
 	return store.Identity{
 		Issuer: idt.Issuer, Subject: idt.Subject,
-		Email: user.NormalizeEmail(claims.Email), EmailVerified: claims.EmailVerified,
+		Email: linkableEmail(claims.Email), EmailVerified: bool(claims.EmailVerified),
 	}, nil
+}
+
+// keysReachable reports whether the provider's key endpoint answers.
+func (o *oidcLogin) keysReachable(ctx context.Context, p *oidc.Provider) bool {
+	var doc struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := p.Claims(&doc); err != nil {
+		return false
+	}
+	req, err := http.NewRequestWithContext(o.ctx(ctx), http.MethodGet, doc.JWKSURI, http.NoBody)
+	if err != nil {
+		return false
+	}
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = resp.Body.Close() }()
+	return resp.StatusCode == http.StatusOK
+}
+
+// flexBool reads a boolean claim sent as true or false, or, as some
+// providers do, as the string "true" or "false". Anything else is false.
+type flexBool bool
+
+func (b *flexBool) UnmarshalJSON(data []byte) error {
+	switch strings.ToLower(strings.Trim(string(data), `"`)) {
+	case "true":
+		*b = true
+	default:
+		*b = false
+	}
+	return nil
+}
+
+// linkableEmail returns the provider's address normalized, if
+// normalizing changes nothing but ASCII letter case; otherwise "", so the
+// identity cannot be linked by email. Case folding maps some other
+// characters onto ASCII (the Kelvin sign onto k), and an address written
+// that way at the provider must not land on another user's account.
+func linkableEmail(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if asciiLower(trimmed) != user.NormalizeEmail(raw) {
+		return ""
+	}
+	return user.NormalizeEmail(raw)
+}
+
+func asciiLower(s string) string {
+	return strings.Map(func(r rune) rune {
+		if 'A' <= r && r <= 'Z' {
+			return r + ('a' - 'A')
+		}
+		return r
+	}, s)
 }
 
 // safeReturnTo keeps a return_to that is a path on this instance and
 // replaces anything else with "/", so the sign-in cannot send the browser
 // to another site.
 func safeReturnTo(s string) string {
-	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.ContainsAny(s, "\\\r\n\t") {
+	if len(s) > maxReturnTo || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.ContainsAny(s, "\\\r\n\t") {
 		return "/"
 	}
 	u, err := url.Parse(s)

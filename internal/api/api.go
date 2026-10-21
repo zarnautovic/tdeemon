@@ -82,11 +82,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		if len(cfg.SecretKey) == 0 {
 			return nil, errors.New("api: OIDC needs the secret key")
 		}
-		o = &oidcLogin{
-			sessions: s, cfg: *cfg.OIDC, secret: cfg.SecretKey,
-			redirectURL: cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host + oidcCallbackPath,
-			client:      &http.Client{Timeout: providerTimeout},
-		}
+		o = newOIDCLogin(s, *cfg.OIDC, cfg.SecretKey, cfg.BaseURL.Scheme+"://"+cfg.BaseURL.Host+oidcCallbackPath)
 	}
 
 	mux := http.NewServeMux()

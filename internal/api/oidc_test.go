@@ -50,6 +50,9 @@ type idp struct {
 	// otherKey signs the next tokens with a key the provider does not
 	// publish.
 	otherKey bool
+	// jwksURI, when set, replaces the keys' address in the discovery
+	// document.
+	jwksURI string
 }
 
 func newIDP(t *testing.T) *idp {
@@ -78,11 +81,17 @@ func (p *idp) discovery(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "down", http.StatusServiceUnavailable)
 		return
 	}
+	jwks := p.srv.URL + "/keys"
+	p.mu.Lock()
+	if p.jwksURI != "" {
+		jwks = p.jwksURI
+	}
+	p.mu.Unlock()
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"issuer":                                p.srv.URL,
 		"authorization_endpoint":                p.srv.URL + "/authorize",
 		"token_endpoint":                        p.srv.URL + "/token",
-		"jwks_uri":                              p.srv.URL + "/keys",
+		"jwks_uri":                              jwks,
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 	})
 }
@@ -165,9 +174,14 @@ func (p *idp) token(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "token_type": "Bearer", "expires_in": 3600, "id_token": idToken})
 }
 
-// newOIDCInstance is newInstance with the fake provider configured. ana
-// exists, without a password.
+// newOIDCInstance is newInstance with the fake provider configured, for
+// an instance at http://localhost. ana exists, without a password.
 func newOIDCInstance(t *testing.T, p *idp) *instance {
+	t.Helper()
+	return newOIDCInstanceAt(t, p, &url.URL{Scheme: "http", Host: "localhost"})
+}
+
+func newOIDCInstanceAt(t *testing.T, p *idp, base *url.URL) *instance {
 	t.Helper()
 
 	db := storetest.Open(t)
@@ -180,7 +194,7 @@ func newOIDCInstance(t *testing.T, p *idp) *instance {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	h, err := api.NewHandler(api.Config{
-		Info: testInfo, DB: db, BaseURL: &url.URL{Scheme: "http", Host: "localhost"},
+		Info: testInfo, DB: db, BaseURL: base,
 		Logger: slog.New(slog.DiscardHandler), Now: c.Now,
 		OIDC:      &config.OIDC{Issuer: p.srv.URL, ClientID: clientID, ClientSecret: "s3cret", Name: "Authentik"},
 		SecretKey: []byte(strings.Repeat("k", 32)),
@@ -189,6 +203,11 @@ func newOIDCInstance(t *testing.T, p *idp) *instance {
 		t.Fatalf("NewHandler: %v", err)
 	}
 	return &instance{h: h, db: db, clock: c, user: u}
+}
+
+// requestCookie is a cookie as a client sends it: a name and a value.
+func requestCookie(name, value string) *http.Cookie {
+	return &http.Cookie{Name: name, Value: value} //nolint:gosec // G124: a request's cookie carries no attributes.
 }
 
 // cookieNamed returns the response's cookie called name, or nil.
@@ -215,6 +234,9 @@ func (in *instance) begin(t *testing.T, p *idp, returnTo string) (*http.Cookie, 
 		t.Fatalf("oidc login: %d %s", rec.Code, rec.Body.String())
 	}
 	flow := cookieNamed(rec, "tdeemon_oidc")
+	if flow == nil {
+		flow = cookieNamed(rec, "__Host-tdeemon_oidc")
+	}
 	if flow == nil || !flow.HttpOnly || flow.SameSite != http.SameSiteLaxMode || flow.MaxAge != 600 {
 		t.Fatalf("flow cookie = %+v, want HttpOnly, SameSite=Lax, ten minutes", flow)
 	}
@@ -272,10 +294,12 @@ func TestOIDCSignInWithoutAnAccount(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		claims map[string]any
+		want   string
 	}{
-		{"unverified email", map[string]any{"email_verified": false}},
-		{"unknown email", map[string]any{"email": "ivo@example.com"}},
-		{"no email", map[string]any{"email": ""}},
+		{"unverified email", map[string]any{"email_verified": false}, "does not confirm that your email address is verified"},
+		{"unverified, as a string", map[string]any{"email_verified": "false"}, "does not confirm that your email address is verified"},
+		{"unknown email", map[string]any{"email": "ivo@example.com"}, "no account for you on this instance"},
+		{"no email", map[string]any{"email": ""}, "no account for you on this instance"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -285,7 +309,7 @@ func TestOIDCSignInWithoutAnAccount(t *testing.T) {
 			flow, callback := in.begin(t, p, "")
 			rec := in.finish(t, callback, flow)
 			if rec.Code != http.StatusForbidden || cookieNamed(rec, "tdeemon_session") != nil ||
-				!strings.Contains(rec.Body.String(), "no account for you on this instance") {
+				!strings.Contains(rec.Body.String(), tc.want) {
 				t.Errorf("callback: %d %s, want 403 and no session", rec.Code, rec.Body.String())
 			}
 		})
@@ -301,7 +325,12 @@ func TestOIDCCallbackRefusesForeignFlows(t *testing.T) {
 	in := newOIDCInstance(t, p)
 	flow, callback := in.begin(t, p, "")
 	_, otherCallback := in.begin(t, p, "") // someone else's flow
-	forged := requestCookie(flow.Name, auth.Seal([]byte(strings.Repeat("x", 32)), "oidc flow", []byte(`{"state":"s"}`)))
+	// The real flow, sealed with another key: only the MAC is wrong.
+	genuine, err := auth.Open([]byte(strings.Repeat("k", 32)), "oidc flow", flow.Value)
+	if err != nil {
+		t.Fatalf("open the real flow: %v", err)
+	}
+	forged := requestCookie(flow.Name, auth.Seal([]byte(strings.Repeat("x", 32)), "oidc flow", genuine))
 
 	for _, tc := range []struct {
 		name     string
@@ -370,6 +399,12 @@ func TestOIDCProviderFailures(t *testing.T) {
 	p.mu.Lock()
 	p.down = false
 	p.mu.Unlock()
+	// The failure answers for itself for a while, without asking again…
+	if rec := in.do(t, http.MethodGet, "/api/v1/auth/oidc/login", "", nil, nil); rec.Code != http.StatusBadGateway {
+		t.Errorf("login right after the failure: %d, want the cached 502", rec.Code)
+	}
+	// …then the next sign-in discovers the provider.
+	in.clock.Set(in.clock.Now().Add(31 * time.Second))
 	flow, callback := in.begin(t, p, "")
 
 	// A code the provider does not know (or a wrong PKCE verifier).
@@ -470,5 +505,108 @@ func TestOIDCStoreFailures(t *testing.T) {
 		if rec := in.finish(t, callback, flow); rec.Code != http.StatusInternalServerError || cookieNamed(rec, "tdeemon_session") != nil {
 			t.Errorf("callback when writing %s fails: %d, want 500 and no session", table, rec.Code)
 		}
+	}
+}
+
+// Over HTTPS the flow cookie is a __Host- cookie, like the session's.
+func TestOIDCFlowCookieOverHTTPS(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	in := newOIDCInstanceAt(t, p, &url.URL{Scheme: "https", Host: "tdeemon.example"})
+	rec := in.do(t, http.MethodGet, "/api/v1/auth/oidc/login", "", nil, nil)
+	c := cookieNamed(rec, "__Host-tdeemon_oidc")
+	if rec.Code != http.StatusFound || c == nil || !c.Secure || c.Path != "/" || c.Domain != "" {
+		t.Errorf("login: %d, flow cookie %+v; want __Host-tdeemon_oidc, Secure, Path=/", rec.Code, c)
+	}
+}
+
+func TestOIDCAccountLinkedElsewhere(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	in := newOIDCInstance(t, p)
+	flow, callback := in.begin(t, p, "")
+	if rec := in.finish(t, callback, flow); rec.Code != http.StatusSeeOther {
+		t.Fatalf("first sign-in: %d", rec.Code)
+	}
+	// Another account at the provider with ana's address.
+	p.mu.Lock()
+	p.claims["sub"] = "subject-2"
+	p.mu.Unlock()
+	flow, callback = in.begin(t, p, "")
+	rec := in.finish(t, callback, flow)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "linked to another account") {
+		t.Errorf("second account: %d %s, want 403 naming the link", rec.Code, rec.Body.String())
+	}
+}
+
+// email_verified sent as a string still counts.
+func TestOIDCEmailVerifiedAsAString(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	p.claims["email_verified"] = "true"
+	in := newOIDCInstance(t, p)
+	flow, callback := in.begin(t, p, "")
+	if rec := in.finish(t, callback, flow); rec.Code != http.StatusSeeOther {
+		t.Errorf("sign-in with email_verified \"true\": %d %s, want 303", rec.Code, rec.Body.String())
+	}
+}
+
+// When the keys cannot be fetched, the provider is at fault: a 502.
+func TestOIDCKeysUnreachable(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	p.jwksURI = gone.URL + "/keys"
+	in := newOIDCInstance(t, p)
+	flow, callback := in.begin(t, p, "")
+	if rec := in.finish(t, callback, flow); rec.Code != http.StatusBadGateway {
+		t.Errorf("callback without keys: %d %s, want 502", rec.Code, rec.Body.String())
+	}
+}
+
+func TestReturnToHasALimit(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	in := newOIDCInstance(t, p)
+	flow, callback := in.begin(t, p, "/"+strings.Repeat("a", 1100))
+	if rec := in.finish(t, callback, flow); rec.Header().Get("Location") != "/" {
+		t.Errorf("a 1.1 KB return_to: redirect to %.40q…, want /", rec.Header().Get("Location"))
+	}
+}
+
+// Case folding maps the Kelvin sign onto k: an address written with it at
+// the provider must not link to kate@example.com.
+func TestOIDCLookAlikeAddressDoesNotLink(t *testing.T) {
+	t.Parallel()
+
+	p := newIDP(t)
+	p.claims["email"], p.claims["sub"] = "\u212Aate@example.com", "kelvin"
+	in := newOIDCInstance(t, p)
+	now := in.clock.Now()
+	kate := user.User{
+		ID: uuid.NewV7(), Email: "kate@example.com", Name: "Kate", Role: user.RoleUser,
+		Locale: "en", TimeZone: "UTC", DayStartHour: 4, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := in.db.CreateUser(t.Context(), kate, ""); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	flow, callback := in.begin(t, p, "")
+	rec := in.finish(t, callback, flow)
+	if rec.Code != http.StatusForbidden || cookieNamed(rec, "tdeemon_session") != nil {
+		t.Errorf("callback: %d %s, want 403 and no session", rec.Code, rec.Body.String())
+	}
+	// The same address in plain ASCII, in another case, links.
+	p.mu.Lock()
+	p.claims["email"] = "Kate@Example.com"
+	p.mu.Unlock()
+	flow, callback = in.begin(t, p, "")
+	if rec := in.finish(t, callback, flow); rec.Code != http.StatusSeeOther {
+		t.Errorf("the plain address: %d %s, want 303", rec.Code, rec.Body.String())
 	}
 }

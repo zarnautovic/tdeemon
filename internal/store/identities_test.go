@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -51,8 +52,13 @@ func TestSignInWithIdentityRefuses(t *testing.T) {
 	t.Parallel()
 
 	db := storetest.Open(t)
-	ana := newUser("ana@example.com")
+	// ana is linked already; ivo is not, so a refusal for him is about the
+	// identity, not about a link that exists.
+	ana, ivo := newUser("ana@example.com"), newUser("ivo@example.com")
 	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := db.CreateUser(t.Context(), ivo, ""); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	if _, err := db.SignInWithIdentity(t.Context(), store.Identity{Issuer: issuer, Subject: "s1", Email: "ana@example.com", EmailVerified: true}, t0); err != nil {
@@ -62,26 +68,47 @@ func TestSignInWithIdentityRefuses(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		id   store.Identity
+		want error
 	}{
-		{"unverified email", store.Identity{Issuer: issuer, Subject: "s2", Email: "ana@example.com"}},
-		{"no email", store.Identity{Issuer: issuer, Subject: "s2", EmailVerified: true}},
-		{"unknown email", store.Identity{Issuer: issuer, Subject: "s2", Email: "ivo@example.com", EmailVerified: true}},
+		{"unverified email", store.Identity{Issuer: issuer, Subject: "s2", Email: "ivo@example.com"}, store.ErrEmailNotVerified},
+		{"no email", store.Identity{Issuer: issuer, Subject: "s2", EmailVerified: true}, store.ErrNoAccount},
+		{"unknown email", store.Identity{Issuer: issuer, Subject: "s2", Email: "eva@example.com", EmailVerified: true}, store.ErrNoAccount},
 		// ana already has an identity at this issuer: a second account
 		// there with her address does not take hers over.
-		{"another subject for a linked user", store.Identity{Issuer: issuer, Subject: "s2", Email: "ana@example.com", EmailVerified: true}},
+		{"another subject for a linked user", store.Identity{Issuer: issuer, Subject: "s2", Email: "ana@example.com", EmailVerified: true}, store.ErrAlreadyLinked},
 	} {
-		if _, err := db.SignInWithIdentity(t.Context(), tc.id, t0); !errors.Is(err, store.ErrNoAccount) {
-			t.Errorf("%s: %v, want ErrNoAccount", tc.name, err)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := db.SignInWithIdentity(t.Context(), tc.id, t0); !errors.Is(err, tc.want) {
+				t.Errorf("SignInWithIdentity = %v, want %v", err, tc.want)
+			}
+		})
+	}
+	// After the parallel subtests: no refusal linked anything. t.Context is
+	// done by the time cleanups run.
+	t.Cleanup(func() {
+		var n int
+		err := db.Read().QueryRowContext(context.WithoutCancel(t.Context()), "SELECT count(*) FROM user_identities").Scan(&n)
+		if err != nil || n != 1 {
+			t.Errorf("%d identities (err %v), want 1", n, err)
 		}
-	}
-	if n := identityCount(t, db); n != 1 {
-		t.Errorf("%d identities, want 1", n)
-	}
+	})
+}
 
-	// Another provider is a separate identity for the same user.
-	other := store.Identity{Issuer: "https://other.example.com", Subject: "s1", Email: "ana@example.com", EmailVerified: true}
-	if u, err := db.SignInWithIdentity(t.Context(), other, t0); err != nil || u.ID != ana.ID {
-		t.Errorf("another issuer = %v, %v; want ana", u.ID, err)
+// Another provider is a separate identity for the same user.
+func TestSignInWithIdentityAtAnotherIssuer(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	ana := newUser("ana@example.com")
+	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	for _, iss := range []string{issuer, "https://other.example.com"} {
+		u, err := db.SignInWithIdentity(t.Context(), store.Identity{Issuer: iss, Subject: "s1", Email: "ana@example.com", EmailVerified: true}, t0)
+		if err != nil || u.ID != ana.ID {
+			t.Errorf("issuer %s = %v, %v; want ana", iss, u.ID, err)
+		}
 	}
 }
 

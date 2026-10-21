@@ -183,19 +183,42 @@ for when the provider is down):
    `<TDEEMON_BASE_URL>/api/v1/auth/oidc/callback` and the scopes
    `openid`, `email` and `profile`. In Authentik the issuer is
    `https://<authentik>/application/o/<slug>/`.
-2. Create the user in tdeemon (`tdeemon user create --email …`) with the
+2. Make the provider say whether an address is verified
+   (`email_verified`): tdeemon links an account by its address only when
+   it is. Authentik sends `false` by default since 2025.10. If its users
+   cannot change their address without verifying it, add a scope mapping
+   (Customization → Property Mappings → Scope Mapping, scope name
+   `email`) and choose it for the provider instead of the default one:
+
+   ```python
+   return {
+       "email": request.user.email,
+       "email_verified": request.user.attributes.get("email_verified", False),
+   }
+   ```
+
+   with the `email_verified` attribute set on the users whose address is
+   known to be theirs, or `True` instead of the lookup if every address
+   is. Authentik's own warning applies: do not assert verified addresses
+   when users can change theirs freely, or one of them could take over
+   another's tdeemon account at the first sign-in.
+3. Create the user in tdeemon (`tdeemon user create --email …`) with the
    address they have at the provider. Nobody gets an account by signing
    in.
-3. The first sign-in links the provider's account to that user, if the
-   provider says the address is verified; after that the provider's
-   subject identifies them, whatever the address becomes.
+4. The first sign-in links the provider's account to that user, if the
+   provider says the address is verified, the address matches exactly
+   (letter case aside) and the user has no other account at that
+   provider; after that the provider's subject identifies them, whatever
+   the address becomes. A refused sign-in says why, and the log records
+   the reason. There is no command yet to undo a link.
 
 The browser starts at `/api/v1/auth/oidc/login` (add `?return_to=/path`
 to land somewhere else on the instance); `GET /api/v1/auth/methods` says
 whether the instance has a provider. The flow uses PKCE, a nonce and a
 state bound to the browser in a short-lived sealed cookie. tdeemon finds
 the provider on the first sign-in, so it starts while the provider is
-down.
+down; after a failure it waits 30 seconds before asking again. The
+provider's endpoints must use https, like its issuer.
 
 ## Data
 

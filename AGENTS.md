@@ -17,7 +17,7 @@ hashes, the API contract and an empty web app exist.
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create` and `user set-password` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
 | `internal/domain` | the domain types and their rules, one package each (`user`) |
-| `internal/auth` | credentials: password rules, argon2id hashes, session tokens and who a request acts for |
+| `internal/auth` | credentials: password rules, argon2id hashes, session tokens, sealed values and who a request acts for |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
 | `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`, with sign-in and sessions |
