@@ -477,11 +477,16 @@ Until P3, a training day for split targets comes from a manual toggle
 - ~~Name~~ → **tdeemon**.
 - ~~Observability~~ → deferred to a later phase: logs, `/healthz` and the
   watchdog until then; `/metrics` and dashboards later.
-- ~~License~~ → **decided: AGPL-3.0, without a CLA.** Contributions
-  come under the AGPL too (inbound = outbound). A CLA would only serve
-  dual licensing, and a commercial or hosted SaaS is a non-goal (§2).
-  If that changes, a CLA added then covers the contributions from that
-  point on.
+- ~~License~~ → **decided: AGPL-3.0-only, without a CLA.**
+  Contributions come under the AGPL too (inbound = outbound). A CLA
+  would mainly serve dual licensing, and a commercial or hosted SaaS is
+  a non-goal (§2). The cost: once outside contributions are in, any
+  change of licence, a later AGPL version included, needs every
+  contributor's consent. A CLA added later covers only the
+  contributions from that point on; earlier ones need their authors'
+  consent or a rewrite. The dependency licence policy stays
+  (`docs/conventions.md`), so a dependency never stands in the way of
+  such a change.
 - ~~Frontend~~ → **decided: React SPA embedded in the Go binary**
   (see §9).
 - **Food DB scope.** Per user only, or optionally shared within a
