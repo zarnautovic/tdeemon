@@ -17,6 +17,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -86,6 +87,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		}
 		bread := saveIsolationFoods(t, in.db, p.user, now)
 		saveIsolationMeals(t, in.db, p.user, bread, now)
+		saveIsolationMetrics(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
@@ -196,6 +198,18 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 	}
 	if err := db.ExcludeDay(t.Context(), u.ID, day.DateOf(now).AddDays(-1), day.Exclusion{Reason: u.Name + "'s birthday dinner"}, now); err != nil {
 		t.Fatalf("exclude %s's day: %v", u.Name, err)
+	}
+}
+
+// saveIsolationMetrics gives u a day of metrics, a manual weight and
+// imported steps.
+func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time) {
+	t.Helper()
+	if _, err := db.MergeMetrics(t.Context(), u.ID, day.DateOf(now), []metric.Value{
+		{Kind: metric.Weight, Value: 81.5, Source: metric.Manual},
+		{Kind: metric.Steps, Value: 6400, Source: metric.Import},
+	}, now); err != nil {
+		t.Fatalf("save %s's metrics: %v", u.Name, err)
 	}
 }
 
