@@ -442,8 +442,10 @@ func TestLastUsesInOneSecond(t *testing.T) {
 	earlier := breakfast(t, bar, at)
 	later := breakfast(t, bar, at)
 	later.Items[0], _ = meal.FromFood(bar, meal.Quantity{Amount: 40, Unit: "g"}, "")
-	createMeal(t, db, ana, later) // stored first, so the order of rows does not decide
+	// Stored in the order made: SQLite would return the first row of a tie,
+	// the earlier meal's, without the tie-break.
 	createMeal(t, db, ana, earlier)
+	createMeal(t, db, ana, later)
 	got, err := db.LastUses(t.Context(), ana, []uuid.UUID{bar.ID})
 	if err != nil || got[bar.ID].MealID != later.ID {
 		t.Errorf("LastUses = %+v, %v; want the later meal %s", got, err, later.ID)

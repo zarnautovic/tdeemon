@@ -33,6 +33,11 @@ const (
 	MaxNoteLen  = 2000
 	// MaxEstimateKcal bounds a one-off estimate: a feast, not a typo.
 	MaxEstimateKcal = 10000
+	// MinYear and MaxYear bound when a meal was eaten: a log, not a typo
+	// or an id's clock gone wrong; four-digit years store as text that
+	// sorts as the time.
+	MinYear = 1970
+	MaxYear = 9999
 )
 
 // Quantity is how much of a food was eaten: an amount in grams or ml, a
@@ -244,8 +249,11 @@ func (m Meal) Validate() error {
 	if m.ID == uuid.Nil() {
 		errs = append(errs, errors.New("id is missing"))
 	}
-	if m.EatenAt.IsZero() {
+	switch y := m.EatenAt.UTC().Year(); {
+	case m.EatenAt.IsZero():
 		errs = append(errs, errors.New("the time it was eaten is missing"))
+	case y < MinYear || y > MaxYear:
+		errs = append(errs, fmt.Errorf("eaten in %d: want %d to %d", y, MinYear, MaxYear))
 	}
 	if m.Day.IsZero() {
 		errs = append(errs, errors.New("the day is missing"))
@@ -281,7 +289,9 @@ func (m Meal) Validate() error {
 // fingerprint even after its foods changed, and the store can tell a
 // retry from a different meal under the same id. The time counts to the
 // second, as stored. The items count in their order: the same items in
-// another order are another request. A client that leaves out when the
+// another order are another request. The text hashed is stored state:
+// a field added later must be written only when it is set, so that the
+// meals stored before keep their fingerprint. A client that leaves out when the
 // meal was eaten must get the same time on a retry: the API takes it
 // from the meal's UUIDv7, not from the clock.
 func (m Meal) Fingerprint() string {

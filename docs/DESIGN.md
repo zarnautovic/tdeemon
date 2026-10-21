@@ -167,7 +167,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | --- | --- |
 | `get_profile` | current phase and goal, current targets (day-type aware), profile notes, locale, units |
 | `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
-| `log_meal(eaten_at?, description, items[], note?)` | stores the meal; returns breakdown + day status |
+| `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
 | `delete_meal(meal_id)` / `undo_last()` | |
 | `upsert_food(...)` | save or correct a food (label values); same-name-same-portion rule |
@@ -479,15 +479,18 @@ the first spec.
   - "The same" is what the client said (a meal's `Fingerprint`: the time
     to the second, text, foods and quantities in order, an estimate's
     values), not what the server worked out, so a retry after a food was
-    corrected is still a retry. When `log_meal` leaves out `eaten_at`,
-    the time comes from the meal's UUIDv7, not the clock, so a retry has
-    the same one.
+    corrected is still a retry. A client gives the meal's `id`; when
+    `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
+    the clock, so a retry has the same one. The API takes only a version
+    7 ID whose time is near the clock, so a model cannot reuse yesterday's
+    meal ID or one made up.
   - The fingerprint is the create's: an edit leaves it, so a late retry
     of the create (an offline queue that lost the answer) returns the
     meal as it is now.
   - An item keeps its ID across edits; a new item may carry the
-    client's, so a retried "add" adds once. A server-made ID fills in
-    for an item without one.
+    client's, and an "add" of an item the meal already has under that ID
+    is a retry: the same content changes nothing, other content is a
+    conflict (409). A server-made ID fills in for an item without one.
   - A deleted meal leaves no trace yet, so a late retry of its create
     brings it back; the event log (#104) is to keep a tombstone.
   - The future in-gym workout logger can queue writes offline and sync

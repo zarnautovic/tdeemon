@@ -234,6 +234,8 @@ func TestMealValidate(t *testing.T) {
 	}{
 		{"no id", func(m *Meal) { m.ID = uuid.Nil() }, "id is missing"},
 		{"no time", func(m *Meal) { m.EatenAt = time.Time{} }, "time it was eaten"},
+		{"before 1970", func(m *Meal) { m.EatenAt = time.Date(1969, 12, 31, 23, 0, 0, 0, time.UTC) }, "eaten in 1969"},
+		{"past year 9999", func(m *Meal) { m.EatenAt = time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC) }, "eaten in 10000"},
 		{"no day", func(m *Meal) { m.Day = day.Date{} }, "day is missing"},
 		{"an unknown client", func(m *Meal) { m.Client = "fax" }, "client"},
 		{"no items", func(m *Meal) { m.Items = nil }, "at least one item"},
