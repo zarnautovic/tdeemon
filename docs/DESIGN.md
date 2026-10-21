@@ -346,7 +346,8 @@ instructions injected through a label photo, a recipe or a web page
 it read while researching. So limits are enforced by the server.
 
 - **One function.** A pure, unit-tested `Validate(change, state,
-  limits) → []Violation`, the state being the profile and what the data
+  limits) → violations and warnings` (`internal/domain/limits`), the
+  state being the profile and what the data
   say now (among them the trend weight now and when the phase started,
   the measured TDEE and whether calibration trusts it, the autopilot's
   drift and last step, the days logged and the weigh-ins), runs on
@@ -354,10 +355,12 @@ it read while researching. So limits are enforced by the server.
   `apply_proposal` (the data or the limits may have changed since the
   proposal), on every autopilot step, and on manual target edits in the
   UI.
-- **Machine-readable violations.** A violation names the rule, the limit
-  and the proposed value, e.g. `{rule: "kcal_floor", limit: 1800,
-  proposed: 1500}`. The model can then explain the refusal and propose
-  something allowed, so the loop corrects itself.
+- **Machine-readable violations.** A violation names the rule, the limit and the
+  proposed value, e.g. `{rule: "kcal_floor", limit: 1800, proposed: 1500}`, the
+  type of day for a limit of each, and the level that refuses it (the code, the
+  instance or the user), so it is clear who could allow it
+  ([limits.md](limits.md) lists the rules). The model can then explain the
+  refusal and propose something allowed, so the loop corrects itself.
 - **Limits**, among them (the full list, the default values and their
   sources are in [limits.md](limits.md)):
   - a kcal floor, for each day type, and a warning below the estimated

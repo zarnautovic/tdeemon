@@ -214,26 +214,68 @@ The protein a phase starts with, between the floor and the ceiling:
   lost once the weight has settled (Hall et al. 2011), is modelled
   apart and is not drift.
 
+## The names of the limits
+
+The code (`internal/domain/limits`), the API and the configuration call
+the limits by these names; the instance's are set with
+`TDEEMON_LIMIT_<NAME>`, such as `TDEEMON_LIMIT_KCAL_FLOOR_FEMALE=1000`.
+Rates are in % a week, shares in %.
+
+| Name | Row | Looser when |
+| --- | --- | --- |
+| `cut_rate` | Cut, BMI below 30 | lower |
+| `cut_rate_obese` | Cut, BMI 30 or more | lower |
+| `loss_kg_week` | the 1.5 kg a week, which holds for every loss: a cut, a recomp below 0 and the loss a kcal target implies; a user's starts at the instance's | higher |
+| `bulk_rate` | Bulk | higher |
+| `recomp_min`, `recomp_max` | Recomp | lower, higher |
+| `protein_floor`, `protein_ceiling` | Protein, floor and ceiling, g/kg | lower, higher |
+| `protein_floor_grams` | a floor in grams, the user's only; 0 for none | lower |
+| `kcal_floor_male`, `kcal_floor_female` | Kcal, floor | lower |
+| `fat_floor_pct` | Fat, floor | lower |
+| `step_kcal`, `step_pct` | Autopilot, step | higher |
+| `interval_days`, `first_step_days` | Autopilot, interval | lower |
+| `logged_days`, `weigh_ins` | Autopilot, data | lower |
+| `drift_pct` | Autopilot, drift | higher |
+
+The instance may only tighten the limits with an empty cell under
+"Hard limit" (`protein_ceiling` and the autopilot's interval and data),
+and no level passes the floor in the code. A user's limit looser than
+the instance's holds only as far as the instance's.
+
+`Validate` names the rule a change breaks, with the limit that holds,
+the value proposed, the type of day for the limits of each, and the
+level that refuses it: `code` (nothing allows it), `instance` (only the
+admin could) or `user` (the user may loosen it, up to the instance's).
+The rules: `profile_missing`, `weight_missing`, `min_age`,
+`underweight_loss`, `underweight_goal`, `underweight_milestone`,
+`cut_rate`, `bulk_rate`, `recomp_rate`, `loss_kg_week`,
+`implied_loss_rate`, `implied_gain_rate`, `implied_loss_kg_week`,
+`kcal_floor`, `fat_floor`, `protein_floor`, `protein_ceiling`,
+`protein_floor_grams`, and for the autopilot's steps `autopilot_step`,
+`autopilot_interval`, `autopilot_first_step`, `autopilot_logged_days`,
+`autopilot_weigh_ins`, `autopilot_drift` and `tdee_missing`, a step with
+no TDEE to measure its drift against. What starts the autopilot's waits
+again, and what counts as a logged day, are the autopilot's to decide;
+`Validate` holds the numbers it is given to the limits.
+
 ## Warnings, not limits
 
 These show in a proposal's preview without refusing it:
 
-- **Below the estimated BMR:** a kcal target under the resting rate by
-  the Mifflin–St Jeor equation (Frankenfield et al.), with the trend
-  weight. It is no floor: the BMR grows with the whole weight, so at a
-  BMI of 30 or more it often lies above the guidelines' own 1200 to
-  1500 kcal for women and 1500 to 1800 for men, which a floor would
-  refuse.
-- **Low energy availability:** below 30 kcal per kg of fat-free mass a
-  day, intake less the energy of exercise, when the fat-free mass is
-  known. The threshold was found in women (Loucks and Thuma 2003), and
-  the IOC no longer holds to a fixed one, lower for men (Mountjoy et al.
-  2023), so it is a warning only, and a convention. The active energy a
-  device reports counts all movement, not only exercise, so it stands
-  in for the energy of exercise by overstating it: the warning comes
-  sooner, not later.
-- **Low carbohydrate:** below 130 g a day, the RDA, set by the brain's
-  use of glucose (IOM 2005). A low-carbohydrate diet is a choice, so
+- **Below the estimated BMR** (`below_bmr`): a kcal target under the resting
+  rate by the Mifflin–St Jeor equation (Frankenfield et al.), with the trend
+  weight. It is no floor: the BMR grows with the whole weight, so at a BMI of 30
+  or more it often lies above the guidelines' own 1200 to 1500 kcal for women
+  and 1500 to 1800 for men, which a floor would refuse.
+- **Low energy availability** (`low_energy_availability`): below 30 kcal per kg
+  of fat-free mass a day, intake less the energy of exercise, when the fat-free
+  mass is known. The threshold was found in women (Loucks and Thuma 2003), and
+  the IOC no longer holds to a fixed one, lower for men (Mountjoy et al. 2023),
+  so it is a warning only, and a convention. The active energy a device reports
+  counts all movement, not only exercise, so it stands in for the energy of
+  exercise by overstating it: the warning comes sooner, not later.
+- **Low carbohydrate** (`low_carbs`): below 130 g a day, the RDA, set by the
+  brain's use of glucose (IOM 2005). A low-carbohydrate diet is a choice, so
   there is no floor.
 
 ## Cases for a clinician
