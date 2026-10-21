@@ -56,20 +56,54 @@ func check(field, s string, maxLen int, required, lines bool) error {
 func hidden(s string, lines bool) bool {
 	rs := []rune(s)
 	for i, r := range rs {
-		switch {
-		case !Invisible(r), r == '\n' && lines:
-		case (r == '\ufe0e' || r == '\ufe0f') && i > 0 && (emoji(rs[i-1]) || keycap(rs, i-1)):
-		case r == '\u200d' && i > 0 && i+1 < len(rs) && emoji(before(rs, i)) && emoji(rs[i+1]):
-		default:
+		if Invisible(r) && (r != '\n' || !lines) && !inEmoji(rs, i) {
 			return true
 		}
 	}
 	return false
 }
 
-// emoji reports a symbol an emoji sequence is built of: a pictograph or
-// a modifier such as a skin tone.
-func emoji(r rune) bool { return unicode.In(r, unicode.So, unicode.Sk) }
+// inEmoji reports whether the invisible character at rs[i] is part of
+// an emoji sequence: a selector after its base, a tag of a flag, a joiner
+// between two of its parts.
+func inEmoji(rs []rune, i int) bool {
+	switch r := rs[i]; {
+	case r == '\ufe0e' || r == '\ufe0f':
+		return i > 0 && (emoji(rs[i-1]) || keycap(rs, i-1))
+	case r >= '\U000e0020' && r <= '\U000e007f':
+		return tagged(rs, i)
+	case r == '\u200d':
+		return i > 0 && i+1 < len(rs) && emoji(before(rs, i)) && emoji(rs[i+1])
+	}
+	return false
+}
+
+// emoji reports a character an emoji sequence is built of: a symbol, a
+// skin tone, or one of the few emoji outside the symbols that take a
+// variation selector (‼, ⁉, ℹ, ↔, ⤴, ⤵, 〰, 〽, the medium squares).
+// Other modifier letters and punctuation ("^", "`") are not.
+func emoji(r rune) bool {
+	switch {
+	case unicode.Is(unicode.So, r), r >= '\U0001f3fb' && r <= '\U0001f3ff':
+		return true
+	}
+	return strings.ContainsRune("\u203c\u2049\u2139\u2194\u2934\u2935\u3030\u303d\u25fb\u25fc\u25fd\u25fe", r)
+}
+
+// tagged reports a tag character at rs[i] that belongs to a flag: the
+// black flag, then tags (the flag of England is U+1F3F4, the tags for
+// "gbeng", and the cancel tag U+E007F).
+func tagged(rs []rune, i int) bool {
+	for j := i - 1; j >= 0; j-- {
+		switch {
+		case rs[j] == '\U0001f3f4':
+			return true
+		case rs[j] < '\U000e0020' || rs[j] > '\U000e007e':
+			return false
+		}
+	}
+	return false
+}
 
 // keycap reports a keycap base at rs[i]: #, * or a digit, then a
 // variation selector and the combining keycap.
