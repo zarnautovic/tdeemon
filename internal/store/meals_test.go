@@ -35,7 +35,7 @@ func breakfast(t *testing.T, bar food.Food, at time.Time) meal.Meal {
 
 func createMeal(t *testing.T, db *store.DB, userID uuid.UUID, m meal.Meal) meal.Meal {
 	t.Helper()
-	got, created, err := db.CreateMeal(t.Context(), userID, m, t0)
+	got, created, err := db.CreateMeal(t.Context(), userID, testActor, m, t0)
 	if err != nil || !created {
 		t.Fatalf("CreateMeal = %v, %v", created, err)
 	}
@@ -91,7 +91,7 @@ func TestCreateMealKeepsSeconds(t *testing.T) {
 	}
 	// The meal as stored, sent again, is a retry: the fingerprint counts
 	// the time to the second, as stored.
-	if _, created, err := db.CreateMeal(t.Context(), ana, got, t0); err != nil || created {
+	if _, created, err := db.CreateMeal(t.Context(), ana, testActor, got, t0); err != nil || created {
 		t.Errorf("the stored meal sent again = %v, %v; want a retry", created, err)
 	}
 }
@@ -109,7 +109,7 @@ func TestCreateMealIsIdempotent(t *testing.T) {
 	saveFood(t, db, ana, bar)
 	retry := breakfast(t, bar, t0)
 	retry.ID = m.ID
-	got, created, err := db.CreateMeal(t.Context(), ana, retry, t0.Add(time.Minute))
+	got, created, err := db.CreateMeal(t.Context(), ana, testActor, retry, t0.Add(time.Minute))
 	if err != nil || created || !reflect.DeepEqual(got, first) {
 		t.Errorf("a retry = %+v, %v, %v; want the first meal, not created", got, created, err)
 	}
@@ -129,12 +129,12 @@ func TestCreateMealConflicts(t *testing.T) {
 	first := createMeal(t, db, ana, m)
 	other := m
 	other.Note = "standing"
-	if _, _, err := db.CreateMeal(t.Context(), ana, other, t0); !errors.Is(err, store.ErrMealConflict) {
+	if _, _, err := db.CreateMeal(t.Context(), ana, testActor, other, t0); !errors.Is(err, store.ErrMealConflict) {
 		t.Errorf("another meal under the id = %v, want ErrMealConflict", err)
 	}
 	ivos := breakfast(t, saveFood(t, db, ivo, bar()), t0.Add(time.Hour))
 	ivos.ID = m.ID
-	if got, created, err := db.CreateMeal(t.Context(), ivo, ivos, t0); err != nil || !created || got.ID != m.ID {
+	if got, created, err := db.CreateMeal(t.Context(), ivo, testActor, ivos, t0); err != nil || !created || got.ID != m.ID {
 		t.Errorf("ivo under ana's meal id = %v, %v; want his meal, created under it", created, err)
 	}
 	if got, _ := db.MealByID(t.Context(), ana, m.ID); !reflect.DeepEqual(got, first) {
@@ -143,7 +143,7 @@ func TestCreateMealConflicts(t *testing.T) {
 	if got, _ := db.MealByID(t.Context(), ivo, m.ID); !got.EatenAt.Equal(t0.Add(time.Hour)) {
 		t.Errorf("ivo's meal is %+v", got)
 	}
-	if err := db.DeleteMeal(t.Context(), ivo, m.ID); err != nil {
+	if err := db.DeleteMeal(t.Context(), ivo, testActor, m.ID, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := db.MealByID(t.Context(), ana, m.ID); err != nil || len(got.Items) != 2 {
@@ -157,13 +157,13 @@ func TestCreateMealRefuses(t *testing.T) {
 	db, ana, ivo := withTwoUsers(t)
 	bad := breakfast(t, saveFood(t, db, ana, bar()), t0)
 	bad.Items = nil
-	if _, _, err := db.CreateMeal(t.Context(), ana, bad, t0); err == nil || !strings.Contains(err.Error(), "invalid meal") {
+	if _, _, err := db.CreateMeal(t.Context(), ana, testActor, bad, t0); err == nil || !strings.Contains(err.Error(), "invalid meal") {
 		t.Errorf("a meal without items = %v", err)
 	}
 	// An item of another user's food: the foreign key refuses it, and
 	// nothing of the meal is kept.
 	theirs := breakfast(t, saveFood(t, db, ivo, bar()), t0)
-	if _, _, err := db.CreateMeal(t.Context(), ana, theirs, t0); err == nil {
+	if _, _, err := db.CreateMeal(t.Context(), ana, testActor, theirs, t0); err == nil {
 		t.Error("a meal of another user's food was stored")
 	}
 	if n := countRows(t, db, "meals"); n != 0 {
@@ -191,7 +191,7 @@ func TestReplaceMeal(t *testing.T) {
 	added.ID = uuid.NewV7()
 	another, _ := meal.FromFood(bar, meal.Quantity{Amount: 20, Unit: "g"}, "")
 	edit.Items = []meal.Item{half, added, another}
-	got, err := db.ReplaceMeal(t.Context(), ana, edit, t0.Add(time.Hour))
+	got, err := db.ReplaceMeal(t.Context(), ana, testActor, edit, t0.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,21 +224,21 @@ func TestReplaceMealAndRetries(t *testing.T) {
 	added, _ := meal.FromFood(bar, meal.Quantity{Amount: 30, Unit: "g"}, "")
 	added.ID = uuid.NewV7()
 	edit.Items = append(append([]meal.Item(nil), first.Items...), added)
-	got, err := db.ReplaceMeal(t.Context(), ana, edit, t0.Add(time.Hour))
+	got, err := db.ReplaceMeal(t.Context(), ana, testActor, edit, t0.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// The same edit again (a retried "add") adds nothing.
-	again, err := db.ReplaceMeal(t.Context(), ana, edit, t0.Add(time.Hour))
+	again, err := db.ReplaceMeal(t.Context(), ana, testActor, edit, t0.Add(time.Hour))
 	if err != nil || len(again.Items) != 3 || again.Items[2].ID != added.ID || countRows(t, db, "meal_items") != 3 {
 		t.Errorf("the edit again = %+v, %v", again, err)
 	}
 	// A late retry of the create finds the meal as it is now; the edited
 	// content under the id is not what was created.
-	if m, created, err := db.CreateMeal(t.Context(), ana, original, t0); err != nil || created || !reflect.DeepEqual(m, again) {
+	if m, created, err := db.CreateMeal(t.Context(), ana, testActor, original, t0); err != nil || created || !reflect.DeepEqual(m, again) {
 		t.Errorf("a late retry of the create = %+v, %v, %v; want the edited meal", m, created, err)
 	}
-	if _, _, err := db.CreateMeal(t.Context(), ana, got, t0); !errors.Is(err, store.ErrMealConflict) {
+	if _, _, err := db.CreateMeal(t.Context(), ana, testActor, got, t0); !errors.Is(err, store.ErrMealConflict) {
 		t.Errorf("creating the edited content under the id = %v, want ErrMealConflict", err)
 	}
 }
@@ -256,7 +256,7 @@ func TestReplaceMealItemOfAnotherMeal(t *testing.T) {
 	edit.Note = "changed"
 	edit.Items = append([]meal.Item(nil), first.Items...)
 	edit.Items[1].ID = other.Items[0].ID
-	if _, err := db.ReplaceMeal(t.Context(), ana, edit, t0); !errors.Is(err, store.ErrMealConflict) {
+	if _, err := db.ReplaceMeal(t.Context(), ana, testActor, edit, t0); !errors.Is(err, store.ErrMealConflict) {
 		t.Errorf("an item of another meal = %v, want ErrMealConflict", err)
 	}
 	for _, m := range []meal.Meal{first, other} {
@@ -267,7 +267,7 @@ func TestReplaceMealItemOfAnotherMeal(t *testing.T) {
 	// The same at creation.
 	fresh := breakfast(t, bar, t0.Add(9*time.Hour))
 	fresh.Items[0].ID = other.Items[1].ID
-	if _, _, err := db.CreateMeal(t.Context(), ana, fresh, t0); !errors.Is(err, store.ErrMealConflict) {
+	if _, _, err := db.CreateMeal(t.Context(), ana, testActor, fresh, t0); !errors.Is(err, store.ErrMealConflict) {
 		t.Errorf("creating with another meal's item id = %v, want ErrMealConflict", err)
 	}
 }
@@ -289,17 +289,17 @@ func TestMealsUnderOneIDStayApart(t *testing.T) {
 	}
 	ivos = createMeal(t, db, ivo, ivos)
 	for _, u := range []uuid.UUID{ana, ivo} {
-		if err := db.ExcludeDay(t.Context(), u, d, day.Exclusion{Reason: "wedding"}, t0); err != nil {
+		if err := db.ExcludeDay(t.Context(), u, testActor, d, day.Exclusion{Reason: "wedding"}, t0); err != nil {
 			t.Fatal(err)
 		}
 	}
 	edit := anas
 	edit.Items = []meal.Item{anas.Items[0]}
 	edit.Items[0].Note = "only one"
-	if _, err := db.ReplaceMeal(t.Context(), ana, edit, t0); err != nil {
+	if _, err := db.ReplaceMeal(t.Context(), ana, testActor, edit, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.IncludeDay(t.Context(), ana, d, t0); err != nil {
+	if err := db.IncludeDay(t.Context(), ana, testActor, d, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := db.MealByID(t.Context(), ivo, ivos.ID); !reflect.DeepEqual(got, ivos) {
@@ -312,7 +312,7 @@ func TestMealsUnderOneIDStayApart(t *testing.T) {
 	if err != nil || !uses[anasBar.ID].At.Equal(t0) {
 		t.Errorf("ana's last use = %+v, %v; want her own meal's time", uses, err)
 	}
-	if err := db.DeleteMeal(t.Context(), ana, anas.ID); err != nil {
+	if err := db.DeleteMeal(t.Context(), ana, testActor, anas.ID, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := db.MealByID(t.Context(), ivo, ivos.ID); !reflect.DeepEqual(got, ivos) {
@@ -326,7 +326,7 @@ func TestReplaceMealRefuses(t *testing.T) {
 	db, ana, ivo := withTwoUsers(t)
 	edit := createMeal(t, db, ana, breakfast(t, saveFood(t, db, ana, bar()), t0))
 	edit.Note = "changed"
-	if _, err := db.ReplaceMeal(t.Context(), ivo, edit, t0); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.ReplaceMeal(t.Context(), ivo, testActor, edit, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("ivo replacing ana's meal = %v, want ErrNotFound", err)
 	}
 	if got, _ := db.MealByID(t.Context(), ana, edit.ID); got.Note == "changed" {
@@ -334,11 +334,11 @@ func TestReplaceMealRefuses(t *testing.T) {
 	}
 	nope := edit
 	nope.ID = uuid.NewV7()
-	if _, err := db.ReplaceMeal(t.Context(), ana, nope, t0); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.ReplaceMeal(t.Context(), ana, testActor, nope, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("replacing a meal nobody has = %v, want ErrNotFound", err)
 	}
 	nope.Items = nil
-	if _, err := db.ReplaceMeal(t.Context(), ana, nope, t0); err == nil || !strings.Contains(err.Error(), "invalid meal") {
+	if _, err := db.ReplaceMeal(t.Context(), ana, testActor, nope, t0); err == nil || !strings.Contains(err.Error(), "invalid meal") {
 		t.Errorf("replacing with no items = %v", err)
 	}
 }
@@ -348,10 +348,10 @@ func TestDeleteMeal(t *testing.T) {
 
 	db, ana, ivo := withTwoUsers(t)
 	m := createMeal(t, db, ana, breakfast(t, saveFood(t, db, ana, bar()), t0))
-	if err := db.DeleteMeal(t.Context(), ivo, m.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := db.DeleteMeal(t.Context(), ivo, testActor, m.ID, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("ivo deleting ana's meal = %v, want ErrNotFound", err)
 	}
-	if err := db.DeleteMeal(t.Context(), ana, m.ID); err != nil {
+	if err := db.DeleteMeal(t.Context(), ana, testActor, m.ID, t0); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.MealByID(t.Context(), ana, m.ID); !errors.Is(err, store.ErrNotFound) {
@@ -360,7 +360,7 @@ func TestDeleteMeal(t *testing.T) {
 	if n := countRows(t, db, "meal_items"); n != 0 {
 		t.Errorf("%d items left", n)
 	}
-	if err := db.DeleteMeal(t.Context(), ana, m.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := db.DeleteMeal(t.Context(), ana, testActor, m.ID, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("deleting twice = %v, want ErrNotFound", err)
 	}
 }
@@ -457,16 +457,16 @@ func TestExcludedDays(t *testing.T) {
 
 	db, ana, ivo := withTwoUsers(t)
 	d := day.DateOf(t0)
-	if err := db.ExcludeDay(t.Context(), ana, d, day.Exclusion{Reason: "restaurant"}, t0); err != nil {
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: "restaurant"}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ExcludeDay(t.Context(), ana, d.AddDays(2), day.Exclusion{Reason: "sick"}, t0); err != nil {
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d.AddDays(2), day.Exclusion{Reason: "sick"}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ExcludeDay(t.Context(), ana, d, day.Exclusion{Reason: "wedding"}, t0); err != nil {
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: "wedding"}, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ExcludeDay(t.Context(), ivo, d.AddDays(1), day.Exclusion{Reason: "travel"}, t0); err != nil {
+	if err := db.ExcludeDay(t.Context(), ivo, testActor, d.AddDays(1), day.Exclusion{Reason: "travel"}, t0); err != nil {
 		t.Fatal(err)
 	}
 	got, err := db.Exclusions(t.Context(), ana, d, d.AddDays(2))
@@ -477,19 +477,19 @@ func TestExcludedDays(t *testing.T) {
 	if got, _ := db.Exclusions(t.Context(), ana, d.AddDays(1), d.AddDays(1)); len(got) != 0 {
 		t.Errorf("ana sees ivo's day: %v", got)
 	}
-	if err := db.IncludeDay(t.Context(), ana, d, t0); err != nil {
+	if err := db.IncludeDay(t.Context(), ana, testActor, d, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.IncludeDay(t.Context(), ana, d.AddDays(5), t0); err != nil {
+	if err := db.IncludeDay(t.Context(), ana, testActor, d.AddDays(5), t0); err != nil {
 		t.Errorf("including a day never excluded: %v", err)
 	}
 	if got, _ := db.Exclusions(t.Context(), ana, d, d.AddDays(5)); len(got) != 1 {
 		t.Errorf("after including a day = %v", got)
 	}
-	if err := db.ExcludeDay(t.Context(), ana, d, day.Exclusion{Reason: " "}, t0); err == nil {
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: " "}, t0); err == nil {
 		t.Error("an exclusion without a reason was stored")
 	}
-	if err := db.ExcludeDay(t.Context(), ana, day.Date{}, day.Exclusion{Reason: "sick"}, t0); err == nil ||
+	if err := db.ExcludeDay(t.Context(), ana, testActor, day.Date{}, day.Exclusion{Reason: "sick"}, t0); err == nil ||
 		!strings.Contains(err.Error(), "the day is missing") {
 		t.Errorf("an exclusion without a day = %v", err)
 	}
@@ -504,7 +504,7 @@ func TestMealsGoWithTheirUser(t *testing.T) {
 	anas := saveFood(t, db, ana, bar())
 	createMeal(t, db, ana, breakfast(t, anas, t0))
 	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar()), t0))
-	if err := db.ExcludeDay(t.Context(), ivo, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
+	if err := db.ExcludeDay(t.Context(), ivo, testActor, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
 		t.Fatal(err)
 	}
 	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
@@ -532,13 +532,13 @@ func TestMealStoreFailures(t *testing.T) {
 	d := day.DateOf(t0)
 	again := m
 	again.ID = uuid.NewV7()
-	if _, _, err := db.CreateMeal(ctx, ana, again, t0); err == nil {
+	if _, _, err := db.CreateMeal(ctx, ana, testActor, again, t0); err == nil {
 		t.Error("CreateMeal on a closed database succeeded")
 	}
-	if _, err := db.ReplaceMeal(ctx, ana, m, t0); err == nil || errors.Is(err, store.ErrNotFound) {
+	if _, err := db.ReplaceMeal(ctx, ana, testActor, m, t0); err == nil || errors.Is(err, store.ErrNotFound) {
 		t.Errorf("ReplaceMeal on a closed database = %v", err)
 	}
-	if err := db.DeleteMeal(ctx, ana, m.ID); err == nil || errors.Is(err, store.ErrNotFound) {
+	if err := db.DeleteMeal(ctx, ana, testActor, m.ID, t0); err == nil || errors.Is(err, store.ErrNotFound) {
 		t.Errorf("DeleteMeal on a closed database = %v", err)
 	}
 	if _, err := db.MealByID(ctx, ana, m.ID); err == nil || errors.Is(err, store.ErrNotFound) {
@@ -553,10 +553,10 @@ func TestMealStoreFailures(t *testing.T) {
 	if _, err := db.LastUses(ctx, ana, []uuid.UUID{m.Items[0].FoodID}); err == nil {
 		t.Error("LastUses on a closed database succeeded")
 	}
-	if err := db.ExcludeDay(ctx, ana, d, day.Exclusion{Reason: "sick"}, t0); err == nil {
+	if err := db.ExcludeDay(ctx, ana, testActor, d, day.Exclusion{Reason: "sick"}, t0); err == nil {
 		t.Error("ExcludeDay on a closed database succeeded")
 	}
-	if err := db.IncludeDay(ctx, ana, d, t0); err == nil {
+	if err := db.IncludeDay(ctx, ana, testActor, d, t0); err == nil {
 		t.Error("IncludeDay on a closed database succeeded")
 	}
 	if _, err := db.Exclusions(ctx, ana, d, d); err == nil {

@@ -15,6 +15,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
@@ -150,6 +151,9 @@ func (e isolationEnv) rowsOf(t *testing.T, id uuid.UUID) (rows, values []string)
 // user.
 type userTable struct{ name, column string }
 
+// isolationActor writes the fixtures: the user, through the web app.
+var isolationActor = event.Actor{Kind: event.User, Client: "web"}
+
 // saveIsolationFoods gives u a food with a serving and an alias, and an
 // archived one per portion, their names u's own, and returns the first.
 func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) food.Food {
@@ -160,7 +164,7 @@ func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) 
 		Nutrients: food.Nutrients{Kcal: 259, Protein: 8.5, Carbs: 48, Fat: 3.3, Fiber: new(6.0)},
 		Servings:  []food.Serving{{Name: "slice", Amount: 40}}, Aliases: []string{u.Name + "'s loaf"},
 	}
-	if _, err := db.SaveFood(t.Context(), u.ID, bread, now); err != nil {
+	if _, err := db.SaveFood(t.Context(), u.ID, isolationActor, bread, now); err != nil {
 		t.Fatalf("save %s's food: %v", u.Name, err)
 	}
 	// And an archived one, a portion.
@@ -168,10 +172,10 @@ func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) 
 		ID: uuid.NewV7(), Name: u.Name + "'s canteen stew", Basis: food.PerPortion, Source: food.Estimate,
 		Nutrients: food.Nutrients{Kcal: 780, Protein: 38, Carbs: 85, Fat: 28}, PortionGrams: 450,
 	}
-	if _, err := db.SaveFood(t.Context(), u.ID, stew, now); err != nil {
+	if _, err := db.SaveFood(t.Context(), u.ID, isolationActor, stew, now); err != nil {
 		t.Fatalf("save %s's food: %v", u.Name, err)
 	}
-	if err := db.SetFoodArchived(t.Context(), u.ID, stew.ID, true, now); err != nil {
+	if err := db.SetFoodArchived(t.Context(), u.ID, isolationActor, stew.ID, true, now); err != nil {
 		t.Fatalf("archive %s's food: %v", u.Name, err)
 	}
 	return bread
@@ -193,10 +197,10 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 		ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: u.Name + "'s lunch", Client: meal.ClientMCP,
 		Items: []meal.Item{toast, soup},
 	}
-	if _, _, err := db.CreateMeal(t.Context(), u.ID, m, now); err != nil {
+	if _, _, err := db.CreateMeal(t.Context(), u.ID, isolationActor, m, now); err != nil {
 		t.Fatalf("log %s's meal: %v", u.Name, err)
 	}
-	if err := db.ExcludeDay(t.Context(), u.ID, day.DateOf(now).AddDays(-1), day.Exclusion{Reason: u.Name + "'s birthday dinner"}, now); err != nil {
+	if err := db.ExcludeDay(t.Context(), u.ID, isolationActor, day.DateOf(now).AddDays(-1), day.Exclusion{Reason: u.Name + "'s birthday dinner"}, now); err != nil {
 		t.Fatalf("exclude %s's day: %v", u.Name, err)
 	}
 }
@@ -205,7 +209,7 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 // imported steps.
 func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
-	if _, err := db.MergeMetrics(t.Context(), u.ID, day.DateOf(now), []metric.Value{
+	if _, err := db.MergeMetrics(t.Context(), u.ID, isolationActor, day.DateOf(now), []metric.Value{
 		{Kind: metric.Weight, Value: 81.5, Source: metric.Manual},
 		{Kind: metric.Steps, Value: 6400, Source: metric.Import},
 	}, now); err != nil {

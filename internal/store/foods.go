@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"unicode"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 )
 
@@ -93,12 +95,17 @@ func nullable(p *float64) any {
 //
 // Saving the name and brand of an archived food corrects it and, as f is
 // not archived, brings it back: it is in use again. An alias another
-// food goes by is refused (ErrAliasTaken).
-func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, f food.Food, now time.Time) (food.Food, error) {
+// food goes by is refused (ErrAliasTaken). The save is recorded as a's
+// event, with the food before (none for a new one) and after.
+func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, now time.Time) (food.Food, error) {
 	if err := f.Validate(); err != nil {
 		return food.Food{}, fmt.Errorf("invalid food: %w", err)
 	}
+	if err := a.Validate(); err != nil {
+		return food.Food{}, fmt.Errorf("invalid actor: %w", err)
+	}
 	nameKey, brandKey := food.Key(f.Name), food.Key(f.Brand)
+	var stored food.Food
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		target, exists, err := saveTarget(ctx, tx, userID, f.ID, nameKey, brandKey)
 		if err != nil {
@@ -108,15 +115,28 @@ func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, f food.Food, now t
 		if err := checkAliases(ctx, tx, userID, f); err != nil {
 			return err
 		}
+		var before *food.Food
 		if exists {
+			old, err := foodInTx(ctx, tx, userID, f.ID)
+			if err != nil {
+				return err
+			}
+			before = &old
 			err = updateFood(ctx, tx, userID, f, nameKey, brandKey, now)
-		} else {
-			err = insertFood(ctx, tx, userID, f, nameKey, brandKey, now)
-		}
-		if err != nil {
+			if err != nil {
+				return err
+			}
+		} else if err := insertFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
 			return err
 		}
-		return replaceFoodChildren(ctx, tx, userID, f)
+		if err := replaceFoodChildren(ctx, tx, userID, f); err != nil {
+			return err
+		}
+		if stored, err = foodInTx(ctx, tx, userID, f.ID); err != nil {
+			return err
+		}
+		_, err = record(ctx, tx, userID, a, event.FoodSave, f.ID.String(), before, stored, now)
+		return err
 	})
 	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
 		return food.Food{}, err
@@ -124,7 +144,7 @@ func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, f food.Food, now t
 	if err != nil {
 		return food.Food{}, fmt.Errorf("save food: %w", err)
 	}
-	return db.FoodByID(ctx, userID, f.ID)
+	return stored, nil
 }
 
 // saveTarget returns the id SaveFood writes to and whether that row
@@ -248,19 +268,9 @@ func replaceFoodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f fo
 func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, error) {
 	var f food.Food
 	err := db.readTx(ctx, func(tx *sql.Tx) error {
-		var r foodFields
-		err := tx.QueryRowContext(ctx, "SELECT "+foodColumns+" FROM foods AS f WHERE f.id = ? AND f.user_id = ?",
-			id.String(), userID.String()).Scan(r.dest()...)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if f, err = r.food(); err != nil {
-			return err
-		}
-		return foodChildren(ctx, tx, userID, &f)
+		var err error
+		f, err = foodInTx(ctx, tx, userID, id)
+		return err
 	})
 	if errors.Is(err, ErrNotFound) {
 		return food.Food{}, err
@@ -269,6 +279,26 @@ func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, er
 		return food.Food{}, fmt.Errorf("food: %w", err)
 	}
 	return f, nil
+}
+
+// foodInTx reads userID's food id with its children in tx, or returns
+// ErrNotFound.
+func foodInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (food.Food, error) {
+	var r foodFields
+	err := tx.QueryRowContext(ctx, "SELECT "+foodColumns+" FROM foods AS f WHERE f.id = ? AND f.user_id = ?",
+		id.String(), userID.String()).Scan(r.dest()...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return food.Food{}, ErrNotFound
+	}
+	if err != nil {
+		return food.Food{}, err
+	}
+	f, err := r.food()
+	if err != nil {
+		return food.Food{}, err
+	}
+	err = foodChildren(ctx, tx, userID, &f)
+	return f, err
 }
 
 // foodChildren reads f's servings and aliases, in the order saved.
@@ -307,25 +337,118 @@ func foodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f *food.Foo
 
 // SetFoodArchived archives userID's food with id (or brings it back): an
 // archived food is kept, and the meals that used it keep their items, but
-// search no longer offers it.
-func (db *DB) SetFoodArchived(ctx context.Context, userID, id uuid.UUID, archived bool, now time.Time) error {
+// search no longer offers it. It is recorded as a's event.
+func (db *DB) SetFoodArchived(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, archived bool, now time.Time) error {
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("invalid actor: %w", err)
+	}
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		var was bool
+		err := tx.QueryRowContext(ctx, "SELECT archived FROM foods WHERE user_id = ? AND id = ?",
+			userID.String(), id.String()).Scan(&was)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if err := setArchived(ctx, tx, userID, id, archived, now); err != nil {
+			return err
+		}
+		_, err = record(ctx, tx, userID, a, event.FoodArchive, id.String(), archivedState{was}, archivedState{archived}, now)
+		return err
+	})
+	if errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("archive food: %w", err)
+	}
+	return nil
+}
+
+// archivedState is a food.archive event's state.
+type archivedState struct{ Archived bool }
+
+func setArchived(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, archived bool, now time.Time) error {
 	v := 0
 	if archived {
 		v = 1
 	}
-	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, "UPDATE foods SET archived = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-			v, formatTime(now), id.String(), userID.String())
-		if err != nil {
-			return fmt.Errorf("archive food: %w", err)
+	_, err := tx.ExecContext(ctx, "UPDATE foods SET archived = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+		v, formatTime(now), id.String(), userID.String())
+	return err
+}
+
+// takeBackFood puts the food of e back as it was: archived or not as
+// before, or as saved before. A food that e added goes, unless a meal
+// uses it, which keeps it, archived.
+func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
+	id, err := uuid.Parse(e.Entity)
+	if err != nil {
+		return fmt.Errorf("food id %q: %w", e.Entity, err)
+	}
+	switch {
+	case e.Action == event.FoodArchive:
+		var s archivedState
+		if err := json.Unmarshal(e.Before, &s); err != nil {
+			return err
 		}
-		if n, err := res.RowsAffected(); err != nil {
-			return fmt.Errorf("archive food: %w", err)
-		} else if n == 0 {
-			return ErrNotFound
+		return setArchived(ctx, tx, userID, id, s.Archived, now)
+	case e.Before == nil:
+		var used int
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM meal_items WHERE user_id = ? AND food_id = ?",
+			userID.String(), id.String()).Scan(&used); err != nil {
+			return err
 		}
-		return nil
-	})
+		if used > 0 {
+			return setArchived(ctx, tx, userID, id, true, now)
+		}
+		_, err := tx.ExecContext(ctx, "DELETE FROM foods WHERE user_id = ? AND id = ?", userID.String(), id.String())
+		return err
+	}
+	var f food.Food
+	if err := json.Unmarshal(e.Before, &f); err != nil {
+		return err
+	}
+	// Another food may have taken the name or an alias since.
+	var other int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
+		userID.String(), food.Key(f.Name), food.Key(f.Brand), f.ID.String()).Scan(&other); err != nil {
+		return err
+	}
+	if other > 0 {
+		return errUndoBlocked
+	}
+	if err := checkAliases(ctx, tx, userID, f); errors.Is(err, ErrAliasTaken) {
+		return errUndoBlocked
+	} else if err != nil {
+		return err
+	}
+	if err := updateFood(ctx, tx, userID, f, food.Key(f.Name), food.Key(f.Brand), now); err != nil {
+		return err
+	}
+	return replaceFoodChildren(ctx, tx, userID, f)
+}
+
+// foodStateNow returns the state of e's food now, as e's kind of event
+// records it: the food (nil when gone), or whether it is archived.
+func foodStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
+	id, err := uuid.Parse(e.Entity)
+	if err != nil {
+		return nil, err
+	}
+	f, err := foodInTx(ctx, tx, userID, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if e.Action == event.FoodArchive {
+		return archivedState{f.Archived}, nil
+	}
+	return f, nil
 }
 
 // FindFoods returns up to limit of userID's foods, not archived, whose
