@@ -235,8 +235,9 @@ func (o *oidcLogin) callback(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	if e := q.Get("error"); e != "" {
-		// The code as safeCode cleans it: the query is the browser's to write.
-		o.sessions.logger.InfoContext(ctx, "the OIDC provider refused the sign-in", "error", safeCode(e))
+		// The query is the browser's to write: the log gets a code from the
+		// standards' list, or "other".
+		o.sessions.logger.InfoContext(ctx, "the OIDC provider refused the sign-in", "error", knownErrorCode(e))
 		writeProblem(w, http.StatusUnauthorized, "the sign-in provider refused the sign-in ("+safeCode(e)+")")
 		return
 	}
@@ -442,6 +443,26 @@ func safeReturnTo(s string) string {
 		return "/"
 	}
 	return s
+}
+
+// errorCodes are the error codes a provider sends back to the redirect
+// URI: RFC 6749 §4.1.2.1 and OpenID Connect Core §3.1.2.6.
+var errorCodes = []string{
+	"invalid_request", "unauthorized_client", "access_denied", "unsupported_response_type", "invalid_scope",
+	"server_error", "temporarily_unavailable", "interaction_required", "login_required",
+	"account_selection_required", "consent_required", "invalid_request_uri", "invalid_request_object",
+	"request_not_supported", "request_uri_not_supported", "registration_not_supported",
+}
+
+// knownErrorCode returns s if it is one of errorCodes, and "other" if not.
+// The result is always one of the list's own strings, never s itself.
+func knownErrorCode(s string) string {
+	for _, c := range errorCodes {
+		if s == c {
+			return c
+		}
+	}
+	return "other"
 }
 
 // safeCode keeps an OAuth error code (RFC 6749: printable ASCII) short and
