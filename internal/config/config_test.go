@@ -310,14 +310,14 @@ func TestLoadTrustedProxies(t *testing.T) {
 	t.Parallel()
 
 	vars := required()
-	vars["TDEEMON_TRUSTED_PROXIES"] = "10.42.0.0/16, 192.168.1.10 fd00::/8,::ffff:10.0.0.1"
+	vars["TDEEMON_TRUSTED_PROXIES"] = "10.42.0.0/16, 192.168.1.10 fd00::/8,::ffff:10.0.0.1 ::ffff:172.16.0.0/108"
 	cfg, err := config.Load(env(vars))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
 	want := []netip.Prefix{
 		netip.MustParsePrefix("10.42.0.0/16"), netip.MustParsePrefix("192.168.1.10/32"),
-		netip.MustParsePrefix("fd00::/8"), netip.MustParsePrefix("10.0.0.1/32"),
+		netip.MustParsePrefix("fd00::/8"), netip.MustParsePrefix("10.0.0.1/32"), netip.MustParsePrefix("172.16.0.0/12"),
 	}
 	if !slices.Equal(cfg.TrustedProxies, want) {
 		t.Errorf("TrustedProxies = %v, want %v", cfg.TrustedProxies, want)

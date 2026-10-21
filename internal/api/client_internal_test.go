@@ -49,20 +49,33 @@ func TestClientAddr(t *testing.T) {
 	}
 }
 
-// Without trusted proxies, a forwarded request gets one warning in the
-// log, not one per request.
-func TestClientsWarnsOnceWithoutTrustedProxies(t *testing.T) {
+// A forwarded request that cannot be trusted gets one warning in the log,
+// not one per request: without trusted proxies, or from a peer that is
+// not one of them (a proxy whose address is missing from the list).
+func TestClientsWarnsOnce(t *testing.T) {
 	t.Parallel()
 
-	var log bytes.Buffer
-	c := &clients{logger: slog.New(slog.NewTextHandler(&log, nil))}
-	for range 3 {
-		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
-		r.Header.Set("X-Forwarded-For", "203.0.113.5")
-		c.addr(r)
-	}
-	if n := strings.Count(log.String(), "TDEEMON_TRUSTED_PROXIES is not set"); n != 1 {
-		t.Errorf("%d warnings, want 1:\n%s", n, log.String())
+	for _, tc := range []struct {
+		name    string
+		trusted []netip.Prefix
+		want    string
+	}{
+		{"no trusted proxies", nil, "TDEEMON_TRUSTED_PROXIES is not set"},
+		{"a peer not in the list", []netip.Prefix{netip.MustParsePrefix("10.0.0.0/8")}, "a peer that is not in TDEEMON_TRUSTED_PROXIES"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var log bytes.Buffer
+			c := &clients{trusted: tc.trusted, logger: slog.New(slog.NewTextHandler(&log, nil))}
+			for range 3 {
+				r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", http.NoBody)
+				r.Header.Set("X-Forwarded-For", "203.0.113.5")
+				c.addr(r)
+			}
+			if n := strings.Count(log.String(), tc.want); n != 1 {
+				t.Errorf("%d warnings, want 1:\n%s", n, log.String())
+			}
+		})
 	}
 }
 

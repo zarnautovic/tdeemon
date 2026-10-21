@@ -30,7 +30,7 @@ const (
 const maxLimitKeys = 100_000
 
 // limiter counts failures per key. A key that reaches max failures is
-// blocked until window has passed since its first failure; then it
+// blocked until window has passed since its first attempt; then it
 // starts over.
 type limiter struct {
 	max     int
@@ -51,31 +51,22 @@ func newLimiter(maxFailures int, window time.Duration, now func() time.Time) *li
 	return &limiter{max: maxFailures, window: window, now: now, maxKeys: maxLimitKeys, keys: map[string]*failures{}}
 }
 
-// blocked reports whether key is blocked now, and for how much longer.
-func (l *limiter) blocked(key string) (time.Duration, bool) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	f, ok := l.keys[key]
-	if !ok {
-		return 0, false
-	}
-	now, end := l.now(), f.since.Add(l.window)
-	if !now.Before(end) {
-		delete(l.keys, key)
-		return 0, false
-	}
-	return end.Sub(now), f.n >= l.max
-}
-
-// fail counts a failure for key.
-func (l *limiter) fail(key string) {
+// take reserves an attempt for key. It counts as a failure until release
+// gives it back, so attempts still in flight count against the limit as
+// much as those that failed: a burst sent at once cannot slip past it. It
+// reports false, and how long to wait, when key is blocked.
+func (l *limiter) take(key string) (time.Duration, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	now := l.now()
 	if f, ok := l.keys[key]; ok && now.Before(f.since.Add(l.window)) {
+		if f.n >= l.max {
+			return f.since.Add(l.window).Sub(now), false
+		}
 		f.n++
-		return
+		return 0, true
 	}
+	delete(l.keys, key)
 	if len(l.keys) >= l.maxKeys {
 		for k, f := range l.keys {
 			if !now.Before(f.since.Add(l.window)) {
@@ -83,10 +74,20 @@ func (l *limiter) fail(key string) {
 			}
 		}
 		if len(l.keys) >= l.maxKeys {
-			return
+			return 0, true
 		}
 	}
 	l.keys[key] = &failures{n: 1, since: now}
+	return 0, true
+}
+
+// release gives back an attempt take reserved that did not fail.
+func (l *limiter) release(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if f, ok := l.keys[key]; ok && f.n > 0 {
+		f.n--
+	}
 }
 
 // reset forgets key's failures.

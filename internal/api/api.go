@@ -253,7 +253,9 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 		Summary:     "Get server info",
 		Description: "Name and version of the running server.",
 		Tags:        []string{"meta"},
-		Metadata:    openToAnyToken(),
+		// A Bearer request from an address with too many bad tokens.
+		Errors:   []int{http.StatusTooManyRequests},
+		Metadata: openToAnyToken(),
 	}, func(context.Context, *struct{}) (*infoOutput, error) {
 		return &infoOutput{Body: info}, nil
 	})

@@ -105,24 +105,22 @@ func writeBadToken(w http.ResponseWriter) {
 // a good token included, until its window passes (limit.go).
 func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, token string, next http.Handler) {
 	addr := addrKey(clientAddrFrom(r.Context()))
-	if wait, blocked := s.badTokens.blocked(addr); blocked {
+	if wait, ok := s.badTokens.take(addr); !ok {
 		maps.Copy(w.Header(), retryAfter(wait))
 		writeProblem(w, http.StatusTooManyRequests, "too many invalid API tokens from this address; try again later")
 		return
 	}
-	bad := func() {
-		s.badTokens.fail(addr)
-		writeBadToken(w)
-	}
+	// The attempt take reserved stays a failure, unless the token is good.
 	if !strings.HasPrefix(token, auth.TokenPrefix) {
-		bad()
+		writeBadToken(w)
 		return
 	}
 	t, u, err := s.db.APITokenUser(r.Context(), auth.SessionID(token))
 	if errors.Is(err, store.ErrNotFound) {
-		bad()
+		writeBadToken(w)
 		return
 	}
+	s.badTokens.release(addr)
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "looking up an API token failed", "error", err)
 		writeProblem(w, http.StatusInternalServerError, "the API token could not be checked")
@@ -204,7 +202,7 @@ func (s *sessions) registerTokens(a huma.API) {
 		Summary:     "Get who the request acts for",
 		Description: "The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token. Any token may call it.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusUnauthorized},
+		Errors:      []int{http.StatusUnauthorized, http.StatusTooManyRequests},
 		Metadata:    openToAnyToken(),
 	}, func(ctx context.Context, _ *struct{}) (*whoamiOutput, error) {
 		p, ok := auth.PrincipalFrom(ctx)

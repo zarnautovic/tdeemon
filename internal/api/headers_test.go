@@ -2,7 +2,6 @@ package api_test
 
 import (
 	"net/http"
-	"strings"
 	"testing"
 )
 
@@ -34,11 +33,11 @@ func TestSecurityHeaders(t *testing.T) {
 					t.Errorf("%s = %q, want %q", name, got, want)
 				}
 			}
-			csp := h.Get("Content-Security-Policy")
-			for _, want := range []string{"default-src 'self'", "frame-ancestors 'none'", "object-src 'none'", "base-uri 'none'"} {
-				if !strings.Contains(csp, want) {
-					t.Errorf("Content-Security-Policy %q lacks %q", csp, want)
-				}
+			// The whole policy, written out: a source added to it (a CDN,
+			// 'unsafe-inline') is a decision this test makes visible.
+			const csp = "default-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+			if got := h.Get("Content-Security-Policy"); got != csp {
+				t.Errorf("Content-Security-Policy = %q, want %q", got, csp)
 			}
 			if hsts := h.Get("Strict-Transport-Security"); hsts != "" {
 				t.Errorf("HSTS over plain HTTP: %q", hsts)

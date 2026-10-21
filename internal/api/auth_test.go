@@ -67,7 +67,7 @@ func newInstance(t *testing.T, baseURL, hash string) *instance {
 // passwordHash hashes password, the password of the test user.
 func passwordHash(t *testing.T) string {
 	t.Helper()
-	h, err := auth.HashPassword(password)
+	h, err := auth.HashPassword(t.Context(), password)
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}

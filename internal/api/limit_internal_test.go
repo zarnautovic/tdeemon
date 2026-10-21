@@ -10,34 +10,33 @@ func TestLimiter(t *testing.T) {
 
 	now := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
 	l := newLimiter(3, time.Minute, func() time.Time { return now })
-	for range 2 {
-		l.fail("a")
+	for i := range 3 {
+		if _, ok := l.take("a"); !ok {
+			t.Fatalf("attempt %d refused, want three", i+1)
+		}
+		now = now.Add(10 * time.Second)
 	}
-	if _, blocked := l.blocked("a"); blocked {
-		t.Error("blocked after two failures of three")
+	if wait, ok := l.take("a"); ok || wait != 30*time.Second {
+		t.Errorf("a fourth attempt: allowed %v, wait %v; want refused for the 30s left of the window", ok, wait)
 	}
-	now = now.Add(20 * time.Second)
-	l.fail("a")
-	if wait, blocked := l.blocked("a"); !blocked || wait != 40*time.Second {
-		t.Errorf("after three failures: blocked %v for %v, want 40s from the first", blocked, wait)
+	if _, ok := l.take("b"); !ok {
+		t.Error("another key is refused")
 	}
-	if _, blocked := l.blocked("b"); blocked {
-		t.Error("another key is blocked")
+	// An attempt given back makes room for one more.
+	l.release("a")
+	if _, ok := l.take("a"); !ok {
+		t.Error("refused after an attempt was given back")
 	}
-	now = now.Add(40 * time.Second)
-	if _, blocked := l.blocked("a"); blocked {
-		t.Error("still blocked once the window has passed")
-	}
-	l.fail("a")
-	if _, blocked := l.blocked("a"); blocked {
-		t.Error("a new window starts with one failure")
+	now = now.Add(30 * time.Second)
+	if _, ok := l.take("a"); !ok {
+		t.Error("still refused once the window has passed")
 	}
 	for range 3 {
-		l.fail("c")
+		l.take("c")
 	}
 	l.reset("c")
-	if _, blocked := l.blocked("c"); blocked {
-		t.Error("blocked after a reset")
+	if _, ok := l.take("c"); !ok {
+		t.Error("refused after a reset")
 	}
 }
 
@@ -49,15 +48,15 @@ func TestLimiterBoundsItsKeys(t *testing.T) {
 	now := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
 	l := newLimiter(1, time.Minute, func() time.Time { return now })
 	l.maxKeys = 2
-	l.fail("old")
+	l.take("old")
 	now = now.Add(time.Minute)
-	l.fail("a")
-	l.fail("b") // "old" expired: swept
-	if _, blocked := l.blocked("b"); !blocked {
+	l.take("a")
+	l.take("b") // "old" expired: swept
+	if _, ok := l.take("b"); ok {
 		t.Error("b was not counted, though an expired key made room")
 	}
-	l.fail("c") // full of live keys
-	if _, blocked := l.blocked("c"); blocked {
+	l.take("c") // full of live keys
+	if _, ok := l.take("c"); !ok {
 		t.Error("c was counted past the bound")
 	}
 	if len(l.keys) > 2 {

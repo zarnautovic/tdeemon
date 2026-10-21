@@ -25,7 +25,8 @@ func clientAddrFrom(ctx context.Context) netip.Addr {
 type clients struct {
 	trusted []netip.Prefix
 	logger  *slog.Logger
-	warned  atomic.Bool
+	// warned and warnedPeer make each warning go to the log once.
+	warned, warnedPeer atomic.Bool
 }
 
 // addr returns r's client address. Behind trusted proxies it is the
@@ -46,6 +47,10 @@ func (c *clients) addr(r *http.Request) netip.Addr {
 		return addr
 	}
 	if !c.isTrusted(addr) {
+		if len(forwarded) > 0 && !c.warnedPeer.Swap(true) {
+			c.logger.WarnContext(r.Context(), "a request came with X-Forwarded-For from a peer that is not in TDEEMON_TRUSTED_PROXIES: "+
+				"the header was ignored; if a proxy sent it, add its address", "peer", addr.String())
+		}
 		return addr
 	}
 	hops := strings.Split(strings.Join(forwarded, ","), ",")

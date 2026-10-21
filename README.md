@@ -180,8 +180,10 @@ Against guessing and floods:
   (an IPv6 address counts by its /64), or for one account (from
   anywhere, and the same for an address no account has), sign-ins from
   there or for it answer 429 with `Retry-After` until the 15 minutes
-  have passed, the right password included. A successful sign-in starts
-  the account's count over. Single sign-on is not counted.
+  have passed, the right password included. Sign-ins still being checked
+  count too, so a burst sent at once gets no further. A successful
+  sign-in starts the account's count over. Single sign-on is not
+  counted.
 - **Bad API tokens:** after 50 in 15 minutes from one address, every
   request with a Bearer token from there answers 429, a good token
   included, until the 15 minutes have passed.
@@ -192,7 +194,9 @@ Against guessing and floods:
   requests come in without it. The counts live in memory and start over
   when the server restarts.
 - **Password hashing** runs at most one hash per CPU at a time; more
-  sign-ins at once wait their turn instead of adding 19 MiB each.
+  sign-ins at once wait their turn instead of adding 19 MiB each, for up
+  to 10 seconds, then answer 503 with `Retry-After`. A client that goes
+  away gives up its place.
 - **Security headers** on every response: a content security policy
   that loads nothing from other sites and forbids framing
   (`default-src 'self'; frame-ancestors 'none'`), `nosniff`,

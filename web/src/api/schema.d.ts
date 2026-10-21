@@ -15,7 +15,7 @@ export interface paths {
         put?: never;
         /**
          * Sign in with a password
-         * @description Checks the email and password and starts a web session: the response sets the session cookie. A session the request already carries ends. A wrong address or password answers 401, always with the same message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent. After 10 failed sign-ins in 15 minutes from one address, or for one account, sign-ins from there or for it answer 429 with Retry-After until the 15 minutes have passed.
+         * @description Checks the email and password and starts a web session: the response sets the session cookie. A session the request already carries ends. A wrong address or password answers 401, always with the same message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent. After 10 failed sign-ins in 15 minutes from one address, or for one account, sign-ins from there or for it answer 429 with Retry-After until the 15 minutes have passed; sign-ins still being checked count too. When too many passwords are being checked at once, a sign-in that waited 10 seconds answers 503 with Retry-After.
          */
         post: operations["login"];
         delete?: never;
@@ -412,6 +412,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
         };
     };
     logout: {
@@ -584,6 +593,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
             /** @description Internal Server Error */
             500: {
                 headers: {
@@ -613,8 +631,17 @@ export interface operations {
                     "application/json": components["schemas"]["ServerInfo"];
                 };
             };
-            /** @description Error */
-            default: {
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

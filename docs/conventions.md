@@ -295,7 +295,10 @@ in `web/`.
   parameter.
   Package-level variables only hold read-only values Go cannot declare
   as constants (sentinel errors, compiled regular expressions, embedded
-  files, fixed lookup tables) and the version set at build time.
+  files, fixed lookup tables) and the version set at build time. The one
+  exception is a limit of the whole process: `internal/auth`'s hashing
+  slots, which every password check in the process shares; a test that
+  takes them all does not run in parallel.
 - **Doc comments** on everything exported: what it does, and why when that
   is not obvious.
 - **Logging** with `log/slog`: a constant message, key-value pairs with

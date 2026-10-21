@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"strings"
@@ -43,14 +44,14 @@ func TestHashAndVerify(t *testing.T) {
 	t.Parallel()
 
 	const password = "correct horse battery staple"
-	hash, err := HashPassword(password)
+	hash, err := HashPassword(t.Context(), password)
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
 	if !phc.MatchString(hash) {
 		t.Errorf("hash %q is not an argon2id PHC string with the default parameters", hash)
 	}
-	if again, _ := HashPassword(password); again == hash {
+	if again, _ := HashPassword(t.Context(), password); again == hash {
 		t.Error("two hashes of one password are equal; the salt is not random")
 	}
 
@@ -65,7 +66,7 @@ func TestHashAndVerify(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ok, err := VerifyPassword(tc.password, hash)
+			ok, err := VerifyPassword(t.Context(), tc.password, hash)
 			if err != nil || ok != tc.want {
 				t.Errorf("VerifyPassword = %v, %v; want %v, nil", ok, err, tc.want)
 			}
@@ -76,8 +77,8 @@ func TestHashAndVerify(t *testing.T) {
 func TestHashPasswordAppliesTheRules(t *testing.T) {
 	t.Parallel()
 
-	if _, err := HashPassword("short"); !errors.Is(err, ErrPasswordTooShort) {
-		t.Errorf("HashPassword(short) = %v, want ErrPasswordTooShort", err)
+	if _, err := HashPassword(t.Context(), "short"); !errors.Is(err, ErrPasswordTooShort) {
+		t.Errorf("HashPassword(t.Context(), short) = %v, want ErrPasswordTooShort", err)
 	}
 }
 
@@ -95,12 +96,12 @@ func TestNormalization(t *testing.T) {
 	for _, set := range forms {
 		t.Run("set "+set.name, func(t *testing.T) {
 			t.Parallel()
-			hash, err := HashPassword(set.password)
+			hash, err := HashPassword(t.Context(), set.password)
 			if err != nil {
 				t.Fatalf("HashPassword: %v", err)
 			}
 			for _, typed := range forms {
-				if ok, err := VerifyPassword(typed.password, hash); err != nil || !ok {
+				if ok, err := VerifyPassword(t.Context(), typed.password, hash); err != nil || !ok {
 					t.Errorf("verify %s = %v, %v; want true", typed.name, ok, err)
 				}
 			}
@@ -135,7 +136,7 @@ func TestVerifyUsesTheStoredParameters(t *testing.T) {
 	//   argon2.low_level.hash_secret(password, salt, time_cost=1,
 	//     memory_cost=8, parallelism=1, hash_len=32, type=Type.ID)
 	const hash = "$argon2id$v=19$m=8,t=1,p=1$MDEyMzQ1Njc4OWFiY2RlZg$XdTJKPvVpEdCNu922dgwQXj+XfOITS04PpG3cDMn5sE"
-	ok, err := VerifyPassword("correct horse battery staple", hash)
+	ok, err := VerifyPassword(t.Context(), "correct horse battery staple", hash)
 	if err != nil || !ok {
 		t.Errorf("VerifyPassword = %v, %v; want true", ok, err)
 	}
@@ -144,7 +145,7 @@ func TestVerifyUsesTheStoredParameters(t *testing.T) {
 func TestVerifyRejectsInvalidHashes(t *testing.T) {
 	t.Parallel()
 
-	good, err := HashPassword("correct horse battery staple")
+	good, err := HashPassword(t.Context(), "correct horse battery staple")
 	if err != nil {
 		t.Fatalf("HashPassword: %v", err)
 	}
@@ -179,7 +180,7 @@ func TestVerifyRejectsInvalidHashes(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			ok, err := VerifyPassword("correct horse battery staple", tc.hash)
+			ok, err := VerifyPassword(t.Context(), "correct horse battery staple", tc.hash)
 			if ok || !errors.Is(err, ErrInvalidHash) {
 				t.Errorf("VerifyPassword = %v, %v; want false, ErrInvalidHash", ok, err)
 			}
@@ -204,9 +205,8 @@ func TestGeneratePassword(t *testing.T) {
 
 // A hash waits for a free slot: with every slot taken, a check (here the
 // dummy one of an unknown address) does not run until one is released.
-func TestHashingWaitsForASlot(t *testing.T) {
-	t.Parallel()
-
+// Not parallel: it takes every slot of the process.
+func TestHashingWaitsForASlot(t *testing.T) { //nolint:paralleltest // It holds the process's hashing slots.
 	for range cap(hashSlots) {
 		hashSlots <- struct{}{}
 	}
@@ -218,7 +218,7 @@ func TestHashingWaitsForASlot(t *testing.T) {
 	})
 	done := make(chan struct{})
 	go func() {
-		_, _ = VerifyLogin("correct horse battery staple", "")
+		_, _ = VerifyLogin(t.Context(), "correct horse battery staple", "")
 		close(done)
 	}()
 	select {
@@ -232,5 +232,33 @@ func TestHashingWaitsForASlot(t *testing.T) {
 	case <-done:
 	case <-time.After(30 * time.Second):
 		t.Fatal("the hash did not run after a slot was released")
+	}
+}
+
+// The wait for a slot ends with the request: a client that went away, or
+// a wait past the limit (ErrBusy), gets no hash.
+func TestHashingGivesUpWaiting(t *testing.T) { //nolint:paralleltest // It holds the process's hashing slots.
+	for range cap(hashSlots) {
+		hashSlots <- struct{}{}
+	}
+	t.Cleanup(func() {
+		for range cap(hashSlots) {
+			<-hashSlots
+		}
+	})
+	gone, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := VerifyLogin(gone, "correct horse battery staple", ""); !errors.Is(err, context.Canceled) {
+		t.Errorf("VerifyLogin with the client gone = %v, want context.Canceled", err)
+	}
+	if _, err := HashPassword(gone, "correct horse battery staple"); !errors.Is(err, context.Canceled) {
+		t.Errorf("HashPassword with the client gone = %v, want context.Canceled", err)
+	}
+	start := time.Now()
+	if _, err := idKeyWithin(t.Context(), 50*time.Millisecond, []byte("p"), []byte("saltsalt"), 1, 8, 1, 16); !errors.Is(err, ErrBusy) {
+		t.Errorf("idKeyWithin past its wait = %v, want ErrBusy", err)
+	}
+	if waited := time.Since(start); waited > 5*time.Second {
+		t.Errorf("waited %v for a 50ms limit", waited)
 	}
 }

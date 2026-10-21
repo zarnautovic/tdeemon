@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -123,5 +124,61 @@ func TestBadTokensFromOneAddress(t *testing.T) {
 	in.clock.Set(in.clock.Now().Add(15 * time.Minute))
 	if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, from(attacker, bearer(tok.Token))); rec.Code != http.StatusOK {
 		t.Errorf("after 15 minutes: %d, want 200", rec.Code)
+	}
+}
+
+// Sign-ins sent all at once cannot slip past the limit: the attempts
+// still being checked count, so of a burst of wrong passwords from one
+// address, or for one account, at most ten are checked.
+func TestABurstOfSignInsMeetsTheLimit(t *testing.T) {
+	t.Parallel()
+
+	for name, addr := range map[string]func(i int) string{
+		"from one address": func(int) string { return "198.51.100.20:7000" },
+		"for one account":  func(i int) string { return fmt.Sprintf("203.0.113.%d:7000", i) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := newInstance(t, "http://localhost", passwordHash(t))
+			var wg sync.WaitGroup
+			codes := make([]int, 40)
+			for i := range codes {
+				wg.Go(func() { codes[i] = in.loginFrom(t, addr(i), "ana@example.com", "wrong password, surely").Code })
+			}
+			wg.Wait()
+			checked := 0
+			for _, c := range codes {
+				switch c {
+				case http.StatusUnauthorized:
+					checked++
+				case http.StatusTooManyRequests:
+				default:
+					t.Errorf("a sign-in answered %d, want 401 or 429", c)
+				}
+			}
+			if checked > 10 {
+				t.Errorf("%d of 40 sign-ins at once were checked, want at most 10", checked)
+			}
+		})
+	}
+}
+
+// Only failures add up: sign-ins that succeed, and requests with a good
+// token, give their attempt back.
+func TestSuccessesDoNotUseUpTheLimit(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	tok, _ := in.createToken(t, session, `{"name":"iPhone","scopes":["ingest"]}`)
+	const addr = "198.51.100.30:8000"
+	for i := range 12 {
+		if res := in.loginFrom(t, addr, "ana@example.com", password); res.Code != http.StatusOK {
+			t.Fatalf("sign-in %d: %d, want 200", i+1, res.Code)
+		}
+	}
+	for i := range 60 {
+		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, from(addr, bearer(tok.Token))); rec.Code != http.StatusOK {
+			t.Fatalf("request %d with a good token: %d, want 200", i+1, rec.Code)
+		}
 	}
 }
