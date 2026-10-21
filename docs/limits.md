@@ -20,7 +20,9 @@ page changes with it.
    - no plan for someone under 18;
    - no change that starts or deepens a loss of weight below a BMI of
      18.5, by the trend weight now (a cut, a recomp below 0, a kcal
-     target that implies a loss), and no goal or milestone weight below
+     target that implies a loss, or one that lowers the weekly average
+     before calibration trusts the TDEE; a first target is not judged,
+     see "Reading the table"), and no goal or milestone weight below
      it. A loss under way when the trend crosses 18.5 is not changed
      without the user: the autopilot applies no more steps and proposes
      maintenance, and the summary flags it.
@@ -63,7 +65,9 @@ only the warning on energy availability.
   weight. It counts once calibration trusts the measured TDEE enough for
   a verdict (DESIGN.md §7); until then a target's kcal meet the kcal
   floor, and below a BMI of 18.5 a target may not lower the weekly
-  average, which the floor in the code takes for a deeper loss.
+  average, which the floor in the code takes for a deeper loss. A first
+  target, with none before it, cannot be judged so: no rate can be told
+  without a TDEE, and only the kcal floor holds for it.
   Whatever the phase, it is held to the limits of loss and gain: no
   faster loss than a cut's limit for the BMI, no faster gain than a
   bulk's.

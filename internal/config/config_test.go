@@ -396,6 +396,22 @@ func TestLoadLimitsErrors(t *testing.T) {
 	}
 }
 
+// A value that does not read and one that breaks a rule are reported
+// together.
+func TestLoadLimitsReportsEveryError(t *testing.T) {
+	t.Parallel()
+
+	m := required()
+	m["TDEEMON_LIMIT_CUT_RATE"] = "abc"
+	m["TDEEMON_LIMIT_KCAL_FLOOR_MALE"] = "500"
+	_, err := config.Load(env(m))
+	for _, want := range []string{"TDEEMON_LIMIT_CUT_RATE", "kcal_floor_male 500"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Load = %v, want it to name %s", err, want)
+		}
+	}
+}
+
 func TestConfigLogValueHasLimits(t *testing.T) {
 	t.Parallel()
 

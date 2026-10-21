@@ -190,11 +190,12 @@ func loadLimits(get func(name, fallback string) string) (limits.Limits, error) {
 		}
 		f.Set(&l, v)
 	}
+	// The values that read are checked too, so every error shows at once.
+	if err := limits.ValidateInstance(l); err != nil {
+		errs = append(errs, fmt.Errorf("%s%s*: %w", Prefix, LimitPrefix, err))
+	}
 	if err := errors.Join(errs...); err != nil {
 		return limits.Instance(), err
-	}
-	if err := limits.ValidateInstance(l); err != nil {
-		return limits.Instance(), fmt.Errorf("%s%s*: %w", Prefix, LimitPrefix, err)
 	}
 	return l, nil
 }

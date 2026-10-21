@@ -432,6 +432,8 @@ func TestValidateAutopilot(t *testing.T) {
 		{"no TDEE to measure the drift", and(func(s *State) { s.Autopilot.DriftBaseTDEE = 0 }), step(-50), nil, []string{"tdee_missing"}},
 		{"no TDEE, as a proposal", and(func(s *State) { s.Autopilot.DriftBaseTDEE = 0 }), Change{Target: unsplit(2350, 170, 70), By: ByAutopilotProposal}, nil, nil},
 		{"a step during a loss below a BMI of 18.5", and(func(s *State) { s.TrendKg = 59 }), step(50), nil, []string{"underweight_loss code"}},
+		// A step down deepens the loss too: the violation once.
+		{"a step down during a loss below a BMI of 18.5", and(func(s *State) { s.TrendKg = 59 }), step(-50), nil, []string{"underweight_loss code"}},
 		{"a step below it in maintenance", and(func(s *State) {
 			s.TrendKg = 59
 			s.Phase = phase(t, plan.Maintain, "2026-09-07", 0)
@@ -587,6 +589,12 @@ func TestValidateAtTheEdge(t *testing.T) {
 			t.Fatalf("3.0 g/kg at %v kg = %q", kg, violations(r))
 		}
 	}
+	// The code's floor holds whatever the levels say.
+	near800 := levels()
+	near800.Instance.KcalFloorMale, near800.User.KcalFloorMale = 800.0000001, 800.0000001
+	if r := Validate(Change{Target: unsplit(800, 136, 25)}, base(t), near800); !slices.Equal(violations(r), []string{"kcal_floor code"}) || r.Violations[0].Limit != 800 {
+		t.Errorf("800 kcal under a floor a hair over it = %+v", r.Violations)
+	}
 	// A hair over the code's 800 kcal is 800, which the code refuses.
 	if r := Validate(Change{Target: unsplit(800+1e-13, 136, 25)}, base(t), lv); !slices.Equal(violations(r), []string{"kcal_floor code"}) {
 		t.Errorf("800 kcal and a hair = %q", violations(r))
@@ -647,6 +655,43 @@ func TestValidateRefusesAChangeOfTheWrongShape(t *testing.T) {
 			nil,
 			[]string{"invalid_change"},
 		},
+		{
+			"a trend weight at the phase's start that is no number", func(s *State) { s.PhaseStartTrendKg = math.Inf(1) },
+			Change{Phase: phase(t, plan.Cut, start, -0.5)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		// A regression with nothing to regress gives a TDEE of 0/0.
+		{
+			"a trusted TDEE that is no number", func(s *State) { s.TDEE, s.TDEETrusted = math.NaN(), true },
+			Change{Target: unsplit(1500, 170, 60)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"a lean mass that is no number", func(s *State) { s.LeanMassKg = math.NaN() },
+			Change{Target: unsplit(2500, 170, 75)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"active energy that is no number", func(s *State) { s.ActiveKcal = math.NaN() },
+			Change{Target: unsplit(2500, 170, 75)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"a drift that is no number", func(s *State) { s.Autopilot.DriftKcal = math.NaN() },
+			Change{Target: unsplit(2500, 170, 75)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"a drift's base that is no number", func(s *State) { s.Autopilot.DriftBaseTDEE = math.NaN() },
+			Change{Target: unsplit(2500, 170, 75)},
+			nil,
+			[]string{"invalid_change"},
+		},
 	})
 }
 
@@ -664,5 +709,9 @@ func TestValidateUnderweightNewPhase(t *testing.T) {
 		{"a slower recomp", cutting, Change{Phase: phase(t, plan.Recomp, "2026-10-26", -0.2)}, nil, nil},
 		{"a slower cut", cutting, Change{Phase: phase(t, plan.Cut, "2026-10-26", -0.2)}, nil, nil},
 		{"a faster cut", cutting, Change{Phase: phase(t, plan.Cut, "2026-10-26", -0.6)}, nil, []string{"underweight_loss code"}},
+		{"maintenance after a bulk", func(s *State) {
+			s.TrendKg = 59
+			s.Phase = phase(t, plan.Bulk, "2026-09-07", 0.25)
+		}, Change{Phase: phase(t, plan.Maintain, "2026-10-26", 0)}, nil, nil},
 	})
 }

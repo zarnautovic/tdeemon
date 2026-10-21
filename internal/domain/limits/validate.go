@@ -2,6 +2,7 @@ package limits
 
 import (
 	"math"
+	"slices"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
@@ -59,8 +60,8 @@ const (
 	// else; Limit and Proposed are 0.
 	RuleAutopilotShape = "autopilot_shape"
 	// RuleInvalidChange: the change breaks a rule of its shape (a rate of
-	// the wrong sign for its phase, a value that is no number), or the
-	// state's trend weight is no number; Limit and Proposed are 0.
+	// the wrong sign for its phase, a value that is no number), or a
+	// number of the state is no number; Limit and Proposed are 0.
 	RuleInvalidChange = "invalid_change"
 )
 
@@ -268,8 +269,9 @@ type validator struct {
 
 // shape refuses a change that breaks a rule of its shape, which no limit
 // would catch (a comparison with a value that is no number is false; a
-// bulk that loses is no cut), and a trend weight that is no number. It
-// reports false for one.
+// bulk that loses is no cut), and a state with a number that is no
+// number (a TDEE from a regression with nothing to regress). It reports
+// false for one.
 func (v *validator) shape() bool {
 	var bad bool
 	switch c := v.c; {
@@ -278,7 +280,14 @@ func (v *validator) shape() bool {
 		c.TrainingDays != nil && c.TrainingDays.Validate() != nil:
 		bad = true
 	}
-	if bad || !finite(v.s.TrendKg) {
+	st := v.s
+	for _, x := range []float64{
+		st.TrendKg, st.PhaseStartTrendKg, st.TDEE, st.LeanMassKg, st.ActiveKcal,
+		st.Autopilot.DriftKcal, st.Autopilot.DriftBaseTDEE,
+	} {
+		bad = bad || !finite(x)
+	}
+	if bad {
 		v.violate(Violation{Rule: RuleInvalidChange})
 		return false
 	}
@@ -656,7 +665,8 @@ func (b bound) breaks(x, limit float64, exclusive bool) bool {
 // still).
 func (v *validator) hold(b bound, x float64, old *float64) {
 	limit := b.user
-	if !b.breaks(x, limit, false) {
+	code := b.hasCode && b.breaks(x, b.code, b.codeExclusive)
+	if !code && !b.breaks(x, limit, false) {
 		return
 	}
 	if old != nil && (b.floor && x > *old || !b.floor && x < *old) {
@@ -664,15 +674,26 @@ func (v *validator) hold(b bound, x float64, old *float64) {
 	}
 	level := LevelUser
 	switch {
-	case b.hasCode && b.breaks(x, b.code, b.codeExclusive):
+	case code:
 		level = LevelCode
+		// The code's floor holds whatever the levels say; it is the limit
+		// when theirs are looser.
+		if !b.breaks(x, limit, false) {
+			limit = b.code
+		}
 	case b.breaks(x, b.instance, false):
 		level = LevelInstance
 	}
 	v.violate(Violation{Rule: b.rule, DayType: b.dayType, Limit: limit, Proposed: x, Level: level})
 }
 
-func (v *validator) violate(x Violation) { v.r.Violations = append(v.r.Violations, x) }
+// violate adds x, unless the result has it already: a step down during a
+// loss below a BMI of 18.5 deepens the loss and is a step during it.
+func (v *validator) violate(x Violation) {
+	if !slices.Contains(v.r.Violations, x) {
+		v.r.Violations = append(v.r.Violations, x)
+	}
+}
 
 // scaled returns f of *p, or nil for nil.
 func scaled(p *float64, f func(float64) float64) *float64 {
