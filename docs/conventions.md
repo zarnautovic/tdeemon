@@ -94,7 +94,7 @@ A change is done when:
   - the schema snapshot after a migration
     (`go test ./internal/store -run TestSchema -update`);
 - the docs say what changed: README, these conventions, `DESIGN.md` for
-  design decisions;
+  design decisions, `limits.md` for a limit of a plan;
 - no personal data entered the repo (real weights, meals, sessions);
 - the pull request title is a Conventional Commit, and the description
   says what changed, why, and how it was checked.

@@ -18,7 +18,9 @@ maintenance, bulk or recomp — within guardrails you control.
 - Built-in chat with your own API key, photo logging, PWA.
 - Apple Health import (Health Auto Export), later native HealthKit.
 - Adaptive calibration with confidence intervals; AI changes plans only
-  through proposals you accept, and limits are enforced in code.
+  through proposals you accept, and limits are enforced in code
+  ([docs/limits.md](docs/limits.md), with their sources; not medical
+  advice).
 
 ## Development
 

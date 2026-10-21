@@ -14,7 +14,7 @@ comments: this description becomes the body of the squash commit. -->
 - [ ] Generated files are fresh: the OpenAPI spec and TypeScript types,
       the schema snapshot
 - [ ] The docs say what changed: README, `docs/conventions.md`,
-      `docs/DESIGN.md`
+      `docs/DESIGN.md`, `docs/limits.md`
 - [ ] No personal data and no secrets in the change
 - [ ] The title is a Conventional Commit (`feat: …`, `fix(store): …`)
 

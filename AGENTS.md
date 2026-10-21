@@ -26,7 +26,7 @@ contract and an empty web app exist.
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
-| `docs/` | the design and the conventions |
+| `docs/` | the design, the conventions, and the limits of a plan with their sources (`limits.md`) |
 | `.github/` | the CI workflows, the ruleset for `main`, issue and PR templates |
 | `scripts/` | `next-version.sh` for releases, with its test; `apply-github-settings.sh`, for the maintainer only |
 
@@ -94,8 +94,9 @@ details.
     `eslint-disable` (oxlint and `scripts/check-disable-comments.sh`
     enforce both).
 - **Code, comments, docs and commit messages are in English.**
-- **Keep the docs true:** update the README, docs/conventions.md or
-  docs/DESIGN.md when a change makes them wrong.
+- **Keep the docs true:** update the README, docs/conventions.md,
+  docs/DESIGN.md or docs/limits.md when a change makes them wrong; a
+  limit in the code and its row in docs/limits.md change together.
 
 ## Definition of Done
 
