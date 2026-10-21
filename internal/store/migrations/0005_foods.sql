@@ -27,7 +27,9 @@ CREATE TABLE foods (
     alcohol REAL CHECK (alcohol >= 0),
     -- The weight of one portion of a food per portion, when known.
     portion_g REAL CHECK (portion_g IS NULL OR (basis = 'portion' AND portion_g > 0)),
-    source TEXT NOT NULL CHECK (source IN ('label', 'estimate', 'user', 'dish')),
+    -- recipe and off (Open Food Facts) are planned (DESIGN.md §4); they
+    -- are allowed now, so adding them needs no rebuild of the table.
+    source TEXT NOT NULL CHECK (source IN ('label', 'estimate', 'user', 'dish', 'recipe', 'off')),
     note TEXT NOT NULL DEFAULT '',
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
     created_at TEXT NOT NULL,

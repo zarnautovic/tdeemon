@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -116,7 +117,7 @@ func TestSaveFoodByID(t *testing.T) {
 func TestSaveFoodRefuses(t *testing.T) {
 	t.Parallel()
 
-	db, ana, ivo := withTwoUsers(t)
+	db, ana, _ := withTwoUsers(t)
 	saveFood(t, db, ana, bar())
 	// An alias another food goes by.
 	other := bar()
@@ -130,18 +131,65 @@ func TestSaveFoodRefuses(t *testing.T) {
 	if _, err := db.SaveFood(t.Context(), ana, bad, t0); err == nil || !strings.Contains(err.Error(), "invalid food") {
 		t.Errorf("an invalid food = %v", err)
 	}
-	// Another user's food id: refused, and that food untouched.
+}
+
+// Another user's food id answers like an id nobody has: the food is
+// saved under a new one, and the other user's food is untouched.
+func TestSaveFoodUnderAnotherUsersID(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
 	ivos := saveFood(t, db, ivo, food.Food{
 		ID: uuid.NewV7(), Name: "Ivo's bread", Basis: food.Per100g, Source: food.User,
 		Nutrients: food.Nutrients{Kcal: 250, Protein: 9, Carbs: 49, Fat: 3},
 	})
 	steal := bar()
 	steal.ID = ivos.ID
-	if _, err := db.SaveFood(t.Context(), ana, steal, t0); !errors.Is(err, store.ErrIDTaken) {
-		t.Errorf("saving onto another user's id = %v, want ErrIDTaken", err)
+	got := saveFood(t, db, ana, steal)
+	if got.ID == ivos.ID || got.Name != steal.Name {
+		t.Errorf("saved as %+v, want ana's bar under a new id", got)
 	}
 	if got, _ := db.FoodByID(t.Context(), ivo, ivos.ID); got.Name != "Ivo's bread" {
 		t.Errorf("ivo's food became %q", got.Name)
+	}
+}
+
+// Saving the name and brand of an archived food corrects it and brings it
+// back into search.
+func TestSaveFoodRevivesAnArchivedOne(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	old := saveFood(t, db, ana, bar())
+	if err := db.SetFoodArchived(t.Context(), ana, old.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	again := bar()
+	again.Nutrients.Kcal = 370
+	got := saveFood(t, db, ana, again)
+	if got.ID != old.ID || got.Archived || got.Nutrients.Kcal != 370 {
+		t.Errorf("saved as %+v, want the old food, corrected and not archived", got)
+	}
+	if found, _ := db.FindFoods(t.Context(), ana, "caramel", 10); len(found) != 1 {
+		t.Errorf("the revived food is not found: %v", names(found))
+	}
+}
+
+// When a food goes, its search row goes with it, also when the food goes
+// with its user.
+func TestSearchRowsLeaveWithTheirFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	saveFood(t, db, ana, bar())
+	saveFood(t, db, ivo, bar())
+	exec(t, db, "DELETE FROM users WHERE id = '"+ivo.String()+"'")
+	var n int
+	if err := db.Read().QueryRowContext(t.Context(), "SELECT count(*) FROM foods_fts WHERE user_id = ?", ivo.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 || countRows(t, db, "foods_fts") != 1 {
+		t.Errorf("%d search rows of the deleted user left, %d in all; want 0 and ana's 1", n, countRows(t, db, "foods_fts"))
 	}
 }
 
@@ -212,6 +260,7 @@ func TestFindFoods(t *testing.T) {
 		want  []uuid.UUID
 	}{
 		{"cevapi", []uuid.UUID{cevapi.ID}},         // without diacritics
+		{"c\u030cevapi", []uuid.UUID{cevapi.ID}},   // decomposed, as pasted from a PDF
 		{"ĆEV", []uuid.UUID{cevapi.ID}},            // a prefix, any case
 		{"grcki jog", []uuid.UUID{yoghurt.ID}},     // every word a prefix
 		{"dukat", []uuid.UUID{yoghurt.ID}},         // by brand
@@ -257,8 +306,7 @@ func TestFindFoods(t *testing.T) {
 }
 
 // A match in the name ranks before one in an alias, and that before one
-// in the brand, even where the shorter brand or alias would score more
-// and the name sorts last.
+// in the brand, however long the name and however the names sort.
 func TestFindFoodsRanksNamesFirst(t *testing.T) {
 	t.Parallel()
 
@@ -271,13 +319,51 @@ func TestFindFoodsRanksNamesFirst(t *testing.T) {
 	}
 	byBrand := mk("Ajvar blagi", "Kruh")
 	byAlias := mk("Burek sa sirom", "", "kruh")
-	byName := mk("Zobeni domaći kruh iz pećnice", "")
+	byName := mk("Integralni kruh s pet vrsta sjemenki i zobenim pahuljicama", "")
+	short := mk("Kruh", "")
+	white := mk("Bijeli kruh", "")
+	for _, n := range []string{"Ajvar ljuti", "Banana", "Cedevita", "Datulje", "Egg", "Feta", "Grah", "Hummus"} {
+		mk(n, "")
+	}
 	got, err := db.FindFoods(t.Context(), ana, "kruh", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 || got[0].ID != byName || got[1].ID != byAlias || got[2].ID != byBrand {
-		t.Errorf("FindFoods(kruh) = %v, want the name, the alias, then the brand", names(got))
+	if len(got) != 5 || got[0].ID != short || got[1].ID != white || got[2].ID != byName || got[3].ID != byAlias || got[4].ID != byBrand {
+		t.Errorf("FindFoods(kruh) = %v, want the names (shorter first), the alias, then the brand", names(got))
+	}
+}
+
+// The order of one user's results does not depend on another user's
+// foods: a relevance score over the whole index would let one user learn
+// what words another's foods hold.
+func TestFindFoodsOrderIgnoresOtherUsers(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	for _, nb := range [][2]string{{"Mlijeko", "Sir"}, {"Sir", "Mlijeko"}, {"Mlijeko i sir", ""}} {
+		saveFood(t, db, ana, food.Food{
+			ID: uuid.NewV7(), Name: nb[0], Brand: nb[1], Basis: food.Per100g, Source: food.Estimate,
+			Nutrients: food.Nutrients{Kcal: 100, Protein: 5, Carbs: 10, Fat: 3},
+		})
+	}
+	find := func() []string {
+		t.Helper()
+		got, err := db.FindFoods(t.Context(), ana, "mlijeko sir", 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return names(got)
+	}
+	before := find()
+	for i := range 30 {
+		saveFood(t, db, ivo, food.Food{
+			ID: uuid.NewV7(), Name: fmt.Sprintf("Mlijeko %d", i), Basis: food.Per100g, Source: food.Estimate,
+			Nutrients: food.Nutrients{Kcal: 60, Protein: 3, Carbs: 5, Fat: 3},
+		})
+	}
+	if after := find(); !reflect.DeepEqual(before, after) || len(before) != 3 || before[0] != "Mlijeko i sir" {
+		t.Errorf("ana's results %v became %v with ivo's foods; want the same, the name with both words first", before, after)
 	}
 }
 

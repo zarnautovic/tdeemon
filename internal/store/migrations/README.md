@@ -66,7 +66,10 @@ the `schema_migrations` table.
   (`<name>_data`, `_idx`, `_content`, `_docsize`, `_config`) are read
   only through it, and `TestIsolation` compares the virtual table
   instead of them. The store keeps such an index in step with its source
-  tables in the same transaction.
+  tables in the same transaction, and an `AFTER DELETE` trigger on the
+  source table removes its rows however the source row goes (a user's
+  deletion cascades without the store). Rank its results by the user's
+  rows alone, not `bm25()`, whose statistics span every user's rows.
 - Rows that clients create carry a UUIDv7 primary key stored as `TEXT`.
 - Timestamps are `TEXT` in RFC 3339, UTC (`2026-10-20T08:15:00Z`);
   calendar days are `TEXT` in `YYYY-MM-DD`.

@@ -20,8 +20,6 @@ var (
 	ErrNameTaken = errors.New("another food has this name and brand")
 	// ErrAliasTaken: another of the user's foods goes by the alias.
 	ErrAliasTaken = errors.New("another food goes by this alias")
-	// ErrIDTaken: the id is in use by a row the user cannot see.
-	ErrIDTaken = errors.New("the id is taken")
 )
 
 // MaxFoodResults bounds FindFoods.
@@ -90,9 +88,12 @@ func nullable(p *float64) any {
 //     food has the new name and brand (ErrNameTaken);
 //   - otherwise a food with f's name and brand (food.Key) is updated in
 //     place and keeps its own id, which the result carries;
-//   - otherwise f is added.
+//   - otherwise f is added, under a new id if f's is another user's
+//     (which answers like an id nobody has: the result carries the id).
 //
-// An alias another food goes by is refused (ErrAliasTaken).
+// Saving the name and brand of an archived food corrects it and, as f is
+// not archived, brings it back: it is in use again. An alias another
+// food goes by is refused (ErrAliasTaken).
 func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, f food.Food, now time.Time) (food.Food, error) {
 	if err := f.Validate(); err != nil {
 		return food.Food{}, fmt.Errorf("invalid food: %w", err)
@@ -117,7 +118,7 @@ func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, f food.Food, now t
 		}
 		return replaceFoodChildren(ctx, tx, userID, f)
 	})
-	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) || errors.Is(err, ErrIDTaken) {
+	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
 		return food.Food{}, err
 	}
 	if err != nil {
@@ -133,7 +134,7 @@ func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, 
 	err := tx.QueryRowContext(ctx, "SELECT user_id FROM foods WHERE id = ?", id.String()).Scan(&owner)
 	switch {
 	case err == nil && owner != userID.String():
-		return uuid.Nil(), false, ErrIDTaken
+		id = uuid.NewV7()
 	case err == nil:
 		var other string
 		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
@@ -246,28 +247,34 @@ func replaceFoodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f fo
 // FoodByID returns userID's food with id, archived or not, or
 // ErrNotFound.
 func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, error) {
-	var r foodFields
-	err := db.read.QueryRowContext(ctx, "SELECT "+foodColumns+" FROM foods AS f WHERE f.id = ? AND f.user_id = ?",
-		id.String(), userID.String()).Scan(r.dest()...)
-	if errors.Is(err, sql.ErrNoRows) {
-		return food.Food{}, ErrNotFound
+	var f food.Food
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		var r foodFields
+		err := tx.QueryRowContext(ctx, "SELECT "+foodColumns+" FROM foods AS f WHERE f.id = ? AND f.user_id = ?",
+			id.String(), userID.String()).Scan(r.dest()...)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if f, err = r.food(); err != nil {
+			return err
+		}
+		return foodChildren(ctx, tx, userID, &f)
+	})
+	if errors.Is(err, ErrNotFound) {
+		return food.Food{}, err
 	}
 	if err != nil {
-		return food.Food{}, fmt.Errorf("food: %w", err)
-	}
-	f, err := r.food()
-	if err != nil {
-		return food.Food{}, fmt.Errorf("food: %w", err)
-	}
-	if err := db.foodChildren(ctx, userID, &f); err != nil {
 		return food.Food{}, fmt.Errorf("food: %w", err)
 	}
 	return f, nil
 }
 
 // foodChildren reads f's servings and aliases, in the order saved.
-func (db *DB) foodChildren(ctx context.Context, userID uuid.UUID, f *food.Food) error {
-	rows, err := db.read.QueryContext(ctx, "SELECT name, amount FROM food_servings WHERE food_id = ? AND user_id = ? ORDER BY rowid",
+func foodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f *food.Food) error {
+	rows, err := tx.QueryContext(ctx, "SELECT name, amount FROM food_servings WHERE food_id = ? AND user_id = ? ORDER BY rowid",
 		f.ID.String(), userID.String())
 	if err != nil {
 		return err
@@ -283,7 +290,7 @@ func (db *DB) foodChildren(ctx context.Context, userID uuid.UUID, f *food.Food) 
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	arows, err := db.read.QueryContext(ctx, "SELECT alias FROM food_aliases WHERE food_id = ? AND user_id = ? ORDER BY rowid",
+	arows, err := tx.QueryContext(ctx, "SELECT alias FROM food_aliases WHERE food_id = ? AND user_id = ? ORDER BY rowid",
 		f.ID.String(), userID.String())
 	if err != nil {
 		return err
@@ -325,34 +332,51 @@ func (db *DB) SetFoodArchived(ctx context.Context, userID, id uuid.UUID, archive
 // FindFoods returns up to limit of userID's foods, not archived, whose
 // name, brand or an alias has words starting with each word of query,
 // without regard to case or diacritics: "cev" finds "Ćevapi", "grčki jog"
-// finds "Grčki jogurt". The best matches come first; a match in the name
-// counts most. A query with no words finds nothing.
+// finds "Grčki jogurt". Foods whose name holds every word come first,
+// then those whose name and aliases do, then the rest; within each, the
+// shorter name, then by name. The order depends on the user's foods
+// alone, not on other users' (which a relevance score over the whole
+// index would). A query with no words finds nothing.
 func (db *DB) FindFoods(ctx context.Context, userID uuid.UUID, query string, limit int) ([]food.Food, error) {
 	match := ftsQuery(query)
 	if match == "" || limit <= 0 {
 		return nil, nil
 	}
 	limit = min(limit, MaxFoodResults)
-	out, err := db.queryFoods(ctx, `
-		SELECT `+foodColumns+` FROM foods_fts JOIN foods AS f ON f.id = foods_fts.food_id
-		WHERE foods_fts MATCH ? AND foods_fts.user_id = ? AND f.user_id = ? AND f.archived = 0
-		ORDER BY bm25(foods_fts, 0, 0, 10, 3, 5), f.name
-		LIMIT ?`, match, userID.String(), userID.String(), limit)
+	uid := userID.String()
+	var out []food.Food
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		out, err = queryFoods(ctx, tx, `
+			SELECT `+foodColumns+` FROM foods AS f
+			WHERE f.user_id = ? AND f.archived = 0
+				AND f.id IN (SELECT food_id FROM foods_fts WHERE foods_fts MATCH ? AND user_id = ?)
+			ORDER BY CASE
+					WHEN f.id IN (SELECT food_id FROM foods_fts WHERE foods_fts MATCH ? AND user_id = ?) THEN 0
+					WHEN f.id IN (SELECT food_id FROM foods_fts WHERE foods_fts MATCH ? AND user_id = ?) THEN 1
+					ELSE 2
+				END, length(f.name), f.name
+			LIMIT ?`, uid, match, uid, "{name} : ("+match+")", uid, "{name aliases} : ("+match+")", uid, limit)
+		if err != nil {
+			return err
+		}
+		for i := range out {
+			if err := foodChildren(ctx, tx, userID, &out[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, fmt.Errorf("find foods: %w", err)
-	}
-	for i := range out {
-		if err := db.foodChildren(ctx, userID, &out[i]); err != nil {
-			return nil, fmt.Errorf("find foods: %w", err)
-		}
 	}
 	return out, nil
 }
 
 // queryFoods runs q, which selects foodColumns, and returns the foods,
 // without their servings and aliases.
-func (db *DB) queryFoods(ctx context.Context, q string, args ...any) ([]food.Food, error) {
-	rows, err := db.read.QueryContext(ctx, q, args...)
+func queryFoods(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]food.Food, error) {
+	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +403,11 @@ const maxQueryWords = 8
 // quoted prefix, all of them required. Quoting keeps FTS5's own syntax
 // (AND, NEAR, column filters, *) out of it.
 func ftsQuery(s string) string {
-	words := strings.FieldsFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	// A combining mark (a caron pasted from a PDF, after its "c") is part
+	// of its word; the tokenizer drops it with the other diacritics.
+	words := strings.FieldsFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.Is(unicode.Mn, r)
+	})
 	if len(words) > maxQueryWords {
 		words = words[:maxQueryWords]
 	}

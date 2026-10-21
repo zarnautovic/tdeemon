@@ -174,10 +174,6 @@ func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) 
 // noOnesData are the tables that hold no user's data.
 var noOnesData = []string{"schema_migrations"}
 
-// ftsShadows are the suffixes of the tables an FTS5 table keeps its index
-// in. They are compared through the virtual table, which has a user_id.
-var ftsShadows = []string{"_data", "_idx", "_content", "_docsize", "_config"}
-
 // userTables lists users and every table with a user_id column, from the
 // schema itself. A table with neither fails the test: every table of a
 // user's rows has a user_id (internal/store/migrations/README.md), and
@@ -188,7 +184,8 @@ func (e isolationEnv) userTables(t *testing.T) []userTable {
 	res, err := e.in.db.Read().QueryContext(t.Context(), `
 		SELECT m.name, EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'user_id'),
 			EXISTS (SELECT 1 FROM sqlite_master AS v
-				WHERE v.type = 'table' AND v.sql LIKE 'CREATE VIRTUAL TABLE%' AND m.name GLOB v.name || '_*')
+				WHERE v.type = 'table' AND v.sql LIKE 'CREATE VIRTUAL TABLE%' AND m.name IN
+					(v.name || '_data', v.name || '_idx', v.name || '_content', v.name || '_docsize', v.name || '_config'))
 		FROM sqlite_master AS m WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY m.name`)
 	if err != nil {
 		t.Fatalf("list the tables: %v", err)
@@ -197,12 +194,12 @@ func (e isolationEnv) userTables(t *testing.T) []userTable {
 	var out []userTable
 	for res.Next() {
 		var name string
-		var hasUserID, ofVirtual bool
-		if err := res.Scan(&name, &hasUserID, &ofVirtual); err != nil {
+		var hasUserID, shadow bool
+		if err := res.Scan(&name, &hasUserID, &shadow); err != nil {
 			t.Fatalf("scan a table: %v", err)
 		}
 		switch {
-		case ofVirtual && slices.ContainsFunc(ftsShadows, func(s string) bool { return strings.HasSuffix(name, s) }):
+		case shadow: // compared through its virtual table, which has a user_id
 		case name == "users":
 			out = append(out, userTable{name, "id"})
 		case hasUserID:
