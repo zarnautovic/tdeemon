@@ -25,6 +25,16 @@ CREATE INDEX sessions_expires_at ON sessions (expires_at);
 
 CREATE INDEX sessions_user_id ON sessions (user_id);
 
+CREATE TABLE user_identities (
+    issuer TEXT NOT NULL CHECK (issuer <> ''),
+    subject TEXT NOT NULL CHECK (subject <> ''),
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (issuer, subject)
+) STRICT;
+
+CREATE UNIQUE INDEX user_identities_user_issuer ON user_identities (user_id, issuer);
+
 CREATE TABLE users (
     -- A UUIDv7, in the canonical text form.
     id TEXT PRIMARY KEY CHECK (length(id) = 36),

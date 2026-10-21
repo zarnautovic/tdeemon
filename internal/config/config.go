@@ -38,8 +38,8 @@ type Config struct {
 	Listen string
 	// BaseURL is the public URL of the instance, without a trailing slash.
 	BaseURL *url.URL
-	// SecretKey is for sealing and encrypting what tdeemon stores; sessions
-	// do not depend on it. Never log it.
+	// SecretKey seals the single sign-on state cookie, and will encrypt
+	// stored secrets; sessions do not depend on it. Never log it.
 	SecretKey []byte
 	// DataDir holds the database, backups and upload archives.
 	DataDir string
@@ -49,6 +49,24 @@ type Config struct {
 	LogFormat LogFormat
 	// Location is the instance's default time zone, from TZ.
 	Location *time.Location
+	// OIDC is the OpenID Connect provider users may sign in with; nil when
+	// none is configured.
+	OIDC *OIDC
+}
+
+// OIDC configures sign-in through an OpenID Connect provider such as
+// Authentik.
+type OIDC struct {
+	// Issuer is the provider's issuer URL; its discovery document lives at
+	// Issuer/.well-known/openid-configuration.
+	Issuer string
+	// ClientID and ClientSecret are tdeemon's credentials at the provider.
+	// The secret may be empty for a public client; PKCE protects the code
+	// either way. Never log the secret.
+	ClientID     string
+	ClientSecret string
+	// Name is what the sign-in page calls the provider.
+	Name string
 }
 
 // Load reads the configuration through lookup and validates it. It
@@ -98,6 +116,12 @@ func Load(lookup LookupFunc) (Config, error) {
 		errs = append(errs, fmt.Errorf("%sLOG_FORMAT %q: want json or text", Prefix, cfg.LogFormat))
 	}
 
+	oidc, err := loadOIDC(get)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	cfg.OIDC = oidc
+
 	if tz, ok := lookup("TZ"); ok && strings.TrimSpace(tz) != "" {
 		loc, err := time.LoadLocation(strings.TrimSpace(tz))
 		if err != nil {
@@ -108,6 +132,41 @@ func Load(lookup LookupFunc) (Config, error) {
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// loadOIDC reads the OIDC_* variables: none of them for no provider, or
+// at least the issuer and the client ID.
+func loadOIDC(get func(name, fallback string) string) (*OIDC, error) {
+	o := &OIDC{
+		Issuer:       get("OIDC_ISSUER", ""),
+		ClientID:     get("OIDC_CLIENT_ID", ""),
+		ClientSecret: get("OIDC_CLIENT_SECRET", ""),
+		Name:         get("OIDC_NAME", "Single sign-on"),
+	}
+	switch {
+	case o.Issuer == "" && o.ClientID == "" && o.ClientSecret == "":
+		return nil, nil //nolint:nilnil // No provider is a valid configuration, not an error.
+	case o.Issuer == "" || o.ClientID == "":
+		return nil, fmt.Errorf("%sOIDC_ISSUER and %sOIDC_CLIENT_ID go together; set both for single sign-on, or neither", Prefix, Prefix)
+	}
+	u, err := url.Parse(o.Issuer)
+	if err != nil || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return nil, fmt.Errorf("%sOIDC_ISSUER %q: want the provider's issuer URL, e.g. https://auth.example.com/application/o/tdeemon/", Prefix, o.Issuer)
+	}
+	// Plain HTTP would let anyone on the path forge identities; only a
+	// provider on this machine may use it.
+	if u.Scheme != "https" && (u.Scheme != "http" || !isLoopback(u.Hostname())) {
+		return nil, fmt.Errorf("%sOIDC_ISSUER %q: must use https (http only for localhost)", Prefix, o.Issuer)
+	}
+	return o, nil
+}
+
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // parseBaseURL accepts an absolute http(s) URL with a host and no path,
@@ -154,5 +213,23 @@ func (c Config) LogValue() slog.Value {
 		slog.String("log_format", string(c.LogFormat)),
 		slog.String("tz", tz),
 		slog.String("secret_key", "[redacted]"),
+		slog.Any("oidc", c.OIDC),
+	)
+}
+
+// LogValue implements slog.LogValuer without the client secret.
+func (o *OIDC) LogValue() slog.Value {
+	if o == nil {
+		return slog.StringValue("off")
+	}
+	secret := ""
+	if o.ClientSecret != "" {
+		secret = "[redacted]"
+	}
+	return slog.GroupValue(
+		slog.String("issuer", o.Issuer),
+		slog.String("client_id", o.ClientID),
+		slog.String("client_secret", secret),
+		slog.String("name", o.Name),
 	)
 }

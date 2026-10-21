@@ -22,6 +22,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -54,6 +55,10 @@ type Config struct {
 	BaseURL *url.URL
 	// Logger is required.
 	Logger *slog.Logger
+	// OIDC, when not nil, adds sign-in through that provider.
+	OIDC *config.OIDC
+	// SecretKey seals the OIDC flow cookie. Required with OIDC.
+	SecretKey []byte
 	// Now returns the current time; time.Now when nil.
 	Now func() time.Time
 }
@@ -72,6 +77,13 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	}
 	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, secure: cfg.BaseURL.Scheme == "https"}
 	auth.PrepareLogin()
+	var o *oidcLogin
+	if cfg.OIDC != nil {
+		if len(cfg.SecretKey) == 0 {
+			return nil, errors.New("api: OIDC needs the secret key")
+		}
+		o = newOIDCLogin(s, *cfg.OIDC, cfg.SecretKey, cfg.BaseURL.Scheme+"://"+cfg.BaseURL.Host+oidcCallbackPath)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
@@ -79,7 +91,10 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		mux.Handle("GET /", cfg.App)
 	}
 	a := newAPI(mux)
-	register(a, cfg.Info, s)
+	register(a, cfg.Info, s, o)
+	if o != nil {
+		o.register(mux)
+	}
 
 	// The document is served from bytes computed once, the same ones Spec
 	// returns. huma's own route marshals it lazily without a lock, a data
@@ -171,7 +186,7 @@ func writeProblem(w http.ResponseWriter, status int, detail string) {
 func Spec() ([]byte, error) {
 	a := newAPI(http.NewServeMux())
 	// The operations' handlers never run here, so they need no database.
-	register(a, ServerInfo{}, &sessions{})
+	register(a, ServerInfo{}, &sessions{}, nil)
 	return marshalSpec(a)
 }
 
@@ -216,8 +231,9 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 }
 
 // register adds every API operation to a.
-func register(a huma.API, info ServerInfo, s *sessions) {
+func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.register(a)
+	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",
 		Method:      http.MethodGet,

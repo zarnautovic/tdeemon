@@ -18,7 +18,7 @@ func TestAPITyposDoNotReachACatchAll(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = io.WriteString(w, "<!doctype html>")
 	})
-	register(newAPI(mux), ServerInfo{}, &sessions{})
+	register(newAPI(mux), ServerInfo{}, &sessions{}, nil)
 	h := withAPIErrors(mux)
 
 	for path, want := range map[string]string{

@@ -44,6 +44,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the ways to sign in
+         * @description What the sign-in page offers: a password, and an OpenID Connect provider when one is configured.
+         */
+        get: operations["get-auth-methods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -133,6 +153,24 @@ export interface components {
             /** @description The address the user signs in with; case does not matter. */
             email: string;
             password: string;
+        };
+        MethodsBody: {
+            /** @description The OpenID Connect provider, when the instance has one. */
+            oidc?: components["schemas"]["OidcMethod"];
+            /** @description Signing in with an email and a password works. */
+            password: boolean;
+        };
+        OidcMethod: {
+            /**
+             * @description Open it in the browser (add ?return_to=/a/path) to sign in through the provider.
+             * @example /api/v1/auth/oidc/login
+             */
+            login_url: string;
+            /**
+             * @description What to call the provider on the sign-in page.
+             * @example Authentik
+             */
+            name: string;
         };
         ServerInfo: {
             /**
@@ -264,6 +302,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Error */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-auth-methods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodsBody"];
+                };
             };
             /** @description Error */
             default: {
