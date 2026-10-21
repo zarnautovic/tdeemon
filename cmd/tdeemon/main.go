@@ -1,7 +1,8 @@
-// Command tdeemon runs the tdeemon server.
+// Command tdeemon runs the tdeemon server, and with a command, a task
+// next to it (see usage).
 //
 // Configuration comes from the environment; see internal/config for the
-// variables. The process stops gracefully on SIGINT or SIGTERM.
+// variables. The server stops gracefully on SIGINT or SIGTERM.
 package main
 
 import (
@@ -28,18 +29,35 @@ import (
 // When empty, the module version recorded by the Go toolchain is used.
 var version string
 
-const usage = `Usage: tdeemon
+const usage = `Usage:
+  tdeemon                     run the server
+  tdeemon user create [flags] add a user
+  tdeemon help                show this help
 
-Runs the tdeemon server. It takes no arguments: configure it with TDEEMON_*
-environment variables, see
+Flags of user create:
+  --email ADDRESS    the address the user signs in with (required)
+  --name NAME        the name the app shows (default: the part of the
+                     address before the @)
+  --admin            make the user an admin
+  --timezone ZONE    an IANA time zone such as Europe/Zagreb (default: TZ,
+                     or UTC when TZ is not set)
+  --password-stdin   read the password from the first line of standard
+                     input; without it, tdeemon generates one and prints
+                     it once
+
+user create works on the database of a server that has started at least
+once, which creates and migrates it; the server may be running.
+
+Configure tdeemon with TDEEMON_* environment variables; user create reads
+the same ones as the server. See
 https://github.com/zarnautovic/tdeemon#configuration
 `
 
 // errUsage marks a command line tdeemon does not accept.
-var errUsage = errors.New("takes no arguments")
+var errUsage = errors.New("invalid command line")
 
 func main() {
-	err := run(context.Background(), os.Args[1:], os.LookupEnv, os.Stdout, os.Stderr)
+	err := run(context.Background(), os.Args[1:], os.LookupEnv, os.Stdin, os.Stdout, os.Stderr)
 	os.Exit(exitCode(err, os.Stderr))
 }
 
@@ -59,23 +77,31 @@ func exitCode(err error, w io.Writer) int {
 	}
 }
 
-// run wires the server together and blocks until ctx is cancelled or a
-// termination signal arrives. Its inputs are parameters so tests can
-// drive it without touching the process environment.
+// run runs the command in args: the server when there is none. Its
+// inputs are parameters so tests can drive it without touching the
+// process environment.
 //
-// Any argument stops it before it reads the configuration or touches the
-// database: a mistyped command (say, a health check run inside the
-// container) must not start a second server on the live database.
-func run(ctx context.Context, args []string, lookup config.LookupFunc, out, logOut io.Writer) error {
-	if len(args) > 0 {
-		switch args[0] {
-		case "-h", "-help", "--help", "help":
-			_, err := io.WriteString(out, usage)
-			return err
-		}
-		return fmt.Errorf("%w, got %q", errUsage, args)
+// An unknown command stops it before it reads the configuration or
+// touches the database: a mistyped command (say, a health check run
+// inside the container) must not start a second server on the live
+// database.
+func run(ctx context.Context, args []string, lookup config.LookupFunc, in io.Reader, out, logOut io.Writer) error {
+	if len(args) == 0 {
+		return serve(ctx, lookup, logOut)
 	}
+	switch args[0] {
+	case "-h", "-help", "--help", "help":
+		_, err := io.WriteString(out, usage)
+		return err
+	case "user":
+		return userCommand(ctx, args[1:], lookup, in, out)
+	}
+	return fmt.Errorf("%w: unknown command %q", errUsage, args[0])
+}
 
+// serve wires the server together and blocks until ctx is cancelled or a
+// termination signal arrives.
+func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

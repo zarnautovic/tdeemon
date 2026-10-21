@@ -9,13 +9,15 @@ same rules; the full versions are in
 
 tdeemon is a self-hosted nutrition tracker with an adaptive TDEE: one Go
 binary with SQLite and a React web app inside, an MCP server and a REST
-API. It is early: the skeleton, the database layer, the API contract and
-an empty web app exist.
+API. It is early: the skeleton, the database layer, users with password
+hashes, the API contract and an empty web app exist.
 
 | Path | What |
 | --- | --- |
-| `cmd/tdeemon` | the binary: configuration, wiring, start and stop |
+| `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create` command |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
+| `internal/domain` | the domain types and their rules, one package each (`user`) |
+| `internal/auth` | credentials: password rules and argon2id hashes |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
 | `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json` |

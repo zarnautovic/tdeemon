@@ -28,6 +28,10 @@ var embedded embed.FS
 // migrated past the migrations this binary knows.
 var ErrSchemaTooNew = errors.New("database schema is newer than this binary")
 
+// ErrSchemaOutdated reports a database that this binary's migrations
+// have not brought up to date yet.
+var ErrSchemaOutdated = errors.New("database schema is older than this binary")
+
 // migrationFile matches NNNN_snake_case_name.sql.
 var migrationFile = regexp.MustCompile(`^(\d{4})_([a-z0-9]+(?:_[a-z0-9]+)*)\.sql$`)
 
@@ -142,6 +146,67 @@ func (db *DB) migrate(ctx context.Context, fsys fs.FS, logger *slog.Logger) erro
 	if err != nil {
 		logger.Warn("refreshing query planner statistics failed", "error", err)
 	}
+	return nil
+}
+
+// RequireCurrentSchema returns nil when the database has exactly the
+// migrations this binary knows applied, and ErrSchemaOutdated or
+// ErrSchemaTooNew otherwise. Commands that run next to a live server use
+// it instead of Migrate: the runner assumes one process migrates at a
+// time, and that process is the server.
+//
+// After it succeeds, every WriteTx on db checks inside its transaction
+// that the schema is still at that version, so a newer server that
+// migrates between the check and a write makes the write fail instead of
+// writing into a schema this binary does not know. Call it before any
+// write and from one goroutine.
+func (db *DB) RequireCurrentSchema(ctx context.Context) error {
+	sub, err := fs.Sub(embedded, "migrations")
+	if err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	return db.requireCurrentSchema(ctx, sub)
+}
+
+func (db *DB) requireCurrentSchema(ctx context.Context, fsys fs.FS) error {
+	known, err := loadMigrations(fsys)
+	if err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	conn, err := db.read.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	var exists bool
+	err = conn.QueryRowContext(ctx,
+		"SELECT EXISTS (SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'schema_migrations')").Scan(&exists)
+	if err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	var applied []migration
+	if exists {
+		if applied, err = appliedMigrations(ctx, conn); err != nil {
+			return fmt.Errorf("check schema: %w", err)
+		}
+	}
+	if len(applied) > len(known) {
+		// pendingMigrations would advise a restore, which is wrong for a
+		// command next to a newer server that is running.
+		return fmt.Errorf("%w: the database is at version %04d and this binary knows %04d; run the command from the tdeemon version the server runs",
+			ErrSchemaTooNew, len(applied), len(known))
+	}
+	// A changed migration file is the server's to warn about.
+	pending, err := pendingMigrations(known, applied, slog.New(slog.DiscardHandler))
+	if err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	if len(pending) > 0 {
+		return fmt.Errorf("%w: the database is at version %04d and this binary expects %04d; start the server once to migrate it",
+			ErrSchemaOutdated, len(applied), len(known))
+	}
+	db.requiredVersion.Store(int64(len(known)))
 	return nil
 }
 
