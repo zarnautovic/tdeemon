@@ -54,13 +54,13 @@ func TestFromFood(t *testing.T) {
 		wantKcal   float64
 		wantName   string
 	}{
-		{"grams", egg(), Quantity{Amount: 150}, 150, "g", 214.5, "Egg"},
+		{"grams", egg(), Quantity{Amount: 150, Unit: "g"}, 150, "g", 214.5, "Egg"},
 		{"four pieces", egg(), Quantity{Servings: 4, Serving: "piece"}, 240, "g", 343.2, "Egg"},
 		{"half a piece, the serving in another case", egg(), Quantity{Servings: 0.5, Serving: "Piece"}, 30, "g", 42.9, "Egg"},
-		{"ml, with the brand in the name", milk(), Quantity{Amount: 250}, 250, "ml", 145, "Dukat Milk 2.8 %"},
+		{"ml, with the brand in the name", milk(), Quantity{Amount: 250, Unit: "ml"}, 250, "ml", 145, "Dukat Milk 2.8 %"},
 		{"a whole portion", canteen(0), Quantity{Portions: 1}, 1, "portion", 850, "Bean stew with sausage"},
 		{"half a portion", canteen(0), Quantity{Portions: 0.5}, 0.5, "portion", 425, "Bean stew with sausage"},
-		{"grams of a portion of known weight", canteen(500), Quantity{Amount: 250}, 0.5, "portion", 425, "Bean stew with sausage"},
+		{"grams of a portion of known weight", canteen(500), Quantity{Amount: 250, Unit: "g"}, 0.5, "portion", 425, "Bean stew with sausage"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -80,7 +80,7 @@ func TestFromFood(t *testing.T) {
 func TestFromFoodScalesOptionalNutrients(t *testing.T) {
 	t.Parallel()
 
-	it, err := FromFood(egg(), Quantity{Amount: 200}, "")
+	it, err := FromFood(egg(), Quantity{Amount: 200, Unit: "g"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestFromFoodIsASnapshot(t *testing.T) {
 	t.Parallel()
 
 	f := egg()
-	it, err := FromFood(f, Quantity{Amount: 100}, "")
+	it, err := FromFood(f, Quantity{Amount: 100, Unit: "g"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,20 +117,27 @@ func TestFromFoodRefuses(t *testing.T) {
 	}{
 		{"nothing", egg(), Quantity{}, "", "exactly one"},
 		{"two at once", egg(), Quantity{Amount: 10, Portions: 1}, "", "exactly one"},
-		{"a negative amount", egg(), Quantity{Amount: -5}, "", "more than 0"},
-		{"NaN", egg(), Quantity{Amount: math.NaN()}, "", "more than 0"},
-		{"too much", egg(), Quantity{Amount: MaxAmount + 1}, "", "at most 10000"},
+		{"a negative amount", egg(), Quantity{Amount: -5, Unit: "g"}, "", "more than 0"},
+		{"NaN", egg(), Quantity{Amount: math.NaN(), Unit: "g"}, "", "more than 0"},
+		{"too much", egg(), Quantity{Amount: MaxAmount + 1, Unit: "g"}, "", "at most 10000"},
 		{"too many servings", egg(), Quantity{Servings: MaxServings + 1, Serving: "piece"}, "", "at most 100"},
 		{"servings adding up to too much", tray(), Quantity{Servings: 100, Serving: "tray"}, "", "at most 10000"},
 		{"too many portions", canteen(0), Quantity{Portions: MaxPortions + 1}, "", "at most 50"},
 		{"servings without a name", egg(), Quantity{Servings: 2}, "", "the serving's name"},
-		{"a name without servings", egg(), Quantity{Amount: 10, Serving: "piece"}, "", "needs a number"},
+		{"a name without servings", egg(), Quantity{Amount: 10, Unit: "g", Serving: "piece"}, "", "needs a number"},
 		{"an unknown serving", egg(), Quantity{Servings: 1, Serving: "slice"}, "", `the food has "piece"`},
 		{"a serving of a food with none", milk(), Quantity{Servings: 1, Serving: "glass"}, "", "has none"},
 		{"portions of a food by weight", egg(), Quantity{Portions: 1}, "", "measured in g"},
-		{"grams of a portion of unknown weight", canteen(0), Quantity{Amount: 300}, "", "weight of a portion is not known"},
+		{"an amount without a unit", egg(), Quantity{Amount: 100}, "", `unit, g or ml, not ""`},
+		{"an amount in cups", egg(), Quantity{Amount: 1, Unit: "cup"}, "", `not "cup"`},
+		{"a unit without an amount", egg(), Quantity{Servings: 1, Serving: "piece", Unit: "g"}, "", "a unit needs an amount"},
+		{"ml of a food by weight", egg(), Quantity{Amount: 250, Unit: "ml"}, "", "measured in g, not ml; give g"},
+		{"grams of a food by volume", milk(), Quantity{Amount: 250, Unit: "g"}, "", "measured in ml, not g"},
+		{"ml of a portion", canteen(500), Quantity{Amount: 250, Unit: "ml"}, "", "not ml"},
+		{"grams making too many portions", canteen(100), Quantity{Amount: 6000, Unit: "g"}, "", "60 portions: want at most 50"},
+		{"grams of a portion of unknown weight", canteen(0), Quantity{Amount: 300, Unit: "g"}, "", "weight of a portion is not known"},
 		{"servings of a portion", canteen(0), Quantity{Servings: 1, Serving: "piece"}, "", "takes portions"},
-		{"a note with a control character", egg(), Quantity{Amount: 10}, "a\x00b", "control character"},
+		{"a note with a control character", egg(), Quantity{Amount: 10, Unit: "g"}, "a\x00b", "control character"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -191,7 +198,7 @@ func TestTotals(t *testing.T) {
 	t.Parallel()
 
 	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
-	breakfast := meal(t, at, item(t, egg(), Quantity{Servings: 2, Serving: "piece"}), item(t, milk(), Quantity{Amount: 200}))
+	breakfast := meal(t, at, item(t, egg(), Quantity{Servings: 2, Serving: "piece"}), item(t, milk(), Quantity{Amount: 200, Unit: "ml"}))
 	got := breakfast.Total()
 	// 120 g of egg (171.6 kcal, 15.12 P) and 200 ml of milk (116 kcal, 6.6 P).
 	if !near(got.Kcal, 287.6) || !near(got.Protein, 21.72) || got.Fiber == nil || *got.Fiber != 0 {
@@ -211,7 +218,7 @@ func TestMealValidate(t *testing.T) {
 	t.Parallel()
 
 	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
-	if err := meal(t, at, item(t, egg(), Quantity{Amount: 50})).Validate(); err != nil {
+	if err := meal(t, at, item(t, egg(), Quantity{Amount: 50, Unit: "g"})).Validate(); err != nil {
 		t.Fatalf("a valid meal: %v", err)
 	}
 	for _, tc := range []struct {
@@ -235,7 +242,7 @@ func TestMealValidate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m := meal(t, at, item(t, egg(), Quantity{Amount: 50}))
+			m := meal(t, at, item(t, egg(), Quantity{Amount: 50, Unit: "g"}))
 			tc.change(&m)
 			if err := m.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Validate = %v, want an error with %q", err, tc.want)

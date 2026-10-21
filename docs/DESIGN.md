@@ -173,24 +173,28 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `shopping_list(op, items?)` | |
 
 `log_meal` items accept these shapes (field names are illustrative; the
-tool schema is the reference):
+tool schema is the reference). An amount always names its unit, and it
+must be the food's: 250 ml of a food by weight is refused rather than
+taken for 250 g. Grams of a portion food work when its portion weight
+is known.
 
 ```jsonc
-{ "food_id": "0199…", "amount": 150 }                        // known food, in its unit (g or ml)
+{ "food_id": "0199…", "amount": 150, "unit": "g" }           // known food, in its unit (g or ml)
 { "food_id": "0199…", "servings": 4, "serving": "piece" }    // a named serving: 4 eggs
 { "food_id": "0199…", "portions": 0.5 }                      // half a canteen portion
 { "food": { "name": "Greek yoghurt 2 %", "basis": "100g", "source": "label",
             "kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2.0 },
-  "amount": 200 }                                            // a new food, saved as it is logged
+  "amount": 200, "unit": "g" }                               // a new food, saved as it is logged
 { "name": "Restaurant pasta", "kcal": 850, "protein": 32,
   "carbs": 105, "fat": 30 }                                  // a one-off estimate of a whole plate
 ```
 
 The response holds the stored meal (items with computed macros), the day
 totals against the day-type target, what remains, and `warnings`. Warning
-examples: the Atwater check (4P + 4C + 9F) is more than 15 % off the
-stated kcal, saturated fat is above total fat, a duplicate of a meal
-logged minutes ago.
+examples: the stated kcal are more than 15 % (and 10 kcal) off what the
+grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol, with fiber
+and polyols by any of the conventions labels use), saturated fat is
+above total fat, a duplicate of a meal logged minutes ago.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
 scripts.

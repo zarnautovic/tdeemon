@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
 
 // Date is a calendar date, with no time and no time zone.
@@ -75,22 +77,49 @@ func NewCalendar(tz string, startHour int) (Calendar, error) {
 }
 
 // DayOf returns the day an instant belongs to: its date on the user's
-// wall clock, or the date before when that is earlier than the day start
-// hour. It goes by the wall clock, so a day stays a day across a change
-// to or from summer time.
+// wall clock, or the date before when it comes before that date's start.
+// It is defined by Start, so the instant always lies in [Start, End) of
+// its day, summer time or not.
 func (c Calendar) DayOf(t time.Time) Date {
-	local := t.In(c.Location)
-	if local.Hour() < c.StartHour {
-		return DateOf(local).AddDays(-1)
+	d := DateOf(t.In(c.Location))
+	if t.Before(c.Start(d)) {
+		return d.AddDays(-1)
 	}
-	return DateOf(local)
+	return d
 }
 
-// Start returns the instant d starts: StartHour on its date. When that
-// hour does not exist on the day (summer time starts then), the day
-// starts once it does.
+// Start returns the instant d starts: the first instant whose wall clock
+// shows StartHour on d's date, or later. When the clock skips that hour
+// (summer time starts), the day starts once the clock jumps; when it
+// shows the hour twice (summer time ends), at the first of them.
 func (c Calendar) Start(d Date) time.Time {
-	return time.Date(d.Year, d.Month, d.Day, c.StartHour, 0, 0, 0, c.Location)
+	want := time.Date(d.Year, d.Month, d.Day, c.StartHour, 0, 0, 0, time.UTC) // the wall clock, as a comparable value
+	t := time.Date(d.Year, d.Month, d.Day, c.StartHour, 0, 0, 0, c.Location)
+	if wallClock(t).Before(want) {
+		// time.Date went back across a gap: the day starts when the gap
+		// ends, the start of the next zone period.
+		_, end := t.ZoneBounds()
+		return end
+	}
+	// The clock went back to show this wall clock twice when the instant
+	// that shows it at the period before's offset still lies in that
+	// period; it is the earlier of the two.
+	start, _ := t.ZoneBounds()
+	if !start.IsZero() {
+		_, prevOffset := start.Add(-time.Nanosecond).Zone()
+		_, offset := t.Zone()
+		if earlier := t.Add(time.Duration(offset-prevOffset) * time.Second); earlier.Before(start) {
+			return earlier
+		}
+	}
+	return t
+}
+
+// wallClock returns t's wall clock in its location, as a UTC time to
+// compare.
+func wallClock(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC)
 }
 
 // End returns the instant d ends: the start of the next day.
@@ -119,14 +148,10 @@ type Exclusion struct {
 // ValidateExclusion checks the reason for excluding a day: some text, at
 // most MaxReasonLen characters.
 func ValidateExclusion(e Exclusion) error {
-	r := strings.TrimSpace(e.Reason)
-	switch {
-	case r == "":
+	if strings.TrimSpace(e.Reason) == "" {
 		return errors.New("excluding a day needs a reason, such as \"restaurant\" or \"sick\"")
-	case len([]rune(r)) > MaxReasonLen:
-		return fmt.Errorf("the reason is %d characters long, want at most %d", len([]rune(r)), MaxReasonLen)
 	}
-	return nil
+	return text.Check("the reason", e.Reason, MaxReasonLen, true)
 }
 
 // StatusOf returns the status of day d at instant now: excluded when the

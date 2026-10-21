@@ -104,13 +104,56 @@ func TestDaysAcrossSummerTime(t *testing.T) {
 	if got := c2.Start(d).In(c2.Location).Hour(); got != 3 {
 		t.Errorf("the day starts at %d:00, want 3:00", got)
 	}
-	// And every instant of that night belongs to one day or the other.
-	for m := 0; m < 4*60; m += 7 {
-		inst := c2.Start(d.AddDays(-1)).Add(20*time.Hour + time.Duration(m)*time.Minute)
-		got := c2.DayOf(inst)
-		if got != d && got != d.AddDays(-1) {
-			t.Fatalf("%v belongs to %v, want the 28th or the 29th", inst, got)
-		}
+}
+
+// The property everything rests on: an instant lies in [Start, End) of
+// the day DayOf gives it, and the days tile time without gaps, in zones
+// where the clock jumps forward and back at different hours, by an hour
+// or by half an hour, for day start hours around the jumps.
+func TestDaysTileTime(t *testing.T) {
+	t.Parallel()
+
+	for _, tz := range []string{
+		"Europe/Zagreb", "America/New_York", "America/Santiago", "Australia/Lord_Howe",
+		"America/Havana", "Asia/Beirut", "UTC",
+	} {
+		t.Run(tz, func(t *testing.T) {
+			t.Parallel()
+			for _, h := range []int{0, 1, 2, 3, 4, 23} {
+				c, err := NewCalendar(tz, h)
+				if err != nil {
+					t.Fatal(err)
+				}
+				from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+				for inst := from; inst.Year() == 2026; inst = inst.Add(15 * time.Minute) {
+					d := c.DayOf(inst)
+					if s, e := c.Start(d), c.End(d); inst.Before(s) || !inst.Before(e) {
+						t.Fatalf("hour %d: %v belongs to %v, which runs from %v to %v", h, inst, d, s, e)
+					}
+				}
+			}
+		})
+	}
+}
+
+// When the clock shows the start hour twice, the day starts at the first.
+func TestStartAtARepeatedHour(t *testing.T) {
+	t.Parallel()
+
+	// Zagreb, 25 October 2026: 02:00–02:59 CEST, then again in CET.
+	c := zagreb(t, 2)
+	d, _ := ParseDate("2026-10-25")
+	if got, want := c.Start(d), time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC); !got.Equal(want) { // 02:00 CEST
+		t.Errorf("Start = %v, want %v (02:00 CEST)", got, want)
+	}
+	// New York, 8 March 2026: 02:00 is skipped; the day starts at 03:00 EDT.
+	ny, err := NewCalendar("America/New_York", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, _ = ParseDate("2026-03-08")
+	if got, want := ny.Start(d), time.Date(2026, 3, 8, 7, 0, 0, 0, time.UTC); !got.Equal(want) { // 03:00 EDT
+		t.Errorf("Start = %v, want %v (03:00 EDT)", got, want)
 	}
 }
 
@@ -199,9 +242,11 @@ func TestValidateExclusion(t *testing.T) {
 		t.Errorf("a reason: %v", err)
 	}
 	for name, reason := range map[string]string{
-		"no reason":  "",
-		"only space": "   ",
-		"too long":   strings.Repeat("ž", MaxReasonLen+1),
+		"no reason":    "",
+		"only space":   "   ",
+		"too long":     strings.Repeat("ž", MaxReasonLen+1),
+		"a tab":        "sick\tday",
+		"space around": " sick",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

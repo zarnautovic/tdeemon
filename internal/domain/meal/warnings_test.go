@@ -24,10 +24,22 @@ func TestCheckNutrients(t *testing.T) {
 		n    food.Nutrients
 		want string
 	}{
-		{"a label that adds up", food.Nutrients{Kcal: 363, Protein: 30, Carbs: 52, Fat: 10}, ""},
+		{"a label that adds up", food.Nutrients{Kcal: 410, Protein: 30, Carbs: 52, Fat: 10}, ""},
 		{"within 15 %", food.Nutrients{Kcal: 200, Protein: 10, Carbs: 20, Fat: 10}, ""},             // 210 expected
 		{"just within 15 %", food.Nutrients{Kcal: 240, Protein: 10, Carbs: 20, Fat: 10}, ""},        // 30 of 240: 12.5 %
 		{"just past 15 %", food.Nutrients{Kcal: 250, Protein: 10, Carbs: 20, Fat: 10}, WarnAtwater}, // 40 of 250: 16 %
+		// The share is of the stated kcal, under as over.
+		{"just within 15 % under", food.Nutrients{Kcal: 185, Protein: 10, Carbs: 20, Fat: 10}, ""},        // 25 of 185: 13.5 %
+		{"just past 15 % under", food.Nutrients{Kcal: 180, Protein: 10, Carbs: 20, Fat: 10}, WarnAtwater}, // 30 of 180: 16.7 %
+		{"far in share, but only a few kcal", food.Nutrients{Kcal: 20, Protein: 2, Carbs: 5}, ""},         // 28 expected
+		{"a few kcal past the floor", food.Nutrients{Kcal: 20, Protein: 2, Carbs: 5.8}, WarnAtwater},      // 31.2 expected
+		{"kcal alone, no grams", food.Nutrients{Kcal: 500}, ""},
+		{"a spirit, alcohol alone", food.Nutrients{Kcal: 231, Alcohol: new(33.0)}, ""},
+		{"a spirit, alcohol alone, kcal off", food.Nutrients{Kcal: 400, Alcohol: new(33.0)}, WarnAtwater},
+		{"no kcal, but grams", food.Nutrients{Protein: 10}, WarnAtwater},
+		{"a US label, fiber inside the carbs", food.Nutrients{Kcal: 145, Protein: 5, Carbs: 30, Fat: 5, Fiber: new(10.0)}, ""},
+		{"an EU label, fiber outside", food.Nutrients{Kcal: 165, Protein: 5, Carbs: 20, Fat: 5, Fiber: new(10.0)}, ""},
+		{"erythritol", food.Nutrients{Kcal: 0, Carbs: 100, Polyols: new(100.0)}, ""},
 		{"kcal far off", food.Nutrients{Kcal: 500, Protein: 10, Carbs: 20, Fat: 10}, WarnAtwater},
 		{"kcal too low", food.Nutrients{Kcal: 100, Protein: 10, Carbs: 20, Fat: 10}, WarnAtwater},
 		{"a cucumber, a few kcal off", food.Nutrients{Kcal: 8, Protein: 0.3, Carbs: 1.8, Fat: 0.1}, ""},
@@ -59,20 +71,20 @@ func TestDuplicateOf(t *testing.T) {
 
 	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
 	e, m := egg(), milk()
-	first := meal(t, at, item(t, e, Quantity{Amount: 120}), item(t, m, Quantity{Amount: 200}))
+	first := meal(t, at, item(t, e, Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"}))
 	for _, tc := range []struct {
 		name string
 		next Meal
 		want bool
 	}{
 		{"the same items in another order, 3 minutes later", meal(t, at.Add(3*time.Minute),
-			item(t, m, Quantity{Amount: 200}), item(t, e, Quantity{Servings: 2, Serving: "piece"})), true},
-		{"the same, logged as earlier", meal(t, at.Add(-9*time.Minute), item(t, e, Quantity{Amount: 120}), item(t, m, Quantity{Amount: 200})), true},
-		{"half a percent more milk", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 120}), item(t, m, Quantity{Amount: 201})), true},
-		{"an hour later", meal(t, at.Add(time.Hour), item(t, e, Quantity{Amount: 120}), item(t, m, Quantity{Amount: 200})), false},
-		{"more egg", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 180}), item(t, m, Quantity{Amount: 200})), false},
-		{"an item less", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 120})), false},
-		{"another food", meal(t, at.Add(time.Minute), item(t, egg(), Quantity{Amount: 120}), item(t, m, Quantity{Amount: 200})), false},
+			item(t, m, Quantity{Amount: 200, Unit: "ml"}), item(t, e, Quantity{Servings: 2, Serving: "piece"})), true},
+		{"the same, logged as earlier", meal(t, at.Add(-9*time.Minute), item(t, e, Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), true},
+		{"half a percent more milk", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 201, Unit: "ml"})), true},
+		{"an hour later", meal(t, at.Add(time.Hour), item(t, e, Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), false},
+		{"more egg", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 180, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), false},
+		{"an item less", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 120, Unit: "g"})), false},
+		{"another food", meal(t, at.Add(time.Minute), item(t, egg(), Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -91,5 +103,28 @@ func TestDuplicateOf(t *testing.T) {
 	b, _ := Estimate("Burger", food.Nutrients{Kcal: 900}, "")
 	if _, dup := DuplicateOf(meal(t, at, b), []Meal{meal(t, at, a)}); !dup {
 		t.Error("the same estimate twice is not a duplicate")
+	}
+	c, _ := Estimate("Pizza", food.Nutrients{Kcal: 900}, "")
+	if _, dup := DuplicateOf(meal(t, at, c), []Meal{meal(t, at, a)}); dup {
+		t.Error("estimates of another name are a duplicate")
+	}
+	d, _ := Estimate("Burger", food.Nutrients{Kcal: 700}, "")
+	if _, dup := DuplicateOf(meal(t, at, d), []Meal{meal(t, at, a)}); dup {
+		t.Error("a second burger, smaller, is a duplicate")
+	}
+}
+
+// The message says what the grams give, as a range when the conventions
+// differ.
+func TestCheckNutrientsMessage(t *testing.T) {
+	t.Parallel()
+
+	ws := CheckNutrients("the bar", food.Nutrients{Kcal: 500, Protein: 10, Carbs: 20, Fat: 10})
+	if len(ws) != 1 || !strings.Contains(ws[0].Message, "500 kcal, but the protein, carbs and fat give 210 kcal;") {
+		t.Errorf("CheckNutrients = %v", ws)
+	}
+	ws = CheckNutrients("the bar", food.Nutrients{Kcal: 500, Protein: 10, Carbs: 20, Fat: 10, Fiber: new(5.0)})
+	if len(ws) != 1 || !strings.Contains(ws[0].Message, "give 190 to 220 kcal;") {
+		t.Errorf("CheckNutrients = %v", ws)
 	}
 }

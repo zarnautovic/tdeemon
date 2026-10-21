@@ -12,11 +12,11 @@ import (
 	"math"
 	"strings"
 	"time"
-	"unicode/utf8"
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
 
 // Limits on what one item or meal may hold.
@@ -33,11 +33,14 @@ const (
 	MaxEstimateKcal = 10000
 )
 
-// Quantity is how much of a food was eaten: an amount in the food's unit
-// (grams or ml), a number of a named serving ("4 × piece", "0.5 × roll"),
-// or a number of portions of a food per portion. Exactly one is given.
+// Quantity is how much of a food was eaten: an amount in grams or ml, a
+// number of a named serving ("4 × piece", "0.5 × roll"), or a number of
+// portions of a food per portion. Exactly one is given. The amount names
+// its unit, so 250 ml of a food by weight is refused, not taken for 250 g.
 type Quantity struct {
-	Amount   float64
+	Amount float64
+	// Unit is "g" or "ml", the unit of Amount; empty without an amount.
+	Unit     string
 	Servings float64
 	Serving  string
 	Portions float64
@@ -98,14 +101,13 @@ func resolve(f food.Food, q Quantity) (float64, error) {
 	case f.Basis == food.PerPortion && q.Portions > 0:
 		return q.Portions, nil
 	case f.Basis == food.PerPortion && q.Amount > 0:
-		if f.PortionGrams == 0 {
-			return 0, errors.New("the weight of a portion is not known; give the number of portions")
-		}
-		return q.Amount / f.PortionGrams, nil
+		return portionsOf(f, q)
 	case f.Basis == food.PerPortion:
 		return 0, errors.New("a food per portion takes portions (or grams when the portion's weight is known), not servings")
 	case q.Portions > 0:
 		return 0, fmt.Errorf("the food is measured in %s; give an amount or a serving", f.Basis.Unit())
+	case q.Amount > 0 && q.Unit != f.Basis.Unit():
+		return 0, fmt.Errorf("the food is measured in %s, not %s; give %[1]s or a serving", f.Basis.Unit(), q.Unit)
 	case q.Servings > 0:
 		s, ok := f.Serving(q.Serving)
 		if !ok {
@@ -118,6 +120,22 @@ func resolve(f food.Food, q Quantity) (float64, error) {
 		return amount, nil
 	}
 	return q.Amount, nil
+}
+
+// portionsOf returns the portions of PerPortion food f that q's grams
+// make.
+func portionsOf(f food.Food, q Quantity) (float64, error) {
+	switch {
+	case q.Unit != "g":
+		return 0, fmt.Errorf("a food per portion takes portions, or grams when the portion's weight is known; not %s", q.Unit)
+	case f.PortionGrams == 0:
+		return 0, errors.New("the weight of a portion is not known; give the number of portions")
+	}
+	p := q.Amount / f.PortionGrams
+	if p > MaxPortions {
+		return 0, fmt.Errorf("%v g is %v portions: want at most %d", q.Amount, p, MaxPortions)
+	}
+	return p, nil
 }
 
 func servingNames(f food.Food) string {
@@ -155,13 +173,23 @@ func (q Quantity) validate() error {
 	case q.Servings == 0 && q.Serving != "":
 		return errors.New("a serving's name needs a number of servings")
 	}
+	return q.validateUnit()
+}
+
+func (q Quantity) validateUnit() error {
+	switch {
+	case q.Amount > 0 && q.Unit != "g" && q.Unit != "ml":
+		return fmt.Errorf("an amount needs its unit, g or ml, not %q", q.Unit)
+	case q.Amount == 0 && q.Unit != "":
+		return errors.New("a unit needs an amount")
+	}
 	return nil
 }
 
 // Estimate returns a one-off item: a dish whose totals were judged as a
 // whole (a restaurant plate), with no food behind it.
 func Estimate(name string, n food.Nutrients, note string) (Item, error) {
-	if err := validateText("name", name, MaxNameLen, true); err != nil {
+	if err := text.Check("name", name, MaxNameLen, true); err != nil {
 		return Item{}, err
 	}
 	if err := validateNote(note); err != nil {
@@ -221,7 +249,7 @@ func (m Meal) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("client %q: want mcp, chat, web, telegram or import", m.Client))
 	}
-	errs = append(errs, validateText("description", m.Description, MaxNameLen, false), validateNote(m.Note))
+	errs = append(errs, text.Check("description", m.Description, MaxNameLen, false), validateNote(m.Note))
 	switch {
 	case len(m.Items) == 0:
 		errs = append(errs, errors.New("a meal needs at least one item"))
@@ -249,23 +277,4 @@ func DayTotal(meals []Meal) food.Nutrients {
 	return t
 }
 
-func validateNote(note string) error { return validateText("note", note, MaxNoteLen, false) }
-
-// validateText checks a text field: valid UTF-8, no control characters
-// but line breaks, no space around it, at most maxLen characters, and
-// present when required.
-func validateText(field, s string, maxLen int, required bool) error {
-	switch {
-	case !utf8.ValidString(s):
-		return fmt.Errorf("%s is not valid UTF-8", field)
-	case strings.TrimSpace(s) == "" && (required || s != ""):
-		return fmt.Errorf("%s is required", field)
-	case s != strings.TrimSpace(s):
-		return fmt.Errorf("%s has space at the start or end", field)
-	case strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 && r != '\n' || r == 0x7f }):
-		return fmt.Errorf("%s contains a control character", field)
-	case utf8.RuneCountInString(s) > maxLen:
-		return fmt.Errorf("%s is %d characters long, want at most %d", field, utf8.RuneCountInString(s), maxLen)
-	}
-	return nil
-}
+func validateNote(note string) error { return text.Check("note", note, MaxNoteLen, false) }

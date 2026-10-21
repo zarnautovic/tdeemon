@@ -26,10 +26,11 @@ const (
 	WarnDuplicateMeal = "duplicate_meal"
 )
 
-// AtwaterTolerance is how far the stated kcal may be from what the
-// macronutrients account for before CheckNutrients warns: labels round,
-// and estimates are estimates. Below AtwaterMinKcal of difference it does
-// not warn at all: a few kcal of a cucumber are no news.
+// AtwaterTolerance is how far, as a share of the stated kcal, the kcal may
+// be from what the macronutrients account for before CheckNutrients
+// warns: labels round, and estimates are estimates. Below AtwaterMinKcal
+// of difference it does not warn at all: a few kcal of a cucumber are no
+// news.
 const (
 	AtwaterTolerance = 0.15
 	AtwaterMinKcal   = 10
@@ -37,15 +38,14 @@ const (
 
 // CheckNutrients returns warnings about values a client stated (a new
 // food from a label, a one-off estimate) that do not add up: kcal far
-// from what the macronutrients give (the Atwater factors), saturated fat
-// above fat, sugars or polyols above carbs. what names the values in the
-// messages.
+// from what the macronutrients give (the Atwater factors, by any of the
+// conventions labels follow), saturated fat above fat, sugars or polyols
+// above carbs. Values with kcal alone, no grams, are not checked against
+// the grams. what names the values in the messages.
 func CheckNutrients(what string, n food.Nutrients) []Warning {
 	var ws []Warning
-	if exp := n.AtwaterKcal(); math.Abs(n.Kcal-exp) > AtwaterMinKcal && math.Abs(n.Kcal-exp) > AtwaterTolerance*math.Max(n.Kcal, exp) {
-		ws = append(ws, Warning{WarnAtwater, fmt.Sprintf(
-			"%s: %v kcal, but the protein, carbs and fat give %v kcal; check the kcal or the grams (drinks: give the alcohol)",
-			what, math.Round(n.Kcal), math.Round(exp))})
+	if w, ok := checkAtwater(what, n); ok {
+		ws = append(ws, w)
 	}
 	if n.SaturatedFat != nil && *n.SaturatedFat > n.Fat+0.05 {
 		ws = append(ws, Warning{WarnSaturatedFat, fmt.Sprintf("%s: saturated fat (%v g) is more than all the fat (%v g)",
@@ -60,6 +60,24 @@ func CheckNutrients(what string, n food.Nutrients) []Warning {
 			what, round1(*n.Polyols), round1(n.Carbs))})
 	}
 	return ws
+}
+
+func checkAtwater(what string, n food.Nutrients) (Warning, bool) {
+	if n.Protein == 0 && n.Carbs == 0 && n.Fat == 0 && (n.Alcohol == nil || *n.Alcohol == 0) {
+		return Warning{}, false
+	}
+	least, most := n.AtwaterRange()
+	off := max(least-n.Kcal, n.Kcal-most, 0)
+	if off <= AtwaterMinKcal || off <= AtwaterTolerance*n.Kcal {
+		return Warning{}, false
+	}
+	give := fmt.Sprintf("%v kcal", math.Round(least))
+	if math.Round(least) != math.Round(most) {
+		give = fmt.Sprintf("%v to %v kcal", math.Round(least), math.Round(most))
+	}
+	return Warning{WarnAtwater, fmt.Sprintf(
+		"%s: %v kcal, but the protein, carbs and fat give %s; check the kcal or the grams (drinks: give the alcohol)",
+		what, math.Round(n.Kcal), give)}, true
 }
 
 // DuplicateWindow is how close in time two meals with the same items must
@@ -83,8 +101,9 @@ func DuplicateOf(m Meal, recent []Meal) (Warning, bool) {
 	return Warning{}, false
 }
 
-// sameItems reports whether a and b hold the same foods (or estimates of
-// the same name) in amounts within 1 % of each other, in any order.
+// sameItems reports whether a and b hold the same foods in amounts within
+// 1 % of each other, or estimates of the same name and kcal within 1 %,
+// in any order.
 func sameItems(a, b []Item) bool {
 	if len(a) != len(b) {
 		return false
@@ -96,7 +115,7 @@ next:
 		for j := range b {
 			y := &b[j]
 			if !used[j] && x.FoodID == y.FoodID && x.Name == y.Name && x.Unit == y.Unit &&
-				math.Abs(x.Amount-y.Amount) <= 0.01*math.Max(x.Amount, y.Amount) {
+				within1(x.Amount, y.Amount) && within1(x.Nutrients.Kcal, y.Nutrients.Kcal) {
 				used[j] = true
 				continue next
 			}
@@ -105,6 +124,8 @@ next:
 	}
 	return true
 }
+
+func within1(a, b float64) bool { return math.Abs(a-b) <= 0.01*math.Max(a, b) }
 
 func absDuration(d time.Duration) time.Duration {
 	if d < 0 {

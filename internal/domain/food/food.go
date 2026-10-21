@@ -14,8 +14,9 @@ import (
 	"math"
 	"slices"
 	"strings"
-	"unicode/utf8"
 	"uuid"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
 
 // Basis is what a food's nutrients refer to.
@@ -69,6 +70,8 @@ const (
 	MaxServings = 20
 	// MaxKcalPer100 is pure fat: nothing has more energy per 100 g.
 	MaxKcalPer100 = 900
+	// MaxKcalPerPortion bounds one portion: a feast, not a typo.
+	MaxKcalPerPortion = 10000
 )
 
 // Food is one entry in a user's food database.
@@ -113,25 +116,28 @@ func (f Food) Validate() error {
 	if f.ID == uuid.Nil() {
 		errs = append(errs, errors.New("id is missing"))
 	}
-	errs = append(errs, validateText("name", f.Name, MaxNameLen, true), validateText("brand", f.Brand, MaxBrandLen, false),
-		validateText("note", f.Note, MaxNoteLen, false))
+	errs = append(errs, text.Check("name", f.Name, MaxNameLen, true), text.Check("brand", f.Brand, MaxBrandLen, false),
+		text.Check("note", f.Note, MaxNoteLen, false))
 	if !validSource(f.Source) {
 		errs = append(errs, fmt.Errorf("source %q: want one of label, estimate, user, dish", f.Source))
 	}
 	switch f.Basis {
 	case Per100g, Per100ml:
-		errs = append(errs, f.Nutrients.ValidatePer100())
+		errs = append(errs, f.Nutrients.ValidatePer100(f.Basis))
 		if f.PortionGrams != 0 {
 			errs = append(errs, errors.New("portion grams belong to a food per portion"))
 		}
 		errs = append(errs, validateServings(f.Servings))
 	case PerPortion:
 		errs = append(errs, f.Nutrients.Validate())
+		if f.Nutrients.Kcal > MaxKcalPerPortion {
+			errs = append(errs, fmt.Errorf("%v kcal in a portion: want at most %d", f.Nutrients.Kcal, MaxKcalPerPortion))
+		}
 		if !finite(f.PortionGrams) || f.PortionGrams < 0 {
 			errs = append(errs, fmt.Errorf("portion grams %v: want zero (unknown) or more", f.PortionGrams))
 		} else if f.PortionGrams > 0 {
 			// Known weight: the values per 100 g must make sense too.
-			errs = append(errs, f.Nutrients.Scale(100/f.PortionGrams).ValidatePer100())
+			errs = append(errs, f.Nutrients.Scale(100/f.PortionGrams).ValidatePer100(Per100g))
 		}
 		if len(f.Servings) > 0 {
 			errs = append(errs, errors.New("a food per portion has no named servings; log a share of the portion"))
@@ -151,7 +157,7 @@ func validateServings(ss []Serving) error {
 	var errs []error
 	seen := map[string]bool{}
 	for _, s := range ss {
-		if err := validateText("serving name", s.Name, 50, true); err != nil {
+		if err := text.Check("serving name", s.Name, 50, true); err != nil {
 			errs = append(errs, err)
 			continue
 		}
@@ -165,29 +171,6 @@ func validateServings(ss []Serving) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// validateText checks a text field: valid UTF-8, no control characters, no
-// space around it, at most max characters, and present when required.
-func validateText(field, s string, maxLen int, required bool) error {
-	switch {
-	case !utf8.ValidString(s):
-		return fmt.Errorf("%s is not valid UTF-8", field)
-	case strings.TrimSpace(s) == "":
-		if required {
-			return fmt.Errorf("%s is required", field)
-		}
-		if s != "" {
-			return fmt.Errorf("%s is only space", field)
-		}
-	case s != strings.TrimSpace(s):
-		return fmt.Errorf("%s %q: has space at the start or end", field, s)
-	case strings.ContainsFunc(s, func(r rune) bool { return r < 0x20 && r != '\n' || r == 0x7f }):
-		return fmt.Errorf("%s contains a control character", field)
-	case utf8.RuneCountInString(s) > maxLen:
-		return fmt.Errorf("%s is %d characters long, want at most %d", field, utf8.RuneCountInString(s), maxLen)
-	}
-	return nil
 }
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }

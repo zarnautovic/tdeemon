@@ -23,7 +23,12 @@ func TestValidate(t *testing.T) {
 		ID: uuid.NewV7(), Name: "Canteen bean stew", Basis: PerPortion, Source: Estimate,
 		Nutrients: Nutrients{Kcal: 850, Protein: 40, Carbs: 90, Fat: 30}, PortionGrams: 500,
 	}
-	for name, f := range map[string]Food{"a food by weight": egg(), "a food per portion": canteen} {
+	// Honey by volume: 100 ml weigh 142 g, more than 100 g of sugar.
+	honey := Food{
+		ID: uuid.NewV7(), Name: "Honey", Basis: Per100ml, Source: Label,
+		Nutrients: Nutrients{Kcal: 432, Protein: 0.4, Carbs: 116, Fat: 0, Sugars: new(115.0)},
+	}
+	for name, f := range map[string]Food{"a food by weight": egg(), "a food per portion": canteen, "a food by volume": honey} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			if err := f.Validate(); err != nil {
@@ -50,7 +55,11 @@ func TestValidate(t *testing.T) {
 		{"more energy than fat", func(f *Food) { f.Nutrients.Kcal = 950 }, "at most 900"},
 		{"more than 100 g in 100 g", func(f *Food) { f.Nutrients.Protein, f.Nutrients.Fat = 60, 50 }, "add up to"},
 		{"negative fiber", func(f *Food) { f.Nutrients.Fiber = new(-2.0) }, "fiber -2"},
-		{"salt over 100 g", func(f *Food) { f.Nutrients.Salt = new(120.0) }, "salt 120"},
+		{"salt over 100 g", func(f *Food) { f.Nutrients.Salt = new(120.0) }, "salt 120 g per 100 g"},
+		{"more than 150 g in 100 ml", func(f *Food) {
+			f.Basis, f.Nutrients.Kcal, f.Nutrients.Protein, f.Nutrients.Carbs, f.Nutrients.Fat = Per100ml, 600, 0, 151, 0
+		}, "add up to 151 g per 100 ml: want at most 150"},
+		{"sugars over 150 g in 100 ml", func(f *Food) { f.Basis, f.Nutrients.Sugars = Per100ml, new(151.0) }, "sugars 151"},
 		{"portion grams on a food by weight", func(f *Food) { f.PortionGrams = 50 }, "portion grams belong"},
 		{"a serving without a name", func(f *Food) { f.Servings = []Serving{{Amount: 10}} }, "serving name is required"},
 		{"a serving of nothing", func(f *Food) { f.Servings = []Serving{{Name: "crumb", Amount: 0}} }, "amount 0"},
@@ -66,6 +75,12 @@ func TestValidate(t *testing.T) {
 			f.Basis, f.Servings = PerPortion, []Serving{{Name: "piece", Amount: 1}}
 		}, "no named servings"},
 		{"negative portion grams", func(f *Food) { f.Basis, f.Servings, f.PortionGrams = PerPortion, nil, -5 }, "portion grams -5"},
+		{"a portion too big", func(f *Food) {
+			f.Basis, f.Servings, f.Nutrients.Kcal = PerPortion, nil, MaxKcalPerPortion+1
+		}, "10001 kcal in a portion"},
+		{"a portion with more than 100 g in 100 g", func(f *Food) {
+			f.Basis, f.Servings, f.PortionGrams, f.Nutrients = PerPortion, nil, 100, Nutrients{Kcal: 480, Carbs: 120}
+		}, "add up to 120 g per 100 g"},
 		{"a portion denser than fat", func(f *Food) {
 			f.Basis, f.Servings, f.PortionGrams, f.Nutrients.Kcal = PerPortion, nil, 10, 500
 		}, "at most 900"},
@@ -120,23 +135,27 @@ func TestScaleAndAdd(t *testing.T) {
 	}
 }
 
-func TestAtwaterKcal(t *testing.T) {
+func TestAtwaterRange(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name string
-		n    Nutrients
-		want float64
+		name        string
+		n           Nutrients
+		least, most float64
 	}{
-		{"macros", Nutrients{Protein: 10, Carbs: 20, Fat: 5}, 165},
-		{"with alcohol (wine)", Nutrients{Carbs: 2.6, Alcohol: new(10.0)}, 80.4},
-		{"with fiber", Nutrients{Carbs: 10, Fiber: new(5.0)}, 50},
-		{"with polyols in the carbs", Nutrients{Carbs: 20, Polyols: new(10.0)}, 64},
+		{"macros", Nutrients{Protein: 10, Carbs: 20, Fat: 5}, 165, 165},
+		{"with alcohol (wine)", Nutrients{Carbs: 2.6, Alcohol: new(10.0)}, 80.4, 80.4},
+		// EU: 40 + 10; left out: 40; US, fiber inside the carbs: 40 - 20.
+		{"with fiber", Nutrients{Carbs: 10, Fiber: new(5.0)}, 20, 50},
+		// As carbs: 80; EU, at 2.4: 64; erythritol: 40.
+		{"with polyols in the carbs", Nutrients{Carbs: 20, Polyols: new(10.0)}, 40, 80},
+		{"never below zero", Nutrients{Carbs: 1, Fiber: new(5.0)}, 0, 14},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tc.n.AtwaterKcal(); math.Abs(got-tc.want) > 1e-9 {
-				t.Errorf("AtwaterKcal = %v, want %v", got, tc.want)
+			least, most := tc.n.AtwaterRange()
+			if math.Abs(least-tc.least) > 1e-9 || math.Abs(most-tc.most) > 1e-9 {
+				t.Errorf("AtwaterRange = %v, %v, want %v, %v", least, most, tc.least, tc.most)
 			}
 		})
 	}
@@ -145,8 +164,8 @@ func TestAtwaterKcal(t *testing.T) {
 func TestRounded(t *testing.T) {
 	t.Parallel()
 
-	r := Nutrients{Kcal: 199.375, Protein: 15.95, Carbs: 17.05, Fat: 9.075, Salt: new(0.649)}.Rounded()
-	if r.Kcal != 199 || r.Protein != 16 || r.Carbs != 17.1 || r.Fat != 9.1 || *r.Salt != 0.6 || r.Fiber != nil {
+	r := Nutrients{Kcal: 199.375, Protein: 15.95, Carbs: 17.05, Fat: 9.075, Salt: new(0.649), Sugars: new(0.649)}.Rounded()
+	if r.Kcal != 199 || r.Protein != 16 || r.Carbs != 17.1 || r.Fat != 9.1 || *r.Salt != 0.65 || *r.Sugars != 0.6 || r.Fiber != nil {
 		t.Errorf("Rounded = %+v", r)
 	}
 }
