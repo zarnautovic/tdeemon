@@ -49,6 +49,9 @@ func (d Date) AddDays(n int) Date {
 	return DateOf(time.Date(d.Year, d.Month, d.Day+n, 12, 0, 0, 0, time.UTC))
 }
 
+// Weekday returns the day of the week d falls on.
+func (d Date) Weekday() time.Weekday { return d.at(time.UTC).Weekday() }
+
 // Before reports whether d comes before e.
 func (d Date) Before(e Date) bool { return d.at(time.UTC).Before(e.at(time.UTC)) }
 

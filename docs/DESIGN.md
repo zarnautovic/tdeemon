@@ -88,7 +88,7 @@ store layer and covered by tests that run every query as the wrong user.
 
 | table | key columns | notes |
 | --- | --- | --- |
-| `users` | id, name, email, role (admin/user), locale, timezone, day_start_hour, sex (for the energy equations)?, birth_date?, height? | invites; a password (argon2id), and OIDC identities in `user_identities`; the profile (sex, birth date, height) is optional for logging, needed for a plan, and changes only from a web session (§8) |
+| `users` | id, name, email, role (admin/user), locale, timezone, day_start_hour, sex (for the energy equations)?, birth_date?, height (cm)? | invites; a password (argon2id), and OIDC identities in `user_identities`; the profile (sex, birth date, height) is optional for logging, needed for a plan, and changes only from a web session (§8) |
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
@@ -100,7 +100,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
 | `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log) |
-| `targets` | user_id, effective_from, kcal, kcal_training?, kcal_rest?, protein, carbs, fat, proposal_id? | effective-dated rows; the why lives in the proposal |
+| `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
 | `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
 | `plan_settings` | user_id, autonomy (propose/autopilot), autopilot bounds, check-in weekday, training weekdays, the user's limits | the training weekdays give each day its type ahead of time (§7); the user's limits change only from a web session, never through tools (§8) |
 | `phases` | user_id, type (cut/maintain/bulk/recomp), started_at, ends_at?, target_rate_pct_week (signed), goal_weight?, milestone_weight? | the user's goal timeline; a phase start anchors the water/glycogen window; a diet break or a deload maintenance week is just a short `maintain` phase; goal and milestone may sit above or below the current weight |

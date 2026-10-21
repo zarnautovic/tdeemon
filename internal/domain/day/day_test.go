@@ -262,6 +262,12 @@ func TestDate(t *testing.T) {
 	if d.IsZero() || !(Date{}).IsZero() {
 		t.Error("IsZero is wrong")
 	}
+	if got := d.Weekday(); got != time.Saturday {
+		t.Errorf("Weekday() = %s, want Saturday", got)
+	}
+	if got := d.AddDays(1).Weekday(); got != time.Sunday {
+		t.Errorf("Weekday() of 1 March = %s, want Sunday", got)
+	}
 	for _, bad := range []string{"", "2026-2-28", "28.02.2026.", "2026-02-30", "2026-02-28T00:00"} {
 		t.Run(bad, func(t *testing.T) {
 			t.Parallel()
