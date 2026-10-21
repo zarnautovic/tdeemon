@@ -153,8 +153,12 @@ func TestLimiterSweepsAFullMapRarely(t *testing.T) {
 		now = start.Add(64*time.Minute + time.Duration(i)*time.Second)
 		l.take(fmt.Sprint("new ", i))
 	}
-	if l.sweeps > 2 {
-		t.Errorf("%d sweeps in 100 seconds, want at most 2 (one a minute)", l.sweeps)
+	if l.sweeps != 2 {
+		t.Errorf("%d sweeps in 100 seconds, want 2 (one a minute)", l.sweeps)
+	}
+	// The second sweep, a minute after the first, made room for it.
+	if _, _, ok := l.take("new 60"); ok {
+		t.Error("new 60 was not counted, though a sweep was due")
 	}
 }
 

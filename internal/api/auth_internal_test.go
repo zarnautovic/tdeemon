@@ -1,10 +1,12 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -229,5 +231,43 @@ func TestLoginCheckedAfterTheClientLeftCounts(t *testing.T) {
 		if kept != 1 {
 			t.Errorf("%s: %d attempts kept, want 1", name, kept)
 		}
+	}
+}
+
+// A client that leaves while its session or API token is being looked
+// up, or its new session written, logs at debug level: it says nothing
+// about the server, and a client can do it at will.
+func TestGoneClientsLogAtDebug(t *testing.T) {
+	t.Parallel()
+
+	gone, cancel := context.WithCancel(t.Context())
+	cancel()
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	for name, run := range map[string]func(s *sessions){
+		"a session lookup": func(s *sessions) {
+			r := httptest.NewRequestWithContext(gone, http.MethodGet, "/api/v1/auth/session", http.NoBody)
+			r.AddCookie(&http.Cookie{Name: "tdeemon_session", Value: "token"}) //nolint:gosec // G124: a request's cookie.
+			s.authenticate(next).ServeHTTP(httptest.NewRecorder(), r)
+		},
+		"a token lookup": func(s *sessions) {
+			r := httptest.NewRequestWithContext(gone, http.MethodGet, "/api/v1/auth/whoami", http.NoBody)
+			s.authenticateToken(httptest.NewRecorder(), r, auth.TokenPrefix+"token", next)
+		},
+		"a session write": func(s *sessions) {
+			_, _, _ = s.start(gone, user.User{ID: uuid.NewV7()}, s.now(), "password", func(store.Session) error { return context.Canceled })
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var log bytes.Buffer
+			s := newSessions(Config{
+				DB: storetest.Open(t), BaseURL: &url.URL{Scheme: "http", Host: "localhost"}, Now: time.Now,
+				Logger: slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})),
+			})
+			run(s)
+			if !strings.Contains(log.String(), "level=DEBUG") || strings.Contains(log.String(), "level=ERROR") {
+				t.Errorf("log = %q, want the failure at debug level only", log.String())
+			}
+		})
 	}
 }

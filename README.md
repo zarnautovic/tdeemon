@@ -193,7 +193,8 @@ Against guessing and floods:
   proxy) and not the proxy; tdeemon logs a warning when forwarded
   requests come in without it. The counts live in memory, at most 100,000
   addresses or accounts per limit (past that, new ones go uncounted
-  until older ones expire), and start over when the server restarts.
+  until older ones expire, and up to 14 seconds more), and start over
+  when the server restarts.
 - **Password hashing** runs at most one hash per CPU at a time; more
   sign-ins at once wait their turn instead of adding 19 MiB each, for up
   to 10 seconds, then answer 503 with `Retry-After`; such a sign-in does

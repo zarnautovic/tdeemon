@@ -88,7 +88,7 @@ func (s *sessions) giveBack(a signInAttempt) {
 	s.signInByAccount.release(a.account)
 }
 
-// logLevel is the level to log a sign-in that ended in err at: debug
+// logLevel is the level to log a request that failed with err at: debug
 // when the client went away (it says nothing about the server, and a
 // client can do it at will), warn when hashing was busy, error otherwise.
 func logLevel(err error) slog.Level {
@@ -173,7 +173,7 @@ func (s *sessions) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		if err != nil {
-			s.logger.ErrorContext(r.Context(), "looking up a session failed", "error", err)
+			s.logger.Log(r.Context(), logLevel(err), "looking up a session failed", "error", err)
 			writeProblem(w, http.StatusInternalServerError, "the session could not be checked")
 			return
 		}
