@@ -147,9 +147,18 @@ present; nobody has to enter them. Values are stored as they are and
 rounded only for display (kcal to a whole number, grams to a tenth, salt
 to a hundredth).
 
-**Metric merge rules** carry over from the predecessor: a manual weight beats an
-imported one, sleep is a max-merge per date, cumulative metrics never
-shrink on a partial sync.
+**Metric merge rules** carry over from the predecessor
+(`internal/domain/metric`): a value the user gave (`manual`, from any
+client) beats an imported one, of every kind; the day's first imported
+weighing stays (the morning's, not the one after dinner; body fat and
+lean mass with it); an import of sleep or of a running total of the day
+(steps, active and basal kcal, exercise minutes) is kept only when it is
+more, so a sync of part of the day undoes nothing; any other import
+replaces the one before. Each kind has bounds a person can have, so a
+typo or minutes for hours of sleep is refused rather than stored;
+converting units is ingest's, by the units the source names. A merge
+reports what it changed, with the value before, for the event log and
+undo; deleting a wrong manual value lets imports apply again.
 
 **Day status:**
 
