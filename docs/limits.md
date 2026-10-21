@@ -18,14 +18,16 @@ page changes with it.
    - never 800 kcal a day or less;
    - never less than 0.8 g of protein per kg of the reference mass;
    - no plan for someone under 18;
-   - no cut phase, and no goal or milestone weight, below a BMI of 18.5.
+   - no loss of weight below a BMI of 18.5, by the trend weight now (a
+     cut, a recomp below 0, a kcal target that implies a loss), and no
+     goal or milestone weight below it.
 2. **The instance's limits**, set by the admin in the configuration
    within that floor: the outer bound for everyone on the instance. The
    column "Hard limit" below holds their defaults.
 3. **The user's limits**, within the instance's, which start at the
-   column "Default". The user may tighten them freely; going past one
-   needs an explicit confirmation, in a web session, and nothing goes
-   past the instance's limit.
+   column "Default". The user may tighten them freely; loosening one, up
+   to the instance's limit and no further, takes an explicit
+   confirmation in a web session.
 
 One function, `Validate`, checks every change of a plan against all
 three, and says which rule a change breaks, with the limit and the
@@ -43,33 +45,54 @@ target without sex (for the energy equations), birth date and height
 the coach knows what to ask. Logging works without them.
 
 Since the profile moves the limits, it changes only from a web session,
-as they do; a coach may propose a change. The weight and the lean mass
-are measurements, which any client may log; they move the BMI and the
-reference mass too, a gap the limits do not close.
+as they do; a coach may propose a change. The weight is a measurement,
+which any client may log; it moves the BMI and the reference mass too,
+a gap the limits do not close. The lean mass, also a measurement, moves
+only the warning on energy availability.
 
 ## Reading the table
 
-- **Rates** are in % of the trend weight per week; a minus is a loss.
-  They hold for a phase's target rate, and for the rate a kcal target
-  implies against the measured TDEE when there is one (the difference
-  times 7, over 7700 kcal per kg, as a share of the trend weight).
-- **"Default"** is the value a user starts with. For a rate, the range
-  in brackets holds the targets the user may set without a
-  confirmation; a faster loss or gain needs one, up to the hard limit,
-  and a slower one never does. A rate without a range has its default
-  as the fast end. Where a default is a floor or a ceiling, going past
-  it needs the confirmation.
+- **Rates** are in % of the trend weight per week; a minus is a loss. A
+  phase's target rate lies between 0 and its limit (a cut's is a loss,
+  a bulk's a gain); a recomp has its own range, and maintenance is 0.
+- **The rate a kcal target implies** is the weekly average less the
+  measured TDEE, times 7, over 7700 kcal per kg, as a share of the trend
+  weight. It counts once calibration trusts the measured TDEE enough for
+  a verdict (DESIGN.md §7); until then only the kcal floor checks a
+  target. Whatever the phase, it is held to the limits of loss and
+  gain: no faster loss than a cut's limit for the BMI, no faster gain
+  than a bulk's.
+- **"Default"** is the user's limit at the start, and the value a phase
+  starts with. For a rate, the range in brackets is the user's limit: a
+  faster loss or gain needs the user to loosen it first, and a slower
+  rate never does. Where a default is a floor or a ceiling, it is the
+  user's floor or ceiling.
 - **"Hard limit"** is the instance's default limit. An empty cell means
-  the default is also the limit: the user may only make it stricter.
+  the default is the instance's limit too, which the admin may tighten
+  and nobody loosens.
+- **"Basis"** says "evidence" where guidelines or the studies they rest
+  on set the value, and "convention" where it is a choice, or one
+  review's recommendation among others.
 - **Limits are inclusive** ("at most", "at least"), but for the code's
   floor of 800 kcal, which 800 itself breaks.
-- **The BMI** is taken from the trend weight when the phase starts, and
-  does not change during the phase.
-- **A default never passes a hard limit:** a range is cut where it
-  would (above about 150 kg, −1.0 % a week is more than 1.5 kg).
+- **The BMI** that picks a cut's row is the trend weight's when the
+  phase starts, and does not change during the phase. The code's floor
+  of 18.5 is the trend weight's now, at every check, the autopilot's
+  steps included.
+- **The trend weight** is the one now, for the reference mass and to
+  turn a rate in % into kg.
+- **A default never passes a limit:** it is cut at the instance's or
+  the user's, where that is stricter (above about 150 kg, −1.0 % a week
+  is more than 1.5 kg; a user's protein ceiling of 2.0 g/kg cuts a
+  cut's 2.2).
 - **The floors of kcal and fat** hold for each day type, on every
   level, not only for the weekly average; fat is a share of that day's
   kcal.
+- **`Validate` refuses a change for the values it sets.** A value that
+  new data put outside a limit (the measured TDEE moved, the weight fell
+  so that the protein in grams is short) does not stop other changes,
+  and a change that brings it toward the limit passes; the summary
+  flags it.
 
 ## The defaults
 
@@ -77,7 +100,7 @@ reference mass too, a gap the limits do not close.
 | --- | --- | --- | --- | --- |
 | Cut, BMI below 30 | −0.5 (0 to −0.7) | −1.0 | evidence | Helms, Aragon and Fitschen 2014; Garthe et al. 2011; Roberts et al. 2020 |
 | Cut, BMI 30 or more | −0.75 (0 to −1.0) | −1.25, and at most 1.5 kg a week | convention; the 1.5 kg evidence | NHLBI 1998; Jensen et al. 2014; Weinsier et al. 1995 |
-| Bulk | +0.25 | +0.5 | evidence | Iraki et al. 2019; Helms et al. 2023 |
+| Bulk | +0.25 (0 to +0.25) | +0.5 | evidence | Iraki et al. 2019; Helms et al. 2023 |
 | Recomp | −0.1 (−0.5 to +0.25) | −0.5 to +0.25 | convention | Murphy and Koehler 2022; Barakat et al. 2020 |
 | Maintenance | 0 | | convention | Stevens et al. 2006; Turicchi et al. 2020 |
 | Protein, floor | 1.6 g/kg | 0.8 g/kg (the RDA; the code's floor) | evidence | Morton et al. 2018; IOM 2005 |
@@ -86,8 +109,8 @@ reference mass too, a gap the limits do not close.
 | Fat, floor | 20 % of the day's kcal | 15 % | evidence; the 15 % convention | IOM 2005; Helms, Aragon and Fitschen 2014; Roberts et al. 2020 |
 | Autopilot, step | min(100 kcal, 5 %) of the weekly average | min(200 kcal, 10 %) | convention | MacroFactor |
 | Autopilot, interval | 7 days; the first change 14 days or more after a phase starts or changes | | convention | MacroFactor; Nuckols 2024 |
-| Autopilot, data | 4 logged days and 3 weigh-ins or more in the 7 days | | convention | MacroFactor |
-| Autopilot, drift | ±15 % of the TDEE at the phase's start, then the user confirms | ±25 % | convention | Frankenfield et al. 2005; Müller et al. 2016 |
+| Autopilot, data | at least 4 logged days and at least 3 weigh-ins in the last 7 days | | convention | MacroFactor |
+| Autopilot, drift | 15 % of the TDEE | 25 % | convention | Frankenfield et al. 2005; Müller et al. 2016 |
 
 The protein a phase starts with, between the floor and the ceiling:
 
@@ -149,16 +172,20 @@ The protein a phase starts with, between the floor and the ceiling:
   and 1500 to 1800 for men as one way to diet; their lower ends are the
   defaults. NICE calls a diet of 800 to 1200 kcal low-energy and one
   under 800 very-low-energy, both only with specialist services (NICE
-  2025, 1.16.8 to 1.16.11; Jensen et al. and NHLBI likewise for 800). So
-  the instance's 1200 keeps a low-energy diet to an instance whose admin
-  lowers it, for a clinician's patient; the code refuses 800 or less,
-  one kcal stricter than "under 800".
-- **Fat, floor:** 20 % is the lower end of the IOM's range (20 to 35 %).
-  The hard limit is the lower end of Helms, Aragon and Fitschen's range
-  (15 to 30 %); Roberts et al. go down to 10 % in contest preparation,
-  which tdeemon does not allow.
+  2025, 1.16.8 to 1.16.11; Jensen et al. and NHLBI likewise for 800).
+  The instance's 1200, the top of NICE's low-energy range and the bottom
+  of Jensen et al.'s for women, allows 1200 itself; a diet under it
+  needs an admin who lowers the instance's floor, for a clinician's
+  patient. The code refuses 800 or less, one kcal stricter than "under
+  800".
+- **Fat, floor:** 20 % is the lower end of the IOM's range (20 to 35 %),
+  a reference intake. The hard limit is the lower end of one review's
+  range, Helms, Aragon and Fitschen's (15 to 30 %), so a convention;
+  Roberts et al. go down to 10 % in contest preparation, which tdeemon
+  does not allow.
 - **Autopilot, step:** only the autopilot's steps are limited; a
-  coach's proposal has no step limit, but meets every other. A step
+  coach's proposal meets every limit but the autopilot's step,
+  interval, data and drift. A step
   moves the weekly average, and the difference between training and
   rest days stays as it is (the coach can change that split, DESIGN.md
   §8). MacroFactor publishes no caps; it smooths a step over weeks.
@@ -166,11 +193,13 @@ The protein a phase starts with, between the floor and the ceiling:
   days and 1 weigh-in in 7, 3 weigh-ins being its ideal, which tdeemon
   requires. Its estimate of the TDEE settles after about 14 to 30 days
   (Nuckols 2024).
-- **Autopilot, drift:** the autopilot's changes of the weekly average
-  add up from the phase's start, or from the user's last confirmation,
-  as a share of the TDEE when the phase started. Past ±15 % the next
-  step waits for a confirmation, which sets a new base; past ±25 % no
-  step goes. The bounds start from the error of the estimate: the best
+- **Autopilot, drift:** the autopilot's changes of the weekly average,
+  up and down, add up from the last target the user agreed to (the
+  phase's start, or a proposal they applied), as a share of the TDEE
+  then: the measured one, else the equation's estimate. Past the user's
+  limit the autopilot applies nothing more and proposes instead; the
+  user may raise the limit, in a web session, up to 25 %. The bounds
+  start from the error of the estimate: the best
   equation for the resting rate is within 10 % of the measured rate for
   most people (Frankenfield et al.), and the TDEE adapts to a diet
   (Müller et al.). The TDEE's expected fall, about 22 to 24 kcal a day
@@ -183,8 +212,9 @@ These show in a proposal's preview without refusing it:
 
 - **Below the estimated BMR:** a kcal target under the resting rate by
   the Mifflin–St Jeor equation (Frankenfield et al.), with the trend
-  weight. It is no floor: with a BMI of 30 or more the estimate is high,
-  and it would refuse the guidelines' own prescriptions.
+  weight. It is no floor: the BMR grows with the whole weight, so at a
+  BMI of 30 or more it lies above the guidelines' own 1200 to 1800
+  kcal, which a floor would refuse.
 - **Low energy availability:** below 30 kcal per kg of fat-free mass a
   day, intake less the energy of exercise, when the fat-free mass is
   known. The threshold was found in women (Loucks and Thuma 2003), and
@@ -200,9 +230,10 @@ These show in a proposal's preview without refusing it:
 ## Cases for a clinician
 
 tdeemon does not plan for these. The code refuses what it can tell from
-the profile and the plan (a plan for someone under 18, a cut or a goal
-weight under a BMI of 18.5, 800 kcal a day or less); for the rest, P0
-has this page, and questions at sign-up come later:
+the profile, the plan and the trend weight (a plan for someone under
+18; a loss, a goal or a milestone weight under a BMI of 18.5; 800 kcal
+a day or less); for the rest, P0 has this page, and questions at
+sign-up come later:
 
 - a very-low-calorie diet, under 800 kcal a day (NICE 2025; Jensen et
   al. 2014);

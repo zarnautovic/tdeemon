@@ -186,7 +186,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `get_summary(window?)` | weekly averages, weight trend, measured TDEE, calibration verdict, recovery flags |
 | `get_history(window, granularity)` | coaching: compact day/week table across all metrics (§8) |
 | `get_plan()` | phases, target history **with outcomes**, autopilot bounds, guardrails, pending proposals |
-| `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/notes + preview; applies nothing |
+| `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/profile/notes + preview; applies nothing |
 | `apply_proposal(id)` / `reject_proposal(id)` / `revert(id)` | **apply only after explicit user consent**; recorded with actor and rationale |
 | `update_profile_notes(...)` | preferences and life context the coach should remember |
 | `shopping_list(op, items?)` | |
@@ -261,9 +261,9 @@ The replacement:
 - **Verdict:** a recommendation appears only when the interval is narrow
   enough. Otherwise the summary shows the estimate with its uncertainty,
   not just "calibrating".
-- **Goal-agnostic rules.** Each phase has a target band in % body weight
-  per week. The verdict compares the measured rate with that band and
-  proposes a kcal step toward it:
+- **Goal-agnostic rules.** Each phase has a target rate in % body weight
+  per week, and the verdict a tolerance around it. The verdict compares
+  the measured rate with that and proposes a kcal step toward it:
   - Too slow on a cut → lower the target.
   - Gaining too fast on a bulk → shrink the surplus.
   - Drifting during maintenance → nudge back.
@@ -319,7 +319,8 @@ Claude/ChatGPT subscription.
 ### Proposals, not direct writes
 
 1. **Propose.** `propose_changes` submits a diff (phases, targets,
-   settings, notes) with a rationale and the analysed window. The
+   settings, the profile, notes) with a rationale and the analysed
+   window. The
    server validates it and returns a preview: daily targets per day
    type, the expected rate, any guardrail violations.
 2. **Consent.** The user agrees in plain language ("može", "yes") and the
@@ -335,7 +336,7 @@ Claude/ChatGPT subscription.
 - `propose` (default): the autopilot and the coach only propose.
 - `autopilot`: weekly adjustments within the plan's bounds, which lie
   within the limits' step and drift, apply automatically and are
-  reported.
+  reported; past the drift limit, the autopilot proposes instead.
 - A plan change never applies without consent.
 
 ### Guardrails live in code, not in prompts
@@ -345,8 +346,10 @@ model, and a model can be talked into things, misread data, or follow
 instructions injected through a label photo, a recipe or a web page
 it read while researching. So limits are enforced by the server.
 
-- **One function.** A pure, unit-tested `Validate(change, profile,
-  limits) → []Violation` runs on `propose_changes` (the preview shows
+- **One function.** A pure, unit-tested `Validate(change, state,
+  limits) → []Violation`, the state being the profile and what the data
+  say now (the trend weight, the measured TDEE, the autopilot's drift
+  and last step, the days logged), runs on `propose_changes` (the preview shows
   violations), again on `apply_proposal` (the data or the limits may
   have changed since the proposal), on every autopilot step, and on
   manual target edits in the UI.
@@ -363,7 +366,8 @@ it read while researching. So limits are enforced by the server.
   - the maximum kcal step of an autopilot step;
   - the minimum time between autopilot changes, so a plateau cannot turn
     into cut-cut-cut, and the data a change needs;
-  - the maximum cumulative autopilot drift from the plan.
+  - the maximum cumulative autopilot drift from the last target the user
+    agreed to.
 - **Out of the AI's reach by construction, not by instruction.** No
   tool changes the limits or the profile they depend on. A coach may
   propose a change of either (`propose_changes`), but the proposal
@@ -376,20 +380,20 @@ it read while researching. So limits are enforced by the server.
   check their scope themselves.
 - **The user can change them** within the instance's limits, with an
   explicit warning, e.g. for a faster rate of loss. A low-energy diet
-  under medical supervision (800 to 1200 kcal) needs the admin to lower
-  the instance's floor; below that, nothing goes. Adults decide; models
-  don't.
+  under medical supervision, under 1200 kcal, needs the admin to lower
+  the instance's floor; 800 kcal or less, nothing allows. Adults decide;
+  models don't.
 - **Three levels.**
   - A floor in the code that nobody can lower, the admin included: never
     800 kcal a day or less, never less than 0.8 g/kg of protein, no plan
-    for someone under 18, and no cut or goal weight below a BMI of
-    18.5.
+    for someone under 18, and no loss, goal or milestone weight below a
+    BMI of 18.5.
   - Instance limits (admin, in config) within it are the outer bound for
     everyone on the instance. Someone hosting friends can set a floor
     nobody goes below.
-  - Per-user limits within those. The defaults are the user's starting
-    values: going past a default needs an explicit confirmation, and
-    nothing goes past the instance's limit.
+  - Per-user limits within those, which start at the defaults:
+    loosening one, up to the instance's limit and no further, takes an
+    explicit confirmation in a web session.
 - **A plan needs the profile.** The limits depend on sex, age and
   height (a kcal floor, the BMI, the estimated BMR) and on the trend
   weight, so without them `Validate` refuses a phase or a target
