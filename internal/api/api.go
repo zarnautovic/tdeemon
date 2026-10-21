@@ -8,14 +8,21 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
+
+	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
 // Version is the version of the JSON API: part of every path and the
@@ -32,17 +39,47 @@ type ServerInfo struct {
 	Version string `json:"version" example:"v0.1.0" doc:"Version of the running server; dev when the build carries no version information."`
 }
 
+// Config is what NewHandler needs.
+type Config struct {
+	Info ServerInfo
+	// App, if not nil, answers every GET request no other route takes
+	// (the web app and its client-side routes); requests under /api/
+	// never reach it.
+	App http.Handler
+	// DB is the database. Required.
+	DB *store.DB
+	// BaseURL is the instance's public URL. Required: over https the
+	// session cookie is Secure, and the URL's origin is trusted for
+	// cross-origin checks behind a proxy that rewrites Host.
+	BaseURL *url.URL
+	// Logger is required.
+	Logger *slog.Logger
+	// Now returns the current time; time.Now when nil.
+	Now func() time.Time
+}
+
 // NewHandler returns the root HTTP handler with every route registered.
-// app, if not nil, answers every other GET request (the web app and its
-// client-side routes); requests under /api/ never reach it.
-func NewHandler(info ServerInfo, app http.Handler) (http.Handler, error) {
+//
+// Every request goes through, in order: http.CrossOriginProtection,
+// which refuses a cross-origin browser request that is not GET, HEAD or
+// OPTIONS (CSRF); the session lookup for API requests; the routes.
+func NewHandler(cfg Config) (http.Handler, error) {
+	if cfg.DB == nil || cfg.BaseURL == nil || cfg.Logger == nil {
+		return nil, errors.New("api: the database, the base URL and the logger are required")
+	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, secure: cfg.BaseURL.Scheme == "https"}
+	auth.PrepareLogin()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	if app != nil {
-		mux.Handle("GET /", app)
+	if cfg.App != nil {
+		mux.Handle("GET /", cfg.App)
 	}
 	a := newAPI(mux)
-	register(a, info)
+	register(a, cfg.Info, s)
 
 	// The document is served from bytes computed once, the same ones Spec
 	// returns. huma's own route marshals it lazily without a lock, a data
@@ -57,7 +94,15 @@ func NewHandler(info ServerInfo, app http.Handler) (http.Handler, error) {
 		w.Header().Set("Content-Length", strconv.Itoa(len(spec)))
 		_, _ = w.Write(spec)
 	})
-	return withAPIErrors(mux), nil
+
+	cop := http.NewCrossOriginProtection()
+	if err := cop.AddTrustedOrigin(cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host); err != nil {
+		return nil, fmt.Errorf("api: trusted origin: %w", err)
+	}
+	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeProblem(w, http.StatusForbidden, "cross-origin request refused")
+	}))
+	return cop.Handler(s.authenticate(withAPIErrors(mux))), nil
 }
 
 // apiMethods are the methods withAPIErrors probes for an Allow header.
@@ -125,7 +170,8 @@ func writeProblem(w http.ResponseWriter, status int, detail string) {
 // /api/v1/openapi.json. It does not depend on the running server.
 func Spec() ([]byte, error) {
 	a := newAPI(http.NewServeMux())
-	register(a, ServerInfo{})
+	// The operations' handlers never run here, so they need no database.
+	register(a, ServerInfo{}, &sessions{})
 	return marshalSpec(a)
 }
 
@@ -150,11 +196,28 @@ func newAPI(mux *http.ServeMux) huma.API {
 	cfg.CreateHooks = nil
 	// A misspelled query parameter is an error, not silently ignored.
 	cfg.RejectUnknownQueryParameters = true
+	cfg.Transformers = append(cfg.Transformers, dropErrorValues)
 	return humago.New(mux, cfg)
 }
 
+// dropErrorValues keeps an error response from echoing what the request
+// sent: huma puts the offending value into each error detail, and for a
+// sign-in that is the password (a body that does not parse, a field of
+// the wrong type). The location and the message say enough.
+func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
+	if e, ok := v.(*huma.ErrorModel); ok {
+		for _, d := range e.Errors {
+			if d != nil {
+				d.Value = nil
+			}
+		}
+	}
+	return v, nil
+}
+
 // register adds every API operation to a.
-func register(a huma.API, info ServerInfo) {
+func register(a huma.API, info ServerInfo, s *sessions) {
+	s.register(a)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",
 		Method:      http.MethodGet,

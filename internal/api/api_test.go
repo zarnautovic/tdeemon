@@ -2,23 +2,41 @@ package api_test
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
+	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
 
 var testInfo = api.ServerInfo{Name: "tdeemon", Version: "v9.9.9"}
 
+// newHandler returns the root handler over a fresh database, for an
+// instance at http://localhost.
+func newHandler(tb testing.TB, app http.Handler) http.Handler {
+	tb.Helper()
+
+	h, err := api.NewHandler(api.Config{
+		Info:    testInfo,
+		App:     app,
+		DB:      storetest.Open(tb),
+		BaseURL: &url.URL{Scheme: "http", Host: "localhost"},
+		Logger:  slog.New(slog.DiscardHandler),
+	})
+	if err != nil {
+		tb.Fatalf("NewHandler: %v", err)
+	}
+	return h
+}
+
 func serve(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	h, err := api.NewHandler(testInfo, nil)
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
-	}
+	h := newHandler(t, nil)
 	req := httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -126,10 +144,7 @@ func TestAppGetsEveryOtherGET(t *testing.T) {
 	app := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	})
-	h, err := api.NewHandler(testInfo, app)
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
-	}
+	h := newHandler(t, app)
 	for path, want := range map[string]string{
 		"/":             "text/html; charset=utf-8",
 		"/day/today":    "text/html; charset=utf-8",

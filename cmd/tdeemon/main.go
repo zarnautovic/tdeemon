@@ -30,9 +30,11 @@ import (
 var version string
 
 const usage = `Usage:
-  tdeemon                     run the server
-  tdeemon user create [flags] add a user
-  tdeemon help                show this help
+  tdeemon                           run the server
+  tdeemon user create [flags]       add a user
+  tdeemon user set-password [flags] give a user a new password and end
+                                    their sessions
+  tdeemon help                      show this help
 
 Flags of user create:
   --email ADDRESS    the address the user signs in with (required)
@@ -45,11 +47,15 @@ Flags of user create:
                      input; without it, tdeemon generates one and prints
                      it once
 
-user create works on the database of a server that has started at least
-once, which creates and migrates it; the server may be running.
+Flags of user set-password:
+  --email ADDRESS    the user's address (required)
+  --password-stdin   as for user create
 
-Configure tdeemon with TDEEMON_* environment variables; user create reads
-the same ones as the server. See
+The user commands work on the database of a server that has started at
+least once, which creates and migrates it; the server may be running.
+
+Configure tdeemon with TDEEMON_* environment variables; the user commands
+read the same ones as the server. See
 https://github.com/zarnautovic/tdeemon#configuration
 `
 
@@ -137,7 +143,13 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		return err
 	}
 	logger.Info("web app", "embedded", embedded)
-	handler, err := api.NewHandler(api.ServerInfo{Name: "tdeemon", Version: serverVersion}, app)
+	handler, err := api.NewHandler(api.Config{
+		Info:    api.ServerInfo{Name: "tdeemon", Version: serverVersion},
+		App:     app,
+		DB:      db,
+		BaseURL: cfg.BaseURL,
+		Logger:  logger,
+	})
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}

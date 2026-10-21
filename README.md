@@ -86,7 +86,7 @@ All settings come from environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TDEEMON_BASE_URL` | — (required) | public URL of the instance, without a path (tdeemon is served at the root of its host), e.g. `https://tdeemon.example.com` |
-| `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; signs sessions and encrypts stored secrets |
+| `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; kept for sealing and encrypting what tdeemon stores (sessions do not depend on it) |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
 | `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |
 | `TDEEMON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
@@ -104,9 +104,9 @@ one volume at `/data`, so the root filesystem can be read-only.
 ```sh
 docker build -t tdeemon .
 
-# Once: the settings, readable by you only. Keep the secret key: it signs
-# sessions and encrypts stored secrets. set -C refuses to replace an
-# existing .env, so running this again keeps the key.
+# Once: the settings, readable by you only. Keep the secret key: features
+# that seal or encrypt what tdeemon stores use it. set -C refuses to
+# replace an existing .env, so running this again keeps the key.
 (umask 077 && set -C && printf 'TDEEMON_BASE_URL=%s\nTDEEMON_SECRET_KEY=%s\n' \
   http://localhost:8080 "$(openssl rand -base64 32)" > .env)
 
@@ -156,11 +156,17 @@ kubectl exec deploy/tdeemon -- /tdeemon user create --admin --email you@example.
 - `--name` sets the name the app shows (by default, the part of the
   address before the @), and `--timezone` the user's time zone (by
   default `TZ`, or UTC). `tdeemon help` lists the flags.
-- The command reads the same `TDEEMON_*` variables as the server, and it
-  refuses a database the server has not migrated to its version yet.
+- `tdeemon user set-password --email …` gives a user a new password,
+  generated or with `--password-stdin`, and ends their sessions: the way
+  back when a password is lost.
+- The commands read the same `TDEEMON_*` variables as the server, and
+  they refuse a database the server has not migrated to their version.
 
-Signing in to the web app is not built yet: users exist, but nothing
-reads them.
+Signing in goes through the API (`POST /api/v1/auth/login`), which sets
+an HttpOnly session cookie for 30 days; the web app's sign-in page comes
+with the web UI. Cross-origin browser requests that change something are
+refused (Go's `http.CrossOriginProtection`), and over HTTPS the cookie is
+a `__Host-` cookie.
 
 ## Data
 

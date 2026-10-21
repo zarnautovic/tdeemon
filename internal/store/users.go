@@ -52,32 +52,110 @@ func (db *DB) CreateUser(ctx context.Context, u user.User, passwordHash string) 
 // UserByEmail returns the user with email, which must be normalized
 // (user.NormalizeEmail), or ErrNotFound.
 func (db *DB) UserByEmail(ctx context.Context, email string) (user.User, error) {
-	var (
-		u                    user.User
-		id, role             string
-		createdAt, updatedAt string
-	)
-	err := db.read.QueryRowContext(ctx, `
-		SELECT id, email, name, role, locale, timezone, day_start_hour, created_at, updated_at
-		FROM users WHERE email = ?`, email).
-		Scan(&id, &u.Email, &u.Name, &role, &u.Locale, &u.TimeZone, &u.DayStartHour, &createdAt, &updatedAt)
+	row := db.read.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE email = ?", email)
+	u, err := scanUser(row.Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return user.User{}, ErrNotFound
 	}
 	if err != nil {
 		return user.User{}, fmt.Errorf("user by email: %w", err)
 	}
+	return u, nil
+}
+
+// UserCredentials returns the user with email, which must be normalized,
+// and their password hash ("" when they have no password), or ErrNotFound.
+func (db *DB) UserCredentials(ctx context.Context, email string) (user.User, string, error) {
+	var hash sql.NullString
+	row := db.read.QueryRowContext(ctx, "SELECT "+userColumns+", password_hash FROM users WHERE email = ?", email)
+	u, err := scanUser(row.Scan, &hash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return user.User{}, "", ErrNotFound
+	}
+	if err != nil {
+		return user.User{}, "", fmt.Errorf("user credentials: %w", err)
+	}
+	return u, hash.String, nil
+}
+
+// userColumns are the columns scanUser reads; userColumnsOfU the same,
+// for a query that calls the users table u.
+const (
+	userColumns    = "id, email, name, role, locale, timezone, day_start_hour, created_at, updated_at"
+	userColumnsOfU = "u.id, u.email, u.name, u.role, u.locale, u.timezone, u.day_start_hour, u.created_at, u.updated_at"
+)
+
+// scanUser reads the columns of userColumns, then any extra ones into
+// extra, with scan (a Row's or Rows' Scan).
+func scanUser(scan func(dest ...any) error, extra ...any) (user.User, error) {
+	var (
+		u                    user.User
+		id, role             string
+		createdAt, updatedAt string
+	)
+	dest := append([]any{&id, &u.Email, &u.Name, &role, &u.Locale, &u.TimeZone, &u.DayStartHour, &createdAt, &updatedAt}, extra...)
+	if err := scan(dest...); err != nil {
+		return user.User{}, err
+	}
 	u.Role = user.Role(role)
+	var err error
 	if u.ID, err = uuid.Parse(id); err != nil {
-		return user.User{}, fmt.Errorf("user by email: id %q: %w", id, err)
+		return user.User{}, fmt.Errorf("id %q: %w", id, err)
 	}
 	if u.CreatedAt, err = parseTime(createdAt); err != nil {
-		return user.User{}, fmt.Errorf("user by email: %w", err)
+		return user.User{}, err
 	}
 	if u.UpdatedAt, err = parseTime(updatedAt); err != nil {
-		return user.User{}, fmt.Errorf("user by email: %w", err)
+		return user.User{}, err
 	}
 	return u, nil
+}
+
+// SetPasswordHash gives the user with id a new password hash and ends
+// every session of theirs, as a reset should, or returns ErrNotFound. A
+// rehash at sign-in, which keeps the sessions, is ReplacePasswordHash.
+func (db *DB) SetPasswordHash(ctx context.Context, id uuid.UUID, passwordHash string, now time.Time) error {
+	if passwordHash == "" {
+		return errors.New("set password: the hash is empty")
+	}
+	return db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+			passwordHash, formatTime(now), id.String())
+		if err != nil {
+			return fmt.Errorf("set password: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("set password: %w", err)
+		} else if n == 0 {
+			return ErrNotFound
+		}
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id.String()); err != nil {
+			return fmt.Errorf("set password: end sessions: %w", err)
+		}
+		return nil
+	})
+}
+
+// ReplacePasswordHash stores newHash for the user with id if their hash
+// is still oldHash, and reports whether it did. A sign-in uses it to store
+// a rehash: a reset that came in between wins, instead of being undone by
+// a hash of the old password.
+func (db *DB) ReplacePasswordHash(ctx context.Context, id uuid.UUID, oldHash, newHash string, now time.Time) (bool, error) {
+	var replaced bool
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ?",
+			newHash, formatTime(now), id.String(), oldHash)
+		if err != nil {
+			return err
+		}
+		n, err := res.RowsAffected()
+		replaced = n == 1
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("replace password hash: %w", err)
+	}
+	return replaced, nil
 }
 
 // formatTime writes t as the schema stores timestamps: RFC 3339 in UTC,

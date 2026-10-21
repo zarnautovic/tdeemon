@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -103,6 +104,52 @@ func VerifyPassword(password, encoded string) (bool, error) {
 	}
 	key := argon2.IDKey([]byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length at maxKeyLen
 	return subtle.ConstantTimeCompare(key, h.key) == 1, nil
+}
+
+// MaxPasswordBytes is the longest password input VerifyLogin considers:
+// MaxPasswordLen characters of four bytes each. Anything longer fails
+// without being normalized, which can make a string many times longer (one
+// U+FDFA becomes 18 characters). A password typed in a decomposed form
+// takes more bytes than its normal form, so near the length limit one can
+// be refused: 1,024 bytes hold 113 Hangul syllables typed as separate
+// jamo.
+const MaxPasswordBytes = 4 * MaxPasswordLen
+
+// VerifyLogin checks password against encoded, the stored hash of the
+// account signing in, or "" when there is no such account or it has no
+// password. Either way it runs one argon2id hash, so the time a sign-in
+// takes does not tell which addresses have accounts; so does an overlong
+// password, which never matches.
+func VerifyLogin(password, encoded string) (bool, error) {
+	if encoded == "" || len(password) > MaxPasswordBytes {
+		// A fixed input: an overlong password is not normalized either.
+		_, _ = VerifyPassword("", dummyHash())
+		return false, nil
+	}
+	return VerifyPassword(password, encoded)
+}
+
+// PrepareLogin computes what VerifyLogin needs once, now, so the first
+// sign-in for an unknown address takes no longer than the others.
+func PrepareLogin() { _ = dummyHash() }
+
+// dummyHash is a hash of a password nobody knows, with the current
+// parameters, for VerifyLogin to spend the time on.
+var dummyHash = sync.OnceValue(func() string {
+	h, _ := HashPassword(GeneratePassword()) // A generated password always meets the rules.
+	return h
+})
+
+// NeedsRehash reports whether encoded was made with other parameters than
+// HashPassword uses now, so a successful sign-in should store a new hash.
+// A hash it cannot read needs no rehash: it never verifies.
+func NeedsRehash(encoded string) bool {
+	h, err := parseHash(encoded)
+	if err != nil {
+		return false
+	}
+	return h.memoryKiB != argonMemoryKiB || h.time != argonTime || h.threads != argonThreads ||
+		len(h.salt) != argonSaltLen || len(h.key) != argonKeyLen
 }
 
 // GeneratePassword returns a random password with 130 bits of entropy:
