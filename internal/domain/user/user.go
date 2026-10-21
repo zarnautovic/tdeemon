@@ -15,6 +15,8 @@ import (
 	"uuid"
 
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
 
 // Role is what a user may do on the instance.
@@ -127,7 +129,7 @@ func ValidateEmail(email string) error {
 	// An invisible character (a zero-width space pasted from a chat, a
 	// variation selector) would make an address nobody can type at sign-in
 	// that looks like another user's.
-	if strings.IndexFunc(email, func(r rune) bool { return invisible(r) || unicode.IsSpace(r) }) >= 0 {
+	if strings.IndexFunc(email, func(r rune) bool { return text.Invisible(r) || unicode.IsSpace(r) }) >= 0 {
 		return fmt.Errorf("email %q: contains a space or an invisible character", email)
 	}
 	// A bare address only: no display name ("Ana <ana@example.com>"), no
@@ -140,37 +142,10 @@ func ValidateEmail(email string) error {
 }
 
 // ValidateName reports whether name is a usable display name: not empty,
-// without space around it or control characters, at most MaxNameLen
-// characters.
-func ValidateName(name string) error {
-	switch {
-	case !utf8.ValidString(name):
-		return errors.New("name is not valid UTF-8")
-	// Spaces are fine inside a name; a tab, a line break, a direction
-	// override that reorders the list of users, or a blank that only
-	// looks like a name are not.
-	case strings.IndexFunc(name, invisible) >= 0:
-		return fmt.Errorf("name %q: contains a control or invisible character", name)
-	case strings.TrimSpace(name) == "":
-		return errors.New("name is required")
-	case name != strings.TrimSpace(name):
-		return fmt.Errorf("name %q: has space at the start or end", name)
-	case utf8.RuneCountInString(name) > MaxNameLen:
-		return fmt.Errorf("name is %d characters long, want at most %d", utf8.RuneCountInString(name), MaxNameLen)
-	}
-	return nil
-}
-
-// invisible reports a character that shows as nothing, or as a blank:
-// control and format characters (a tab, a zero-width space, a byte order
-// mark, direction marks), line and paragraph separators, characters
-// Unicode says to ignore when not supported (a combining grapheme joiner,
-// Hangul fillers), variation selectors, the blank Braille pattern, and
-// U+FFFD, which stands in for bytes that were not text.
-func invisible(r rune) bool {
-	return !unicode.IsGraphic(r) || r == utf8.RuneError || r == '\u2800' ||
-		unicode.In(r, unicode.Other_Default_Ignorable_Code_Point, unicode.Variation_Selector)
-}
+// nothing invisible (a tab, a line break, a direction override that
+// reorders the list of users, a blank that only looks like a name), no
+// space around it, at most MaxNameLen characters.
+func ValidateName(name string) error { return text.Check("name", name, MaxNameLen, true) }
 
 // ValidateTimeZone accepts an IANA time zone name, such as
 // Europe/Zagreb or UTC. It rejects names Go may resolve but that mean

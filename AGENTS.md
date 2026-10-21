@@ -17,7 +17,7 @@ contract and an empty web app exist.
 | --- | --- |
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create` and `user set-password` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
-| `internal/domain` | the domain types and their rules, one package each (`user`) |
+| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `text` (the rules for free text, shared by the others) |
 | `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |

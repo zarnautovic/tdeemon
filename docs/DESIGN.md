@@ -92,13 +92,14 @@ store layer and covered by tests that run every query as the wrong user.
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
-| `foods` | id, user_id, name, brand, kcal/protein/carbs/fat per 100 g, serving_g, serving_name, source (label/estimate/user/off), note, archived | the user's food DB; "same name + same portion" upsert rule enforced in code |
-| `food_aliases` | food_id, alias | "the dessert from last Sunday", "my bread" |
+| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish, later recipe/off), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a whole dish (a canteen meal); "same name + same brand" is the same food, corrected in place |
+| `food_servings` | food_id, user_id, name, amount | named amounts of a food by weight or volume: "piece" = 60 g of egg, "slice" = 40 g of bread |
+| `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import) | |
-| `meal_items` | id, meal_id, food_id?, name, grams?, kcal, protein, carbs, fat, basis (food/label/estimate), note | **macro snapshot at log time**; editing a food later does not silently rewrite history |
+| `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
-| `days` | user_id, day, status (open/complete/excluded), training_day?, mood, hunger, note | check-in; `excluded` drops a day from calibration (restaurant, sick, forgot to log) |
+| `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log) |
 | `targets` | user_id, effective_from, kcal, kcal_training?, kcal_rest?, protein, carbs, fat, proposal_id? | effective-dated rows; the why lives in the proposal |
 | `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
 | `plan_settings` | user_id, autonomy (propose/autopilot), autopilot bounds, check-in weekday, guardrail overrides | guardrails are editable only in the UI, never through tools |
@@ -106,6 +107,36 @@ store layer and covered by tests that run every query as the wrong user.
 | `profile_notes` | user_id, text | free-text preferences and guidance (e.g. food dislikes, schedule constraints) handed to the AI as context |
 | `shopping_items` | user_id, text, done | |
 | `events` | id, user_id, at, actor, client, action, payload | audit trail; powers `undo_last` |
+
+A table of a user's rows carries `user_id` even when its parent row has
+it too (`meal_items`, `food_servings`, `food_aliases`), with a foreign
+key on the pair, so a child can never belong to another user's parent and
+the isolation test can compare every table by user.
+
+**Foods.** The agent works out what was eaten from a short description
+or a photo, finds it in the food DB, and saves what is new for next
+time; the code does the arithmetic. A food is one of:
+
+- **by weight or volume** (most of them): values per 100 g or 100 ml, so
+  any amount eaten is one multiplication, half a bar as much as a whole
+  one. Named servings turn "4 eggs" or "half a roll" into grams;
+- **per portion**: a dish judged as a whole (a canteen meal, a
+  restaurant plate), eaten whole or in part ("half a portion"). With the
+  portion's weight known it can be logged in grams too. When the agent
+  logs such a dish it asks whether to keep it for next time; the user
+  decides;
+- **a cooked dish without a recipe** (`source: dish`): the agent works
+  out the values per 100 g of the finished dish from the ingredients and
+  the weight of the pot, or roughly, and keeps the ingredients as a note;
+  a cake cut into pieces is a food per portion. This stays an option
+  after recipes come: a recipe stores its ingredients for a dish cooked
+  again, and produces the same kind of food, with `source: recipe`.
+
+A meal is a meal, not a row in the food DB: its items point at foods.
+The optional nutrients are kept when known (a label) and used when
+present; nobody has to enter them. Values are stored as they are and
+rounded only for display (kcal to a whole number, grams to a tenth, salt
+to a hundredth).
 
 **Metric merge rules** carry over from the predecessor: a manual weight beats an
 imported one, sleep is a max-merge per date, cumulative metrics never
@@ -142,22 +173,29 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `update_profile_notes(...)` | preferences and life context the coach should remember |
 | `shopping_list(op, items?)` | |
 
-`log_meal` items accept three shapes:
+`log_meal` items accept these shapes (field names are illustrative; the
+tool schema is the reference). An amount always names its unit, and it
+must be the food's: 250 ml of a food by weight is refused rather than
+taken for 250 g. Grams of a portion food work when its portion weight
+is known.
 
 ```jsonc
-{ "food_id": 17, "grams": 150 }                              // known food
-{ "name": "Greek yoghurt 2 %", "grams": 200,
-  "per_100g": { "kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2.0 },
-  "save_food": true, "source": "label" }                     // from a label
+{ "food_id": "0199…", "amount": 150, "unit": "g" }           // known food, in its unit (g or ml)
+{ "food_id": "0199…", "servings": 4, "serving": "piece" }    // a named serving: 4 eggs
+{ "food_id": "0199…", "portions": 0.5 }                      // half a canteen portion
+{ "food": { "name": "Greek yoghurt 2 %", "basis": "100g", "source": "label",
+            "kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2.0 },
+  "amount": 200, "unit": "g" }                               // a new food, saved as it is logged
 { "name": "Restaurant pasta", "kcal": 850, "protein": 32,
-  "carbs": 105, "fat": 30, "estimate": true }                // one-off estimate
+  "carbs": 105, "fat": 30 }                                  // a one-off estimate of a whole plate
 ```
 
 The response holds the stored meal (items with computed macros), the day
 totals against the day-type target, what remains, and `warnings`. Warning
-examples: the Atwater check (4P + 4C + 9F) is more than 15 % off the
-stated kcal, saturated fat is above total fat, a duplicate of a meal
-logged minutes ago.
+examples: the stated kcal are more than 15 % (and 10 kcal) off what the
+grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol, with fiber
+and polyols by any of the conventions labels use), saturated fat is
+above total fat, a duplicate of a meal logged minutes ago.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
 scripts.

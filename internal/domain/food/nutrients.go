@@ -1,0 +1,190 @@
+package food
+
+import (
+	"errors"
+	"fmt"
+	"math"
+)
+
+// Nutrients are energy (kcal) and grams of each macronutrient in some
+// amount of food. The optional ones are nil when unknown: nobody has to
+// enter them, and what uses them uses them only when they are there.
+type Nutrients struct {
+	Kcal    float64
+	Protein float64
+	Carbs   float64
+	Fat     float64
+
+	Fiber        *float64
+	SaturatedFat *float64
+	Sugars       *float64
+	Salt         *float64
+	// Polyols (sugar alcohols) are part of Carbs on an EU label, at 2.4
+	// kcal/g instead of 4.
+	Polyols *float64
+	// Alcohol, in grams (7 kcal/g), so a drink's energy adds up.
+	Alcohol *float64
+}
+
+// optional lists the optional nutrients of n with their names, for code
+// that treats them alike.
+func optional(n *Nutrients) []struct {
+	name string
+	v    **float64
+} {
+	return []struct {
+		name string
+		v    **float64
+	}{
+		{"fiber", &n.Fiber},
+		{"saturated fat", &n.SaturatedFat},
+		{"sugars", &n.Sugars},
+		{"salt", &n.Salt},
+		{"polyols", &n.Polyols},
+		{"alcohol", &n.Alcohol},
+	}
+}
+
+// Scale returns n for f times the amount: 1.5 servings, 250/100 g.
+// Optional nutrients that are unknown stay unknown.
+func (n Nutrients) Scale(f float64) Nutrients {
+	out := Nutrients{Kcal: n.Kcal * f, Protein: n.Protein * f, Carbs: n.Carbs * f, Fat: n.Fat * f}
+	src, dst := optional(&n), optional(&out)
+	for i := range src {
+		if v := *src[i].v; v != nil {
+			s := *v * f
+			*dst[i].v = &s
+		}
+	}
+	return out
+}
+
+// Add returns the sum of n and m. An optional nutrient is the sum of the
+// amounts known, and unknown only when neither knows it: a day's fiber
+// covers the meals that stated it, not the others.
+func (n Nutrients) Add(m Nutrients) Nutrients {
+	out := Nutrients{Kcal: n.Kcal + m.Kcal, Protein: n.Protein + m.Protein, Carbs: n.Carbs + m.Carbs, Fat: n.Fat + m.Fat}
+	a, b, dst := optional(&n), optional(&m), optional(&out)
+	for i := range a {
+		x, y := *a[i].v, *b[i].v
+		if x == nil && y == nil {
+			continue
+		}
+		var s float64
+		if x != nil {
+			s += *x
+		}
+		if y != nil {
+			s += *y
+		}
+		*dst[i].v = &s
+	}
+	return out
+}
+
+// Validate reports nutrients that cannot be: negative or not a number.
+func (n Nutrients) Validate() error {
+	var errs []error
+	for _, c := range []struct {
+		name string
+		v    float64
+	}{{"kcal", n.Kcal}, {"protein", n.Protein}, {"carbs", n.Carbs}, {"fat", n.Fat}} {
+		if !finite(c.v) || c.v < 0 {
+			errs = append(errs, fmt.Errorf("%s %v: want a number, zero or more", c.name, c.v))
+		}
+	}
+	for _, o := range optional(&n) {
+		if v := *o.v; v != nil && (!finite(*v) || *v < 0) {
+			errs = append(errs, fmt.Errorf("%s %v: want a number, zero or more", o.name, *v))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// The most grams of nutrients 100 g or 100 ml of a food can hold: 100 g
+// (a little over for rounding on labels), and for 100 ml as much as the
+// densest food a client logs by volume, honey or syrup, at up to 1.5 g/ml.
+const (
+	maxGramsPer100g  = 101
+	maxGramsPer100ml = 150
+)
+
+// ValidatePer100 checks nutrients per 100 of basis (Per100g or Per100ml):
+// Validate, at most MaxKcalPer100 kcal, and no more grams of protein,
+// carbs, fat and alcohol together, or of one optional nutrient, than 100
+// g or 100 ml can hold.
+func (n Nutrients) ValidatePer100(basis Basis) error {
+	if err := n.Validate(); err != nil {
+		return err
+	}
+	unit, maxGrams := "g", float64(maxGramsPer100g)
+	if basis == Per100ml {
+		unit, maxGrams = "ml", maxGramsPer100ml
+	}
+	var errs []error
+	if n.Kcal > MaxKcalPer100 {
+		errs = append(errs, fmt.Errorf("%v kcal per 100 %s: want at most %d, the energy of pure fat", round1(n.Kcal), unit, MaxKcalPer100))
+	}
+	mass := n.Protein + n.Carbs + n.Fat + value(n.Alcohol)
+	if mass > maxGrams {
+		errs = append(errs, fmt.Errorf("protein, carbs, fat and alcohol add up to %v g per 100 %s: want at most %v",
+			round1(mass), unit, maxGrams))
+	}
+	for _, o := range optional(&n) {
+		if v := *o.v; v != nil && *v > maxGrams {
+			errs = append(errs, fmt.Errorf("%s %v g per 100 %s: want at most %v", o.name, round1(*v), unit, maxGrams))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Kcal from each gram, the Atwater factors (Regulation (EU) No 1169/2011,
+// Annex XIV, which also gives polyols 2.4).
+const (
+	kcalPerGramProtein = 4
+	kcalPerGramCarbs   = 4
+	kcalPerGramFat     = 9
+	kcalPerGramAlcohol = 7
+	kcalPerGramFiber   = 2
+)
+
+// AtwaterRange returns the least and the most energy the macronutrients
+// account for across the ways labels count it: 4 kcal per gram of protein
+// and carbs, 9 per gram of fat, 7 of alcohol, and then fiber and polyols
+// by convention. Fiber is outside the carbs
+// at 2 kcal/g on an EU label, may be left out of the energy, or is inside
+// the carbs and taken back out (a US label): from -4 to +2 kcal a gram.
+// Polyols are inside the carbs at 2.4 kcal/g, or at 0 (erythritol), or
+// counted as carbs: from -4 to 0 kcal a gram.
+func (n Nutrients) AtwaterRange() (least, most float64) {
+	base := kcalPerGramProtein*n.Protein + kcalPerGramCarbs*n.Carbs + kcalPerGramFat*n.Fat + kcalPerGramAlcohol*value(n.Alcohol)
+	fiber, polyols := value(n.Fiber), value(n.Polyols)
+	return max(0, base-kcalPerGramCarbs*fiber-kcalPerGramCarbs*polyols), base + kcalPerGramFiber*fiber
+}
+
+// Rounded returns n as it is shown: kcal to a whole number, grams to one
+// decimal, salt to two (a label gives 0.08 g). Stored values keep their
+// precision, so sums stay exact.
+func (n Nutrients) Rounded() Nutrients {
+	out := Nutrients{Kcal: math.Round(n.Kcal), Protein: round1(n.Protein), Carbs: round1(n.Carbs), Fat: round1(n.Fat)}
+	src, dst := optional(&n), optional(&out)
+	for i := range src {
+		if v := *src[i].v; v != nil {
+			r := round1(*v)
+			if src[i].v == &n.Salt {
+				r = math.Round(*v*100) / 100
+			}
+			*dst[i].v = &r
+		}
+	}
+	return out
+}
+
+func value(p *float64) float64 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func round1(v float64) float64 { return math.Round(v*10) / 10 }
