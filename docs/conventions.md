@@ -316,8 +316,11 @@ in `web/`.
   event records must be what `stateNow` reads back, so the two compare
   alike: read it back in the transaction, or normalise it as the table
   does (-0 to 0, a time to the second in UTC). A way back that clashes
-  with what came since returns one of the clashes in `events.go`, whose
-  text is the reason the user is given.
+  with what came since returns a `clash` with its `UndoReason` (a new
+  kind of clash is a new reason), and a way back reads the change's own
+  data through `decode`, `entityID` and `entityDay`: those failures pass
+  the change over, while any other error, a bug included, is returned
+  and passes over nothing.
 - **One user's data stays theirs:**
   - every store method that reads or writes a user's rows takes the
     user's ID as a parameter and filters by it (`WHERE user_id = ?`).

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -163,7 +162,7 @@ func takeBackMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 		return err
 	}
 	var s mealState
-	if err := json.Unmarshal(e.Before, &s); err != nil {
+	if err := decode(e.Before, &s); err != nil {
 		return err
 	}
 	if e.Action == event.MealReplace {
@@ -175,7 +174,7 @@ func takeBackMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 	// items keep them, unless another meal took one since.
 	err := insertMeal(ctx, tx, userID, s, nil, now)
 	if errors.Is(err, ErrMealConflict) {
-		return fmt.Errorf("%w: %w", errItemTaken, err)
+		return fmt.Errorf("%w: %w", clash{UndoItemTaken}, err)
 	}
 	return err
 }
@@ -612,13 +611,13 @@ func setExclusion(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date,
 
 // takeBackDay puts the day of e back in or out of calibration as before.
 func takeBackDay(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
-	d, err := day.ParseDate(e.Entity)
+	d, err := entityDay(e.Entity)
 	if err != nil {
 		return err
 	}
 	var s exclusionState
 	if e.Before != nil {
-		if err := json.Unmarshal(e.Before, &s); err != nil {
+		if err := decode(e.Before, &s); err != nil {
 			return err
 		}
 	}

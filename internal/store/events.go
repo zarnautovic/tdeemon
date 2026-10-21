@@ -19,42 +19,56 @@ import (
 // ErrNothingToUndo reports that the user has no change left to undo.
 var ErrNothingToUndo = errors.New("nothing to undo")
 
-// The ways back return these when putting the entity back would clash
-// with what came since; each one's text is the conflict's reason.
-var (
-	errNameTaken  = errors.New("another food has taken its name since")
-	errAliasTaken = errors.New("another food has taken one of its aliases since")
-	errItemTaken  = errors.New("another meal has taken one of its items since")
+// UndoReason says why a change cannot be undone, in words for the user
+// or the model; a client that translates them tells them apart by the
+// constants.
+type UndoReason string
+
+// The reasons a change cannot be undone.
+const (
+	// UndoChanged: the entity is no longer as the change left it (an
+	// import wrote it, or a later change that undo passed over).
+	UndoChanged UndoReason = "it changed since"
+	// UndoNameTaken: another food took the food's name.
+	UndoNameTaken UndoReason = "another food has taken its name since"
+	// UndoAliasTaken: another food took one of the food's aliases.
+	UndoAliasTaken UndoReason = "another food has taken one of its aliases since"
+	// UndoItemTaken: another meal took one of the meal's item ids.
+	UndoItemTaken UndoReason = "another meal has taken one of its items since"
+	// UndoUnreadable: the change's entity or a state of it does not
+	// decode, or the entity's state cannot be read.
+	UndoUnreadable UndoReason = "its state cannot be read"
+	// UndoStuck: the state before breaks a rule of a table now.
+	UndoStuck UndoReason = "it cannot be put back"
 )
 
-// The reasons of the conflicts that are not a clash.
-const (
-	reasonChanged    = "it changed since"
-	reasonUnreadable = "its state cannot be read"
-	reasonStuck      = "it cannot be put back"
-)
+// clash is what a way back returns, before it writes anything, when
+// putting the entity back would clash with what came since.
+type clash struct{ reason UndoReason }
+
+func (c clash) Error() string { return string(c.reason) }
+
+// errUnreadable marks a change whose own data, its entity or a state of
+// it, does not decode.
+var errUnreadable = errors.New("the change does not decode")
 
 // UndoConflictError reports that the latest change could not be taken
-// back: the entity changed since (an import wrote it), putting it back
-// clashes with what came since (another food took the name, another meal
-// an item), or the change itself cannot be read or put back (its state
-// breaks a rule of the table now). The change is passed over from then
-// on, so the next undo takes back the one before it.
+// back: the entity changed since, putting it back clashes with what came
+// since, or the change cannot be read or put back; Reason says which. The
+// change is passed over from then on, so the next undo takes back the one
+// before it.
 type UndoConflictError struct {
-	Event event.Event
-	// Reason says why, in words for the user or the model: "it changed
-	// since", what it clashes with, or that it cannot be read or put back.
-	Reason string
-	// Err is what failed, if anything did: for the logs, not for the
-	// user. Unwrap returns it.
+	Event  event.Event
+	Reason UndoReason
+	// Err is what failed, if anything did: for the logs, not for the user.
+	// It is not unwrapped, so a conflict does not pass for an error of the
+	// write that clashed (ErrMealConflict).
 	Err error
 }
 
 func (e *UndoConflictError) Error() string {
 	return fmt.Sprintf("%s of %s cannot be undone: %s", e.Event.Action, e.Event.Entity, e.Reason)
 }
-
-func (e *UndoConflictError) Unwrap() error { return e.Err }
 
 // MaxEvents bounds Events.
 const MaxEvents = 100
@@ -168,7 +182,8 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 // an event of a's, and returns the event it took back, marked undone.
 // Undoing again takes back the change before: undo walks back, it does
 // not redo. When the entity is no longer as the change left it (an import
-// wrote it since), putting it back would lose that; when putting it back
+// wrote it, or a later change that undo passed over), putting it back
+// would lose that; when putting it back
 // clashes with what came since, or the change cannot be read or put
 // back, it cannot be undone. Then UndoLast changes nothing, returns an
 // *UndoConflictError, and passes over that change from then on. A failure
@@ -227,7 +242,7 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 // must not keep undo from the ones before it. A failure of the database
 // or of ctx is not the change's, and it returns it as an error.
 func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) (any, *UndoConflictError, error) {
-	passOver := func(reason string, cause error) (any, *UndoConflictError, error) {
+	passOver := func(reason UndoReason, cause error) (any, *UndoConflictError, error) {
 		_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
 		return nil, &UndoConflictError{Event: e, Reason: reason, Err: cause}, err
 	}
@@ -236,12 +251,12 @@ func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 		if !belongsToChange(err) {
 			return nil, nil, fmt.Errorf("state of %s: %w", e.Entity, err)
 		}
-		return passOver(reasonUnreadable, err)
+		return passOver(UndoUnreadable, err)
 	}
 	if c, err := stateJSON(current); err != nil {
 		return nil, nil, err
 	} else if want, _ := stateJSON(e.After); c != want {
-		return passOver(reasonChanged, nil)
+		return passOver(UndoChanged, nil)
 	}
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT take_back"); err != nil {
 		return nil, nil, err
@@ -257,11 +272,11 @@ func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 		if _, rerr := tx.ExecContext(ctx, "RELEASE take_back"); rerr != nil {
 			return nil, nil, errors.Join(err, rerr)
 		}
-		reason := reasonStuck
-		for _, clash := range []error{errNameTaken, errAliasTaken, errItemTaken} {
-			if errors.Is(err, clash) {
-				reason = clash.Error()
-			}
+		reason := UndoStuck
+		if c, ok := errors.AsType[clash](err); ok {
+			reason = c.reason
+		} else if errors.Is(err, errUnreadable) {
+			reason = UndoUnreadable
 		}
 		return passOver(reason, err)
 	}
@@ -276,17 +291,43 @@ func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 
 // belongsToChange reports whether err, from reading a change's entity or
 // putting it back, is the change's: a clash with what came since, a rule
-// of a table that its state breaks now, a state that does not decode.
-// SQLite's other errors (a disk that is full, a table gone) and those of
-// the context are not: they say nothing about the change, and may pass.
+// of a table that its state breaks now, its own data that does not
+// decode. Any other error is not: a failure of the database (a disk that
+// is full, a table gone, a row that does not read), of the context, or a
+// bug, which must not use up the user's changes unseen.
 func belongsToChange(err error) bool {
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return false
+	if _, ok := errors.AsType[clash](err); ok || errors.Is(err, errUnreadable) {
+		return true
 	}
-	if se, ok := errors.AsType[*sqlite.Error](err); ok {
-		return se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
+	se, ok := errors.AsType[*sqlite.Error](err)
+	return ok && se.Code()&0xff == sqlite3.SQLITE_CONSTRAINT
+}
+
+// decode decodes state, one of a change's, into v.
+func decode(state json.RawMessage, v any) error {
+	if err := json.Unmarshal(state, v); err != nil {
+		return fmt.Errorf("%w: %w", errUnreadable, err)
 	}
-	return true
+	return nil
+}
+
+// entityID returns the id e's entity names.
+func entityID(e event.Event) (uuid.UUID, error) {
+	id, err := uuid.Parse(e.Entity)
+	if err != nil {
+		return uuid.Nil(), fmt.Errorf("%w: entity %q: %w", errUnreadable, e.Entity, err)
+	}
+	return id, nil
+}
+
+// entityDay returns the day s names, an entity or the part of one before
+// a metric's kind.
+func entityDay(s string) (day.Date, error) {
+	d, err := day.ParseDate(s)
+	if err != nil {
+		return day.Date{}, fmt.Errorf("%w: entity day %q: %w", errUnreadable, s, err)
+	}
+	return d, nil
 }
 
 // stateNow returns the state of e's entity now, as e's kind of event
@@ -296,7 +337,7 @@ func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) 
 	case event.FoodSave, event.FoodArchive:
 		return foodStateNow(ctx, tx, userID, e)
 	case event.MealCreate, event.MealReplace, event.MealDelete:
-		id, err := uuid.Parse(e.Entity)
+		id, err := entityID(e)
 		if err != nil {
 			return nil, err
 		}
@@ -306,7 +347,7 @@ func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) 
 		}
 		return s, err
 	case event.DayExclude, event.DayInclude:
-		d, err := day.ParseDate(e.Entity)
+		d, err := entityDay(e.Entity)
 		if err != nil {
 			return nil, err
 		}

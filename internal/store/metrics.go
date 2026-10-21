@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -231,7 +230,7 @@ func dropMetric(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, k
 // records them: the value (nil when none) of a single kind, or each kind's.
 func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
 	dayPart, kind, single := strings.Cut(e.Entity, "/")
-	d, err := day.ParseDate(dayPart)
+	d, err := entityDay(dayPart)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +242,7 @@ func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 		return v, nil
 	}
 	var after metricsState
-	if err := json.Unmarshal(e.After, &after); err != nil {
+	if err := decode(e.After, &after); err != nil {
 		return nil, err
 	}
 	now := metricsState{}
@@ -265,7 +264,7 @@ func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 // value e changed as before, or gone where the day had none.
 func takeBackMetrics(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
 	dayPart, kind, single := strings.Cut(e.Entity, "/")
-	d, err := day.ParseDate(dayPart)
+	d, err := entityDay(dayPart)
 	if err != nil {
 		return err
 	}
@@ -273,12 +272,12 @@ func takeBackMetrics(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 	if single {
 		var v *metric.Value
 		if e.Before != nil {
-			if err := json.Unmarshal(e.Before, &v); err != nil {
+			if err := decode(e.Before, &v); err != nil {
 				return err
 			}
 		}
 		before[metric.Kind(kind)] = v
-	} else if err := json.Unmarshal(e.Before, &before); err != nil {
+	} else if err := decode(e.Before, &before); err != nil {
 		return err
 	}
 	for k, v := range before {
