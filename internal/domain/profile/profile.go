@@ -74,8 +74,8 @@ func (p Profile) Complete() bool { return len(p.Missing()) == 0 }
 
 // Validate reports every field that is given and breaks its rule, joined
 // into one error: a sex other than Male or Female, a birth date after
-// today or more than MaxAge years before it, a height outside MinHeightCm
-// to MaxHeightCm. A field that is not given is not an error here; Missing
+// today or one that makes the age today, in whole years, more than
+// MaxAge, and a height outside MinHeightCm to MaxHeightCm. A field that is not given is not an error here; Missing
 // says what a plan still needs.
 func (p Profile) Validate(today day.Date) error {
 	var errs []error

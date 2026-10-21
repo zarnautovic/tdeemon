@@ -101,7 +101,9 @@ func (p Phase) validateRate() error {
 }
 
 // On reports whether day d lies in p: from its start to its end, both
-// included, or on from its start when it has none.
+// included, or on from its start when it has none. It knows nothing of
+// the next phase, which ends an open one; PhaseOn finds the phase of a
+// day on a timeline.
 func (p Phase) On(d day.Date) bool {
 	return !d.Before(p.Start) && (p.End.IsZero() || !p.End.Before(d))
 }
