@@ -26,7 +26,7 @@ func bar() food.Food {
 
 func saveFood(t *testing.T, db *store.DB, userID uuid.UUID, f food.Food) food.Food {
 	t.Helper()
-	got, err := db.SaveFood(t.Context(), userID, f, t0)
+	got, err := db.SaveFood(t.Context(), userID, testActor, f, t0)
 	if err != nil {
 		t.Fatalf("SaveFood(%s): %v", f.Name, err)
 	}
@@ -109,7 +109,7 @@ func TestSaveFoodByID(t *testing.T) {
 	other.Name, other.Aliases = "Protein bar Cookies", nil
 	saveFood(t, db, ana, other)
 	f.Name = "PROTEIN BAR cookies"
-	if _, err := db.SaveFood(t.Context(), ana, f, t0); !errors.Is(err, store.ErrNameTaken) {
+	if _, err := db.SaveFood(t.Context(), ana, testActor, f, t0); !errors.Is(err, store.ErrNameTaken) {
 		t.Errorf("rename onto another food = %v, want ErrNameTaken", err)
 	}
 }
@@ -122,13 +122,13 @@ func TestSaveFoodRefuses(t *testing.T) {
 	// An alias another food goes by.
 	other := bar()
 	other.Name, other.Aliases = "Protein bar Cookies", []string{"Caramel  BAR"}
-	if _, err := db.SaveFood(t.Context(), ana, other, t0); !errors.Is(err, store.ErrAliasTaken) {
+	if _, err := db.SaveFood(t.Context(), ana, testActor, other, t0); !errors.Is(err, store.ErrAliasTaken) {
 		t.Errorf("a taken alias = %v, want ErrAliasTaken", err)
 	}
 	// A food that breaks the rules.
 	bad := bar()
 	bad.Nutrients.Kcal = -1
-	if _, err := db.SaveFood(t.Context(), ana, bad, t0); err == nil || !strings.Contains(err.Error(), "invalid food") {
+	if _, err := db.SaveFood(t.Context(), ana, testActor, bad, t0); err == nil || !strings.Contains(err.Error(), "invalid food") {
 		t.Errorf("an invalid food = %v", err)
 	}
 }
@@ -186,7 +186,7 @@ func TestSaveFoodRevivesAnArchivedOne(t *testing.T) {
 
 	db, ana, _ := withTwoUsers(t)
 	old := saveFood(t, db, ana, bar())
-	if err := db.SetFoodArchived(t.Context(), ana, old.ID, true, t0); err != nil {
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, old.ID, true, t0); err != nil {
 		t.Fatal(err)
 	}
 	again := bar()
@@ -244,7 +244,7 @@ func TestFoodsBelongToTheirUser(t *testing.T) {
 	if _, err := db.FoodByID(t.Context(), ivo, anas.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("ivo reading ana's food = %v, want ErrNotFound", err)
 	}
-	if err := db.SetFoodArchived(t.Context(), ivo, anas.ID, true, t0); !errors.Is(err, store.ErrNotFound) {
+	if err := db.SetFoodArchived(t.Context(), ivo, testActor, anas.ID, true, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("ivo archiving ana's food = %v, want ErrNotFound", err)
 	}
 	found, err := db.FindFoods(t.Context(), ivo, "caramel", 10)
@@ -290,7 +290,7 @@ func TestFindFoods(t *testing.T) {
 	bread := mk("Proteinski kruh", "", "moj kruh")
 	pecivo := mk("Pecivo sa sezamom", "Kruh i pecivo")
 	gone := mk("Stari kruh", "")
-	if err := db.SetFoodArchived(t.Context(), ana, gone.ID, true, t0); err != nil {
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, gone.ID, true, t0); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -412,7 +412,7 @@ func TestFindFoodsArchived(t *testing.T) {
 
 	db, ana, _ := withTwoUsers(t)
 	f := saveFood(t, db, ana, bar())
-	if err := db.SetFoodArchived(t.Context(), ana, f.ID, true, t0); err != nil {
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, f.ID, true, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := db.FindFoods(t.Context(), ana, "caramel", 10); len(got) != 0 {
@@ -421,7 +421,7 @@ func TestFindFoodsArchived(t *testing.T) {
 	if got, err := db.FoodByID(t.Context(), ana, f.ID); err != nil || !got.Archived {
 		t.Errorf("FoodByID of an archived food = %+v, %v", got, err)
 	}
-	if err := db.SetFoodArchived(t.Context(), ana, f.ID, false, t0); err != nil {
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, f.ID, false, t0); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := db.FindFoods(t.Context(), ana, "caramel", 10); len(got) != 1 {
@@ -457,7 +457,7 @@ func TestFoodStoreFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.WithoutCancel(t.Context())
-	if _, err := db.SaveFood(ctx, ana, bar(), t0); err == nil {
+	if _, err := db.SaveFood(ctx, ana, testActor, bar(), t0); err == nil {
 		t.Error("SaveFood on a closed database succeeded")
 	}
 	if _, err := db.FoodByID(ctx, ana, f.ID); err == nil || errors.Is(err, store.ErrNotFound) {
@@ -466,7 +466,7 @@ func TestFoodStoreFailures(t *testing.T) {
 	if _, err := db.FindFoods(ctx, ana, "bar", 5); err == nil {
 		t.Error("FindFoods on a closed database succeeded")
 	}
-	if err := db.SetFoodArchived(ctx, ana, f.ID, true, t0); err == nil || errors.Is(err, store.ErrNotFound) {
+	if err := db.SetFoodArchived(ctx, ana, testActor, f.ID, true, t0); err == nil || errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SetFoodArchived on a closed database = %v", err)
 	}
 }

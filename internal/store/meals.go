@@ -3,12 +3,14 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
@@ -17,6 +19,11 @@ import (
 // user's meals (not a retry of it), or an item under the id of an item of
 // another of the user's meals.
 var ErrMealConflict = errors.New("a meal with this id holds something else")
+
+// ErrMealDeleted reports a meal created under the id of one of the
+// user's meals that was deleted (or its create undone): a late retry of
+// its create does not bring it back.
+var ErrMealDeleted = errors.New("the meal under this id was deleted")
 
 const mealColumns = "m.id, m.eaten_at, m.day, m.description, m.client, m.note"
 
@@ -39,11 +46,16 @@ const itemColumns = `i.id, i.food_id, i.name, i.quantity_amount, i.quantity_unit
 // Creating is idempotent on m's id: the same meal sent again (the same
 // meal.Meal.Fingerprint as when it was created) returns the meal as it is
 // now, edits included, and false, and nothing changes; another meal under
-// the id is ErrMealConflict. Ids are per user: another user's meal under
-// the id is no meal of this user's. The time eaten is kept to the second.
-func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now time.Time) (meal.Meal, bool, error) {
+// the id is ErrMealConflict, and an id whose meal was deleted is
+// ErrMealDeleted. Ids are per user: another user's meal under the id is
+// no meal of this user's. The time eaten is kept to the second. A meal
+// created is recorded as a's event.
+func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, m meal.Meal, now time.Time) (meal.Meal, bool, error) {
 	if err := m.Validate(); err != nil {
 		return meal.Meal{}, false, fmt.Errorf("invalid meal: %w", err)
+	}
+	if err := a.Validate(); err != nil {
+		return meal.Meal{}, false, fmt.Errorf("invalid actor: %w", err)
 	}
 	created := false
 	var stored meal.Meal
@@ -58,28 +70,108 @@ func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
 		default:
+			if err := checkNotDeleted(ctx, tx, userID, m.ID); err != nil {
+				return err
+			}
 			created = true
-			if _, err := tx.ExecContext(ctx, `INSERT INTO meals
-				(id, user_id, eaten_at, day, description, client, note, fingerprint, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				m.ID.String(), userID.String(), formatTime(m.EatenAt), m.Day.String(), m.Description, string(m.Client),
-				m.Note, m.Fingerprint(), formatTime(now), formatTime(now)); err != nil {
+			s := mealState{Meal: m, Fingerprint: m.Fingerprint(), CreatedAt: now}
+			if err := insertMeal(ctx, tx, userID, s, nil, now); err != nil {
 				return err
 			}
-			if err := insertItems(ctx, tx, userID, m, nil); err != nil {
+			if stored, err = mealInTx(ctx, tx, userID, m.ID); err != nil {
 				return err
 			}
+			s.Meal = stored
+			_, err = record(ctx, tx, userID, a, event.MealCreate, m.ID.String(), nil, s, now)
+			return err
 		}
 		stored, err = mealInTx(ctx, tx, userID, m.ID)
 		return err
 	})
-	if errors.Is(err, ErrMealConflict) {
+	if errors.Is(err, ErrMealConflict) || errors.Is(err, ErrMealDeleted) {
 		return meal.Meal{}, false, err
 	}
 	if err != nil {
 		return meal.Meal{}, false, fmt.Errorf("create meal: %w", err)
 	}
 	return stored, created, nil
+}
+
+// mealState is a meal as an event records it: with the fingerprint and
+// the time of its create, so a meal put back answers retries as before.
+type mealState struct {
+	Meal        meal.Meal
+	Fingerprint string
+	CreatedAt   time.Time
+}
+
+// stateOf returns the state of userID's meal id in tx.
+func stateOf(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (mealState, error) {
+	m, err := mealInTx(ctx, tx, userID, id)
+	if err != nil {
+		return mealState{}, err
+	}
+	s := mealState{Meal: m}
+	var created string
+	if err := tx.QueryRowContext(ctx, "SELECT fingerprint, created_at FROM meals WHERE user_id = ? AND id = ?",
+		userID.String(), id.String()).Scan(&s.Fingerprint, &created); err != nil {
+		return mealState{}, err
+	}
+	s.CreatedAt, err = parseTime(created)
+	return s, err
+}
+
+// checkNotDeleted returns ErrMealDeleted when userID's events show a meal
+// under id that is no longer there: the tombstone of a delete, or of an
+// undone create.
+func checkNotDeleted(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) error {
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM events
+		WHERE user_id = ? AND entity = ? AND operation IN ('meal.create', 'meal.delete')`,
+		userID.String(), id.String()).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrMealDeleted
+	}
+	return nil
+}
+
+// insertMeal writes the meal of s, with its fingerprint and the time of
+// its create, and its items; an item keeps its id when kept holds it.
+func insertMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, s mealState, kept map[uuid.UUID]bool, now time.Time) error {
+	m := s.Meal
+	if _, err := tx.ExecContext(ctx, `INSERT INTO meals
+		(id, user_id, eaten_at, day, description, client, note, fingerprint, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		m.ID.String(), userID.String(), formatTime(m.EatenAt), m.Day.String(), m.Description, string(m.Client),
+		m.Note, s.Fingerprint, formatTime(s.CreatedAt), formatTime(now)); err != nil {
+		return err
+	}
+	return insertItems(ctx, tx, userID, m, kept)
+}
+
+// takeBackMeal puts the meal of e back as it was: a meal e created goes
+// (and its id stays a tombstone), an edited one is as before, a deleted
+// one is back with its fingerprint, the time of its create and its item
+// ids.
+func takeBackMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
+	if e.Action == event.MealCreate {
+		_, err := tx.ExecContext(ctx, "DELETE FROM meals WHERE user_id = ? AND id = ?", userID.String(), e.Entity)
+		return err
+	}
+	var s mealState
+	if err := json.Unmarshal(e.Before, &s); err != nil {
+		return err
+	}
+	if e.Action == event.MealReplace {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM meals WHERE user_id = ? AND id = ?", userID.String(), e.Entity); err != nil {
+			return err
+		}
+	}
+	// The meal's rows are gone, so its items' ids are free again and the
+	// items keep them.
+	return insertMeal(ctx, tx, userID, s, nil, now)
 }
 
 // mealInTx reads userID's meal id, with its items, in tx.
@@ -102,13 +194,21 @@ func mealInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (meal.Meal,
 // ErrMealConflict); an item without one gets a new id. The client the
 // meal was logged through and its fingerprint stay: a late retry of the
 // create returns the edited meal. A meal the user does not have is
-// ErrNotFound.
-func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now time.Time) (meal.Meal, error) {
+// ErrNotFound. The edit is recorded as a's event, with the meal before
+// and after.
+func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, a event.Actor, m meal.Meal, now time.Time) (meal.Meal, error) {
 	if err := m.Validate(); err != nil {
 		return meal.Meal{}, fmt.Errorf("invalid meal: %w", err)
 	}
+	if err := a.Validate(); err != nil {
+		return meal.Meal{}, fmt.Errorf("invalid actor: %w", err)
+	}
 	var stored meal.Meal
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		before, err := stateOf(ctx, tx, userID, m.ID)
+		if err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE meals SET eaten_at = ?, day = ?, description = ?, note = ?,
 			updated_at = ? WHERE id = ? AND user_id = ?`,
 			formatTime(m.EatenAt), m.Day.String(), m.Description, m.Note, formatTime(now), m.ID.String(), userID.String())
@@ -131,7 +231,12 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, no
 		if err := insertItems(ctx, tx, userID, m, kept); err != nil {
 			return err
 		}
-		stored, err = mealInTx(ctx, tx, userID, m.ID)
+		after, err := stateOf(ctx, tx, userID, m.ID)
+		if err != nil {
+			return err
+		}
+		stored = after.Meal
+		_, err = record(ctx, tx, userID, a, event.MealReplace, m.ID.String(), before, after, now)
 		return err
 	})
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) {
@@ -212,20 +317,31 @@ func insertItems(ctx context.Context, tx *sql.Tx, userID uuid.UUID, m meal.Meal,
 }
 
 // DeleteMeal removes userID's meal with id and its items, or returns
-// ErrNotFound.
-func (db *DB) DeleteMeal(ctx context.Context, userID, id uuid.UUID) error {
-	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, "DELETE FROM meals WHERE id = ? AND user_id = ?", id.String(), userID.String())
+// ErrNotFound. It is recorded as a's event, with the meal before: undo
+// puts it back, and the event is the tombstone that keeps a late retry
+// of its create from bringing it back (ErrMealDeleted).
+func (db *DB) DeleteMeal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, now time.Time) error {
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("invalid actor: %w", err)
+	}
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		before, err := stateOf(ctx, tx, userID, id)
 		if err != nil {
-			return fmt.Errorf("delete meal: %w", err)
+			return err
 		}
-		if n, err := res.RowsAffected(); err != nil {
-			return fmt.Errorf("delete meal: %w", err)
-		} else if n == 0 {
-			return ErrNotFound
+		if _, err := tx.ExecContext(ctx, "DELETE FROM meals WHERE id = ? AND user_id = ?", id.String(), userID.String()); err != nil {
+			return err
 		}
-		return nil
+		_, err = record(ctx, tx, userID, a, event.MealDelete, id.String(), before, nil, now)
+		return err
 	})
+	if errors.Is(err, ErrNotFound) {
+		return err
+	}
+	if err != nil {
+		return fmt.Errorf("delete meal: %w", err)
+	}
+	return nil
 }
 
 // MealByID returns userID's meal with id, with its items in order, or
@@ -411,37 +527,96 @@ func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (
 }
 
 // ExcludeDay takes userID's logical day d out of calibration, for e's
-// reason, or changes the reason of a day already out.
-func (db *DB) ExcludeDay(ctx context.Context, userID uuid.UUID, d day.Date, e day.Exclusion, now time.Time) error {
+// reason, or changes the reason of a day already out. It is recorded as
+// a's event.
+func (db *DB) ExcludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, e day.Exclusion, now time.Time) error {
 	if err := day.ValidateExclusion(e); err != nil {
 		return fmt.Errorf("invalid exclusion: %w", err)
 	}
 	if d.IsZero() {
 		return errors.New("invalid exclusion: the day is missing")
 	}
-	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO days (user_id, day, excluded_reason, updated_at) VALUES (?, ?, ?, ?)
-			ON CONFLICT (user_id, day) DO UPDATE SET excluded_reason = excluded.excluded_reason, updated_at = excluded.updated_at`,
-			userID.String(), d.String(), e.Reason, formatTime(now))
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("invalid actor: %w", err)
+	}
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		before, err := exclusionOf(ctx, tx, userID, d)
 		if err != nil {
-			return fmt.Errorf("exclude day: %w", err)
+			return err
 		}
-		return nil
+		if err := setExclusion(ctx, tx, userID, d, &e.Reason, now); err != nil {
+			return err
+		}
+		_, err = record(ctx, tx, userID, a, event.DayExclude, d.String(), before, exclusionState{&e.Reason}, now)
+		return err
 	})
+	if err != nil {
+		return fmt.Errorf("exclude day: %w", err)
+	}
+	return nil
 }
 
-// IncludeDay brings userID's logical day d back into calibration. A day
-// not excluded stays as it is.
-func (db *DB) IncludeDay(ctx context.Context, userID uuid.UUID, d day.Date, now time.Time) error {
-	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx,
-			"UPDATE days SET excluded_reason = NULL, updated_at = ? WHERE user_id = ? AND day = ? AND excluded_reason IS NOT NULL",
-			formatTime(now), userID.String(), d.String())
-		if err != nil {
-			return fmt.Errorf("include day: %w", err)
+// IncludeDay brings userID's logical day d back into calibration, as a's
+// event. A day not excluded stays as it is, and nothing is recorded.
+func (db *DB) IncludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, now time.Time) error {
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("invalid actor: %w", err)
+	}
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		before, err := exclusionOf(ctx, tx, userID, d)
+		if err != nil || before.Reason == nil {
+			return err
 		}
-		return nil
+		if err := setExclusion(ctx, tx, userID, d, nil, now); err != nil {
+			return err
+		}
+		_, err = record(ctx, tx, userID, a, event.DayInclude, d.String(), before, exclusionState{}, now)
+		return err
 	})
+	if err != nil {
+		return fmt.Errorf("include day: %w", err)
+	}
+	return nil
+}
+
+// exclusionState is a day event's state: the reason the day is out of
+// calibration, or nil when it is in.
+type exclusionState struct{ Reason *string }
+
+func exclusionOf(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date) (exclusionState, error) {
+	var reason sql.NullString
+	err := tx.QueryRowContext(ctx, "SELECT excluded_reason FROM days WHERE user_id = ? AND day = ?",
+		userID.String(), d.String()).Scan(&reason)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return exclusionState{}, err
+	}
+	if reason.Valid {
+		return exclusionState{&reason.String}, nil
+	}
+	return exclusionState{}, nil
+}
+
+// setExclusion stores reason (nil: none) as userID's day d's.
+func setExclusion(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, reason *string, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO days (user_id, day, excluded_reason, updated_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (user_id, day) DO UPDATE SET excluded_reason = excluded.excluded_reason, updated_at = excluded.updated_at`,
+		userID.String(), d.String(), reason, formatTime(now))
+	return err
+}
+
+// takeBackDay puts the day of e back in or out of calibration as before.
+func takeBackDay(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
+	d, err := day.ParseDate(e.Entity)
+	if err != nil {
+		return err
+	}
+	var s exclusionState
+	if e.Before != nil {
+		if err := json.Unmarshal(e.Before, &s); err != nil {
+			return err
+		}
+	}
+	return setExclusion(ctx, tx, userID, d, s.Reason, now)
 }
 
 // Exclusions returns userID's excluded days from from to to, both

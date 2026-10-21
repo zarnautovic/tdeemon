@@ -3,12 +3,15 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 )
 
@@ -24,13 +27,16 @@ type MetricChange struct {
 // day holds, by metric.Merge, and returns the values that changed, in the
 // order of vs. Values that change nothing (an import under a manual value,
 // a part of the day's steps) are left out, so a sync sent twice changes
-// nothing the second time.
-func (db *DB) MergeMetrics(ctx context.Context, userID uuid.UUID, d day.Date, vs []metric.Value, now time.Time) ([]MetricChange, error) {
+// nothing the second time. What changed is recorded as one event of a's.
+func (db *DB) MergeMetrics(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, vs []metric.Value, now time.Time) ([]MetricChange, error) {
 	if err := metric.ValidateDay(vs); err != nil {
 		return nil, fmt.Errorf("invalid metrics: %w", err)
 	}
 	if d.IsZero() {
 		return nil, errors.New("invalid metrics: the day is missing")
+	}
+	if err := a.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid actor: %w", err)
 	}
 	var out []MetricChange
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
@@ -47,16 +53,20 @@ func (db *DB) MergeMetrics(ctx context.Context, userID uuid.UUID, d day.Date, vs
 			if !changed {
 				continue
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO metrics (user_id, day, metric, value, source, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?)
-				ON CONFLICT (user_id, day, metric) DO UPDATE SET
-					value = excluded.value, source = excluded.source, updated_at = excluded.updated_at`,
-				userID.String(), d.String(), string(kept.Kind), kept.Value, string(kept.Source), formatTime(now)); err != nil {
+			if err := putMetric(ctx, tx, userID, d, kept, now); err != nil {
 				return err
 			}
 			out = append(out, MetricChange{Before: current, After: kept})
 		}
-		return nil
+		if len(out) == 0 {
+			return nil
+		}
+		before, after := metricsState{}, metricsState{}
+		for _, c := range out {
+			before[c.After.Kind], after[c.After.Kind] = c.Before, &c.After
+		}
+		_, err := record(ctx, tx, userID, a, event.MetricsMerge, d.String(), before, after, now)
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("merge metrics: %w", err)
@@ -82,15 +92,17 @@ func metricOf(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, k m
 }
 
 // SetMetric stores v as the value of its kind on userID's day d, whatever
-// the day held, and returns what it held (nil for nothing): an undo
-// putting back what was there, recorded with what it replaced. Merging is
-// MergeMetrics.
-func (db *DB) SetMetric(ctx context.Context, userID uuid.UUID, d day.Date, v metric.Value, now time.Time) (*metric.Value, error) {
+// the day held and the merge rules aside, and returns what it held (nil
+// for nothing). It is recorded as a's event. Merging is MergeMetrics.
+func (db *DB) SetMetric(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, v metric.Value, now time.Time) (*metric.Value, error) {
 	if err := v.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid metric: %w", err)
 	}
 	if d.IsZero() {
 		return nil, errors.New("invalid metric: the day is missing")
+	}
+	if err := a.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid actor: %w", err)
 	}
 	var before *metric.Value
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
@@ -101,11 +113,10 @@ func (db *DB) SetMetric(ctx context.Context, userID uuid.UUID, d day.Date, v met
 		if found {
 			before = &stored
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO metrics (user_id, day, metric, value, source, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?)
-			ON CONFLICT (user_id, day, metric) DO UPDATE SET
-				value = excluded.value, source = excluded.source, updated_at = excluded.updated_at`,
-			userID.String(), d.String(), string(v.Kind), v.Value, string(v.Source), formatTime(now))
+		if err := putMetric(ctx, tx, userID, d, v, now); err != nil {
+			return err
+		}
+		_, err = record(ctx, tx, userID, a, event.MetricSet, metricEntity(d, v.Kind), before, v, now)
 		return err
 	})
 	if err != nil {
@@ -116,10 +127,13 @@ func (db *DB) SetMetric(ctx context.Context, userID uuid.UUID, d day.Date, v met
 
 // DeleteMetric removes the value of kind k from userID's day d and
 // returns it, or returns ErrNotFound. A wrong manual value deleted lets
-// imports apply again.
-func (db *DB) DeleteMetric(ctx context.Context, userID uuid.UUID, d day.Date, k metric.Kind) (metric.Value, error) {
+// imports apply again. It is recorded as a's event.
+func (db *DB) DeleteMetric(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, k metric.Kind, now time.Time) (metric.Value, error) {
 	if d.IsZero() {
 		return metric.Value{}, errors.New("delete metric: the day is missing")
+	}
+	if err := a.Validate(); err != nil {
+		return metric.Value{}, fmt.Errorf("invalid actor: %w", err)
 	}
 	var before metric.Value
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
@@ -131,8 +145,10 @@ func (db *DB) DeleteMetric(ctx context.Context, userID uuid.UUID, d day.Date, k 
 			return ErrNotFound
 		}
 		before = stored
-		_, err = tx.ExecContext(ctx, "DELETE FROM metrics WHERE user_id = ? AND day = ? AND metric = ?",
-			userID.String(), d.String(), string(k))
+		if err := dropMetric(ctx, tx, userID, d, k); err != nil {
+			return err
+		}
+		_, err = record(ctx, tx, userID, a, event.MetricDelete, metricEntity(d, k), stored, nil, now)
 		return err
 	})
 	if errors.Is(err, ErrNotFound) {
@@ -181,4 +197,60 @@ func (db *DB) Metrics(ctx context.Context, userID uuid.UUID, from, to day.Date) 
 		}
 	}
 	return out, nil
+}
+
+// metricsState is a metrics.merge event's state: the value of each kind
+// that changed, nil where the day had none.
+type metricsState map[metric.Kind]*metric.Value
+
+// metricEntity names a day's metric in an event: "2026-10-21/weight".
+func metricEntity(d day.Date, k metric.Kind) string { return d.String() + "/" + string(k) }
+
+// putMetric stores v as userID's day d's value of its kind.
+func putMetric(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, v metric.Value, now time.Time) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO metrics (user_id, day, metric, value, source, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (user_id, day, metric) DO UPDATE SET
+			value = excluded.value, source = excluded.source, updated_at = excluded.updated_at`,
+		userID.String(), d.String(), string(v.Kind), v.Value, string(v.Source), formatTime(now))
+	return err
+}
+
+func dropMetric(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, k metric.Kind) error {
+	_, err := tx.ExecContext(ctx, "DELETE FROM metrics WHERE user_id = ? AND day = ? AND metric = ?",
+		userID.String(), d.String(), string(k))
+	return err
+}
+
+// takeBackMetrics puts the day's values of e back as they were: each
+// value e changed as before, or gone where the day had none.
+func takeBackMetrics(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
+	dayPart, kind, single := strings.Cut(e.Entity, "/")
+	d, err := day.ParseDate(dayPart)
+	if err != nil {
+		return err
+	}
+	before := metricsState{}
+	if single {
+		var v *metric.Value
+		if e.Before != nil {
+			if err := json.Unmarshal(e.Before, &v); err != nil {
+				return err
+			}
+		}
+		before[metric.Kind(kind)] = v
+	} else if err := json.Unmarshal(e.Before, &before); err != nil {
+		return err
+	}
+	for k, v := range before {
+		if v == nil {
+			err = dropMetric(ctx, tx, userID, d, k)
+		} else {
+			err = putMetric(ctx, tx, userID, d, *v, now)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

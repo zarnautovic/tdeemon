@@ -305,6 +305,13 @@ in `web/`.
   snake_case keys (`"data_dir", dir`), no `fmt.Sprintf` in the message.
 - **Database:** the schema and migration rules are in
   [`internal/store/migrations/README.md`](../internal/store/migrations/README.md).
+- **Every write of a user's data is an event:** a store method that
+  writes takes the `event.Actor` (the user or an import, the client, the
+  model) and records an event in the same transaction, with the state
+  before and after, which undo puts back. A write that changes nothing (a
+  retry, a merge of nothing new) records nothing. A new kind of write
+  adds its `event.Action`, the operation to the `events` table's CHECK
+  and its way back to `takeBack`.
 - **One user's data stays theirs:**
   - every store method that reads or writes a user's rows takes the
     user's ID as a parameter and filters by it (`WHERE user_id = ?`).
