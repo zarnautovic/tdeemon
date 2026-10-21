@@ -385,6 +385,28 @@ func TestLoginEndsThePreviousSession(t *testing.T) {
 	}
 }
 
+// The session a sign-in ends is the one the request carries, whoever it
+// belongs to: ivo signing in where ana's session is ends hers.
+func TestLoginAsAnotherUserEndsTheCarriedSession(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", passwordHash(t))
+	ivo := user.User{
+		ID: uuid.NewV7(), Email: "ivo@example.com", Name: "Ivo", Role: user.RoleUser,
+		Locale: "en", TimeZone: "UTC", DayStartHour: 4, CreatedAt: in.clock.Now(), UpdatedAt: in.clock.Now(),
+	}
+	if err := in.db.CreateUser(t.Context(), ivo, passwordHash(t)); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	anas := sessionCookie(t, in.login(t, "ana@example.com", password))
+	if rec := in.login(t, "ivo@example.com", password, anas); rec.Code != http.StatusOK {
+		t.Fatalf("ivo's sign-in: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{anas}, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("ana's session after ivo signed in with it: %d, want 401", rec.Code)
+	}
+}
+
 func storedHash(t *testing.T, in *instance) string {
 	t.Helper()
 	_, h, err := in.db.UserCredentials(t.Context(), "ana@example.com")

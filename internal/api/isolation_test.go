@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -21,12 +22,14 @@ import (
 // and a sign-in replaces it, so the sign-in case writes a hash too.
 const isolationHash = "$argon2id$v=19$m=8,t=1,p=1$MDEyMzQ1Njc4OWFiY2RlZg$XdTJKPvVpEdCNu922dgwQXj+XfOITS04PpG3cDMn5sE"
 
-// party is one user of an isolationEnv and what they own: a session and
-// an API token with every scope.
+// party is one user of an isolationEnv and what they own: a session, an
+// API token with every scope that was used once, one never used, and an
+// OpenID Connect identity. A row in each state the queries tell apart.
 type party struct {
 	user    user.User
 	session *http.Cookie
 	token   createdToken
+	spare   createdToken
 }
 
 // tokenName is the name of the party's token, which only they may see.
@@ -77,12 +80,20 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
+		if p.spare, rec = in.createToken(t, p.session, `{"name":"`+p.user.Name+`'s spare","scopes":["read"]}`); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s's spare token: %d %s", p.user.Name, rec.Code, rec.Body.String())
+		}
+		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
+		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
+			t.Fatalf("link %s's identity: %v", p.user.Name, err)
+		}
 	}
 
 	e := isolationEnv{in: in, hits: h, owner: ana, other: ivos}
 	if adminActs {
 		e.owner, e.other = ivos, ana
 	}
+	e.bothHaveRowsEverywhere(t)
 	_, ownerValues := e.rowsOf(t, e.owner.user.ID)
 	_, otherValues := e.rowsOf(t, e.other.user.ID)
 	for _, v := range ownerValues {
@@ -90,7 +101,23 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 			e.ownerValues = append(e.ownerValues, v)
 		}
 	}
+	slices.Sort(e.ownerValues)
+	e.ownerValues = slices.Compact(e.ownerValues)
 	return e
+}
+
+// bothHaveRowsEverywhere fails unless both users have rows in every table
+// of user data: a table the fixture leaves empty compares [] with [] and
+// proves nothing. A new kind of data adds rows of it above.
+func (e isolationEnv) bothHaveRowsEverywhere(t *testing.T) {
+	t.Helper()
+	for _, tb := range e.userTables(t) {
+		for _, u := range []*user.User{&e.owner.user, &e.other.user} {
+			if rows, _ := e.tableRows(t, tb, u.ID); len(rows) == 0 {
+				t.Fatalf("%s has no rows in %s: newIsolationEnv must give both users rows of every kind", u.Name, tb.name)
+			}
+		}
+	}
 }
 
 // rowsOf returns every row of the database that belongs to the user with
@@ -110,13 +137,19 @@ func (e isolationEnv) rowsOf(t *testing.T, id uuid.UUID) (rows, values []string)
 // user.
 type userTable struct{ name, column string }
 
+// noOnesData are the tables that hold no user's data.
+var noOnesData = []string{"schema_migrations"}
+
 // userTables lists users and every table with a user_id column, from the
-// schema itself, so a new table is covered without a word here.
+// schema itself. A table with neither fails the test: it must name its
+// user (the rule in docs/conventions.md), or be listed in noOnesData, or,
+// for rows that belong to a user through a parent row, be compared here
+// through that parent.
 func (e isolationEnv) userTables(t *testing.T) []userTable {
 	t.Helper()
 	res, err := e.in.db.Read().QueryContext(t.Context(), `
 		SELECT m.name, EXISTS (SELECT 1 FROM pragma_table_info(m.name) WHERE name = 'user_id')
-		FROM sqlite_master AS m WHERE m.type = 'table' ORDER BY m.name`)
+		FROM sqlite_master AS m WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite\_%' ESCAPE '\' ORDER BY m.name`)
 	if err != nil {
 		t.Fatalf("list the tables: %v", err)
 	}
@@ -133,6 +166,8 @@ func (e isolationEnv) userTables(t *testing.T) []userTable {
 			out = append(out, userTable{name, "id"})
 		case hasUserID:
 			out = append(out, userTable{name, "user_id"})
+		case !slices.Contains(noOnesData, name):
+			t.Fatalf("table %s has no user_id column: the isolation test cannot tell whose its rows are", name)
 		}
 	}
 	if err := res.Err(); err != nil {
@@ -216,22 +251,39 @@ func (e isolationEnv) ownersTokenWorks(t *testing.T) {
 }
 
 // hits records, while on, the requests that got a 2xx answer, so a case
-// can be held to reaching its own operation.
+// can be held to reaching its own operation, and every answer, headers
+// and body, so none escapes the search for the owner's values.
 type hits struct {
-	next http.Handler
-	mu   sync.Mutex
-	on   bool
-	got  []string // "METHOD /path"
+	next    http.Handler
+	mu      sync.Mutex
+	on      bool
+	got     []string // "METHOD /path"
+	answers []answer
 }
+
+// answer is a response the other got: what was asked, and the headers
+// and body that came back.
+type answer struct{ request, text string }
 
 func (h *hits) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 	h.next.ServeHTTP(sw, r)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.on && sw.code < 300 {
+	if !h.on {
+		return
+	}
+	if sw.code < 300 {
 		h.got = append(h.got, r.Method+" "+r.URL.Path)
 	}
+	h.answers = append(h.answers, answer{r.Method + " " + r.URL.Path, fmt.Sprintf("%v %s", w.Header(), sw.body.String())})
+}
+
+// recorded returns the answers recorded so far.
+func (h *hits) recorded() []answer {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.answers)
 }
 
 func (h *hits) record(on bool) {
@@ -251,6 +303,7 @@ func (h *hits) reached(op operation) bool {
 type statusWriter struct {
 	http.ResponseWriter
 	code int
+	body bytes.Buffer
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -258,15 +311,23 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+func (w *statusWriter) Write(b []byte) (int, error) {
+	w.body.Write(b)
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.ResponseController reach the writer underneath.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
 // isolationCase runs one operation as the other user, against what the
 // owner has.
 type isolationCase func(t *testing.T, e isolationEnv)
 
 // read is the case of a GET: with the other's session and, withToken,
 // their token too, it must answer 200 (so the request got to the query,
-// not stuck at a check), show nothing of the owner's, and, where the
-// answer has user data, show what shows returns of the other's own (so
-// an empty answer does not pass).
+// not stuck at a check) and, where the answer has user data, show what
+// shows returns of the other's own (so an empty answer does not pass).
+// TestIsolation searches every answer for the owner's values.
 //
 //nolint:thelper // A case is a test, not a helper: a failure should point into it.
 func read(path string, withToken bool, shows func(e isolationEnv) []string) isolationCase {
@@ -288,7 +349,6 @@ func read(path string, withToken bool, shows func(e isolationEnv) []string) isol
 				t.Errorf("GET %s with the other's %s: %d %s, want 200", path, way, rec.Code, rec.Body.String())
 				continue
 			}
-			e.noneOfTheOwners(t, "GET "+path+" with the other's "+way, rec.Body.String())
 			if shows == nil {
 				continue
 			}
@@ -302,9 +362,10 @@ func read(path string, withToken bool, shows func(e isolationEnv) []string) isol
 }
 
 // isolationCases has one case for every operation in the OpenAPI
-// document. TestIsolation checks after each that the case got a 2xx from
-// its operation, that the owner's rows in the database and what the
-// owner sees have not changed, and that the owner's token still works;
+// document. TestIsolation checks after each that no answer showed the
+// owner's values, that the case got a 2xx from its operation, that the
+// owner's rows in the database and what the owner sees have not changed,
+// and that the owner's token still works;
 // TestIsolationCoversEveryOperation fails for an operation without a
 // case, and for a case without an operation.
 //
@@ -326,7 +387,6 @@ func isolationCases() map[string]isolationCase {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("the other's sign-in: %d %s", rec.Code, rec.Body.String())
 			}
-			e.noneOfTheOwners(t, "the other's sign-in", rec.Body.String())
 			if old := e.in.do(t, http.MethodGet, "/api/v1/auth/session", "", []*http.Cookie{e.other.session}, nil); old.Code != http.StatusUnauthorized {
 				t.Errorf("the other's previous session after signing in again: %d, want 401", old.Code)
 			}
@@ -348,7 +408,6 @@ func isolationCases() map[string]isolationCase {
 			if rec.Code != http.StatusCreated {
 				t.Fatalf("the other's new token: %d %s", rec.Code, rec.Body.String())
 			}
-			e.noneOfTheOwners(t, "the other's new token", rec.Body.String())
 			who := e.in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(created.Token))
 			if !strings.Contains(who.Body.String(), e.other.user.Email) {
 				t.Errorf("the other's new token acts for %s, want them", who.Body.String())
@@ -392,6 +451,9 @@ func TestIsolation(t *testing.T) {
 					e.hits.record(true)
 					run(t, e)
 					e.hits.record(false)
+					for _, a := range e.hits.recorded() {
+						e.noneOfTheOwners(t, "the answer to "+a.request, a.text)
+					}
 					if o, ok := ops[op]; ok && !e.hits.reached(o) {
 						t.Errorf("the case got no 2xx from %s %s, its operation", o.method, o.route)
 					}
