@@ -155,6 +155,30 @@ func TestSaveFoodUnderAnotherUsersID(t *testing.T) {
 	}
 }
 
+// Two users' foods under one id stay two foods all the way: search, and
+// the deletion of one user, which leaves the other's search row.
+func TestFoodsUnderOneIDStayApart(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	anas := saveFood(t, db, ana, bar())
+	ivos := food.Food{
+		ID: anas.ID, Name: "Raženi kruh", Basis: food.Per100g, Source: food.User,
+		Nutrients: food.Nutrients{Kcal: 250, Protein: 9, Carbs: 49, Fat: 3}, Aliases: []string{"ivin kruh"},
+	}
+	saveFood(t, db, ivo, ivos)
+	if got, _ := db.FindFoods(t.Context(), ana, "kruh", 10); len(got) != 0 {
+		t.Errorf("ana finds ivo's words through the shared id: %v", names(got))
+	}
+	if got, _ := db.FindFoods(t.Context(), ivo, "caramel", 10); len(got) != 0 {
+		t.Errorf("ivo finds ana's words through the shared id: %v", names(got))
+	}
+	exec(t, db, "DELETE FROM users WHERE id = '"+ana.String()+"'")
+	if got, _ := db.FindFoods(t.Context(), ivo, "kruh", 10); len(got) != 1 || got[0].ID != anas.ID {
+		t.Errorf("after ana's deletion ivo finds %v, want his bread", names(got))
+	}
+}
+
 // Saving the name and brand of an archived food corrects it and brings it
 // back into search.
 func TestSaveFoodRevivesAnArchivedOne(t *testing.T) {

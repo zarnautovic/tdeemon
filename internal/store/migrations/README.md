@@ -70,7 +70,11 @@ the `schema_migrations` table.
   transaction, and an `AFTER DELETE` trigger on the source table removes
   its rows however the source row goes (a user's deletion cascades
   without the store). Rank its results by the user's rows alone, not
-  `bm25()`, whose statistics span every user's rows.
+  `bm25()`, whose statistics span every user's rows. Turn on
+  `secure-delete` (`INSERT INTO <name> (<name>, rank) VALUES
+  ('secure-delete', 1)`), so a deleted row's words leave the index's
+  pages; it is a setting kept in `<name>_config`, so a rebuilt virtual
+  table needs it again.
 - Rows that clients create carry a UUIDv7 id stored as `TEXT`. Where
   clients choose it (for idempotent writes), the primary key is
   `(user_id, id)`: ids are per user, so another user's row under the
