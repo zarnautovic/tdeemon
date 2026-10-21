@@ -9,18 +9,37 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 )
 
 // ErrNothingToUndo reports that the user has no change left to undo.
 var ErrNothingToUndo = errors.New("nothing to undo")
 
+// errUndoBlocked is what a way back returns, before it writes anything,
+// when putting the entity back would clash with what came since (another
+// food took the name): UndoLast reports it as a conflict.
+var errUndoBlocked = errors.New("undo blocked")
+
+// UndoConflictError reports that the latest change could not be taken
+// back: the entity changed since (an import wrote it), and putting it back
+// would lose that. The change is passed over from then on, so the next
+// undo takes back the one before it.
+type UndoConflictError struct {
+	Event event.Event
+}
+
+func (e *UndoConflictError) Error() string {
+	return fmt.Sprintf("%s of %s cannot be undone: it changed since", e.Event.Action, e.Event.Entity)
+}
+
 // MaxEvents bounds Events.
 const MaxEvents = 100
 
 // record writes the event of a write in its transaction tx. before and
 // after are the entity's state, marshalled as JSON (json.RawMessage as it
-// is); nil, or a nil pointer, records none.
+// is); nil, or a nil pointer, records none. A write that left the state as
+// it was (a retry) records nothing, and the id is uuid.Nil.
 func record(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, action event.Action, entity string,
 	before, after any, now time.Time,
 ) (uuid.UUID, error) {
@@ -32,6 +51,9 @@ func record(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, ac
 	if err != nil {
 		return uuid.Nil(), fmt.Errorf("event %s: %w", action, err)
 	}
+	if b == af && action != event.Undo {
+		return uuid.Nil(), nil
+	}
 	id := uuid.NewV7()
 	_, err = tx.ExecContext(ctx, `INSERT INTO events
 		(id, user_id, at, actor, client, model, operation, entity, before_state, after_state)
@@ -40,7 +62,8 @@ func record(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, ac
 	return id, err
 }
 
-// stateJSON returns v as JSON text, or nil for no state.
+// stateJSON returns v as JSON text, or nil (an untyped nil, so two "no
+// state" compare equal) for no state.
 func stateJSON(v any) (any, error) {
 	switch s := v.(type) {
 	case nil:
@@ -97,7 +120,7 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 	if limit <= 0 {
 		return nil, nil
 	}
-	rows, err := db.read.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+	rows, err := db.read.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE user_id = ? ORDER BY rowid DESC LIMIT ?",
 		userID.String(), min(limit, MaxEvents))
 	if err != nil {
 		return nil, fmt.Errorf("events: %w", err)
@@ -121,25 +144,44 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 // import's writes and undos themselves are skipped), records the undo as
 // an event of a's, and returns the event it took back, marked undone.
 // Undoing again takes back the change before: undo walks back, it does
-// not redo. Changes are taken back newest first, so the entity is as the
-// change left it, an import aside. With nothing left it returns
-// ErrNothingToUndo.
+// not redo. When the entity is no longer as the change left it (an import
+// wrote it since), putting it back would lose that: UndoLast changes
+// nothing, returns an *UndoConflictError, and passes over that change
+// from then on. With nothing left it returns ErrNothingToUndo.
 func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, error) {
 	if err := a.Validate(); err != nil {
 		return event.Event{}, fmt.Errorf("invalid actor: %w", err)
 	}
 	var undone event.Event
+	var conflict *UndoConflictError
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+` FROM events
-			WHERE user_id = ? AND actor = 'user' AND operation <> 'undo' AND undone_by IS NULL
-			ORDER BY id DESC LIMIT 1`, userID.String()))
+			WHERE user_id = ? AND actor = 'user' AND operation <> 'undo' AND undone_by IS NULL AND stale = 0
+			ORDER BY rowid DESC LIMIT 1`, userID.String()))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNothingToUndo
 		}
 		if err != nil {
 			return err
 		}
-		if err := takeBack(ctx, tx, userID, e, now); err != nil {
+		current, err := stateNow(ctx, tx, userID, e)
+		if err != nil {
+			return fmt.Errorf("state of %s: %w", e.Entity, err)
+		}
+		if c, err := stateJSON(current); err != nil {
+			return err
+		} else if want, _ := stateJSON(e.After); c != want {
+			conflict = &UndoConflictError{Event: e}
+			_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
+			return err
+		}
+		err = takeBack(ctx, tx, userID, e, now)
+		if errors.Is(err, errUndoBlocked) {
+			conflict = &UndoConflictError{Event: e}
+			_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
+			return err
+		}
+		if err != nil {
 			return fmt.Errorf("take back %s of %s: %w", e.Action, e.Entity, err)
 		}
 		undoID, err := record(ctx, tx, userID, a, event.Undo, e.ID.String(), e.After, e.Before, now)
@@ -160,7 +202,39 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 	if err != nil {
 		return event.Event{}, fmt.Errorf("undo: %w", err)
 	}
+	if conflict != nil {
+		return event.Event{}, conflict
+	}
 	return undone, nil
+}
+
+// stateNow returns the state of e's entity now, as e's kind of event
+// records it, to compare with the state e left.
+func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
+	switch e.Action {
+	case event.FoodSave, event.FoodArchive:
+		return foodStateNow(ctx, tx, userID, e)
+	case event.MealCreate, event.MealReplace, event.MealDelete:
+		id, err := uuid.Parse(e.Entity)
+		if err != nil {
+			return nil, err
+		}
+		s, err := stateOf(ctx, tx, userID, id)
+		if errors.Is(err, ErrNotFound) {
+			return nil, nil
+		}
+		return s, err
+	case event.DayExclude, event.DayInclude:
+		d, err := day.ParseDate(e.Entity)
+		if err != nil {
+			return nil, err
+		}
+		return exclusionOf(ctx, tx, userID, d)
+	case event.MetricsMerge, event.MetricSet, event.MetricDelete:
+		return metricsStateNow(ctx, tx, userID, e)
+	case event.Undo:
+	}
+	return nil, fmt.Errorf("no state for %q", e.Action)
 }
 
 // takeBack puts e's entity back as it was before e.

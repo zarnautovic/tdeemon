@@ -88,9 +88,3 @@ type Event struct {
 	// UndoneBy is the undo that took the event back, or uuid.Nil.
 	UndoneBy uuid.UUID
 }
-
-// Undoable reports whether undo may take e back: a change of the user's,
-// not an undo itself, not undone already.
-func (e Event) Undoable() bool {
-	return e.Actor.Kind == User && e.Action != Undo && e.UndoneBy == uuid.Nil()
-}

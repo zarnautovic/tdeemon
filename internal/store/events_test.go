@@ -392,3 +392,181 @@ func TestEventStoreFailures(t *testing.T) {
 		t.Errorf("UndoLast on a closed database = %v", err)
 	}
 }
+
+// An import that wrote the entity since: undo would lose it, so it
+// changes nothing, says so, and passes over that change from then on.
+func TestUndoAfterAnImport(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	f := saveFood(t, db, ana, bar())
+	f.Note = "from the box"
+	saveFood(t, db, ana, f) // the user's edit
+	imported := f
+	imported.Nutrients.Kcal = 380
+	if _, err := db.SaveFood(t.Context(), ana, importer, imported, t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Event.Action != event.FoodSave {
+		t.Fatalf("undo after an import = %v, want an UndoConflictError for the food", err)
+	}
+	if got, _ := db.FoodByID(t.Context(), ana, f.ID); got.Nutrients.Kcal != 380 {
+		t.Errorf("the import's kcal became %v", got.Nutrients.Kcal)
+	}
+	// Not stuck: the food's create changed since too, and then the day's
+	// exclusion is taken back.
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) {
+		t.Errorf("the second undo = %v, want the food's create in conflict too", err)
+	}
+	if e := undo(t, db, ana); e.Action != event.DayExclude {
+		t.Errorf("the third undo took back %s, want the exclusion", e.Action)
+	}
+}
+
+// A food's old name taken by another food since: the rename cannot be
+// undone, and undo does not get stuck on it.
+func TestUndoRenameAfterTheNameWasTaken(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	if _, err := db.MergeMetrics(t.Context(), ana, testActor, day.DateOf(t0), []metric.Value{{Kind: metric.Weight, Value: 82, Source: metric.Manual}}, t0); err != nil {
+		t.Fatal(err)
+	}
+	a := saveFood(t, db, ana, bar())
+	renamed := a
+	renamed.Name, renamed.Aliases = "Protein bar Salted", nil
+	saveFood(t, db, ana, renamed)
+	newer := bar() // the old name, a new food, without the old alias
+	newer.Aliases = nil
+	if _, err := db.SaveFood(t.Context(), ana, importer, newer, t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	for range 2 { // the rename, then the create
+		if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) {
+			t.Fatalf("undo = %v, want an UndoConflictError", err)
+		}
+	}
+	if e := undo(t, db, ana); e.Action != event.MetricsMerge {
+		t.Errorf("the next undo took back %s, want the weight", e.Action)
+	}
+	if got, _ := db.FoodByID(t.Context(), ana, a.ID); got.Name != "Protein bar Salted" {
+		t.Errorf("the renamed food is %q", got.Name)
+	}
+}
+
+// The phone's later steps are not lost to an undo of a delete.
+func TestUndoMetricAfterAnImport(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	steps := func(n float64) []metric.Value {
+		return []metric.Value{{Kind: metric.Steps, Value: n, Source: metric.Import}}
+	}
+	if _, err := db.MergeMetrics(t.Context(), ana, phone, d, steps(5000), t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DeleteMetric(t.Context(), ana, testActor, d, metric.Steps, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.MergeMetrics(t.Context(), ana, phone, d, steps(8000), t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) {
+		t.Errorf("undo = %v, want an UndoConflictError", err)
+	}
+	if got, _ := db.Metrics(t.Context(), ana, d, d); got[d][0].Value != 8000 {
+		t.Errorf("the phone's steps became %+v", got[d])
+	}
+}
+
+// A write that leaves the state as it was records nothing, so undo takes
+// back a real change.
+func TestNoChangeNoEvent(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	f := saveFood(t, db, ana, bar())
+	m := createMeal(t, db, ana, breakfast(t, f, t0))
+	w := metric.Value{Kind: metric.Weight, Value: 82, Source: metric.Manual}
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SetMetric(t.Context(), ana, testActor, d, w, t0); err != nil {
+		t.Fatal(err)
+	}
+	before := countRows(t, db, "events")
+	saveFood(t, db, ana, f)
+	if _, err := db.ReplaceMeal(t.Context(), ana, testActor, m, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, f.ID, false, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SetMetric(t.Context(), ana, testActor, d, w, t0); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, db, "events"); n != before {
+		t.Errorf("%d events after writes that changed nothing, want %d", n, before)
+	}
+}
+
+// An undone delete puts the meal back with the time of its create.
+func TestUndoDeleteKeepsCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	m := createMeal(t, db, ana, breakfast(t, saveFood(t, db, ana, bar()), t0))
+	if err := db.DeleteMeal(t.Context(), ana, testActor, m.ID, t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var created string
+	if err := db.Read().QueryRowContext(t.Context(), "SELECT created_at FROM meals WHERE user_id = ? AND id = ?",
+		ana.String(), m.ID.String()).Scan(&created); err != nil || created != t0.Format(time.RFC3339) {
+		t.Errorf("created_at = %q, %v; want the create's %s", created, err, t0.Format(time.RFC3339))
+	}
+}
+
+// An undone set on a day without the kind leaves the day without it.
+func TestUndoSetOnAnEmptyDay(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	if _, err := db.SetMetric(t.Context(), ana, testActor, d, metric.Value{Kind: metric.HRV, Value: 48, Source: metric.Manual}, t0); err != nil {
+		t.Fatal(err)
+	}
+	undo(t, db, ana)
+	if got, _ := db.Metrics(t.Context(), ana, d, d); len(got[d]) != 0 {
+		t.Errorf("after undoing the set the day holds %+v", got[d])
+	}
+}
+
+func TestEventsAtMost(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	for i := range store.MaxEvents + 1 {
+		if _, err := db.SetMetric(t.Context(), ana, testActor, d, metric.Value{Kind: metric.Steps, Value: float64(i), Source: metric.Manual}, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if es, _ := db.Events(t.Context(), ana, store.MaxEvents+50); len(es) != store.MaxEvents {
+		t.Errorf("Events = %d, want at most %d", len(es), store.MaxEvents)
+	}
+}

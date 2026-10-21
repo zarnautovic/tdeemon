@@ -52,8 +52,13 @@ CREATE TABLE events (
     after_state TEXT CHECK (after_state IS NULL OR json_valid(after_state)),
     -- The undo that took the event back.
     undone_by TEXT CHECK (undone_by IS NULL OR length(undone_by) = 36),
+    -- 1 when the entity changed since (an import wrote it): undo cannot
+    -- take the event back without losing that, and passes over it.
+    stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
     PRIMARY KEY (user_id, id)
 ) STRICT;
+
+CREATE INDEX events_user ON events (user_id);
 
 CREATE INDEX events_user_entity ON events (user_id, entity);
 

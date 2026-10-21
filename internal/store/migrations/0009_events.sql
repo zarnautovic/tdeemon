@@ -24,8 +24,15 @@ CREATE TABLE events (
     after_state TEXT CHECK (after_state IS NULL OR json_valid(after_state)),
     -- The undo that took the event back.
     undone_by TEXT CHECK (undone_by IS NULL OR length(undone_by) = 36),
+    -- 1 when the entity changed since (an import wrote it): undo cannot
+    -- take the event back without losing that, and passes over it.
+    stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
     PRIMARY KEY (user_id, id)
 ) STRICT;
+
+-- The order of a user's events is the order of their rows: rowid, which
+-- a clock set back cannot turn around as it could a UUIDv7.
+CREATE INDEX events_user ON events (user_id);
 
 -- For a meal's history: was it ever there (CreateMeal's tombstone).
 CREATE INDEX events_user_entity ON events (user_id, entity);

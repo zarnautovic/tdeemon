@@ -222,6 +222,40 @@ func dropMetric(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date, k
 	return err
 }
 
+// metricsStateNow returns the day's values of the kinds e changed, as e
+// records them: the value (nil when none) of a single kind, or each kind's.
+func metricsStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
+	dayPart, kind, single := strings.Cut(e.Entity, "/")
+	d, err := day.ParseDate(dayPart)
+	if err != nil {
+		return nil, err
+	}
+	if single {
+		v, found, err := metricOf(ctx, tx, userID, d, metric.Kind(kind))
+		if err != nil || !found {
+			return nil, err
+		}
+		return v, nil
+	}
+	var after metricsState
+	if err := json.Unmarshal(e.After, &after); err != nil {
+		return nil, err
+	}
+	now := metricsState{}
+	for k := range after {
+		v, found, err := metricOf(ctx, tx, userID, d, k)
+		if err != nil {
+			return nil, err
+		}
+		if found {
+			now[k] = &v
+		} else {
+			now[k] = nil
+		}
+	}
+	return now, nil
+}
+
 // takeBackMetrics puts the day's values of e back as they were: each
 // value e changed as before, or gone where the day had none.
 func takeBackMetrics(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {

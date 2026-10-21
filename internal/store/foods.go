@@ -411,10 +411,44 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 	if err := json.Unmarshal(e.Before, &f); err != nil {
 		return err
 	}
+	// Another food may have taken the name or an alias since.
+	var other int
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
+		userID.String(), food.Key(f.Name), food.Key(f.Brand), f.ID.String()).Scan(&other); err != nil {
+		return err
+	}
+	if other > 0 {
+		return errUndoBlocked
+	}
+	if err := checkAliases(ctx, tx, userID, f); errors.Is(err, ErrAliasTaken) {
+		return errUndoBlocked
+	} else if err != nil {
+		return err
+	}
 	if err := updateFood(ctx, tx, userID, f, food.Key(f.Name), food.Key(f.Brand), now); err != nil {
 		return err
 	}
 	return replaceFoodChildren(ctx, tx, userID, f)
+}
+
+// foodStateNow returns the state of e's food now, as e's kind of event
+// records it: the food (nil when gone), or whether it is archived.
+func foodStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
+	id, err := uuid.Parse(e.Entity)
+	if err != nil {
+		return nil, err
+	}
+	f, err := foodInTx(ctx, tx, userID, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if e.Action == event.FoodArchive {
+		return archivedState{f.Archived}, nil
+	}
+	return f, nil
 }
 
 // FindFoods returns up to limit of userID's foods, not archived, whose

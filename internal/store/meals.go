@@ -74,7 +74,9 @@ func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, m
 				return err
 			}
 			created = true
-			s := mealState{Meal: m, Fingerprint: m.Fingerprint(), CreatedAt: now}
+			// The time stored, to the second, so the state recorded is the
+			// state read back.
+			s := mealState{Meal: m, Fingerprint: m.Fingerprint(), CreatedAt: now.UTC().Truncate(time.Second)}
 			if err := insertMeal(ctx, tx, userID, s, nil, now); err != nil {
 				return err
 			}

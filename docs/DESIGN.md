@@ -178,7 +178,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
 | `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
-| `delete_meal(meal_id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left), newest first: undoing again goes further back, it does not redo |
+| `delete_meal(meal_id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left), newest first: undoing again goes further back, it does not redo. A change whose entity an import wrote since is not taken back (that would lose the import): the answer says so, and the next undo goes on to the change before |
 | `upsert_food(...)` | save or correct a food (label values); same-name-same-portion rule |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(metric, value, date?)` | weight and other manual measurements |
@@ -502,8 +502,9 @@ the first spec.
     client's, and an "add" of an item the meal already has under that ID
     is a retry: the same content changes nothing, other content is a
     conflict (409). A server-made ID fills in for an item without one.
-  - A deleted meal leaves no trace yet, so a late retry of its create
-    brings it back; the event log (#104) is to keep a tombstone.
+  - A deleted meal's ID stays a tombstone in the event log: a late retry
+    of its create (or of a create that was undone) is refused as
+    deleted (409) rather than bringing the meal back.
   - The future in-gym workout logger can queue writes offline and sync
     without duplicates.
 
