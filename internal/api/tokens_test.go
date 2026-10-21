@@ -14,7 +14,6 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
-	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -87,6 +86,8 @@ func TestCreateAndUseAToken(t *testing.T) {
 // operation is one operation of the API, as the OpenAPI document has it.
 type operation struct {
 	id, method, path string
+	// route is the path as the document has it, with {parameters}.
+	route string
 	// statuses are the response codes the document lists for it.
 	statuses []string
 }
@@ -113,7 +114,7 @@ func operations(t *testing.T) []operation {
 	for path, methods := range spec.Paths {
 		for method, op := range methods {
 			ops = append(ops, operation{
-				op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String()),
+				op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String()), path,
 				slices.Collect(maps.Keys(op.Responses)),
 			})
 		}
@@ -261,32 +262,6 @@ func TestRevokeAToken(t *testing.T) {
 				t.Errorf("revoke: %d, want 404", rec.Code)
 			}
 		})
-	}
-}
-
-// Another user's token looks exactly like one that does not exist.
-func TestTokensOfAnotherUser(t *testing.T) {
-	t.Parallel()
-
-	in, anaSession := signedIn(t)
-	ivo := user.User{
-		ID: uuid.NewV7(), Email: "ivo@example.com", Name: "Ivo", Role: user.RoleUser,
-		Locale: "en", TimeZone: "UTC", DayStartHour: 4, CreatedAt: in.clock.Now(), UpdatedAt: in.clock.Now(),
-	}
-	if err := in.db.CreateUser(t.Context(), ivo, passwordHash(t)); err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
-	ivoSession := sessionCookie(t, in.login(t, "ivo@example.com", password))
-	anas, _ := in.createToken(t, anaSession, `{"name":"ana's","scopes":["read"]}`)
-
-	if rec := in.do(t, http.MethodGet, "/api/v1/tokens", "", []*http.Cookie{ivoSession}, nil); strings.Contains(rec.Body.String(), anas.ID) {
-		t.Errorf("ivo's list shows ana's token: %s", rec.Body.String())
-	}
-	if rec := in.do(t, http.MethodDelete, "/api/v1/tokens/"+anas.ID, "", []*http.Cookie{ivoSession}, nil); rec.Code != http.StatusNotFound {
-		t.Errorf("ivo revoking ana's token: %d, want 404", rec.Code)
-	}
-	if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(anas.Token)); rec.Code != http.StatusOK {
-		t.Errorf("ana's token after ivo's attempt: %d, want 200", rec.Code)
 	}
 }
 

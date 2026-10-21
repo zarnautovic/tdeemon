@@ -60,8 +60,15 @@ func TestSessionUser(t *testing.T) {
 func TestTouchSession(t *testing.T) {
 	t.Parallel()
 
-	db, _ := withSession(t)
-	if err := db.TouchSession(t.Context(), sid("s1"), t0.Add(2*time.Hour)); err != nil {
+	db, ana := withSession(t)
+	// Another user's ID touches nothing.
+	if err := db.TouchSession(t.Context(), uuid.NewV7(), sid("s1"), t0.Add(time.Hour)); err != nil {
+		t.Fatalf("TouchSession as someone else: %v", err)
+	}
+	if s, _, _ := db.SessionUser(t.Context(), sid("s1"), t0); !s.LastSeenAt.Equal(t0) {
+		t.Errorf("last seen = %v after someone else's touch, want %v", s.LastSeenAt, t0)
+	}
+	if err := db.TouchSession(t.Context(), ana, sid("s1"), t0.Add(2*time.Hour)); err != nil {
 		t.Fatalf("TouchSession: %v", err)
 	}
 	if s, _, _ := db.SessionUser(t.Context(), sid("s1"), t0.Add(2*time.Hour)); !s.LastSeenAt.Equal(t0.Add(2 * time.Hour)) {
@@ -85,14 +92,21 @@ func TestSessionExpiry(t *testing.T) {
 func TestDeleteSession(t *testing.T) {
 	t.Parallel()
 
-	db, _ := withSession(t)
-	if err := db.DeleteSession(t.Context(), sid("s1")); err != nil {
+	db, ana := withSession(t)
+	// Another user's ID ends nothing.
+	if err := db.DeleteSession(t.Context(), uuid.NewV7(), sid("s1")); err != nil {
+		t.Fatalf("DeleteSession as someone else: %v", err)
+	}
+	if _, _, err := db.SessionUser(t.Context(), sid("s1"), t0); err != nil {
+		t.Errorf("SessionUser after someone else's delete = %v, want the session", err)
+	}
+	if err := db.DeleteSession(t.Context(), ana, sid("s1")); err != nil {
 		t.Fatalf("DeleteSession: %v", err)
 	}
 	if _, _, err := db.SessionUser(t.Context(), sid("s1"), t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SessionUser after delete = %v, want ErrNotFound", err)
 	}
-	if err := db.DeleteSession(t.Context(), sid("s1")); err != nil {
+	if err := db.DeleteSession(t.Context(), ana, sid("s1")); err != nil {
 		t.Errorf("deleting a deleted session = %v, want nil", err)
 	}
 }

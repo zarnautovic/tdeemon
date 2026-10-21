@@ -302,6 +302,45 @@ in `web/`.
   snake_case keys (`"data_dir", dir`), no `fmt.Sprintf` in the message.
 - **Database:** the schema and migration rules are in
   [`internal/store/migrations/README.md`](../internal/store/migrations/README.md).
+- **One user's data stays theirs:**
+  - every store method that reads or writes a user's rows takes the
+    user's ID as a parameter and filters by it (`WHERE user_id = ?`).
+    The compiler makes sure the ID is passed rather than hidden in a
+    context; `TestIsolation` makes sure the queries the operations reach
+    use it. Writes always filter by the user, also those keyed by a
+    secret's hash (touching or ending a session). The only reads without
+    it are how a request learns its user (by the hash of a session's or
+    an API token's secret; by the provider's subject for OpenID Connect;
+    by address for the sign-in and the admin's commands), and the only
+    other exception is housekeeping that shows or changes no one's data
+    (removing expired sessions);
+  - a handler takes the user from the request's principal
+    (`auth.PrincipalFrom`), never from the path, the query or the body
+    (the sign-in, which finds the user by the address it is given,
+    aside);
+  - another user's row answers exactly like one that does not exist
+    (the same 404, or a list without it);
+  - `TestIsolation` in `internal/api` runs every operation in the
+    OpenAPI document as the other of two users, both ways (an admin and
+    a user acting). Each case must get a 2xx from its own operation;
+    then the owner's rows in the database (`users` and every table with
+    a `user_id`) and what the owner sees through the API must be as they
+    were, and no answer during the case (headers and body) may contain
+    one of the owner's text values from the database of 8 bytes or more
+    that the other user's rows do not also have. Numbers, and shorter
+    text, a case checks itself. `TestIsolationCoversEveryOperation`
+    fails for an operation without a case in `isolationCases`, so a new
+    operation adds its case;
+  - a new kind of data (foods, meals) also goes into `newIsolationEnv`:
+    rows of it for both users, in every state the queries tell apart
+    (used and unused, archived or not), with text unique to each user
+    (as the token names are). The test fails when a table of user data
+    has no rows for one of them, and for a table without a `user_id`
+    that is not listed as no one's data: every table of a user's rows has
+    a `user_id` column (`internal/store/migrations/README.md`);
+  - routes outside the OpenAPI document are not covered: the OpenID
+    Connect browser flow has its own tests (`internal/api/oidc_test.go`),
+    and MCP needs its own list of cases over the tool registry.
 
 ### Tests
 

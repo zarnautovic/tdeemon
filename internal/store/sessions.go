@@ -90,21 +90,22 @@ func (db *DB) SessionUser(ctx context.Context, id string, now time.Time) (Sessio
 	return s, u, nil
 }
 
-// TouchSession records that the session with id was used at now.
-func (db *DB) TouchSession(ctx context.Context, id string, now time.Time) error {
+// TouchSession records that userID's session with id was used at now.
+func (db *DB) TouchSession(ctx context.Context, userID uuid.UUID, id string, now time.Time) error {
 	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "UPDATE sessions SET last_seen_at = ? WHERE id = ?", formatTime(now), id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE sessions SET last_seen_at = ? WHERE id = ? AND user_id = ?",
+			formatTime(now), id, userID.String()); err != nil {
 			return fmt.Errorf("touch session: %w", err)
 		}
 		return nil
 	})
 }
 
-// DeleteSession ends the session with id. Ending one that does not exist
-// is not an error: signing out twice is fine.
-func (db *DB) DeleteSession(ctx context.Context, id string) error {
+// DeleteSession ends userID's session with id. Ending one that does not
+// exist is not an error: signing out twice is fine.
+func (db *DB) DeleteSession(ctx context.Context, userID uuid.UUID, id string) error {
 	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", id); err != nil {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE id = ? AND user_id = ?", id, userID.String()); err != nil {
 			return fmt.Errorf("delete session: %w", err)
 		}
 		return nil

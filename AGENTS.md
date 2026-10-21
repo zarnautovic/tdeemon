@@ -77,6 +77,13 @@ details.
   tokens unless its `Metadata` opens it to a scope
   (`openToTokens(auth.ScopeIngest)`, in `internal/api/tokens.go`);
   settings and anything about tokens or sessions stay closed to them.
+- **One user's data stays theirs.** A store method for a user's rows
+  takes the user's ID and filters by it; a handler takes the user from
+  the request's principal. A new operation in the OpenAPI document adds
+  its case to `isolationCases` in `internal/api/isolation_test.go`, or
+  the test fails, and a new kind of data adds rows of it for both users
+  to `newIsolationEnv`; routes outside the document (MCP) need cases of
+  their own (`docs/conventions.md`).
 - **Migrations only go forward.** Never edit a migration once it is
   merged; add a new one. The rules are in
   `internal/store/migrations/README.md`.
