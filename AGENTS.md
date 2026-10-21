@@ -94,8 +94,9 @@ details.
     `eslint-disable` (oxlint and `scripts/check-disable-comments.sh`
     enforce both).
 - **Code, comments, docs and commit messages are in English.**
-- **Keep the docs true:** update the README, docs/conventions.md or
-  docs/DESIGN.md when a change makes them wrong.
+- **Keep the docs true:** update the README, docs/conventions.md,
+  docs/DESIGN.md or docs/limits.md when a change makes them wrong; a
+  limit in the code and its row in docs/limits.md change together.
 
 ## Definition of Done
 
