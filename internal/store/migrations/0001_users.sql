@@ -4,7 +4,7 @@
 -- only keep obviously broken rows out.
 CREATE TABLE users (
     -- A UUIDv7, in the canonical text form.
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY CHECK (length(id) = 36),
     -- The sign-in name, in the form user.NormalizeEmail gives it.
     email TEXT NOT NULL CHECK (email <> ''),
     name TEXT NOT NULL CHECK (name <> ''),

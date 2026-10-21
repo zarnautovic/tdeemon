@@ -160,7 +160,8 @@ func TestUserByEmailRejectsCorruptRows(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct{ name, id, created, updated string }{
-		{"id", "not-a-uuid", "2026-10-21T08:00:00Z", "2026-10-21T08:00:00Z"},
+		// UUID-sized, so the CHECK on the length lets it in, but not a UUID.
+		{"id", "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz", "2026-10-21T08:00:00Z", "2026-10-21T08:00:00Z"},
 		{"created_at", uuid.NewV7().String(), "yesterday", "2026-10-21T08:00:00Z"},
 		{"updated_at", uuid.NewV7().String(), "2026-10-21T08:00:00Z", "21.10.2026."},
 	} {
@@ -180,5 +181,24 @@ func TestUserByEmailRejectsCorruptRows(t *testing.T) {
 				t.Errorf("UserByEmail = %v, want an error about the %s", err, tc.name)
 			}
 		})
+	}
+}
+
+// The id must have a UUID's length; an empty one would pass the primary
+// key, which only rules out NULL.
+func TestUsersTableChecksTheID(t *testing.T) {
+	t.Parallel()
+
+	for _, id := range []string{"", "1234", uuid.NewV7().String() + "0"} {
+		db := storetest.Open(t)
+		err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(t.Context(), `INSERT INTO users
+				(id, email, name, role, locale, timezone, day_start_hour, created_at, updated_at)
+				VALUES (?, 'ana@example.com', 'Ana', 'user', 'en', 'UTC', 4, '2026-10-21T08:00:00Z', '2026-10-21T08:00:00Z')`, id)
+			return err
+		})
+		if err == nil || !strings.Contains(err.Error(), "CHECK constraint failed") {
+			t.Errorf("insert with id %q = %v, want a CHECK constraint error", id, err)
+		}
 	}
 }
