@@ -88,7 +88,7 @@ store layer and covered by tests that run every query as the wrong user.
 
 | table | key columns | notes |
 | --- | --- | --- |
-| `users` | id, name, email, role (admin/user), locale, timezone, day_start_hour | invites; a password (argon2id), and OIDC identities in `user_identities` |
+| `users` | id, name, email, role (admin/user), locale, timezone, day_start_hour, sex (for the energy equations)?, birth_date?, height? | invites; a password (argon2id), and OIDC identities in `user_identities`; the profile (sex, birth date, height) is optional for logging and needed for a plan (§8) |
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
@@ -102,7 +102,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log) |
 | `targets` | user_id, effective_from, kcal, kcal_training?, kcal_rest?, protein, carbs, fat, proposal_id? | effective-dated rows; the why lives in the proposal |
 | `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
-| `plan_settings` | user_id, autonomy (propose/autopilot), autopilot bounds, check-in weekday, guardrail overrides | guardrails are editable only in the UI, never through tools |
+| `plan_settings` | user_id, autonomy (propose/autopilot), autopilot bounds, check-in weekday, training weekdays, the user's limits | the training weekdays give each day its type ahead of time (§7); the user's limits change only from a web session, never through tools (§8) |
 | `phases` | user_id, type (cut/maintain/bulk/recomp), started_at, ends_at?, target_rate_pct_week (signed), goal_weight?, milestone_weight? | the user's goal timeline; a phase start anchors the water/glycogen window; a diet break or a deload maintenance week is just a short `maintain` phase; goal and milestone may sit above or below the current weight |
 | `profile_notes` | user_id, text | free-text preferences and guidance (e.g. food dislikes, schedule constraints) handed to the AI as context |
 | `shopping_items` | user_id, text, done | |
@@ -174,7 +174,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 
 | tool | purpose |
 | --- | --- |
-| `get_profile` | current phase and goal, current targets (day-type aware), profile notes, locale, units |
+| `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units |
 | `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
 | `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
@@ -267,8 +267,9 @@ The replacement:
   - Too slow on a cut → lower the target.
   - Gaining too fast on a bulk → shrink the surplus.
   - Drifting during maintenance → nudge back.
-  - Band defaults per phase type are TBD from the literature and are
-    user-adjustable.
+  - Band defaults per phase type come from the literature
+    ([limits.md](limits.md)) and are user-adjustable within the limits
+    (§8).
 - **Guards, by phase type:**
   - Water/glycogen window: the first 14 days of *every* phase (glycogen
     refills on a bulk start too).
@@ -280,8 +281,17 @@ The replacement:
   - Strength veto (cut/maintain).
 - **Split targets:** the rule decides which day types absorb a change.
   The predecessor's version lowers rest days only and raises both.
-- **Protein floor in g/kg** (of body weight or of goal weight) instead of
-  a fixed gram value.
+- **The day's type** comes from the plan's training weekdays, so a day's
+  target is known in the morning. A training session read from a source
+  (until P3, the old service's) or the check-in's toggle corrects it
+  afterwards, the toggle having the last word, and calibration uses the
+  corrected type. The weekly average weighs the day types by the number
+  of training weekdays.
+- **Protein in g/kg of a reference mass** instead of a fixed gram value:
+  the fat-free mass when it is known, else the trend weight, but at most
+  the weight at a BMI of 30. The target is stored in grams, and the
+  limit is checked in g/kg; a floor in grams the user sets only narrows
+  it.
 - **Per-user parameters** for all of the above. The predecessor's rules
   are the starting cut-phase defaults.
 - **Test fixtures:** an anonymised multi-week dataset lives in the repo.
@@ -349,26 +359,39 @@ it read while researching. So limits are enforced by the server.
     into cut-cut-cut;
   - maximum cumulative autopilot drift from the plan.
 
-  Default values are TBD from the literature; the predecessor's rules
-  are the starting point.
+  The default values and their sources are in [limits.md](limits.md).
 - **Out of the AI's reach by construction, not by instruction.** No
-  tool reads-for-write or changes limits. The settings endpoint accepts
-  only an interactive web session (cookie + CSRF), never a Bearer token,
-  so not even a leaked MCP token can relax them. The API refuses tokens
+  tool changes limits. A coach may propose a change of the user's limits
+  (`propose_changes`), but such a proposal applies only from an
+  interactive web session (cookie + CSRF), never through
+  `apply_proposal` from a tool or a Bearer token; so does the settings
+  endpoint, so not even a leaked MCP token can relax them. The API refuses tokens
   on every operation in its OpenAPI document that does not open itself
   to a scope, so a new endpoint starts closed to them; routes outside it
   (`/mcp`, ingest) check their scope themselves.
 - **The user can change them,** with an explicit warning, e.g. for a
   medically supervised very-low-calorie diet. Adults decide; models
   don't.
-- **Two levels.** Instance limits (admin, in config) are the outer
-  bound for everyone on the instance; per-user limits sit within them.
-  Someone hosting friends can set a floor nobody goes below.
+- **Three levels.**
+  - A floor in the code that nobody can lower, the admin included: never
+    800 kcal a day or less, never less than 0.8 g/kg of protein.
+  - Instance limits (admin, in config) within it are the outer bound for
+    everyone on the instance. Someone hosting friends can set a floor
+    nobody goes below.
+  - Per-user limits within those. The defaults are the user's starting
+    values: going past a default needs an explicit confirmation, and
+    nothing goes past the instance's limit.
+- **A plan needs the profile.** The limits depend on sex, age and
+  height (a kcal floor, the BMI, the estimated BMR), so without them
+  `Validate` refuses a phase or a target (`profile_missing`), and the
+  coach knows what to ask. Logging works without them.
 - **Plans only, never logging.** Guardrails apply to targets and phases.
   Logging is never blocked or judged: a 4000 kcal day is simply logged.
 - **Not medical advice.** The docs say so plainly. Other people will
   self-host this, so the defaults must be safe for someone who is not
-  the author.
+  the author. Cases for a clinician (a very-low-calorie diet, an eating
+  disorder, pregnancy, kidney disease, people under 18) get the hard
+  limits and the docs in P0; onboarding questions for them come later.
 
 ### What the coach reads
 
@@ -554,8 +577,9 @@ the first spec.
 | **P3 — training module** | generic workout data (exercise, sets, reps, weight, RPE, duration, distance) + import adapters (Strong, others); **programs as declarative specs** over a library of progression rules, created by the coach through proposals (§8); the RTS program is the first spec; `training_day` derived from any workout source |
 | **P4** | in-app workout logging (replaces Strong); native app with HealthKit (replaces HAE) |
 
-Until P3, a training day for split targets comes from a manual toggle
-(`checkin.training_day`) or an imported workout metric.
+Until P3, a training day for split targets comes from the plan's
+training weekdays, corrected by a session from the old service or the
+manual toggle (`checkin.training_day`).
 
 ## 12. Open questions
 
