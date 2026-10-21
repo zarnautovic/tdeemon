@@ -391,8 +391,8 @@ it read while researching. So limits are enforced by the server.
   - A floor in the code that nobody can lower, the admin included: never
     800 kcal a day or less, never less than 0.8 g/kg of protein, no plan
     for someone under 18, no change that starts or deepens a loss below
-    a BMI of 18.5 (a first kcal target before the TDEE is measured is
-    not judged, [limits.md](limits.md)), and no goal or milestone
+    a BMI of 18.5 (a first kcal target before calibration trusts the
+    TDEE is not judged, [limits.md](limits.md)), and no goal or milestone
     weight below it; a loss
     under way that crosses 18.5 makes the autopilot propose
     maintenance.

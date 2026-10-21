@@ -60,8 +60,8 @@ const (
 	// else; Limit and Proposed are 0.
 	RuleAutopilotShape = "autopilot_shape"
 	// RuleInvalidChange: the change breaks a rule of its shape (a rate of
-	// the wrong sign for its phase, a value that is no number), or a
-	// number of the state is no number; Limit and Proposed are 0.
+	// the wrong sign for its phase, a value that is no number), or the
+	// state or the limits break theirs; Limit and Proposed are 0.
 	RuleInvalidChange = "invalid_change"
 )
 
@@ -226,7 +226,7 @@ func (r Result) OK() bool { return len(r.Violations) == 0 }
 // one is applied, on every autopilot step, and on a manual edit of a
 // target.
 func Validate(c Change, s State, lv Levels) Result {
-	v := validator{c: c, s: s, user: Effective(lv.User, lv.Instance), instance: lv.Instance}
+	v := validator{c: c, s: s, levels: lv, user: Effective(lv.User, lv.Instance), instance: lv.Instance}
 	if c.Phase == nil && c.Target == nil && c.TrainingDays == nil {
 		return v.r
 	}
@@ -257,6 +257,7 @@ const epsilon = 1e-9
 type validator struct {
 	c              Change
 	s              State
+	levels         Levels
 	user, instance Limits
 	r              Result
 
@@ -269,9 +270,10 @@ type validator struct {
 
 // shape refuses a change that breaks a rule of its shape, which no limit
 // would catch (a comparison with a value that is no number is false; a
-// bulk that loses is no cut), and a state with a number that is no
-// number (a TDEE from a regression with nothing to regress). It reports
-// false for one.
+// bulk that loses is no cut), and a state or limits that break theirs:
+// a number that is no number (a TDEE from a regression with nothing to
+// regress), a stored phase, target or profile of the wrong shape. It
+// reports false for one.
 func (v *validator) shape() bool {
 	var bad bool
 	switch c := v.c; {
@@ -281,6 +283,16 @@ func (v *validator) shape() bool {
 		bad = true
 	}
 	st := v.s
+	// What is stored passed these rules when it was written; one that
+	// fails them now was written past them, and its numbers would make
+	// every comparison false.
+	switch {
+	case st.Phase != nil && st.Phase.Validate() != nil,
+		st.Target != nil && (st.Target.Training.Validate() != nil || st.Target.Rest.Validate() != nil),
+		st.Profile.Validate(st.Today) != nil,
+		v.levels.User.Validate() != nil, v.levels.Instance.Validate() != nil:
+		bad = true
+	}
 	for _, x := range []float64{
 		st.TrendKg, st.PhaseStartTrendKg, st.TDEE, st.LeanMassKg, st.ActiveKcal,
 		st.Autopilot.DriftKcal, st.Autopilot.DriftBaseTDEE,

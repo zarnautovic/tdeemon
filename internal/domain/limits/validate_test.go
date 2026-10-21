@@ -687,6 +687,48 @@ func TestValidateRefusesAChangeOfTheWrongShape(t *testing.T) {
 			[]string{"invalid_change"},
 		},
 		{
+			"a stored phase of the wrong shape", func(s *State) { s.Phase = phase(t, plan.Cut, "2026-09-07", math.NaN()) },
+			Change{Phase: phase(t, plan.Cut, start, -0.5)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"a stored target of the wrong shape", func(s *State) { s.Target = unsplit(math.NaN(), 170, 70) },
+			Change{Target: unsplit(2400, 170, 70)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{"a stored training day of the wrong shape", func(s *State) {
+			s.Target = &plan.Target{Training: plan.DayTarget{Kcal: math.NaN(), Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: 2400, Protein: 170, Fat: 70}}
+		}, Change{Target: unsplit(2400, 170, 70)}, nil, []string{"invalid_change"}},
+		{"a stored rest day of the wrong shape", func(s *State) {
+			s.Target = &plan.Target{Training: plan.DayTarget{Kcal: 2400, Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: math.NaN(), Protein: 170, Fat: 70}}
+		}, Change{Target: unsplit(2400, 170, 70)}, nil, []string{"invalid_change"}},
+		{
+			"a height that is no number", func(s *State) { s.Profile.HeightCm = math.NaN() },
+			Change{Phase: phase(t, plan.Cut, start, -0.5)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"a height in metres", func(s *State) { s.Profile.HeightCm = 1.8 },
+			Change{Phase: phase(t, plan.Cut, start, -0.5)},
+			nil,
+			[]string{"invalid_change"},
+		},
+		{
+			"a user's limit that is no number", nil,
+			Change{Phase: phase(t, plan.Cut, start, -5)},
+			func(lv *Levels) { lv.User.CutRate = math.NaN() },
+			[]string{"invalid_change"},
+		},
+		{
+			"an instance's limit that is no number", nil,
+			Change{Phase: phase(t, plan.Cut, start, -5)},
+			func(lv *Levels) { lv.Instance.LossKgWeek = math.NaN() },
+			[]string{"invalid_change"},
+		},
+		{
 			"a drift's base that is no number", func(s *State) { s.Autopilot.DriftBaseTDEE = math.NaN() },
 			Change{Target: unsplit(2500, 170, 75)},
 			nil,
