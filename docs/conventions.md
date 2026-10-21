@@ -376,8 +376,10 @@ npm test               # Vitest
 - **Imports:** no cycles, no duplicates, and side-effect imports only for
   CSS.
 - **Strictness of the run:** a warning fails the run, and so does a
-  disable comment that disables nothing. A disable names the rule and
-  says why after `--`:
+  disable comment that disables nothing. A disable names the rule
+  (oxlint's `unicorn/no-abusive-eslint-disable`) and says why after
+  `--`, on the same line (`scripts/check-disable-comments.sh`, in
+  `make lint-web` and the pre-commit hook):
 
   ```ts
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the API guarantees the shape

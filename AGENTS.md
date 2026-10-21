@@ -77,7 +77,8 @@ details.
   that is wrong in that place, and it says which rule and why:
   - Go: `//nolint:<linter> // why` (nolintlint enforces both);
   - web: `// oxlint-disable-next-line <rule> -- why`, and the same for
-    `eslint-disable`; review checks these.
+    `eslint-disable` (oxlint and `scripts/check-disable-comments.sh`
+    enforce both).
 - **Code, comments, docs and commit messages are in English.**
 - **Keep the docs true:** update the README, docs/conventions.md or
   docs/DESIGN.md when a change makes them wrong.
