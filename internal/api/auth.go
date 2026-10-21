@@ -182,7 +182,7 @@ func (s *sessions) register(a huma.API) {
 		Description:   "Ends the request's web session, if any, and clears the cookie. Signing out twice is fine.",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusNoContent,
-		Errors:        []int{http.StatusForbidden},
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, s.logout)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-session",

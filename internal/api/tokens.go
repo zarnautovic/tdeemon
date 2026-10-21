@@ -63,7 +63,7 @@ func gateTokens(a huma.API) func(huma.Context, func(huma.Context)) {
 		scope, open := ctx.Operation().Metadata[tokenScopeKey].(auth.Scope)
 		switch {
 		case !open:
-			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "this needs a web session, not an API token")
+			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "this operation is closed to API tokens")
 		case scope != anyScope && !p.Can(scope):
 			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "the API token does not have the "+string(scope)+" scope")
 		default:

@@ -253,10 +253,10 @@ the operations open to its scopes (today `GET /api/v1/auth/whoami` and
 `GET /api/v1/info`, with any scope); every other operation is closed to
 tokens (403), so a token can never create, list or revoke tokens, read
 the session or change a setting. Only `Authorization: Bearer tdm_…`
-carries a token: another header, such as a reverse proxy's Basic
-credentials or the ID token an authenticating proxy passes on as a
-Bearer, leaves the request to its session cookie. The web app's settings
-page comes with the web UI.
+carries a token (an empty Bearer is a bad one): another header, such as
+a reverse proxy's Basic credentials or the ID token an authenticating
+proxy passes on as a Bearer, leaves the request to its session cookie.
+The web app's settings page comes with the web UI.
 
 ## Data
 

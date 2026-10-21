@@ -125,9 +125,11 @@ func operations(t *testing.T) []operation {
 }
 
 // A token reaches only the operations open to it; everything else, a new
-// endpoint included, takes a web session: managing tokens, reading the
+// endpoint included, is closed to tokens: managing tokens, reading the
 // session, signing in or out. The session cookie next to the token (a
-// browser that has both) does not change that.
+// browser that has both) does not change that. (An operation open to one
+// scope also answers 403 to a token without it; when the first comes,
+// the document check below covers every operation not open to any token.)
 func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +141,7 @@ func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 			t.Parallel()
 			for _, cookies := range [][]*http.Cookie{nil, {session}} {
 				rec := in.do(t, op.method, op.path, "", cookies, bearer(tok.Token))
-				refused := rec.Code == http.StatusForbidden && strings.Contains(rec.Body.String(), "needs a web session")
+				refused := rec.Code == http.StatusForbidden && strings.Contains(rec.Body.String(), "closed to API tokens")
 				if refused == open[op.id] {
 					t.Errorf("%s %s with %d cookies: %d %s; open to tokens: %v", op.method, op.path, len(cookies), rec.Code, rec.Body.String(), open[op.id])
 				}
@@ -212,9 +214,8 @@ func TestOtherCredentialsAreNoToken(t *testing.T) {
 
 	//nolint:gosec // G101: made-up credentials of other schemes, the point of the test.
 	for name, header := range map[string]string{
-		"Basic":                "Basic YW5hOnB3",
-		"a proxy's Bearer":     "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhbmEifQ.c2ln",
-		"two spaces, not tdm_": "Bearer  something",
+		"Basic":            "Basic YW5hOnB3",
+		"a proxy's Bearer": "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhbmEifQ.c2ln",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -223,21 +224,21 @@ func TestOtherCredentialsAreNoToken(t *testing.T) {
 	}
 }
 
-func otherCredentialsAreNoToken(t *testing.T, basic map[string]string) {
+func otherCredentialsAreNoToken(t *testing.T, header map[string]string) {
 	t.Helper()
 	in := newInstance(t, "http://localhost", passwordHash(t))
-	rec := in.do(t, http.MethodPost, "/api/v1/auth/login", `{"email":"ana@example.com","password":"`+password+`"}`, nil, basic)
+	rec := in.do(t, http.MethodPost, "/api/v1/auth/login", `{"email":"ana@example.com","password":"`+password+`"}`, nil, header)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("login with Basic credentials: %d %s, want 200", rec.Code, rec.Body.String())
+		t.Fatalf("login with the header: %d %s, want 200", rec.Code, rec.Body.String())
 	}
 	session := sessionCookie(t, rec)
-	if who := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", []*http.Cookie{session}, basic); who.Code != http.StatusOK ||
+	if who := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", []*http.Cookie{session}, header); who.Code != http.StatusOK ||
 		!strings.Contains(who.Body.String(), `"via":"session"`) {
-		t.Errorf("whoami with Basic credentials and the session: %d %s, want the session", who.Code, who.Body.String())
+		t.Errorf("whoami with the header and the session: %d %s, want the session", who.Code, who.Body.String())
 	}
-	if who := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, basic); who.Code != http.StatusUnauthorized ||
+	if who := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, header); who.Code != http.StatusUnauthorized ||
 		who.Header().Get("WWW-Authenticate") != "" {
-		t.Errorf("whoami with Basic credentials only: %d, WWW-Authenticate %q; want 401 without a token challenge",
+		t.Errorf("whoami with the header only: %d, WWW-Authenticate %q; want 401 without a token challenge",
 			who.Code, who.Header().Get("WWW-Authenticate"))
 	}
 }
