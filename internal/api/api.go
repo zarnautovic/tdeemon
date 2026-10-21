@@ -67,7 +67,8 @@ type Config struct {
 //
 // Every request goes through, in order: http.CrossOriginProtection,
 // which refuses a cross-origin browser request that is not GET, HEAD or
-// OPTIONS (CSRF); the session lookup for API requests; the routes.
+// OPTIONS (CSRF); the session or token lookup for API requests; the
+// routes.
 func NewHandler(cfg Config) (http.Handler, error) {
 	if cfg.DB == nil || cfg.BaseURL == nil || cfg.Logger == nil {
 		return nil, errors.New("api: the database, the base URL and the logger are required")
@@ -212,7 +213,11 @@ func newAPI(mux *http.ServeMux) huma.API {
 	// A misspelled query parameter is an error, not silently ignored.
 	cfg.RejectUnknownQueryParameters = true
 	cfg.Transformers = append(cfg.Transformers, dropErrorValues)
-	return humago.New(mux, cfg)
+	a := humago.New(mux, cfg)
+	// Before any operation registers: huma fixes an operation's
+	// middlewares when it registers.
+	a.UseMiddleware(gateTokens(a))
+	return a
 }
 
 // dropErrorValues keeps an error response from echoing what the request
@@ -233,6 +238,7 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 // register adds every API operation to a.
 func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.register(a)
+	s.registerTokens(a)
 	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",
@@ -241,6 +247,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 		Summary:     "Get server info",
 		Description: "Name and version of the running server.",
 		Tags:        []string{"meta"},
+		Metadata:    openToAnyToken(),
 	}, func(context.Context, *struct{}) (*infoOutput, error) {
 		return &infoOutput{Body: info}, nil
 	})

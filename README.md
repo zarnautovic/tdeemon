@@ -162,7 +162,8 @@ kubectl exec deploy/tdeemon -- /tdeemon user create --admin --email you@example.
   default `TZ`, or UTC). `tdeemon help` lists the flags.
 - `tdeemon user set-password --email …` gives a user a new password,
   generated or with `--password-stdin`, and ends their sessions: the way
-  back when a password is lost.
+  back when a password is lost. Their API tokens keep working; if they
+  may have leaked too, revoke them (see API tokens below).
 - The commands read the same `TDEEMON_*` variables as the server, and
   they refuse a database the server has not migrated to their version.
 
@@ -228,6 +229,34 @@ state bound to the browser in a short-lived sealed cookie. tdeemon finds
 the provider on the first sign-in, so it starts while the provider is
 down; after a failure it waits 30 seconds before asking again. The
 provider's endpoints must use https, like its issuer.
+
+### API tokens
+
+Devices and clients act for a user with an API token instead of a
+session: the phone (Health Auto Export) sends health data, an AI client
+logs meals through MCP. A token has scopes: `ingest` (health data from
+the phone), `tools` (log and change through the tools) and `read`.
+
+```sh
+# Signed in (the session cookie in cookies.txt), create one; the token is
+# shown only in this answer, tdeemon keeps only its hash.
+curl -b cookies.txt -H 'Content-Type: application/json' \
+  -d '{"name":"iPhone","scopes":["ingest"]}' https://tdeemon.example.com/api/v1/tokens
+
+# The device sends it with every request:
+curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/whoami
+```
+
+`GET /api/v1/tokens` lists them (name, scopes, when last used) and
+`DELETE /api/v1/tokens/{id}` revokes one at once. A token reaches only
+the operations open to its scopes (today `GET /api/v1/auth/whoami` and
+`GET /api/v1/info`, with any scope); every other operation is closed to
+tokens (403), so a token can never create, list or revoke tokens, read
+the session or change a setting. Only `Authorization: Bearer tdm_…`
+carries a token (an empty Bearer is a bad one): another header, such as
+a reverse proxy's Basic credentials or the ID token an authenticating
+proxy passes on as a Bearer, leaves the request to its session cookie.
+The web app's settings page comes with the web UI.
 
 ## Data
 
