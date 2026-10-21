@@ -174,12 +174,13 @@ func loadLimits(get func(name, fallback string) string) (limits.Limits, error) {
 	l := limits.Instance()
 	var errs []error
 	for _, f := range limits.Fields() {
-		if f.UserOnly {
-			continue
-		}
 		name := LimitPrefix + strings.ToUpper(f.Name)
 		raw := get(name, "")
-		if raw == "" {
+		switch {
+		case raw == "":
+			continue
+		case f.UserOnly:
+			errs = append(errs, fmt.Errorf("%s%s: a user's limit, which only the user sets", Prefix, name))
 			continue
 		}
 		v, err := strconv.ParseFloat(raw, 64)

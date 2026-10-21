@@ -31,11 +31,12 @@ func DefaultRate(t plan.PhaseType, bmi, trendKg float64, l Limits) float64 {
 	return 0
 }
 
-// DefaultProtein returns the protein, in g/kg of the reference mass, a
-// phase of type t starts with (docs/limits.md): 2.2 on a cut, 1.6 in
+// DefaultProtein returns the protein, in g/kg of the reference mass refKg,
+// a phase of type t starts with (docs/limits.md): 2.2 on a cut, 1.6 in
 // maintenance, 1.8 on a bulk and 2.0 on a recomp, cut to l's floor and
-// ceiling (a ceiling of 2.0 cuts a cut's 2.2).
-func DefaultProtein(t plan.PhaseType, l Limits) float64 {
+// ceiling (a ceiling of 2.0 cuts a cut's 2.2), and raised to a floor in
+// grams the user set; the ceiling wins over it.
+func DefaultProtein(t plan.PhaseType, refKg float64, l Limits) float64 {
 	var g float64
 	switch t {
 	case plan.Cut:
@@ -47,5 +48,9 @@ func DefaultProtein(t plan.PhaseType, l Limits) float64 {
 	case plan.Recomp:
 		g = 2.0
 	}
-	return math.Min(math.Max(g, l.ProteinFloor), l.ProteinCeiling)
+	g = math.Max(g, l.ProteinFloor)
+	if refKg > 0 {
+		g = math.Max(g, l.ProteinFloorGrams/refKg)
+	}
+	return math.Min(g, l.ProteinCeiling)
 }

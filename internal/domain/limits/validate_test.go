@@ -2,6 +2,7 @@ package limits
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -256,8 +257,8 @@ func TestValidateTargetDays(t *testing.T) {
 		{"a target", nil, Change{Target: unsplit(2500, 170, 75)}, nil, nil},
 		{"under a man's floor", nil, Change{Target: unsplit(1400, 170, 60)}, nil, []string{"kcal_floor user"}},
 		{"under the instance's", nil, Change{Target: unsplit(1100, 150, 40)}, nil, []string{"kcal_floor instance"}},
-		{"at 801 kcal", nil, Change{Target: unsplit(801, 140, 30)}, nil, []string{"kcal_floor instance"}},
-		{"at the code's 800", nil, Change{Target: unsplit(800, 140, 30)}, nil, []string{"kcal_floor code"}},
+		{"at 801 kcal", nil, Change{Target: unsplit(801, 136, 25)}, nil, []string{"kcal_floor instance"}},
+		{"at the code's 800", nil, Change{Target: unsplit(800, 136, 25)}, nil, []string{"kcal_floor code"}},
 		{"a woman's floor", woman, Change{Target: unsplit(1200, 110, 40)}, nil, nil},
 		{"under a woman's floor", woman, Change{Target: unsplit(1150, 110, 40)}, nil, []string{"kcal_floor instance"}},
 		{"a rest day under the floor", nil, Change{Target: split}, nil, []string{"kcal_floor user rest"}},
@@ -440,8 +441,69 @@ func TestValidateAutopilot(t *testing.T) {
 			s.Phase = phase(t, plan.Maintain, "2026-09-07", 0)
 			s.TDEE, s.TDEETrusted = 2600, true
 		}), step(50), nil, []string{"underweight_loss code"}},
-		{"a proposal with no target before", func(s *State) { ready(s); s.Target = nil }, Change{Target: unsplit(2400, 170, 70), By: ByAutopilotProposal}, nil, nil},
+		{
+			"a step with no target before", func(s *State) { ready(s); s.Target = nil },
+			Change{Target: unsplit(2400, 170, 70), By: ByAutopilotProposal},
+			nil,
+			[]string{"autopilot_shape"},
+		},
+		{"a step that changes the protein", ready, Change{Target: unsplit(2350, 180, 70), By: ByAutopilot}, nil, []string{"autopilot_shape"}},
+		{"a step that changes the fat", ready, Change{Target: unsplit(2350, 170, 75), By: ByAutopilotProposal}, nil, []string{"autopilot_shape"}},
+		{"a step that changes the split", ready, Change{Target: &plan.Target{
+			Training: plan.DayTarget{Kcal: 2500, Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: 2300, Protein: 170, Fat: 70},
+		}, By: ByAutopilot}, nil, []string{"autopilot_shape"}},
+		{
+			"a step that changes the training day's protein", and(func(s *State) { s.Target = splitStep(0, 0, 0, 0, 0) }),
+			Change{Target: splitStep(-50, 5, 0, 0, 0), By: ByAutopilot},
+			nil,
+			[]string{"autopilot_shape"},
+		},
+		{
+			"a step that changes the training day's fat", and(func(s *State) { s.Target = splitStep(0, 0, 0, 0, 0) }),
+			Change{Target: splitStep(-50, 0, 5, 0, 0), By: ByAutopilot},
+			nil,
+			[]string{"autopilot_shape"},
+		},
+		{
+			"a step that changes the rest day's protein", and(func(s *State) { s.Target = splitStep(0, 0, 0, 0, 0) }),
+			Change{Target: splitStep(-50, 0, 0, 5, 0), By: ByAutopilot},
+			nil,
+			[]string{"autopilot_shape"},
+		},
+		{
+			"a step that changes the rest day's fat", and(func(s *State) { s.Target = splitStep(0, 0, 0, 0, 0) }),
+			Change{Target: splitStep(-50, 0, 0, 0, 5), By: ByAutopilot},
+			nil,
+			[]string{"autopilot_shape"},
+		},
+		{"a step that moves a split", and(func(s *State) {
+			s.Target = &plan.Target{Training: plan.DayTarget{Kcal: 2600, Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: 2200, Protein: 170, Fat: 70}}
+		}), Change{Target: &plan.Target{
+			Training: plan.DayTarget{Kcal: 2550, Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: 2150, Protein: 170, Fat: 70},
+		}, By: ByAutopilot}, nil, nil},
+		{
+			"a step that also sets a phase", ready,
+			Change{Phase: phase(t, plan.Cut, "2026-09-07", -0.5), Target: unsplit(2350, 170, 70), By: ByAutopilot},
+			nil,
+			[]string{"autopilot_shape"},
+		},
+		{
+			"a step that also sets training days", ready,
+			Change{Target: unsplit(2350, 170, 70), TrainingDays: new(plan.Weekdays(1)), By: ByAutopilot},
+			nil,
+			[]string{"autopilot_shape"},
+		},
 	})
+}
+
+// splitStep is a split target of 2600 kcal on training days and 2200 on
+// rest days moved by kcal, with the grams of protein and fat of each day
+// type moved by the rest.
+func splitStep(kcal, trainingProtein, trainingFat, restProtein, restFat float64) *plan.Target {
+	return &plan.Target{
+		Training: plan.DayTarget{Kcal: 2600 + kcal, Protein: 170 + trainingProtein, Fat: 70 + trainingFat},
+		Rest:     plan.DayTarget{Kcal: 2200 + kcal, Protein: 170 + restProtein, Fat: 70 + restFat},
+	}
 }
 
 func TestValidateWarnings(t *testing.T) {
@@ -489,4 +551,118 @@ func TestValidateWarnings(t *testing.T) {
 	if v := r.Violations[0]; v.Limit != 1500 || v.Proposed != 1400 {
 		t.Errorf("Violation = %+v, want limit 1500 and 1400 proposed", v)
 	}
+}
+
+// A value on a limit passes, though float arithmetic puts it a hair past:
+// the defaults never pass a limit, and limits are inclusive.
+func TestValidateAtTheEdge(t *testing.T) {
+	t.Parallel()
+
+	lv := levels()
+	eff := Effective(lv.User, lv.Instance)
+	// A cut's default at 1.5 kg a week, from 150 to 300 kg.
+	for kg := 150.0; kg <= 300; kg += 0.5 {
+		s := base(t)
+		s.Profile.HeightCm = 200
+		s.TrendKg = kg
+		rate := DefaultRate(plan.Cut, s.Profile.BMI(kg), kg, eff)
+		if r := Validate(Change{Phase: phase(t, plan.Cut, "2026-10-26", rate)}, s, lv); !r.OK() {
+			t.Fatalf("the default cut at %v kg = %q", kg, violations(r))
+		}
+	}
+	// Maintenance's protein, 1.6 g/kg, in grams and back.
+	for kg := 50.0; kg <= 97; kg += 0.1 {
+		s := base(t)
+		s.TrendKg = kg
+		grams := plan.ProteinGrams(DefaultProtein(plan.Maintain, kg, eff), kg)
+		if r := Validate(Change{Target: unsplit(2800, grams, 80)}, s, lv); !r.OK() {
+			t.Fatalf("1.6 g/kg at %v kg (%v g) = %q", kg, grams, violations(r))
+		}
+	}
+	// Protein at the ceiling, 3.0 g/kg, in grams and back.
+	for kg := 50.0; kg <= 97; kg += 0.1 {
+		s := base(t)
+		s.TrendKg = kg
+		if r := Validate(Change{Target: unsplit(3200, plan.ProteinGrams(3.0, kg), 80)}, s, lv); !r.OK() {
+			t.Fatalf("3.0 g/kg at %v kg = %q", kg, violations(r))
+		}
+	}
+	// A hair over the code's 800 kcal is 800, which the code refuses.
+	if r := Validate(Change{Target: unsplit(800+1e-13, 136, 25)}, base(t), lv); !slices.Equal(violations(r), []string{"kcal_floor code"}) {
+		t.Errorf("800 kcal and a hair = %q", violations(r))
+	}
+	// Fat at exactly 20 % of the day.
+	for kcal := 1500.0; kcal <= 4000; kcal++ {
+		if r := Validate(Change{Target: unsplit(kcal, 170, kcal*0.2/9)}, base(t), lv); !r.OK() {
+			t.Fatalf("20 %% fat at %v kcal = %q", kcal, violations(r))
+		}
+	}
+}
+
+// Below a BMI of 18.5 the floor in the code holds before calibration
+// trusts the TDEE too: a target that lowers the weekly average is taken
+// for a deeper loss.
+func TestValidateUnderweightBeforeTheTDEE(t *testing.T) {
+	t.Parallel()
+
+	thin := func(s *State) {
+		s.Profile = profile.Profile{Sex: profile.Female, BirthDate: date(t, "1990-03-01"), HeightCm: 165}
+		s.TrendKg = 46 // a BMI of 16.9
+		s.Phase = phase(t, plan.Maintain, "2026-09-07", 0)
+		s.Target = unsplit(2000, 100, 60)
+	}
+	runValidate(t, []validateCase{
+		{"a lower target", thin, Change{Target: unsplit(1250, 100, 40)}, nil, []string{"underweight_loss code"}},
+		{"a higher target", thin, Change{Target: unsplit(2100, 100, 60)}, nil, nil},
+		{"the same average, protein changed", thin, Change{Target: unsplit(2000, 110, 60)}, nil, nil},
+		{"training days that lower the average", func(s *State) {
+			thin(s)
+			s.TrainingDays = 1<<7 - 1
+			s.Target = &plan.Target{Training: plan.DayTarget{Kcal: 2400, Protein: 100, Fat: 60}, Rest: plan.DayTarget{Kcal: 2000, Protein: 100, Fat: 60}}
+		}, Change{TrainingDays: new(plan.Weekdays(0))}, nil, []string{"underweight_loss code"}},
+		{"a lower target above a BMI of 18.5", func(s *State) { thin(s); s.TrendKg = 60 }, Change{Target: unsplit(1700, 100, 50)}, nil, nil},
+		{"a first target", func(s *State) { thin(s); s.Target = nil }, Change{Target: unsplit(1800, 100, 50)}, nil, nil},
+	})
+}
+
+func TestValidateRefusesAChangeOfTheWrongShape(t *testing.T) {
+	t.Parallel()
+
+	start := "2026-10-26"
+	runValidate(t, []validateCase{
+		{"kcal that are no number", nil, Change{Target: unsplit(math.NaN(), 170, 70)}, nil, []string{"invalid_change"}},
+		{"a training day of the wrong shape", nil, Change{Target: &plan.Target{
+			Training: plan.DayTarget{Kcal: 500, Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: 2400, Protein: 170, Fat: 70},
+		}}, nil, []string{"invalid_change"}},
+		{"a rest day of the wrong shape", nil, Change{Target: &plan.Target{
+			Training: plan.DayTarget{Kcal: 2400, Protein: 170, Fat: 70}, Rest: plan.DayTarget{Kcal: 500, Protein: 170, Fat: 70},
+		}}, nil, []string{"invalid_change"}},
+		{"a rate that is no number", nil, Change{Phase: phase(t, plan.Cut, start, math.NaN())}, nil, []string{"invalid_change"}},
+		{"a bulk that loses", nil, Change{Phase: phase(t, plan.Bulk, start, -0.9)}, nil, []string{"invalid_change"}},
+		{"maintenance that loses", nil, Change{Phase: phase(t, plan.Maintain, start, -1.5)}, nil, []string{"invalid_change"}},
+		{"no day of the week", nil, Change{TrainingDays: new(plan.Weekdays(1 << 7))}, nil, []string{"invalid_change"}},
+		{
+			"a trend weight that is no number", func(s *State) { s.TrendKg = math.NaN() },
+			Change{Phase: phase(t, plan.Cut, start, -0.5)},
+			nil,
+			[]string{"invalid_change"},
+		},
+	})
+}
+
+// A new phase that loses more slowly than the current one starts no loss
+// below a BMI of 18.5.
+func TestValidateUnderweightNewPhase(t *testing.T) {
+	t.Parallel()
+
+	cutting := func(s *State) {
+		s.TrendKg = 59
+		s.Phase = phase(t, plan.Cut, "2026-09-07", -0.5)
+		s.PhaseStartTrendKg = 62
+	}
+	runValidate(t, []validateCase{
+		{"a slower recomp", cutting, Change{Phase: phase(t, plan.Recomp, "2026-10-26", -0.2)}, nil, nil},
+		{"a slower cut", cutting, Change{Phase: phase(t, plan.Cut, "2026-10-26", -0.2)}, nil, nil},
+		{"a faster cut", cutting, Change{Phase: phase(t, plan.Cut, "2026-10-26", -0.6)}, nil, []string{"underweight_loss code"}},
+	})
 }

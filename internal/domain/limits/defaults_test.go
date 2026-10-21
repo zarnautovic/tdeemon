@@ -58,6 +58,10 @@ func TestDefaultProtein(t *testing.T) {
 	user := UserDefaults()
 	narrow := user
 	narrow.ProteinFloor, narrow.ProteinCeiling = 1.7, 2.0
+	grams := user
+	grams.ProteinFloorGrams = 150
+	tooMany := user
+	tooMany.ProteinFloorGrams = 300
 	for _, tc := range []struct {
 		name string
 		t    plan.PhaseType
@@ -71,10 +75,13 @@ func TestDefaultProtein(t *testing.T) {
 		// A ceiling of 2.0 cuts a cut's 2.2 (docs/limits.md).
 		{"a cut under a ceiling", plan.Cut, narrow, 2.0},
 		{"maintenance over a floor", plan.Maintain, narrow, 1.7},
+		// A floor of 150 g is 1.875 g/kg of 80 kg.
+		{"maintenance over a floor in grams", plan.Maintain, grams, 1.875},
+		{"a floor in grams over the ceiling", plan.Cut, tooMany, 3.0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := DefaultProtein(tc.t, tc.l); !near(got, tc.want) {
+			if got := DefaultProtein(tc.t, 80, tc.l); !near(got, tc.want) {
 				t.Errorf("DefaultProtein = %v, want %v", got, tc.want)
 			}
 		})

@@ -61,10 +61,12 @@ only the warning on energy availability.
 - **The rate a kcal target implies** is the weekly average less the
   measured TDEE, times 7, over 7700 kcal per kg, as a share of the trend
   weight. It counts once calibration trusts the measured TDEE enough for
-  a verdict (DESIGN.md §7); until then a target's kcal meet only the
-  kcal floor. Whatever the phase, it is held to the limits of loss and
-  gain: no faster loss than a cut's limit for the BMI, no faster gain
-  than a bulk's.
+  a verdict (DESIGN.md §7); until then a target's kcal meet the kcal
+  floor, and below a BMI of 18.5 a target may not lower the weekly
+  average, which the floor in the code takes for a deeper loss.
+  Whatever the phase, it is held to the limits of loss and gain: no
+  faster loss than a cut's limit for the BMI, no faster gain than a
+  bulk's.
 - **"Default"** is the user's limit at the start, and the value a phase
   starts with. For a rate, the range in brackets is the user's limit: a
   faster loss or gain needs the user to loosen it first, and a slower
@@ -225,7 +227,7 @@ Rates are in % a week, shares in %.
 | --- | --- | --- |
 | `cut_rate` | Cut, BMI below 30 | lower |
 | `cut_rate_obese` | Cut, BMI 30 or more | lower |
-| `loss_kg_week` | the 1.5 kg a week, which holds for every loss: a cut, a recomp below 0 and the loss a kcal target implies; a user's starts at the instance's | higher |
+| `loss_kg_week` | the 1.5 kg a week, which holds for every loss: a cut, a recomp below 0 and the loss a kcal target implies; a user's starts at 1.5 too | higher |
 | `bulk_rate` | Bulk | higher |
 | `recomp_min`, `recomp_max` | Recomp | lower, higher |
 | `protein_floor`, `protein_ceiling` | Protein, floor and ceiling, g/kg | lower, higher |
@@ -242,10 +244,12 @@ The instance may only tighten the limits with an empty cell under
 and no level passes the floor in the code. A user's limit looser than
 the instance's holds only as far as the instance's.
 
-`Validate` names the rule a change breaks, with the limit that holds,
-the value proposed, the type of day for the limits of each, and the
-level that refuses it: `code` (nothing allows it), `instance` (only the
-admin could) or `user` (the user may loosen it, up to the instance's).
+`Validate` names the rule a change breaks, with the limit that holds
+for the user (the strictest of the levels), the value proposed, the
+type of day for the limits of each, and the outermost level the value
+breaks: `code` (nothing allows it), `instance` (only the admin could)
+or `user` (the user may loosen it, up to the instance's). Values on a
+limit pass, within the error of float arithmetic.
 The rules: `profile_missing`, `weight_missing`, `min_age`,
 `underweight_loss`, `underweight_goal`, `underweight_milestone`,
 `cut_rate`, `bulk_rate`, `recomp_rate`, `loss_kg_week`,
@@ -253,10 +257,13 @@ The rules: `profile_missing`, `weight_missing`, `min_age`,
 `kcal_floor`, `fat_floor`, `protein_floor`, `protein_ceiling`,
 `protein_floor_grams`, and for the autopilot's steps `autopilot_step`,
 `autopilot_interval`, `autopilot_first_step`, `autopilot_logged_days`,
-`autopilot_weigh_ins`, `autopilot_drift` and `tdee_missing`, a step with
-no TDEE to measure its drift against. What starts the autopilot's waits
-again, and what counts as a logged day, are the autopilot's to decide;
-`Validate` holds the numbers it is given to the limits.
+`autopilot_weigh_ins`, `autopilot_drift`, `tdee_missing` (a step with no
+TDEE to measure its drift against) and `autopilot_shape` (a step is a
+shift of the weekly average of the target before, and nothing else). A
+change that breaks a rule of its shape is `invalid_change`. What starts
+the autopilot's waits again, and what counts as a logged day, are the
+autopilot's to decide; `Validate` holds the numbers it is given to the
+limits.
 
 ## Warnings, not limits
 

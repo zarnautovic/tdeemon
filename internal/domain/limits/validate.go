@@ -54,6 +54,14 @@ const (
 	RuleWeighIns    = "autopilot_weigh_ins"
 	RuleDrift       = "autopilot_drift"
 	RuleTDEEMissing = "tdee_missing"
+	// RuleAutopilotShape: an autopilot step is a shift of the weekly
+	// average of the target before (plan.Target.ShiftKcal), and nothing
+	// else; Limit and Proposed are 0.
+	RuleAutopilotShape = "autopilot_shape"
+	// RuleInvalidChange: the change breaks a rule of its shape (a rate of
+	// the wrong sign for its phase, a value that is no number), or the
+	// state's trend weight is no number; Limit and Proposed are 0.
+	RuleInvalidChange = "invalid_change"
 )
 
 // The rules a warning names; warnings show in a preview without refusing
@@ -88,8 +96,9 @@ const (
 	LevelUser Level = "user"
 )
 
-// Violation is one rule a change breaks: the limit that holds and the
-// value proposed, in the units the rule names.
+// Violation is one rule a change breaks: the limit that holds for the
+// user (the strictest of the levels) and the value proposed, in the
+// units the rule names.
 type Violation struct {
 	Rule string
 	// DayType is the type of day the value is of, for the limits that
@@ -98,7 +107,9 @@ type Violation struct {
 	Limit    float64
 	Proposed float64
 	// Level is the outermost level the value breaks, so whoever reads it
-	// knows who could allow it; "" for missing data.
+	// knows who could allow more: nothing (code), the admin (instance) or
+	// the user (user). Limit stays the one that holds for the user. ""
+	// for missing data and a change of the wrong shape.
 	Level Level
 }
 
@@ -218,7 +229,7 @@ func Validate(c Change, s State, lv Levels) Result {
 	if c.Phase == nil && c.Target == nil && c.TrainingDays == nil {
 		return v.r
 	}
-	if !v.needs() {
+	if !v.shape() || !v.needs() {
 		return v.r
 	}
 	v.prepare()
@@ -253,6 +264,25 @@ type validator struct {
 	bmiStart    float64 // the BMI when the phase started
 	newPhase    bool    // the change starts a phase, rather than editing the current one
 	trainingNow plan.Weekdays
+}
+
+// shape refuses a change that breaks a rule of its shape, which no limit
+// would catch (a comparison with a value that is no number is false; a
+// bulk that loses is no cut), and a trend weight that is no number. It
+// reports false for one.
+func (v *validator) shape() bool {
+	var bad bool
+	switch c := v.c; {
+	case c.Phase != nil && c.Phase.Validate() != nil,
+		c.Target != nil && (c.Target.Training.Validate() != nil || c.Target.Rest.Validate() != nil),
+		c.TrainingDays != nil && c.TrainingDays.Validate() != nil:
+		bad = true
+	}
+	if bad || !finite(v.s.TrendKg) {
+		v.violate(Violation{Rule: RuleInvalidChange})
+		return false
+	}
+	return true
 }
 
 // needs checks what a plan needs before anything else: the profile, a
@@ -355,9 +385,11 @@ func (v *validator) rate(p plan.Phase, old *float64) {
 		v.hold(bound{rule: RuleLossKgWeek, floor: true, user: -v.user.LossKgWeek, instance: -v.instance.LossKgWeek},
 			plan.KgPerWeek(r, v.trend), scaled(old, func(o float64) float64 { return plan.KgPerWeek(o, v.trend) }))
 	}
+	// The loss under way is the current phase's, a new phase's too: a
+	// new phase that loses more slowly does not start a loss.
 	was := 0.0
-	if old != nil {
-		was = math.Min(*old, 0)
+	if v.s.Phase != nil {
+		was = math.Min(v.s.Phase.RatePctWeek, 0)
 	}
 	v.underweight(r, was)
 }
@@ -459,6 +491,7 @@ func (v *validator) days() {
 // TDEE, once calibration trusts it, when the change moves the average.
 func (v *validator) implied() {
 	if !v.s.TDEETrusted || v.s.TDEE <= 0 {
+		v.lowerWhileUnderweight()
 		return
 	}
 	t := v.target()
@@ -486,6 +519,21 @@ func (v *validator) implied() {
 	v.underweight(now, was)
 }
 
+// lowerWhileUnderweight holds the floor in the code below a BMI of
+// UnderweightBMI before calibration trusts the TDEE: no rate can be
+// implied then, so a target that lowers the weekly average is taken for
+// one that deepens a loss, and refused.
+func (v *validator) lowerWhileUnderweight() {
+	if !v.underweightNow() || v.s.Target == nil {
+		return
+	}
+	now := v.target().WeeklyAverage(v.trainingNow.Count()).Kcal
+	before := v.s.Target.WeeklyAverage(v.s.TrainingDays.Count()).Kcal
+	if (bound{floor: true}).breaks(now, before, false) {
+		v.violate(Violation{Rule: RuleUnderweightLoss, Limit: UnderweightBMI, Proposed: v.bmiNow, Level: LevelCode})
+	}
+}
+
 func (v *validator) impliedRate(t plan.Target, training plan.Weekdays) float64 {
 	return plan.ImpliedRate(t.WeeklyAverage(training.Count()).Kcal, v.s.TDEE, v.trend)
 }
@@ -498,7 +546,9 @@ func (v *validator) autopilot() {
 	if v.underweightNow() && v.lossUnderWay() {
 		v.violate(Violation{Rule: RuleUnderweightLoss, Limit: UnderweightBMI, Proposed: v.bmiNow, Level: LevelCode})
 	}
-	if v.s.Target != nil && v.c.Target != nil {
+	if !v.isStep() {
+		v.violate(Violation{Rule: RuleAutopilotShape})
+	} else {
 		n := v.s.TrainingDays.Count()
 		before := v.s.Target.WeeklyAverage(n).Kcal
 		delta := v.c.Target.WeeklyAverage(n).Kcal - before
@@ -514,6 +564,20 @@ func (v *validator) autopilot() {
 	v.hold(bound{rule: RuleFirstStep, floor: true, user: v.user.FirstStepDays, instance: v.instance.FirstStepDays}, float64(a.DaysSincePhaseChange), nil)
 	v.hold(bound{rule: RuleLoggedDays, floor: true, user: v.user.LoggedDays, instance: v.instance.LoggedDays}, float64(a.LoggedDays), nil)
 	v.hold(bound{rule: RuleWeighIns, floor: true, user: v.user.WeighIns, instance: v.instance.WeighIns}, float64(a.WeighIns), nil)
+}
+
+// isStep reports whether the change is an autopilot step: a new target
+// that shifts the weekly average of the one before, as
+// plan.Target.ShiftKcal does, with nothing else changed.
+func (v *validator) isStep() bool {
+	c, before := v.c, v.s.Target
+	if c.Target == nil || before == nil || c.Phase != nil || c.TrainingDays != nil {
+		return false
+	}
+	want := before.ShiftKcal(c.Target.Training.Kcal - before.Training.Kcal)
+	near := func(a, b float64) bool { return math.Abs(a-b) <= 1e-9*math.Max(1, math.Abs(b)) }
+	return near(c.Target.Rest.Kcal, want.Rest.Kcal) && c.Target.Training.Protein == want.Training.Protein &&
+		c.Target.Training.Fat == want.Training.Fat && c.Target.Rest.Protein == want.Rest.Protein && c.Target.Rest.Fat == want.Rest.Fat
 }
 
 // drift checks the autopilot's net change from the last kcal target the
@@ -570,15 +634,19 @@ type bound struct {
 	codeExclusive bool
 }
 
-// breaks reports whether x breaks limit, as a floor or a ceiling.
+// breaks reports whether x breaks limit, as a floor or a ceiling. A value
+// within the error of float arithmetic of the limit is on it: a default
+// cut at 1.5 kg a week, or 1.6 g/kg of a reference mass turned into
+// grams and back, comes a hair past it.
 func (b bound) breaks(x, limit float64, exclusive bool) bool {
+	tol := epsilon * math.Max(1, math.Abs(limit))
 	switch {
 	case b.floor && exclusive:
-		return x <= limit
+		return x <= limit+tol
 	case b.floor:
-		return x < limit
+		return x < limit-tol
 	}
-	return x > limit
+	return x > limit+tol
 }
 
 // hold reports a violation when x breaks b on the user's level, which is

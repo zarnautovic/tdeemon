@@ -355,8 +355,6 @@ func TestLoadLimits(t *testing.T) {
 		"TDEEMON_LIMIT_KCAL_FLOOR_FEMALE": "1000", // a clinician's patient
 		"TDEEMON_LIMIT_CUT_RATE":          " -0.8 ",
 		"TDEEMON_LIMIT_INTERVAL_DAYS":     "10",
-		// A user's limit, which no variable sets.
-		"TDEEMON_LIMIT_PROTEIN_FLOOR_GRAMS": "200",
 	})
 	cfg, err = config.Load(env(m))
 	if err != nil {
@@ -381,6 +379,7 @@ func TestLoadLimitsErrors(t *testing.T) {
 		{"a limit the instance only tightens", "TDEEMON_LIMIT_PROTEIN_CEILING", "4", "protein_ceiling 4: the instance may only tighten it"},
 		{"a part of a day", "TDEEMON_LIMIT_FIRST_STEP_DAYS", "14.5", "first_step_days 14.5"},
 		{"no number", "TDEEMON_LIMIT_DRIFT_PCT", "NaN", "drift_pct NaN"},
+		{"a user's limit", "TDEEMON_LIMIT_PROTEIN_FLOOR_GRAMS", "200", "TDEEMON_LIMIT_PROTEIN_FLOOR_GRAMS: a user's limit"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
