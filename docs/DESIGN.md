@@ -97,7 +97,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import) | |
-| `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
+| `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
 | `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log) |
 | `targets` | user_id, effective_from, kcal, kcal_training?, kcal_rest?, protein, carbs, fat, proposal_id? | effective-dated rows; the why lives in the proposal |
@@ -135,7 +135,8 @@ time; the code does the arithmetic. A food is one of:
 A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
 present; nobody has to enter them. Values are stored as they are and
-rounded only for display (kcal to a whole number, grams to a tenth).
+rounded only for display (kcal to a whole number, grams to a tenth, salt
+to a hundredth).
 
 **Metric merge rules** carry over from the predecessor: a manual weight beats an
 imported one, sleep is a max-merge per date, cumulative metrics never

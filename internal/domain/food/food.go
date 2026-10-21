@@ -117,7 +117,7 @@ func (f Food) Validate() error {
 		errs = append(errs, errors.New("id is missing"))
 	}
 	errs = append(errs, text.Check("name", f.Name, MaxNameLen, true), text.Check("brand", f.Brand, MaxBrandLen, false),
-		text.Check("note", f.Note, MaxNoteLen, false))
+		text.CheckLines("note", f.Note, MaxNoteLen, false))
 	if !validSource(f.Source) {
 		errs = append(errs, fmt.Errorf("source %q: want one of label, estimate, user, dish", f.Source))
 	}

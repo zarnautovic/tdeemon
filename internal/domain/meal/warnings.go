@@ -87,8 +87,9 @@ const DuplicateWindow = 10 * time.Minute
 // DuplicateOf returns a warning when m looks like a meal in recent sent
 // again: eaten within DuplicateWindow of it, with the same items in the
 // same amounts. A client that retries without the meal's ID, or a model
-// that logs twice, would otherwise double the day.
-func DuplicateOf(m Meal, recent []Meal) (Warning, bool) {
+// that logs twice, would otherwise double the day. The message gives the
+// earlier meal's time in loc, the user's time zone.
+func DuplicateOf(m Meal, recent []Meal, loc *time.Location) (Warning, bool) {
 	for i := range recent {
 		r := &recent[i]
 		if r.ID == m.ID || absDuration(r.EatenAt.Sub(m.EatenAt)) > DuplicateWindow || !sameItems(r.Items, m.Items) {
@@ -96,7 +97,7 @@ func DuplicateOf(m Meal, recent []Meal) (Warning, bool) {
 		}
 		return Warning{WarnDuplicateMeal, fmt.Sprintf(
 			"a meal with the same items was logged at %s; if this one was sent twice, delete it",
-			r.EatenAt.Format("15:04"))}, true
+			r.EatenAt.In(loc).Format("15:04"))}, true
 	}
 	return Warning{}, false
 }

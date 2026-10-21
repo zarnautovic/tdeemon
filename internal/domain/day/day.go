@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/text"
+	"github.com/zarnautovic/tdeemon/internal/domain/user"
 )
 
 // Date is a calendar date, with no time and no time zone.
@@ -69,17 +70,20 @@ func NewCalendar(tz string, startHour int) (Calendar, error) {
 	if startHour < 0 || startHour > 23 {
 		return Calendar{}, fmt.Errorf("day start hour %d: want 0 to 23", startHour)
 	}
-	loc, err := time.LoadLocation(tz)
-	if err != nil {
-		return Calendar{}, fmt.Errorf("time zone %q: %w", tz, err)
+	// The user's own rule: "" and "Local" would be this machine's zone.
+	if err := user.ValidateTimeZone(tz); err != nil {
+		return Calendar{}, err
 	}
+	loc, _ := time.LoadLocation(tz) // ValidateTimeZone has loaded it
 	return Calendar{Location: loc, StartHour: startHour}, nil
 }
 
 // DayOf returns the day an instant belongs to: its date on the user's
 // wall clock, or the date before when it comes before that date's start.
-// It is defined by Start, so the instant always lies in [Start, End) of
-// its day, summer time or not.
+// It is defined by Start, so the instant lies in [Start, End) of its day
+// across summer time as zones change their clocks today. (Some zones
+// once turned the clock back across midnight; an instant in such an hour
+// can get a day that has already ended.)
 func (c Calendar) DayOf(t time.Time) Date {
 	d := DateOf(t.In(c.Location))
 	if t.Before(c.Start(d)) {
@@ -101,10 +105,16 @@ func (c Calendar) Start(d Date) time.Time {
 		_, end := t.ZoneBounds()
 		return end
 	}
+	start, _ := t.ZoneBounds()
+	// time.Date may also go forward across a gap that does not begin at
+	// the hour (02:45 to 03:45 in Chatham, for a day at 03:00): when the
+	// clock jumped past the hour as t's period began, the day starts then.
+	if !start.IsZero() && wallClock(start.Add(-time.Nanosecond)).Before(want) && !wallClock(start).Before(want) {
+		return start
+	}
 	// The clock went back to show this wall clock twice when the instant
 	// that shows it at the period before's offset still lies in that
 	// period; it is the earlier of the two.
-	start, _ := t.ZoneBounds()
 	if !start.IsZero() {
 		_, prevOffset := start.Add(-time.Nanosecond).Zone()
 		_, offset := t.Zone()

@@ -9,26 +9,40 @@ func TestCheck(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name, s  string
-		required bool
-		want     string // "" for no error
+		name, s         string
+		required, lines bool
+		want            string // "" for no error
 	}{
-		{"a value", "Egg", true, ""},
-		{"lines", "one\ntwo", false, ""},
-		{"empty, optional", "", false, ""},
-		{"empty, required", "", true, "note is required"},
-		{"only space, required", "  ", true, "note is required"},
-		{"only space, optional", "  ", false, "note is only space"},
-		{"space around", " Egg", false, "space at the start or end"},
-		{"a tab", "E\tgg", false, "control character"},
-		{"DEL", "E\x7fgg", false, "control character"},
-		{"not UTF-8", "\xff", false, "not valid UTF-8"},
-		{"too long", strings.Repeat("ž", 11), false, "11 characters long, want at most 10"},
-		{"just long enough", strings.Repeat("ž", 10), false, ""},
+		{"a value", "Egg", true, false, ""},
+		{"inner space", "Egg white", true, false, ""},
+		{"lines in a note", "one\ntwo", false, true, ""},
+		{"lines in a name", "one\ntwo", false, false, "control or invisible"},
+		{"a tab in a note", "one\ttwo", false, true, "control or invisible"},
+		{"empty, optional", "", false, false, ""},
+		{"empty, required", "", true, false, "note is required"},
+		{"only space, required", "  ", true, false, "note is required"},
+		{"only space, optional", "  ", false, false, "note is only space"},
+		{"space around", " Egg", false, false, "space at the start or end"},
+		{"a tab", "E\tgg", false, false, "control or invisible"},
+		{"DEL", "E\x7fgg", false, false, "control or invisible"},
+		{"NEL", "Egg\u0085x", false, true, "control or invisible"},
+		{"a zero-width space", "Egg\u200b", false, false, "control or invisible"},
+		{"a direction override", "Egg\u202e", false, false, "control or invisible"},
+		{"a line separator", "x\u2028y", false, true, "control or invisible"},
+		{"a variation selector", "Egg\ufe0f", false, false, "control or invisible"},
+		{"a blank Braille pattern", "\u2800", true, false, "control or invisible"},
+		{"a replacement character", "\ufffd", true, false, "control or invisible"},
+		{"not UTF-8", "\xff", false, false, "not valid UTF-8"},
+		{"too long", strings.Repeat("ž", 11), false, false, "11 characters long, want at most 10"},
+		{"just long enough", strings.Repeat("ž", 10), false, false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := Check("note", tc.s, 10, tc.required)
+			check := Check
+			if tc.lines {
+				check = CheckLines
+			}
+			err := check("note", tc.s, 10, tc.required)
 			if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
 				t.Errorf("Check(%q) = %v, want %q", tc.s, err, tc.want)
 			}

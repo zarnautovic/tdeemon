@@ -54,7 +54,8 @@ type Item struct {
 	// estimate.
 	FoodID uuid.UUID
 	// Name is the food's name (with its brand) when the item was logged,
-	// or the estimate's.
+	// or the estimate's: up to food.MaxBrandLen + 1 + food.MaxNameLen
+	// characters.
 	Name     string
 	Quantity Quantity
 	// Amount is the quantity in Unit: grams, ml or portions.
@@ -277,4 +278,4 @@ func DayTotal(meals []Meal) food.Nutrients {
 	return t
 }
 
-func validateNote(note string) error { return text.Check("note", note, MaxNoteLen, false) }
+func validateNote(note string) error { return text.CheckLines("note", note, MaxNoteLen, false) }

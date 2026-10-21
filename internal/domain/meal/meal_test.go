@@ -137,7 +137,7 @@ func TestFromFoodRefuses(t *testing.T) {
 		{"grams making too many portions", canteen(100), Quantity{Amount: 6000, Unit: "g"}, "", "60 portions: want at most 50"},
 		{"grams of a portion of unknown weight", canteen(0), Quantity{Amount: 300, Unit: "g"}, "", "weight of a portion is not known"},
 		{"servings of a portion", canteen(0), Quantity{Servings: 1, Serving: "piece"}, "", "takes portions"},
-		{"a note with a control character", egg(), Quantity{Amount: 10, Unit: "g"}, "a\x00b", "control character"},
+		{"a note with a control character", egg(), Quantity{Amount: 10, Unit: "g"}, "a\x00b", "control or invisible"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -177,6 +177,12 @@ func TestEstimate(t *testing.T) {
 	}
 	if _, err := Estimate("Pasta", food.Nutrients{Kcal: 1}, " "); err == nil {
 		t.Error("a note of only space was accepted")
+	}
+	if _, err := Estimate("Pasta", food.Nutrients{Kcal: 1}, "no oil\nlots of cheese"); err != nil {
+		t.Errorf("a note over two lines: %v", err)
+	}
+	if _, err := Estimate("Pasta\ncarbonara", food.Nutrients{Kcal: 1}, ""); err == nil {
+		t.Error("a name over two lines was accepted")
 	}
 }
 

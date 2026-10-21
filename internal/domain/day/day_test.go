@@ -73,7 +73,8 @@ func TestDayOfAtMidnight(t *testing.T) {
 
 // Summer time ends on 25 October 2026 in Zagreb (03:00 back to 02:00) and
 // starts on 29 March 2026 (02:00 forward to 03:00): days follow the wall
-// clock, so the 25th lasts 25 hours and 29 March 23.
+// clock, so with the day at 04:00 the day of 24 October lasts 25 hours
+// and that of 28 March 23.
 func TestDaysAcrossSummerTime(t *testing.T) {
 	t.Parallel()
 
@@ -115,7 +116,7 @@ func TestDaysTileTime(t *testing.T) {
 
 	for _, tz := range []string{
 		"Europe/Zagreb", "America/New_York", "America/Santiago", "Australia/Lord_Howe",
-		"America/Havana", "Asia/Beirut", "UTC",
+		"America/Havana", "Asia/Beirut", "Pacific/Chatham", "Antarctica/Troll", "UTC",
 	} {
 		t.Run(tz, func(t *testing.T) {
 			t.Parallel()
@@ -123,6 +124,14 @@ func TestDaysTileTime(t *testing.T) {
 				c, err := NewCalendar(tz, h)
 				if err != nil {
 					t.Fatal(err)
+				}
+				for d := (Date{2026, 1, 1}); d.Year == 2026; d = d.AddDays(1) {
+					// Start is the first instant the wall clock shows the
+					// hour on the date, or later.
+					s, want := c.Start(d), time.Date(d.Year, d.Month, d.Day, h, 0, 0, 0, time.UTC)
+					if wallClock(s).Before(want) || !wallClock(s.Add(-time.Second)).Before(want) {
+						t.Fatalf("hour %d: %v starts at %v", h, d, s)
+					}
 				}
 				from := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 				for inst := from; inst.Year() == 2026; inst = inst.Add(15 * time.Minute) {
@@ -133,6 +142,32 @@ func TestDaysTileTime(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A gap that does not begin at the hour: the day starts as it ends.
+func TestStartInAGapOffTheHour(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		tz   string
+		hour int
+		date string
+		want time.Time
+	}{
+		// Chatham, 27 September 2026: 02:45 +1245 jumps to 03:45 +1345.
+		{"Pacific/Chatham", 3, "2026-09-27", time.Date(2026, 9, 26, 14, 0, 0, 0, time.UTC)},
+		// Troll, 29 March 2026: 01:00 +00 jumps to 03:00 +02.
+		{"Antarctica/Troll", 2, "2026-03-29", time.Date(2026, 3, 29, 1, 0, 0, 0, time.UTC)},
+	} {
+		c, err := NewCalendar(tc.tz, tc.hour)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, _ := ParseDate(tc.date)
+		if got := c.Start(d); !got.Equal(tc.want) {
+			t.Errorf("%s: Start(%s) = %v, want %v", tc.tz, d, got.UTC(), tc.want)
+		}
 	}
 }
 
@@ -196,6 +231,8 @@ func TestNewCalendarRefuses(t *testing.T) {
 		{"hour 24", "UTC", 24, "want 0 to 23"},
 		{"a negative hour", "UTC", -1, "want 0 to 23"},
 		{"an unknown zone", "Mars/Olympus", 4, "time zone"},
+		{"no zone", "", 4, "want an IANA name"},
+		{"the machine's zone", "Local", 4, "want an IANA name"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

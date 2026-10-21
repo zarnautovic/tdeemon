@@ -88,28 +88,37 @@ func TestDuplicateOf(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			w, dup := DuplicateOf(tc.next, []Meal{first})
+			w, dup := DuplicateOf(tc.next, []Meal{first}, time.UTC)
 			if dup != tc.want || (dup && (w.Code != WarnDuplicateMeal || !strings.Contains(w.Message, "08:30"))) {
 				t.Errorf("DuplicateOf = %v, %v; want %v", w, dup, tc.want)
 			}
 		})
 	}
 	// The meal itself (an update) is no duplicate of itself.
-	if _, dup := DuplicateOf(first, []Meal{first}); dup {
+	if _, dup := DuplicateOf(first, []Meal{first}, time.UTC); dup {
 		t.Error("a meal is a duplicate of itself")
+	}
+	// The time is the user's: 08:30 UTC is 10:30 in Zagreb in October.
+	zagreb, err := time.LoadLocation("Europe/Zagreb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"}))
+	if w, _ := DuplicateOf(again, []Meal{first}, zagreb); !strings.Contains(w.Message, "at 10:30;") {
+		t.Errorf("DuplicateOf in Zagreb = %q, want the time 10:30", w.Message)
 	}
 	// Estimates compare by name.
 	a, _ := Estimate("Burger", food.Nutrients{Kcal: 900}, "")
 	b, _ := Estimate("Burger", food.Nutrients{Kcal: 900}, "")
-	if _, dup := DuplicateOf(meal(t, at, b), []Meal{meal(t, at, a)}); !dup {
+	if _, dup := DuplicateOf(meal(t, at, b), []Meal{meal(t, at, a)}, time.UTC); !dup {
 		t.Error("the same estimate twice is not a duplicate")
 	}
 	c, _ := Estimate("Pizza", food.Nutrients{Kcal: 900}, "")
-	if _, dup := DuplicateOf(meal(t, at, c), []Meal{meal(t, at, a)}); dup {
+	if _, dup := DuplicateOf(meal(t, at, c), []Meal{meal(t, at, a)}, time.UTC); dup {
 		t.Error("estimates of another name are a duplicate")
 	}
 	d, _ := Estimate("Burger", food.Nutrients{Kcal: 700}, "")
-	if _, dup := DuplicateOf(meal(t, at, d), []Meal{meal(t, at, a)}); dup {
+	if _, dup := DuplicateOf(meal(t, at, d), []Meal{meal(t, at, a)}, time.UTC); dup {
 		t.Error("a second burger, smaller, is a duplicate")
 	}
 }
