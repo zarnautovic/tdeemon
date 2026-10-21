@@ -154,6 +154,12 @@ func (db *DB) migrate(ctx context.Context, fsys fs.FS, logger *slog.Logger) erro
 // ErrSchemaTooNew otherwise. Commands that run next to a live server use
 // it instead of Migrate: the runner assumes one process migrates at a
 // time, and that process is the server.
+//
+// After it succeeds, every WriteTx on db checks inside its transaction
+// that the schema is still at that version, so a newer server that
+// migrates between the check and a write makes the write fail instead of
+// writing into a schema this binary does not know. Call it before any
+// write and from one goroutine.
 func (db *DB) RequireCurrentSchema(ctx context.Context) error {
 	sub, err := fs.Sub(embedded, "migrations")
 	if err != nil {
@@ -194,6 +200,7 @@ func (db *DB) requireCurrentSchema(ctx context.Context, fsys fs.FS) error {
 		return fmt.Errorf("%w: the database is at version %04d and this binary expects %04d; start the server once to migrate it",
 			ErrSchemaOutdated, len(applied), len(known))
 	}
+	db.requiredVersion.Store(int64(len(known)))
 	return nil
 }
 

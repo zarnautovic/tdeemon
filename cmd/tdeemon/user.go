@@ -29,10 +29,14 @@ func userCommand(ctx context.Context, args []string, lookup config.LookupFunc, i
 	if len(args) == 0 {
 		return fmt.Errorf("%w: user: name a subcommand, such as create", errUsage)
 	}
-	if args[0] != "create" {
-		return fmt.Errorf("%w: user: unknown subcommand %q", errUsage, args[0])
+	switch args[0] {
+	case "-h", "-help", "--help", "help":
+		_, err := io.WriteString(out, usage)
+		return err
+	case "create":
+		return createUser(ctx, args[1:], lookup, in, out)
 	}
-	return createUser(ctx, args[1:], lookup, in, out)
+	return fmt.Errorf("%w: user: unknown subcommand %q", errUsage, args[0])
 }
 
 type createUserFlags struct {
@@ -49,7 +53,9 @@ func parseCreateUserFlags(args []string) (createUserFlags, error) {
 	set.StringVar(&f.timeZone, "timezone", "", "")
 	set.BoolVar(&f.admin, "admin", false, "")
 	set.BoolVar(&f.passwordStdin, "password-stdin", false, "")
-	if err := set.Parse(args); err != nil {
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return f, err
+	} else if err != nil {
 		return f, fmt.Errorf("%w: user create: %w", errUsage, err)
 	}
 	if set.NArg() > 0 {
@@ -64,9 +70,12 @@ func parseCreateUserFlags(args []string) (createUserFlags, error) {
 // createUser adds a user to the database of a server that has started at
 // least once. It never migrates: the server may be running, and only the
 // server migrates.
-func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in io.Reader, out io.Writer) (err error) {
+func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in io.Reader, out io.Writer) error {
 	f, err := parseCreateUserFlags(args)
-	if err != nil {
+	if errors.Is(err, flag.ErrHelp) {
+		_, err = io.WriteString(out, usage)
+		return err
+	} else if err != nil {
 		return err
 	}
 	cfg, err := config.Load(lookup)
@@ -75,6 +84,11 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 	}
 
 	u := newUser(f, cfg.Location, time.Now())
+	if f.name == "" {
+		if err := user.ValidateName(u.Name); err != nil {
+			return fmt.Errorf("invalid user: the name comes from the part of the address before the @, and %w; set one with --name", err)
+		}
+	}
 	if err := u.Validate(); err != nil {
 		return fmt.Errorf("invalid user:\n%w", err)
 	}
@@ -90,7 +104,21 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 		return err
 	}
 
-	path := filepath.Join(cfg.DataDir, store.FileName)
+	if err := storeUser(ctx, filepath.Join(cfg.DataDir, store.FileName), u, hash); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Created %s %s (id %s).\n", u.Role, u.Email, u.ID); err != nil {
+		return err
+	}
+	if generated {
+		_, err = fmt.Fprintf(out, "Password: %s\nIt is shown only this once; keep it in a password manager.\n", password)
+	}
+	return err
+}
+
+// storeUser writes u to the database at path, which a server must have
+// created and migrated to this binary's schema.
+func storeUser(ctx context.Context, path string, u user.User, passwordHash string) (err error) {
 	// store.Open would create a missing file, and an empty database next
 	// to a server that has not started yet helps nobody.
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
@@ -103,23 +131,17 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 		return fmt.Errorf("database: %w", err)
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
+	// From here on, every write checks the schema is still this version.
 	if err := db.RequireCurrentSchema(ctx); err != nil {
 		return fmt.Errorf("database: %w", err)
 	}
-	if err := db.CreateUser(ctx, u, hash); err != nil {
+	if err := db.CreateUser(ctx, u, passwordHash); err != nil {
 		if errors.Is(err, store.ErrEmailTaken) {
 			return fmt.Errorf("%s: %w", u.Email, err)
 		}
 		return err
 	}
-
-	if _, err := fmt.Fprintf(out, "Created %s %s (id %s).\n", u.Role, u.Email, u.ID); err != nil {
-		return err
-	}
-	if generated {
-		_, err = fmt.Fprintf(out, "Password: %s\nIt is shown only this once; keep it in a password manager.\n", password)
-	}
-	return err
+	return nil
 }
 
 // newUser builds the user the flags describe, with the defaults for the

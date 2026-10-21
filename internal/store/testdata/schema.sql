@@ -12,8 +12,8 @@ CREATE TABLE schema_migrations (
 CREATE TABLE users (
     -- A UUIDv7, in the canonical text form.
     id TEXT PRIMARY KEY,
-    -- The sign-in name, trimmed and in lower case.
-    email TEXT NOT NULL UNIQUE CHECK (email <> ''),
+    -- The sign-in name, in the form user.NormalizeEmail gives it.
+    email TEXT NOT NULL CHECK (email <> ''),
     name TEXT NOT NULL CHECK (name <> ''),
     role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
     -- An argon2id hash in the PHC string format. NULL means the user
@@ -27,3 +27,5 @@ CREATE TABLE users (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 ) STRICT;
+
+CREATE UNIQUE INDEX users_email ON users (email);

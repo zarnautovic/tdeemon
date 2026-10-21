@@ -13,6 +13,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 	"uuid"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // Role is what a user may do on the instance.
@@ -61,11 +63,13 @@ type User struct {
 }
 
 // NormalizeEmail returns the address as tdeemon stores and compares it:
-// without surrounding space and in lower case. Mail providers treat the
-// part before the @ without regard to case, even where RFC 5321 allows
-// otherwise, and two accounts that differ only in case are a mistake.
+// without surrounding space, in lower case and in Unicode NFC (RFC 6532),
+// so a "č" typed as one character or as c + caron is the same address.
+// Mail providers treat the part before the @ without regard to case, even
+// where RFC 5321 allows otherwise, and two accounts that differ only in
+// case are a mistake.
 func NormalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
+	return norm.NFC.String(strings.ToLower(strings.TrimSpace(email)))
 }
 
 // Validate reports every field that breaks the rules, joined into one
@@ -78,7 +82,7 @@ func (u User) Validate() error {
 	if err := validateEmail(u.Email); err != nil {
 		errs = append(errs, err)
 	}
-	if err := validateName(u.Name); err != nil {
+	if err := ValidateName(u.Name); err != nil {
 		errs = append(errs, err)
 	}
 	if u.Role != RoleAdmin && u.Role != RoleUser {
@@ -103,11 +107,20 @@ func validateEmail(email string) error {
 	if email == "" {
 		return errors.New("email is required")
 	}
+	if !utf8.ValidString(email) {
+		return errors.New("email is not valid UTF-8")
+	}
 	if email != NormalizeEmail(email) {
-		return fmt.Errorf("email %q: not normalized; want it trimmed and in lower case", email)
+		return fmt.Errorf("email %q: not normalized; want NormalizeEmail's form", email)
 	}
 	if len(email) > MaxEmailLen {
 		return fmt.Errorf("email is %d bytes long, want at most %d", len(email), MaxEmailLen)
+	}
+	// An invisible character (a zero-width space pasted from a chat, a
+	// direction mark) would make an address nobody can type at sign-in
+	// that looks like another user's.
+	if strings.IndexFunc(email, func(r rune) bool { return !unicode.IsGraphic(r) || unicode.IsSpace(r) }) >= 0 {
+		return fmt.Errorf("email %q: contains a space or an invisible character", email)
 	}
 	// A bare address only: no display name ("Ana <ana@example.com>"), no
 	// comments, nothing ParseAddress would strip.
@@ -118,7 +131,10 @@ func validateEmail(email string) error {
 	return nil
 }
 
-func validateName(name string) error {
+// ValidateName reports whether name is a usable display name: not empty,
+// without space around it or control characters, at most MaxNameLen
+// characters.
+func ValidateName(name string) error {
 	switch {
 	case strings.TrimSpace(name) == "":
 		return errors.New("name is required")
@@ -135,10 +151,15 @@ func validateName(name string) error {
 }
 
 // ValidateTimeZone accepts an IANA time zone name, such as
-// Europe/Zagreb or UTC. It rejects "Local" and the empty string, which
-// Go accepts but which mean nothing outside this machine.
+// Europe/Zagreb or UTC. It rejects names Go may resolve but that mean
+// nothing outside this machine: the empty string and "Local", and files
+// of the host's zoneinfo directory that are no zone of their own
+// (localtime, posixrules, Factory, the posix/ and right/ copies), which
+// an image without that directory would not find.
 func ValidateTimeZone(name string) error {
-	if name == "" || name == "Local" {
+	switch {
+	case name == "", name == "Local", name == "localtime", name == "posixrules", name == "Factory",
+		strings.HasPrefix(name, "posix/"), strings.HasPrefix(name, "right/"):
 		return fmt.Errorf("time zone %q: want an IANA name such as Europe/Zagreb", name)
 	}
 	if _, err := time.LoadLocation(name); err != nil {

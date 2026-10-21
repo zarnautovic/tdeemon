@@ -47,13 +47,15 @@ const (
 	argonKeyLen    = 32
 )
 
-// Sanity limits for parameters read back from a stored hash, so a
-// corrupted value cannot make a check allocate gigabytes or spin.
+// Limits for what a stored hash may ask of a check: at most 256 MiB and
+// ten passes (a few seconds), so a corrupted value cannot exhaust a small
+// container. They leave room to raise the cost well past today's.
 const (
-	maxMemoryKiB = 1 << 20 // 1 GiB
-	maxTime      = 100
+	maxMemoryKiB = 256 * 1024
+	maxTime      = 10
 	minSaltLen   = 8
 	minKeyLen    = 16
+	maxKeyLen    = 1024
 )
 
 // CheckPassword reports whether password meets the rules for a new
@@ -99,7 +101,7 @@ func VerifyPassword(password, encoded string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	key := argon2.IDKey([]byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length far below 2^32
+	key := argon2.IDKey([]byte(normalize(password)), h.salt, h.time, h.memoryKiB, h.threads, uint32(len(h.key))) //nolint:gosec // G115: parseHash caps the key length at maxKeyLen
 	return subtle.ConstantTimeCompare(key, h.key) == 1, nil
 }
 
@@ -131,7 +133,7 @@ func parseHash(encoded string) (hash, error) {
 	if h.salt, err = base64.RawStdEncoding.Strict().DecodeString(parts[4]); err != nil || len(h.salt) < minSaltLen {
 		return hash{}, fmt.Errorf("%w: bad salt", ErrInvalidHash)
 	}
-	if h.key, err = base64.RawStdEncoding.Strict().DecodeString(parts[5]); err != nil || len(h.key) < minKeyLen || len(h.key) > 1024 {
+	if h.key, err = base64.RawStdEncoding.Strict().DecodeString(parts[5]); err != nil || len(h.key) < minKeyLen || len(h.key) > maxKeyLen {
 		return hash{}, fmt.Errorf("%w: bad hash", ErrInvalidHash)
 	}
 	return h, nil

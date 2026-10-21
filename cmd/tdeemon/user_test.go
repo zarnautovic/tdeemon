@@ -155,6 +155,11 @@ func TestUserCreateRejects(t *testing.T) {
 		{"overlong password", tooLong, "", []string{"--password-stdin"}, auth.ErrPasswordTooLong, ""},
 		{"overlong password line", tooLong + "\n", "", []string{"--password-stdin"}, auth.ErrPasswordTooLong, ""},
 		{"too many characters", strings.Repeat("ž", auth.MaxPasswordLen+1), "", []string{"--password-stdin"}, auth.ErrPasswordTooLong, ""},
+		// 300 characters in 1200 bytes: cut at the byte limit, the first 256
+		// would pass the rules, so the overlong input must be noticed.
+		{"overlong in bytes", strings.Repeat("😀", 300), "", []string{"--password-stdin"}, auth.ErrPasswordTooLong, ""},
+		{"zero-width space in the address", "", "ana@example.com\u200b", nil, nil, "invisible character"},
+		{"long local part without a name", "", strings.Repeat("a", 101) + "@example.com", nil, nil, "set one with --name"},
 		{"no password", "", "", []string{"--password-stdin"}, nil, "no password on standard input"},
 		{"empty line", "\n", "", []string{"--password-stdin"}, nil, "no password on standard input"},
 		{"bad time zone", "", "", []string{"--timezone", "Mars/Olympus"}, nil, "invalid user"},
@@ -189,6 +194,41 @@ func TestUserCreateRejects(t *testing.T) {
 	}
 }
 
+// A long local part is fine when --name gives the name.
+func TestUserCreateLongLocalPartWithName(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	email := strings.Repeat("a", 101) + "@example.com"
+	if err := run(t.Context(), []string{"user", "create", "--email", email, "--name", "Ana"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatalf("user create: %v", err)
+	}
+	if u, _ := stored(t, dbPath, email); u.Name != "Ana" {
+		t.Errorf("name = %q, want Ana", u.Name)
+	}
+}
+
+func TestUserCreateHelp(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{
+		{"user", "help"},
+		{"user", "--help"},
+		{"user", "create", "--help"},
+		{"user", "create", "-h"},
+		{"user", "create", "--email", "ana@example.com", "--help"},
+	} {
+		var out bytes.Buffer
+		// No configuration: help must not need any.
+		if err := run(t.Context(), args, lookup(nil), noInput(), &out, io.Discard); err != nil {
+			t.Errorf("run(%q) = %v, want the usage", args, err)
+		}
+		if !strings.Contains(out.String(), "Flags of user create:") {
+			t.Errorf("run(%q) printed %q, want the usage", args, out.String())
+		}
+	}
+}
+
 func TestUserCreateTakenEmail(t *testing.T) {
 	t.Parallel()
 
@@ -200,8 +240,16 @@ func TestUserCreateTakenEmail(t *testing.T) {
 	if !errors.Is(err, store.ErrEmailTaken) {
 		t.Errorf("second user create = %v, want ErrEmailTaken", err)
 	}
-	if n := userCount(t, dbPath); n != 1 {
-		t.Errorf("%d users stored, want 1", n)
+	// "č" as one character, then as c + combining caron: one address.
+	if err := run(t.Context(), []string{"user", "create", "--email", "\u010daba@example.com"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatalf("user create čaba: %v", err)
+	}
+	err = run(t.Context(), []string{"user", "create", "--email", "c\u030caba@example.com"}, env, noInput(), io.Discard, io.Discard)
+	if !errors.Is(err, store.ErrEmailTaken) {
+		t.Errorf("user create with a decomposed č = %v, want ErrEmailTaken", err)
+	}
+	if n := userCount(t, dbPath); n != 2 {
+		t.Errorf("%d users stored, want 2", n)
 	}
 }
 

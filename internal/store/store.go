@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite" // Registers the pure-Go "sqlite" driver.
 )
@@ -35,6 +36,10 @@ type DB struct {
 	path  string
 	write *sql.DB
 	read  *sql.DB
+	// requiredVersion is the schema version RequireCurrentSchema found;
+	// every write checks it is still there. Zero: no check (the server,
+	// which migrates itself).
+	requiredVersion atomic.Int64
 }
 
 // Open opens the database at path, creating the file if it does not
@@ -162,11 +167,36 @@ func (db *DB) WriteTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	// After a successful Commit this is a no-op that returns ErrTxDone.
 	defer func() { _ = tx.Rollback() }()
 
+	if err := db.checkRequiredVersion(ctx, tx); err != nil {
+		return err
+	}
 	if err := fn(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// checkRequiredVersion fails if RequireCurrentSchema found one schema
+// version and the database now has another: a server migrated it in the
+// meantime. It runs inside the write transaction, whose lock keeps any
+// migration out until the transaction ends.
+func (db *DB) checkRequiredVersion(ctx context.Context, tx *sql.Tx) error {
+	want := db.requiredVersion.Load()
+	if want == 0 {
+		return nil
+	}
+	var got int64
+	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM schema_migrations").Scan(&got); err != nil {
+		return fmt.Errorf("check schema: %w", err)
+	}
+	switch {
+	case got > want:
+		return fmt.Errorf("%w: the database moved to version %04d after the check found %04d", ErrSchemaTooNew, got, want)
+	case got < want:
+		return fmt.Errorf("%w: the database went back to version %04d after the check found %04d", ErrSchemaOutdated, got, want)
 	}
 	return nil
 }

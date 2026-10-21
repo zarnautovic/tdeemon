@@ -38,8 +38,16 @@ func TestValidate(t *testing.T) {
 		{"email in upper case", func(u *User) { u.Email = "Ana@example.com" }, "not normalized"},
 		{"email with space", func(u *User) { u.Email = " ana@example.com" }, "not normalized"},
 		{"email without @", func(u *User) { u.Email = "ana.example.com" }, "plain address"},
-		{"email with a display name", func(u *User) { u.Email = "ana <ana@example.com>" }, "plain address"},
-		{"email with a comment", func(u *User) { u.Email = "ana@example.com (ana)" }, "plain address"},
+		{"email with a display name", func(u *User) { u.Email = "ana <ana@example.com>" }, "a space"},
+		{"email in angle brackets", func(u *User) { u.Email = "<ana@example.com>" }, "plain address"},
+		{"email with a comment", func(u *User) { u.Email = "ana@example.com(ana)" }, "plain address"},
+		{"email with a quoted local part", func(u *User) { u.Email = `"ana"@example.com` }, "plain address"},
+		{"email with a zero-width space", func(u *User) { u.Email = "ana@example.com\u200b" }, "an invisible character"},
+		{"email with a byte order mark", func(u *User) { u.Email = "\ufeffana@example.com" }, "an invisible character"},
+		{"email with a direction mark", func(u *User) { u.Email = "ana\u202e@example.com" }, "an invisible character"},
+		{"email with a no-break space", func(u *User) { u.Email = "ana\u00a0x@example.com" }, "a space"},
+		{"email not UTF-8", func(u *User) { u.Email = "ana\xff@example.com" }, "not valid UTF-8"},
+		{"email decomposed", func(u *User) { u.Email = "c\u030caba@example.com" }, "not normalized"},
 		{"email too long", func(u *User) { u.Email = strings.Repeat("a", 64) + "@" + strings.Repeat("b", 186) + ".com" }, "at most 254"},
 		{"no name", func(u *User) { u.Name = "  " }, "name is required"},
 		{"name with space around", func(u *User) { u.Name = " Ana" }, "space at the start or end"},
@@ -51,6 +59,11 @@ func TestValidate(t *testing.T) {
 		{"no time zone", func(u *User) { u.TimeZone = "" }, "IANA name"},
 		{"Local time zone", func(u *User) { u.TimeZone = "Local" }, "IANA name"},
 		{"unknown time zone", func(u *User) { u.TimeZone = "Mars/Olympus" }, `time zone "Mars/Olympus"`},
+		{"host localtime", func(u *User) { u.TimeZone = "localtime" }, "IANA name"},
+		{"host posixrules", func(u *User) { u.TimeZone = "posixrules" }, "IANA name"},
+		{"Factory", func(u *User) { u.TimeZone = "Factory" }, "IANA name"},
+		{"posix copy", func(u *User) { u.TimeZone = "posix/Europe/Zagreb" }, "IANA name"},
+		{"right copy", func(u *User) { u.TimeZone = "right/Europe/Zagreb" }, "IANA name"},
 		{"day starts before 0", func(u *User) { u.DayStartHour = -1 }, "want 0 to 23"},
 		{"day starts at 24", func(u *User) { u.DayStartHour = 24 }, "want 0 to 23"},
 		{"no times", func(u *User) { u.CreatedAt = time.Time{} }, "created and updated times"},
@@ -97,6 +110,8 @@ func TestValidateAcceptsEdges(t *testing.T) {
 		{"longest name", func(u *User) { u.Name = strings.Repeat("ž", MaxNameLen) }},
 		{"plus address", func(u *User) { u.Email = "ana+tdeemon@example.com" }},
 		{"no dot in the domain", func(u *User) { u.Email = "ana@localhost" }},
+		{"letters with diacritics", func(u *User) { u.Email = "\u010daba@primjer.hr" }},
+		{"Etc zone", func(u *User) { u.TimeZone = "Etc/GMT-2" }},
 	} {
 		u := valid()
 		tc.change(&u)
@@ -110,10 +125,11 @@ func TestNormalizeEmail(t *testing.T) {
 	t.Parallel()
 
 	for in, want := range map[string]string{
-		"ana@example.com":      "ana@example.com",
-		"  Ana@Example.COM \t": "ana@example.com",
-		"ŽELJKA@primjer.hr":    "željka@primjer.hr",
-		"":                     "",
+		"ana@example.com":       "ana@example.com",
+		"  Ana@Example.COM \t":  "ana@example.com",
+		"ŽELJKA@primjer.hr":     "željka@primjer.hr",
+		"C\u030cABA@primjer.hr": "\u010daba@primjer.hr", // decomposed Č becomes one character
+		"":                      "",
 	} {
 		if got := NormalizeEmail(in); got != want {
 			t.Errorf("NormalizeEmail(%q) = %q, want %q", in, got, want)

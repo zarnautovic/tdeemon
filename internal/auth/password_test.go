@@ -78,20 +78,38 @@ func TestHashPasswordAppliesTheRules(t *testing.T) {
 }
 
 // The same password typed as composed or decomposed characters, or with
-// full-width digits, must match.
-func TestVerifyNormalizes(t *testing.T) {
+// full-width digits, must match whichever form it was set in: both
+// HashPassword and VerifyPassword normalize.
+func TestNormalization(t *testing.T) {
 	t.Parallel()
 
-	composed := "čaša mlijeka 1234"    // U+010D
-	decomposed := "čaša mlijeka 1234" // c + U+030C
-	fullWidth := "čaša mlijeka １２３４"   // １２３４
-	hash, err := HashPassword(composed)
-	if err != nil {
-		t.Fatalf("HashPassword: %v", err)
+	forms := []string{
+		"čaša mlijeka 1234",                     // composed č (U+010D)
+		"c\u030caša mlijeka 1234",               // c + combining caron (U+030C)
+		"čaša mlijeka \uff11\uff12\uff13\uff14", // full-width digits
 	}
-	for _, p := range []string{composed, decomposed, fullWidth} {
-		if ok, err := VerifyPassword(p, hash); err != nil || !ok {
-			t.Errorf("VerifyPassword(%q) = %v, %v; want true", p, ok, err)
+	for _, set := range forms {
+		hash, err := HashPassword(set)
+		if err != nil {
+			t.Fatalf("HashPassword(%q): %v", set, err)
+		}
+		for _, typed := range forms {
+			if ok, err := VerifyPassword(typed, hash); err != nil || !ok {
+				t.Errorf("set %q, verify %q = %v, %v; want true", set, typed, ok, err)
+			}
+		}
+	}
+}
+
+// The most a stored hash may ask for is accepted (and costly: it is not
+// run here). Just past it, see TestVerifyRejectsInvalidHashes.
+func TestParseHashLimits(t *testing.T) {
+	t.Parallel()
+
+	salt, key := strings.Repeat("A", 22), strings.Repeat("A", 1364) // 16 and 1023 bytes
+	for _, params := range []string{"m=262144,t=10,p=1", "m=8,t=1,p=1", "m=2040,t=1,p=255"} {
+		if _, err := parseHash("$argon2id$v=19$" + params + "$" + salt + "$" + key); err != nil {
+			t.Errorf("parseHash with %s: %v", params, err)
 		}
 	}
 }
@@ -138,8 +156,8 @@ func TestVerifyRejectsInvalidHashes(t *testing.T) {
 		{"no threads", with(3, "m=19456,t=2,p=0")},
 		{"no passes", with(3, "m=0,t=0,p=1")},
 		{"too little memory", with(3, "m=7,t=1,p=1")},
-		{"too much memory", with(3, "m=2097152,t=1,p=1")},
-		{"too many passes", with(3, "m=19456,t=101,p=1")},
+		{"too much memory", with(3, "m=262145,t=1,p=1")},
+		{"too many passes", with(3, "m=19456,t=11,p=1")},
 		{"not a number", with(3, "m=lots,t=2,p=1")},
 		{"negative", with(3, "m=-1,t=2,p=1")},
 		{"salt not base64", with(4, "!!!!")},
@@ -147,6 +165,7 @@ func TestVerifyRejectsInvalidHashes(t *testing.T) {
 		{"short salt", with(4, "c2FsdA")},
 		{"hash not base64", with(5, "!!!!")},
 		{"short hash", with(5, "c2hvcnQ")},
+		{"long hash", with(5, strings.Repeat("A", 1368))}, // 1026 bytes
 	} {
 		ok, err := VerifyPassword("correct horse battery staple", tc.hash)
 		if ok || !errors.Is(err, ErrInvalidHash) {
