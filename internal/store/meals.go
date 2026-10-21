@@ -14,7 +14,8 @@ import (
 )
 
 // ErrMealConflict reports a meal created under the id of another of the
-// user's meals: not a retry of it.
+// user's meals (not a retry of it), or an item under the id of an item of
+// another of the user's meals.
 var ErrMealConflict = errors.New("a meal with this id holds something else")
 
 const mealColumns = "m.id, m.eaten_at, m.day, m.description, m.client, m.note"
@@ -34,16 +35,18 @@ const itemColumns = `i.id, i.food_id, i.name, i.quantity_amount, i.quantity_unit
 	i.fiber, i.saturated_fat, i.sugars, i.salt, i.polyols, i.alcohol, i.source, i.note`
 
 // CreateMeal stores m, a new meal of userID's, and returns it as stored,
-// each item with a new id. Creating is idempotent on m's id: the same
-// meal sent again (the same meal.Meal.Fingerprint) returns the stored
-// one and false, and nothing changes; another meal under the id is
-// ErrMealConflict. Ids are per user: another user's meal under the id is
-// no meal of this user's. The time eaten is kept to the second.
+// each item under the id it carries (a client's UUIDv7) or a new one.
+// Creating is idempotent on m's id: the same meal sent again (the same
+// meal.Meal.Fingerprint as when it was created) returns the meal as it is
+// now, edits included, and false, and nothing changes; another meal under
+// the id is ErrMealConflict. Ids are per user: another user's meal under
+// the id is no meal of this user's. The time eaten is kept to the second.
 func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now time.Time) (meal.Meal, bool, error) {
 	if err := m.Validate(); err != nil {
 		return meal.Meal{}, false, fmt.Errorf("invalid meal: %w", err)
 	}
 	created := false
+	var stored meal.Meal
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var fingerprint string
 		err := tx.QueryRowContext(ctx, "SELECT fingerprint FROM meals WHERE user_id = ? AND id = ?",
@@ -52,19 +55,23 @@ func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now
 		case err == nil && fingerprint != m.Fingerprint():
 			return ErrMealConflict
 		case err == nil:
-			return nil
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
+		default:
+			created = true
+			if _, err := tx.ExecContext(ctx, `INSERT INTO meals
+				(id, user_id, eaten_at, day, description, client, note, fingerprint, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				m.ID.String(), userID.String(), formatTime(m.EatenAt), m.Day.String(), m.Description, string(m.Client),
+				m.Note, m.Fingerprint(), formatTime(now), formatTime(now)); err != nil {
+				return err
+			}
+			if err := insertItems(ctx, tx, userID, m, nil); err != nil {
+				return err
+			}
 		}
-		created = true
-		if _, err := tx.ExecContext(ctx, `INSERT INTO meals
-			(id, user_id, eaten_at, day, description, client, note, fingerprint, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			m.ID.String(), userID.String(), formatTime(m.EatenAt), m.Day.String(), m.Description, string(m.Client),
-			m.Note, m.Fingerprint(), formatTime(now), formatTime(now)); err != nil {
-			return err
-		}
-		return insertItems(ctx, tx, userID, m, nil)
+		stored, err = mealInTx(ctx, tx, userID, m.ID)
+		return err
 	})
 	if errors.Is(err, ErrMealConflict) {
 		return meal.Meal{}, false, err
@@ -72,24 +79,39 @@ func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now
 	if err != nil {
 		return meal.Meal{}, false, fmt.Errorf("create meal: %w", err)
 	}
-	stored, err := db.MealByID(ctx, userID, m.ID)
-	return stored, created, err
+	return stored, created, nil
+}
+
+// mealInTx reads userID's meal id, with its items, in tx.
+func mealInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (meal.Meal, error) {
+	ms, err := scanMeals(ctx, tx, mealByID, userID.String(), id.String())
+	if err != nil {
+		return meal.Meal{}, err
+	}
+	if len(ms) == 0 {
+		return meal.Meal{}, ErrNotFound
+	}
+	ms[0].Items, err = mealItems(ctx, tx, userID, id)
+	return ms[0], err
 }
 
 // ReplaceMeal stores m in place of userID's meal with m's id (an edit:
 // another time, items added, changed or removed) and returns it as
-// stored. An item that carries the id of one of the meal's items keeps
-// it; any other item gets a new id. A meal the user does not have is
+// stored. Items keep the ids they carry: one of the meal's, or a client's
+// for a new item (an id of another of the user's meals' items is
+// ErrMealConflict); an item without one gets a new id. The client the
+// meal was logged through and its fingerprint stay: a late retry of the
+// create returns the edited meal. A meal the user does not have is
 // ErrNotFound.
 func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, now time.Time) (meal.Meal, error) {
 	if err := m.Validate(); err != nil {
 		return meal.Meal{}, fmt.Errorf("invalid meal: %w", err)
 	}
+	var stored meal.Meal
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE meals SET eaten_at = ?, day = ?, description = ?, client = ?, note = ?,
-			fingerprint = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
-			formatTime(m.EatenAt), m.Day.String(), m.Description, string(m.Client), m.Note, m.Fingerprint(),
-			formatTime(now), m.ID.String(), userID.String())
+		res, err := tx.ExecContext(ctx, `UPDATE meals SET eaten_at = ?, day = ?, description = ?, note = ?,
+			updated_at = ? WHERE id = ? AND user_id = ?`,
+			formatTime(m.EatenAt), m.Day.String(), m.Description, m.Note, formatTime(now), m.ID.String(), userID.String())
 		if err != nil {
 			return err
 		}
@@ -106,15 +128,19 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, m meal.Meal, no
 			m.ID.String(), userID.String()); err != nil {
 			return err
 		}
-		return insertItems(ctx, tx, userID, m, kept)
+		if err := insertItems(ctx, tx, userID, m, kept); err != nil {
+			return err
+		}
+		stored, err = mealInTx(ctx, tx, userID, m.ID)
+		return err
 	})
-	if errors.Is(err, ErrNotFound) {
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) {
 		return meal.Meal{}, err
 	}
 	if err != nil {
 		return meal.Meal{}, fmt.Errorf("replace meal: %w", err)
 	}
-	return db.MealByID(ctx, userID, m.ID)
+	return stored, nil
 }
 
 // itemIDs returns the ids of the items of userID's meal mealID.
@@ -139,16 +165,30 @@ func itemIDs(ctx context.Context, tx *sql.Tx, userID, mealID uuid.UUID) (map[uui
 	return ids, rows.Err()
 }
 
-// insertItems writes m's items, in order. An item keeps its id when kept
-// holds it (the meal had it before an edit); any other gets a new one,
-// so item ids are the store's to give. The foods the items name must be
+// insertItems writes m's items, in order. An item keeps the id it
+// carries when kept holds it (the meal had it before an edit) or no other
+// of the user's items has it (a client's id for a new item, so a retried
+// "add" adds once); an id of another meal's item is ErrMealConflict, and
+// an item without an id gets a new one. The foods the items name must be
 // userID's: the foreign key on the food and the user refuses any other.
 func insertItems(ctx context.Context, tx *sql.Tx, userID uuid.UUID, m meal.Meal, kept map[uuid.UUID]bool) error {
 	for i := range m.Items {
 		it := &m.Items[i]
 		id := it.ID
-		if !kept[id] {
+		switch {
+		case id == uuid.Nil():
 			id = uuid.NewV7()
+		case kept[id]:
+		default:
+			var other string
+			err := tx.QueryRowContext(ctx, "SELECT meal_id FROM meal_items WHERE user_id = ? AND id = ?",
+				userID.String(), id.String()).Scan(&other)
+			if err == nil {
+				return fmt.Errorf("%w: item %s is another meal's", ErrMealConflict, id)
+			}
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
 		}
 		var foodID any
 		if it.FoodID != uuid.Nil() {
@@ -351,7 +391,7 @@ func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (
 				i.quantity_portions, i.amount, i.unit
 			FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
 			WHERE i.user_id = ? AND i.food_id = ?
-			ORDER BY m.eaten_at DESC, i.position DESC LIMIT 1`, userID.String(), id.String()).
+			ORDER BY m.eaten_at DESC, m.id DESC, i.position DESC LIMIT 1`, userID.String(), id.String()).
 			Scan(&at, &mealID, &q.Amount, &q.Unit, &q.Servings, &q.Serving, &q.Portions, &u.Amount, &u.Unit)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue

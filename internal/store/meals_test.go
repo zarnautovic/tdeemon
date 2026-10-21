@@ -85,8 +85,14 @@ func TestCreateMealKeepsSeconds(t *testing.T) {
 
 	db, ana, _ := withTwoUsers(t)
 	m := breakfast(t, saveFood(t, db, ana, bar()), t0.Add(1500*time.Millisecond))
-	if got := createMeal(t, db, ana, m); !got.EatenAt.Equal(t0.Add(time.Second)) {
+	got := createMeal(t, db, ana, m)
+	if !got.EatenAt.Equal(t0.Add(time.Second)) {
 		t.Errorf("eaten at %v, want %v", got.EatenAt, t0.Add(time.Second))
+	}
+	// The meal as stored, sent again, is a retry: the fingerprint counts
+	// the time to the second, as stored.
+	if _, created, err := db.CreateMeal(t.Context(), ana, got, t0); err != nil || created {
+		t.Errorf("the stored meal sent again = %v, %v; want a retry", created, err)
 	}
 }
 
@@ -170,38 +176,147 @@ func TestReplaceMeal(t *testing.T) {
 
 	db, ana, _ := withTwoUsers(t)
 	bar := saveFood(t, db, ana, bar())
-	first := createMeal(t, db, ana, breakfast(t, bar, t0))
-	// Another time, the bars halved, the coffee removed, a third bar added,
-	// and an item id taken from another meal.
-	other := createMeal(t, db, ana, breakfast(t, bar, t0.Add(5*time.Hour)))
+	original := breakfast(t, bar, t0)
+	first := createMeal(t, db, ana, original)
+	// Another time and note, the bars halved, the coffee removed, a bar
+	// added under the client's id and one without an id.
 	edit := first
-	edit.EatenAt = t0.Add(time.Hour)
+	edit.EatenAt, edit.Note, edit.Client = t0.Add(time.Hour), "on the train", meal.ClientWeb
 	half, err := meal.FromFood(bar, meal.Quantity{Servings: 1, Serving: "bar"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	half.ID = first.Items[0].ID
 	added, _ := meal.FromFood(bar, meal.Quantity{Amount: 30, Unit: "g"}, "")
-	forged, _ := meal.FromFood(bar, meal.Quantity{Amount: 20, Unit: "g"}, "")
-	forged.ID = other.Items[0].ID
-	edit.Items = []meal.Item{half, added, forged}
+	added.ID = uuid.NewV7()
+	another, _ := meal.FromFood(bar, meal.Quantity{Amount: 20, Unit: "g"}, "")
+	edit.Items = []meal.Item{half, added, another}
 	got, err := db.ReplaceMeal(t.Context(), ana, edit, t0.Add(time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Items) != 3 || got.Items[0].ID != first.Items[0].ID || got.Items[1].ID == uuid.Nil() ||
-		got.Items[2].ID == other.Items[0].ID || got.Items[0].Amount != 55 || !got.EatenAt.Equal(t0.Add(time.Hour)) {
+	if len(got.Items) != 3 || got.Items[0].ID != first.Items[0].ID || got.Items[1].ID != added.ID ||
+		got.Items[2].ID == uuid.Nil() || got.Items[0].Amount != 55 || !got.EatenAt.Equal(t0.Add(time.Hour)) ||
+		got.Note != "on the train" {
 		t.Errorf("replaced as %+v", got)
 	}
-	if o, _ := db.MealByID(t.Context(), ana, other.ID); !reflect.DeepEqual(o, other) {
-		t.Errorf("the other meal changed: %+v", o)
+	// The client it was logged through stays.
+	if got.Client != meal.ClientMCP {
+		t.Errorf("client = %s, want the one it was logged through", got.Client)
 	}
-	if n := countRows(t, db, "meal_items"); n != 5 {
-		t.Errorf("%d items, want 5", n)
+	if n := countRows(t, db, "meal_items"); n != 3 {
+		t.Errorf("%d items, want 3", n)
 	}
-	// The edited meal is what a retry is compared with now.
-	if _, created, err := db.CreateMeal(t.Context(), ana, got, t0); err != nil || created {
-		t.Errorf("creating the edited meal again = %v, %v; want the stored one", created, err)
+}
+
+// Retries around an edit: the edit again adds nothing, a late retry of
+// the create finds the edited meal, and the edited content is not what
+// was created under the id.
+func TestReplaceMealAndRetries(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	bar := saveFood(t, db, ana, bar())
+	original := breakfast(t, bar, t0)
+	first := createMeal(t, db, ana, original)
+	edit := first
+	edit.Note = "on the train"
+	added, _ := meal.FromFood(bar, meal.Quantity{Amount: 30, Unit: "g"}, "")
+	added.ID = uuid.NewV7()
+	edit.Items = append(append([]meal.Item(nil), first.Items...), added)
+	got, err := db.ReplaceMeal(t.Context(), ana, edit, t0.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same edit again (a retried "add") adds nothing.
+	again, err := db.ReplaceMeal(t.Context(), ana, edit, t0.Add(time.Hour))
+	if err != nil || len(again.Items) != 3 || again.Items[2].ID != added.ID || countRows(t, db, "meal_items") != 3 {
+		t.Errorf("the edit again = %+v, %v", again, err)
+	}
+	// A late retry of the create finds the meal as it is now; the edited
+	// content under the id is not what was created.
+	if m, created, err := db.CreateMeal(t.Context(), ana, original, t0); err != nil || created || !reflect.DeepEqual(m, again) {
+		t.Errorf("a late retry of the create = %+v, %v, %v; want the edited meal", m, created, err)
+	}
+	if _, _, err := db.CreateMeal(t.Context(), ana, got, t0); !errors.Is(err, store.ErrMealConflict) {
+		t.Errorf("creating the edited content under the id = %v, want ErrMealConflict", err)
+	}
+}
+
+// An item under the id of another meal's item is a conflict, and nothing
+// of the edit is kept.
+func TestReplaceMealItemOfAnotherMeal(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	bar := saveFood(t, db, ana, bar())
+	first := createMeal(t, db, ana, breakfast(t, bar, t0))
+	other := createMeal(t, db, ana, breakfast(t, bar, t0.Add(5*time.Hour)))
+	edit := first
+	edit.Note = "changed"
+	edit.Items = append([]meal.Item(nil), first.Items...)
+	edit.Items[1].ID = other.Items[0].ID
+	if _, err := db.ReplaceMeal(t.Context(), ana, edit, t0); !errors.Is(err, store.ErrMealConflict) {
+		t.Errorf("an item of another meal = %v, want ErrMealConflict", err)
+	}
+	for _, m := range []meal.Meal{first, other} {
+		if got, _ := db.MealByID(t.Context(), ana, m.ID); !reflect.DeepEqual(got, m) {
+			t.Errorf("meal %s became %+v", m.ID, got)
+		}
+	}
+	// The same at creation.
+	fresh := breakfast(t, bar, t0.Add(9*time.Hour))
+	fresh.Items[0].ID = other.Items[1].ID
+	if _, _, err := db.CreateMeal(t.Context(), ana, fresh, t0); !errors.Is(err, store.ErrMealConflict) {
+		t.Errorf("creating with another meal's item id = %v, want ErrMealConflict", err)
+	}
+}
+
+// Two users with a meal under one id and the same day excluded: what one
+// does to theirs leaves the other's as it was.
+func TestMealsUnderOneIDStayApart(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	d := day.DateOf(t0)
+	anasBar, ivosBar := saveFood(t, db, ana, bar()), saveFood(t, db, ivo, bar())
+	anas := breakfast(t, anasBar, t0)
+	anas = createMeal(t, db, ana, anas)
+	ivos := breakfast(t, ivosBar, t0.Add(2*time.Hour))
+	ivos.ID = anas.ID
+	for i := range ivos.Items {
+		ivos.Items[i].ID = anas.Items[i].ID // the same item ids too
+	}
+	ivos = createMeal(t, db, ivo, ivos)
+	for _, u := range []uuid.UUID{ana, ivo} {
+		if err := db.ExcludeDay(t.Context(), u, d, day.Exclusion{Reason: "wedding"}, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	edit := anas
+	edit.Items = []meal.Item{anas.Items[0]}
+	edit.Items[0].Note = "only one"
+	if _, err := db.ReplaceMeal(t.Context(), ana, edit, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.IncludeDay(t.Context(), ana, d, t0); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.MealByID(t.Context(), ivo, ivos.ID); !reflect.DeepEqual(got, ivos) {
+		t.Errorf("ivo's meal became %+v, want %+v", got, ivos)
+	}
+	if got, _ := db.Exclusions(t.Context(), ivo, d, d); len(got) != 1 {
+		t.Errorf("ivo's exclusion = %v, want it kept", got)
+	}
+	uses, err := db.LastUses(t.Context(), ana, []uuid.UUID{anasBar.ID})
+	if err != nil || !uses[anasBar.ID].At.Equal(t0) {
+		t.Errorf("ana's last use = %+v, %v; want her own meal's time", uses, err)
+	}
+	if err := db.DeleteMeal(t.Context(), ana, anas.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.MealByID(t.Context(), ivo, ivos.ID); !reflect.DeepEqual(got, ivos) {
+		t.Errorf("after ana's delete ivo's meal is %+v", got)
 	}
 }
 
@@ -313,6 +428,25 @@ func TestLastUses(t *testing.T) {
 	many[store.MaxFoodResults] = bar.ID
 	if got, _ := db.LastUses(t.Context(), ana, many); len(got) != 0 {
 		t.Errorf("an id past MaxFoodResults was looked up: %+v", got)
+	}
+}
+
+// Two meals in the same second: the last use is the later meal's, by id
+// (a UUIDv7 grows with time).
+func TestLastUsesInOneSecond(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	bar := saveFood(t, db, ana, bar())
+	at := t0.Add(3 * time.Hour)
+	earlier := breakfast(t, bar, at)
+	later := breakfast(t, bar, at)
+	later.Items[0], _ = meal.FromFood(bar, meal.Quantity{Amount: 40, Unit: "g"}, "")
+	createMeal(t, db, ana, later) // stored first, so the order of rows does not decide
+	createMeal(t, db, ana, earlier)
+	got, err := db.LastUses(t.Context(), ana, []uuid.UUID{bar.ID})
+	if err != nil || got[bar.ID].MealID != later.ID {
+		t.Errorf("LastUses = %+v, %v; want the later meal %s", got, err, later.ID)
 	}
 }
 
@@ -440,7 +574,7 @@ func TestMealsRejectCorruptRows(t *testing.T) {
 		byDay bool // read the day's meals, else the meals around t0
 	}{
 		{"meal id", []string{"UPDATE meal_items SET meal_id = " + bad, "UPDATE meals SET id = " + bad}, true},
-		{"eaten at", []string{"UPDATE meals SET eaten_at = 'yesterday'"}, true},
+		{"eaten at", []string{"UPDATE meals SET eaten_at = '2026-19-39T29:59:69Z'"}, true},
 		{"day", []string{"UPDATE meals SET day = '2026-19-39'"}, false},
 		{"item id", []string{"UPDATE meal_items SET id = " + bad + " WHERE position = 0"}, true},
 		{"item food id", []string{
@@ -480,7 +614,7 @@ func TestMealsRejectCorruptRows(t *testing.T) {
 	db, ana, _ := withTwoUsers(t)
 	bar := saveFood(t, db, ana, bar())
 	createMeal(t, db, ana, breakfast(t, bar, t0))
-	exec(t, db, "UPDATE meals SET eaten_at = 'yesterday'")
+	exec(t, db, "UPDATE meals SET eaten_at = '2026-19-39T29:59:69Z'")
 	if _, err := db.LastUses(t.Context(), ana, []uuid.UUID{bar.ID}); err == nil {
 		t.Error("LastUses read a bad time")
 	}

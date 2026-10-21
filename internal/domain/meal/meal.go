@@ -279,11 +279,15 @@ func (m Meal) Validate() error {
 // code works out (the day, a food's values and name) and the ids of
 // items are left out, so the same meal sent again has the same
 // fingerprint even after its foods changed, and the store can tell a
-// retry from a different meal under the same id.
+// retry from a different meal under the same id. The time counts to the
+// second, as stored. The items count in their order: the same items in
+// another order are another request. A client that leaves out when the
+// meal was eaten must get the same time on a retry: the API takes it
+// from the meal's UUIDv7, not from the clock.
 func (m Meal) Fingerprint() string {
 	// Each value quoted or in its shortest exact form, one item to a line,
 	// so no two meals write the same text.
-	lines := []string{fmt.Sprintf("%q %q %q %d", m.EatenAt.UTC().Format(time.RFC3339Nano), m.Description, m.Note, len(m.Items))}
+	lines := []string{fmt.Sprintf("%q %q %q %d", m.EatenAt.UTC().Truncate(time.Second).Format(time.RFC3339), m.Description, m.Note, len(m.Items))}
 	for i := range m.Items {
 		it := &m.Items[i]
 		q := it.Quantity
