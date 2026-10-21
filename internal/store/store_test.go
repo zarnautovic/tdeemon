@@ -30,11 +30,11 @@ func pragma(ctx context.Context, t *testing.T, q queryRower, name string) string
 	return v
 }
 
-func exec(t *testing.T, db *store.DB, query string) {
+func exec(t *testing.T, db *store.DB, query string, args ...any) {
 	t.Helper()
 
 	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(t.Context(), query)
+		_, err := tx.ExecContext(t.Context(), query, args...)
 		return err
 	})
 	if err != nil {

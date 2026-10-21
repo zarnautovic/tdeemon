@@ -172,8 +172,12 @@ func takeBackMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 		}
 	}
 	// The meal's rows are gone, so its items' ids are free again and the
-	// items keep them.
-	return insertMeal(ctx, tx, userID, s, nil, now)
+	// items keep them, unless another meal took one since.
+	err := insertMeal(ctx, tx, userID, s, nil, now)
+	if errors.Is(err, ErrMealConflict) {
+		return fmt.Errorf("%w: %w", errItemTaken, err)
+	}
+	return err
 }
 
 // mealInTx reads userID's meal id, with its items, in tx.

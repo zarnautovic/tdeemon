@@ -313,8 +313,11 @@ in `web/`.
   adds its `event.Action`, the operation to the `events` table's CHECK,
   its way back to `takeBack` and the reading of its state to `stateNow`
   (what undo compares with the state the change left). The state an
-  event records is the state read back in the transaction, so the two
-  compare alike.
+  event records must be what `stateNow` reads back, so the two compare
+  alike: read it back in the transaction, or normalise it as the table
+  does (-0 to 0, a time to the second in UTC). A way back that clashes
+  with what came since returns one of the clashes in `events.go`, whose
+  text is the reason the user is given.
 - **One user's data stays theirs:**
   - every store method that reads or writes a user's rows takes the
     user's ID as a parameter and filters by it (`WHERE user_id = ?`).

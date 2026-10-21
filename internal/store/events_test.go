@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"math"
@@ -459,10 +458,11 @@ func TestUndoRenameAfterTheNameWasTaken(t *testing.T) {
 		t.Fatal(err)
 	}
 	var conflict *store.UndoConflictError
-	for range 2 { // the rename, then the create
-		if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) {
-			t.Fatalf("undo = %v, want an UndoConflictError", err)
-		}
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Reason != "another food has taken its name since" {
+		t.Fatalf("undoing the rename = %v, want an UndoConflictError about the name", err)
+	}
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Reason != "it changed since" {
+		t.Fatalf("undoing the create = %v, want an UndoConflictError: it changed since", err)
 	}
 	if e := undo(t, db, ana); e.Action != event.MetricsMerge {
 		t.Errorf("the next undo took back %s, want the weight", e.Action)
@@ -604,7 +604,8 @@ func TestUndoAfterTheAliasWasTaken(t *testing.T) {
 		t.Fatal(err)
 	}
 	var conflict *store.UndoConflictError
-	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || !strings.Contains(conflict.Reason, "alias") {
+	_, err := db.UndoLast(t.Context(), ana, testActor, t0)
+	if !errors.As(err, &conflict) || conflict.Reason != "another food has taken one of its aliases since" || !errors.Is(err, store.ErrAliasTaken) {
 		t.Fatalf("undo = %v, want an UndoConflictError about the alias", err)
 	}
 	if got, _ := db.FoodByID(t.Context(), ana, a.ID); !reflect.DeepEqual(got.Aliases, []string{"salted bar"}) {
@@ -618,6 +619,32 @@ func TestUndoAfterTheAliasWasTaken(t *testing.T) {
 	}
 }
 
+// userEditOfAnImport has userID exclude a day, an import save a food,
+// and userID rename the food and change its servings: the edit is
+// userID's latest change, and the exclusion the one before. It returns
+// the food as edited and the edit's event.
+func userEditOfAnImport(t *testing.T, db *store.DB, userID uuid.UUID) (food.Food, event.Event) {
+	t.Helper()
+	if err := db.ExcludeDay(t.Context(), userID, testActor, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	f, err := db.SaveFood(t.Context(), userID, importer, bar(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Name, f.Servings = "Protein bar Cookies", []food.Serving{{Name: "bar", Amount: 55}, {Name: "half", Amount: 27.5}}
+	saveFood(t, db, userID, f)
+	es, err := db.Events(t.Context(), userID, 1)
+	if err != nil || len(es) != 1 {
+		t.Fatalf("Events = %v, %v", es, err)
+	}
+	edited, err := db.FoodByID(t.Context(), userID, f.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return edited, es[0]
+}
+
 // A change whose way back cannot run, whatever the reason, is a conflict
 // that leaves its entity as it is (the writes of a way back that failed
 // halfway are rolled back) and is passed over, so the undos after it go
@@ -629,57 +656,118 @@ func TestUndoThatCannotRun(t *testing.T) {
 		name, update, reason string
 		value                func(t *testing.T, edit food.Food) any
 	}{
-		// The food goes back to its name, then fails on its serving.
-		{"put back", "UPDATE events SET before_state = ? WHERE id = ?", "cannot be put back", func(t *testing.T, edit food.Food) any {
+		// The food goes back to a name, then fails on its serving.
+		{"put back", "UPDATE events SET before_state = ? WHERE id = ?", "it cannot be put back", func(t *testing.T, edit food.Food) any {
 			t.Helper()
 			before := edit
-			before.Name, before.Servings = "Protein bar Caramel", []food.Serving{{Name: "bar", Amount: -1}}
+			before.Name, before.Servings = "Protein bar Pistachio", []food.Serving{{Name: "bar", Amount: -1}}
 			b, err := json.Marshal(before)
 			if err != nil {
 				t.Fatal(err)
 			}
 			return string(b)
 		}},
-		{"read", "UPDATE events SET entity = ? WHERE id = ?", "cannot be read", func(*testing.T, food.Food) any { return "not a food id" }},
+		{"read", "UPDATE events SET entity = ? WHERE id = ?", "its state cannot be read", func(*testing.T, food.Food) any { return "not a food id" }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
 			db, ana, _ := withTwoUsers(t)
-			if err := db.ExcludeDay(t.Context(), ana, testActor, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
-				t.Fatal(err)
-			}
-			f, err := db.SaveFood(t.Context(), ana, importer, bar(), t0)
-			if err != nil {
-				t.Fatal(err)
-			}
-			edit := f
-			edit.Name, edit.Servings = "Protein bar Cookies", []food.Serving{{Name: "bar", Amount: 55}, {Name: "half", Amount: 27.5}}
-			saveFood(t, db, ana, edit)
-			es, err := db.Events(t.Context(), ana, 1)
-			if err != nil || len(es) != 1 {
-				t.Fatalf("Events = %v, %v", es, err)
-			}
-			edited, err := db.FoodByID(t.Context(), ana, f.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
-				_, err := tx.ExecContext(t.Context(), tc.update, tc.value(t, edited), es[0].ID.String())
-				return err
-			}); err != nil {
-				t.Fatal(err)
-			}
+			edited, edit := userEditOfAnImport(t, db, ana)
+			exec(t, db, tc.update, tc.value(t, edited), edit.ID.String())
 			var conflict *store.UndoConflictError
-			_, err = db.UndoLast(t.Context(), ana, testActor, t0)
-			if !errors.As(err, &conflict) || !strings.Contains(conflict.Reason, tc.reason) || !strings.Contains(err.Error(), tc.reason) {
-				t.Fatalf("undo = %v, want an UndoConflictError that says it %s", err, tc.reason)
+			_, err := db.UndoLast(t.Context(), ana, testActor, t0)
+			if !errors.As(err, &conflict) || conflict.Reason != tc.reason || !strings.HasSuffix(err.Error(), ": "+tc.reason) {
+				t.Fatalf("undo = %v, want an UndoConflictError: %s", err, tc.reason)
 			}
-			if got, _ := db.FoodByID(t.Context(), ana, f.ID); !reflect.DeepEqual(got, edited) {
+			if conflict.Err == nil || !errors.Is(err, conflict.Err) {
+				t.Errorf("the conflict's Err = %v, want what failed", conflict.Err)
+			}
+			if got, _ := db.FoodByID(t.Context(), ana, edited.ID); !reflect.DeepEqual(got, edited) {
 				t.Errorf("the food became %+v, want it as edited: %+v", got, edited)
+			}
+			// The search row is the edit's, not one the way back wrote.
+			if got, _ := db.FindFoods(t.Context(), ana, "cookies", 5); len(got) != 1 {
+				t.Errorf("a search for the edited name finds %d foods", len(got))
+			}
+			if got, _ := db.FindFoods(t.Context(), ana, "pistachio", 5); len(got) != 0 {
+				t.Errorf("a search for a name never kept finds %+v", got)
 			}
 			if e := undo(t, db, ana); e.Action != event.DayExclude {
 				t.Errorf("the next undo took back %s, want the exclusion", e.Action)
+			}
+		})
+	}
+}
+
+// An item an edit took out, which an import's meal took since: the
+// edit's undo is a conflict about the item, and the meals stay as they
+// are.
+func TestUndoAfterAnItemWasTaken(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	if err := db.ExcludeDay(t.Context(), ana, testActor, day.DateOf(t0), day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	f, err := db.SaveFood(t.Context(), ana, importer, bar(), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _, err := db.CreateMeal(t.Context(), ana, importer, breakfast(t, f, t0), t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edit := a
+	edit.Items = a.Items[1:]
+	edited, err := db.ReplaceMeal(t.Context(), ana, testActor, edit, t0.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := breakfast(t, f, t0.Add(2*time.Hour))
+	b.Items = []meal.Item{b.Items[0]}
+	b.Items[0].ID = a.Items[0].ID
+	b, _, err = db.CreateMeal(t.Context(), ana, importer, b, t0.Add(2*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) ||
+		conflict.Reason != "another meal has taken one of its items since" || !errors.Is(err, store.ErrMealConflict) {
+		t.Fatalf("undo = %v, want an UndoConflictError about the item", err)
+	}
+	if got, _ := db.MealByID(t.Context(), ana, a.ID); !reflect.DeepEqual(got, edited) {
+		t.Errorf("the edited meal became %+v", got)
+	}
+	if got, _ := db.MealByID(t.Context(), ana, b.ID); !reflect.DeepEqual(got, b) {
+		t.Errorf("the import's meal became %+v", got)
+	}
+	if e := undo(t, db, ana); e.Action != event.DayExclude {
+		t.Errorf("the next undo took back %s, want the exclusion", e.Action)
+	}
+}
+
+// A failure of the database is not the change's: undo returns it as it
+// is and passes over nothing, so a later undo tries the same change.
+func TestUndoWhenTheDatabaseFails(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, drop string }{
+		{"reading the state", "DROP TABLE food_servings"},
+		{"putting it back", "DROP TABLE foods_fts"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			db, ana, _ := withTwoUsers(t)
+			userEditOfAnImport(t, db, ana)
+			exec(t, db, tc.drop)
+			for range 2 {
+				_, err := db.UndoLast(t.Context(), ana, testActor, t0)
+				var conflict *store.UndoConflictError
+				if err == nil || errors.As(err, &conflict) || !strings.Contains(err.Error(), "no such table") {
+					t.Fatalf("undo = %v, want the database's error, not a conflict", err)
+				}
 			}
 		})
 	}
@@ -704,8 +792,12 @@ func TestUndoWithARealClock(t *testing.T) {
 	if _, err := db.SetMetric(t.Context(), ana, testActor, d, metric.Value{Kind: metric.Steps, Value: minusZero, Source: metric.Manual}, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.MergeMetrics(t.Context(), ana, testActor, d, []metric.Value{{Kind: metric.ExerciseMin, Value: minusZero, Source: metric.Manual}}, now); err != nil {
+	merged := []metric.Value{{Kind: metric.ExerciseMin, Value: minusZero, Source: metric.Manual}}
+	if _, err := db.MergeMetrics(t.Context(), ana, testActor, d, merged, now); err != nil {
 		t.Fatal(err)
+	}
+	if !math.Signbit(merged[0].Value) {
+		t.Error("MergeMetrics changed the caller's values")
 	}
 	for range 4 {
 		if _, err := db.UndoLast(t.Context(), ana, testActor, now); err != nil {

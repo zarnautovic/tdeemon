@@ -418,10 +418,10 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 		return err
 	}
 	if other > 0 {
-		return errUndoBlocked
+		return errNameTaken
 	}
 	if err := checkAliases(ctx, tx, userID, f); errors.Is(err, ErrAliasTaken) {
-		return errUndoBlocked
+		return fmt.Errorf("%w: %w", errAliasTaken, err)
 	} else if err != nil {
 		return err
 	}
