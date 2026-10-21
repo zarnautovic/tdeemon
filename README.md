@@ -162,5 +162,5 @@ significant changes to your diet or training.
 
 ## License
 
-[AGPL-3.0-only](LICENSE). Contributions require signing a CLA (set up before
-the first external contribution).
+[AGPL-3.0-only](LICENSE). Contributions come under the same licence, with no
+CLA to sign ([CONTRIBUTING.md](CONTRIBUTING.md)).

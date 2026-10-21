@@ -7,11 +7,13 @@ a small fix before you start on it.
 Report a security vulnerability privately, as [SECURITY.md](SECURITY.md)
 describes, never in a public issue.
 
-## The Contributor License Agreement
+## Licence of contributions
 
-Contributions need a signed Contributor License Agreement. It is being set
-up and will be linked here before the first outside contribution is
-accepted.
+tdeemon is under the [AGPL-3.0-only](LICENSE), and so is every
+contribution: by opening a pull request you release your change under the
+same licence and confirm you have the right to do so, as the
+[GitHub Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service#6-contributions-under-repository-license)
+also say. There is no Contributor License Agreement to sign.
 
 ## Development
 

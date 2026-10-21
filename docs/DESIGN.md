@@ -452,11 +452,12 @@ the first spec.
    days from its workouts API for the split targets, and the strength
    veto waits for P3. Its nutrition side is retired after the parallel
    run.
-6. **The repo is public from the first commit** (AGPL-3.0, CLA from day
-   one). GitHub Free only enforces rulesets on public repos, and a
-   protected `main` is a requirement. **Personal data never enters the
-   repo:** real-data fixtures and eval sets live outside git, and tests
-   in the repo use synthetic or anonymised data.
+6. **The repo is public from the first commit** (AGPL-3.0, and
+   contributions come under the same licence, with no CLA). GitHub Free
+   only enforces rulesets on public repos, and a protected `main` is a
+   requirement. **Personal data never enters the repo:** real-data
+   fixtures and eval sets live outside git, and tests in the repo use
+   synthetic or anonymised data.
 
 ## 11. Phases
 
@@ -476,9 +477,11 @@ Until P3, a training day for split targets comes from a manual toggle
 - ~~Name~~ → **tdeemon**.
 - ~~Observability~~ → deferred to a later phase: logs, `/healthz` and the
   watchdog until then; `/metrics` and dashboards later.
-- ~~License~~ → **decided: AGPL-3.0 + a CLA** from the first external
-  contribution. The CLA keeps the author's right to dual-license
-  without asking each contributor.
+- ~~License~~ → **decided: AGPL-3.0, without a CLA.** Contributions
+  come under the AGPL too (inbound = outbound). A CLA would only serve
+  dual licensing, and a commercial or hosted SaaS is a non-goal (§2).
+  If that changes, a CLA added then covers the contributions from that
+  point on.
 - ~~Frontend~~ → **decided: React SPA embedded in the Go binary**
   (see §9).
 - **Food DB scope.** Per user only, or optionally shared within a
