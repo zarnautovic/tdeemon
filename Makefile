@@ -6,8 +6,8 @@
 MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
 
 # Licences a dependency may have: permissive ones and MPL-2.0. Copyleft
-# licences such as GPL would keep the project from being offered under
-# another licence besides the AGPL.
+# licences such as GPL would limit any later change of the project's
+# licence to GPL-compatible ones.
 LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,BlueOak-1.0.0,CC0-1.0,Unlicense,Python-2.0,CC-BY-4.0
 
 WEB_DEPS := web/node_modules/.package-lock.json

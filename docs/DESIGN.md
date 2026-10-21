@@ -2,7 +2,7 @@
 
 > Name: TDEE + daemon. Successor to the author's personal setup
 > (an Obsidian vault + a small Go service + an AI agent on Telegram),
-> rebuilt as a self-hostable, multi-user, open-source app (AGPL-3.0).
+> rebuilt as a self-hostable, multi-user, open-source app (AGPL-3.0-only).
 > Status: design phase, 2026-10. Nothing here is built yet.
 
 ## 1. Why
@@ -452,11 +452,12 @@ the first spec.
    days from its workouts API for the split targets, and the strength
    veto waits for P3. Its nutrition side is retired after the parallel
    run.
-6. **The repo is public from the first commit** (AGPL-3.0, CLA from day
-   one). GitHub Free only enforces rulesets on public repos, and a
-   protected `main` is a requirement. **Personal data never enters the
-   repo:** real-data fixtures and eval sets live outside git, and tests
-   in the repo use synthetic or anonymised data.
+6. **The repo is public from the first commit** (AGPL-3.0-only, and
+   contributions come under the same licence, with no CLA). GitHub Free
+   only enforces rulesets on public repos, and a protected `main` is a
+   requirement. **Personal data never enters the repo:** real-data
+   fixtures and eval sets live outside git, and tests in the repo use
+   synthetic or anonymised data.
 
 ## 11. Phases
 
@@ -476,9 +477,16 @@ Until P3, a training day for split targets comes from a manual toggle
 - ~~Name~~ → **tdeemon**.
 - ~~Observability~~ → deferred to a later phase: logs, `/healthz` and the
   watchdog until then; `/metrics` and dashboards later.
-- ~~License~~ → **decided: AGPL-3.0 + a CLA** from the first external
-  contribution. The CLA keeps the author's right to dual-license
-  without asking each contributor.
+- ~~License~~ → **decided: AGPL-3.0-only, without a CLA.**
+  Contributions come under the AGPL too (inbound = outbound). A CLA
+  would mainly serve dual licensing, and a commercial or hosted SaaS is
+  a v1 non-goal (§2). The cost: once outside contributions are in, any
+  change of licence, a later AGPL version included, needs every
+  contributor's consent. A CLA added later covers only the
+  contributions from that point on; earlier ones need their authors'
+  consent or a rewrite. The dependency licence policy stays
+  (`docs/conventions.md`), so the dependencies' licences do not add to
+  that cost.
 - ~~Frontend~~ → **decided: React SPA embedded in the Go binary**
   (see §9).
 - **Food DB scope.** Per user only, or optionally shared within a
