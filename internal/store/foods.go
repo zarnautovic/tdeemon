@@ -88,8 +88,8 @@ func nullable(p *float64) any {
 //     food has the new name and brand (ErrNameTaken);
 //   - otherwise a food with f's name and brand (food.Key) is updated in
 //     place and keeps its own id, which the result carries;
-//   - otherwise f is added, under a new id if f's is another user's
-//     (which answers like an id nobody has: the result carries the id).
+//   - otherwise f is added. Ids are per user: another user's food under
+//     f's id is not this user's, and does not change the answer.
 //
 // Saving the name and brand of an archived food corrects it and, as f is
 // not archived, brings it back: it is in use again. An alias another
@@ -130,15 +130,14 @@ func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, f food.Food, now t
 // saveTarget returns the id SaveFood writes to and whether that row
 // exists.
 func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, brandKey string) (uuid.UUID, bool, error) {
-	var owner string
-	err := tx.QueryRowContext(ctx, "SELECT user_id FROM foods WHERE id = ?", id.String()).Scan(&owner)
+	uid := userID.String()
+	var one int
+	err := tx.QueryRowContext(ctx, "SELECT 1 FROM foods WHERE user_id = ? AND id = ?", uid, id.String()).Scan(&one)
 	switch {
-	case err == nil && owner != userID.String():
-		id = uuid.NewV7()
 	case err == nil:
 		var other string
 		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
-			userID.String(), nameKey, brandKey, id.String()).Scan(&other)
+			uid, nameKey, brandKey, id.String()).Scan(&other)
 		if err == nil {
 			return uuid.Nil(), false, ErrNameTaken
 		}
@@ -151,7 +150,7 @@ func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, 
 	}
 	var same string
 	err = tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ?",
-		userID.String(), nameKey, brandKey).Scan(&same)
+		uid, nameKey, brandKey).Scan(&same)
 	if errors.Is(err, sql.ErrNoRows) {
 		return id, false, nil
 	}
@@ -406,7 +405,7 @@ func ftsQuery(s string) string {
 	// A combining mark (a caron pasted from a PDF, after its "c") is part
 	// of its word; the tokenizer drops it with the other diacritics.
 	words := strings.FieldsFunc(s, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.Is(unicode.Mn, r)
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && !unicode.Is(unicode.Mn, r)
 	})
 	if len(words) > maxQueryWords {
 		words = words[:maxQueryWords]

@@ -2,8 +2,11 @@
 -- internal/domain/food; the checks here only keep obviously broken rows
 -- out.
 CREATE TABLE foods (
-    -- A UUIDv7, chosen by the client that first saved the food.
-    id TEXT PRIMARY KEY CHECK (length(id) = 36),
+    -- A UUIDv7, chosen by the client that first saved the food. Ids are
+    -- per user (the primary key is the pair), so another user's food
+    -- under the same id is no row of this user's, and nothing tells it
+    -- is there.
+    id TEXT NOT NULL CHECK (length(id) = 36),
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     name TEXT NOT NULL CHECK (name <> ''),
     brand TEXT NOT NULL DEFAULT '',
@@ -33,14 +36,13 @@ CREATE TABLE foods (
     note TEXT NOT NULL DEFAULT '',
     archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    -- The child tables' foreign keys name the user as well, so a child
+    -- row can never belong to another user's food.
+    PRIMARY KEY (user_id, id)
 ) STRICT;
 
 CREATE UNIQUE INDEX foods_user_name_brand ON foods (user_id, name_key, brand_key);
-
--- For the foreign keys of the child tables, which name the user as well,
--- so a child row can never belong to another user's food.
-CREATE UNIQUE INDEX foods_id_user ON foods (id, user_id);
 
 -- Named amounts of a food by weight or volume: "piece" is 60 g of egg.
 CREATE TABLE food_servings (
@@ -50,8 +52,8 @@ CREATE TABLE food_servings (
     name_key TEXT NOT NULL CHECK (name_key <> ''),
     -- In the food's unit, grams or ml.
     amount REAL NOT NULL CHECK (amount > 0),
-    PRIMARY KEY (food_id, name_key),
-    FOREIGN KEY (food_id, user_id) REFERENCES foods (id, user_id) ON DELETE CASCADE
+    PRIMARY KEY (user_id, food_id, name_key),
+    FOREIGN KEY (user_id, food_id) REFERENCES foods (user_id, id) ON DELETE CASCADE
 ) STRICT;
 
 -- Other names the user calls a food by. An alias leads to one food.
@@ -60,8 +62,8 @@ CREATE TABLE food_aliases (
     user_id TEXT NOT NULL,
     alias TEXT NOT NULL CHECK (alias <> ''),
     alias_key TEXT NOT NULL CHECK (alias_key <> ''),
-    PRIMARY KEY (food_id, alias_key),
-    FOREIGN KEY (food_id, user_id) REFERENCES foods (id, user_id) ON DELETE CASCADE
+    PRIMARY KEY (user_id, food_id, alias_key),
+    FOREIGN KEY (user_id, food_id) REFERENCES foods (user_id, id) ON DELETE CASCADE
 ) STRICT;
 
 CREATE UNIQUE INDEX food_aliases_user_alias ON food_aliases (user_id, alias_key);

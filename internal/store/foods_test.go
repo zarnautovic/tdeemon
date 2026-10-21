@@ -133,8 +133,9 @@ func TestSaveFoodRefuses(t *testing.T) {
 	}
 }
 
-// Another user's food id answers like an id nobody has: the food is
-// saved under a new one, and the other user's food is untouched.
+// Ids are per user: another user's food under the same id is no food of
+// this user's, so the food is saved under the id it was given, exactly as
+// under an id nobody has, and the other user's food is untouched.
 func TestSaveFoodUnderAnotherUsersID(t *testing.T) {
 	t.Parallel()
 
@@ -146,8 +147,8 @@ func TestSaveFoodUnderAnotherUsersID(t *testing.T) {
 	steal := bar()
 	steal.ID = ivos.ID
 	got := saveFood(t, db, ana, steal)
-	if got.ID == ivos.ID || got.Name != steal.Name {
-		t.Errorf("saved as %+v, want ana's bar under a new id", got)
+	if got.ID != ivos.ID || got.Name != steal.Name {
+		t.Errorf("saved as %+v, want ana's bar under the id it was given", got)
 	}
 	if got, _ := db.FoodByID(t.Context(), ivo, ivos.ID); got.Name != "Ivo's bread" {
 		t.Errorf("ivo's food became %q", got.Name)
@@ -183,7 +184,19 @@ func TestSearchRowsLeaveWithTheirFood(t *testing.T) {
 	db, ana, ivo := withTwoUsers(t)
 	saveFood(t, db, ana, bar())
 	saveFood(t, db, ivo, bar())
+	secret := bar()
+	secret.Name, secret.Aliases = "Ivozzzsecretbread", nil
+	saveFood(t, db, ivo, secret)
 	exec(t, db, "DELETE FROM users WHERE id = '"+ivo.String()+"'")
+	// Secure-delete: the words are gone from the index's own pages too.
+	var left int
+	if err := db.Read().QueryRowContext(t.Context(),
+		"SELECT count(*) FROM foods_fts_data WHERE instr(block, CAST('ivozzzsecretbread' AS BLOB)) > 0").Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Errorf("%d index pages still hold the deleted user's word", left)
+	}
 	var n int
 	if err := db.Read().QueryRowContext(t.Context(), "SELECT count(*) FROM foods_fts WHERE user_id = ?", ivo.String()).Scan(&n); err != nil {
 		t.Fatal(err)
@@ -248,6 +261,7 @@ func TestFindFoods(t *testing.T) {
 		})
 	}
 	cevapi := mk("Ćevapi", "")
+	water := mk("H\u2082O voda", "")
 	yoghurt := mk("Grčki jogurt 2 %", "Dukat")
 	bread := mk("Proteinski kruh", "", "moj kruh")
 	pecivo := mk("Pecivo sa sezamom", "Kruh i pecivo")
@@ -261,6 +275,7 @@ func TestFindFoods(t *testing.T) {
 	}{
 		{"cevapi", []uuid.UUID{cevapi.ID}},         // without diacritics
 		{"c\u030cevapi", []uuid.UUID{cevapi.ID}},   // decomposed, as pasted from a PDF
+		{"h\u2082o", []uuid.UUID{water.ID}},        // a subscript digit is part of its word
 		{"ĆEV", []uuid.UUID{cevapi.ID}},            // a prefix, any case
 		{"grcki jog", []uuid.UUID{yoghurt.ID}},     // every word a prefix
 		{"dukat", []uuid.UUID{yoghurt.ID}},         // by brand
