@@ -229,6 +229,28 @@ the provider on the first sign-in, so it starts while the provider is
 down; after a failure it waits 30 seconds before asking again. The
 provider's endpoints must use https, like its issuer.
 
+### API tokens
+
+Devices and clients act for a user with an API token instead of a
+session: the phone (Health Auto Export) sends health data, an AI client
+logs meals through MCP. A token has scopes: `ingest` (health data from
+the phone), `tools` (log and change through the tools) and `read`.
+
+```sh
+# Signed in (the session cookie in cookies.txt), create one; the token is
+# shown only in this answer, tdeemon keeps only its hash.
+curl -b cookies.txt -H 'Content-Type: application/json' \
+  -d '{"name":"iPhone","scopes":["ingest"]}' https://tdeemon.example.com/api/v1/tokens
+
+# The device sends it with every request:
+curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/whoami
+```
+
+`GET /api/v1/tokens` lists them (name, scopes, when last used) and
+`DELETE /api/v1/tokens/{id}` revokes one at once. Managing tokens, like
+every setting, takes a web session: a token can never create, list or
+revoke tokens. The web app's settings page comes with the web UI.
+
 ## Data
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,

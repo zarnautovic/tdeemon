@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"slices"
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
@@ -32,13 +33,35 @@ func SessionID(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// Via is how a request proved who it acts for.
+type Via int
+
+// The ways a request can authenticate.
+const (
+	// ViaSession is a web session's cookie: a person in a browser.
+	ViaSession Via = iota + 1
+	// ViaToken is an API token: a device or a client acting for the user.
+	ViaToken
+)
+
 // Principal is who a request acts for.
 type Principal struct {
 	User user.User
-	// SessionID is the session the request came with.
+	Via  Via
+	// SessionID is the session the request came with (ViaSession).
 	SessionID string
-	// SessionExpiresAt is when that session ends.
+	// SessionExpiresAt is when that session ends (ViaSession).
 	SessionExpiresAt time.Time
+	// TokenID is the API token's handle (ViaToken).
+	TokenID string
+	// Scopes are what the token may do (ViaToken).
+	Scopes []Scope
+}
+
+// Can reports whether p may act in scope: a session may do anything its
+// user may, a token only what its scopes allow.
+func (p Principal) Can(scope Scope) bool {
+	return p.Via == ViaSession || (p.Via == ViaToken && slices.Contains(p.Scopes, scope))
 }
 
 type principalKey struct{}

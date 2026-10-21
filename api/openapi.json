@@ -1,6 +1,54 @@
 {
   "components": {
     "schemas": {
+      "CreateTokenInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "What to call the token.",
+            "examples": [
+              "iPhone"
+            ],
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "scopes": {
+            "description": "What it may do: ingest (the phone's health data), tools (log and change through MCP), read.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "type": [
+              "array",
+              "null"
+            ],
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "CreateTokenOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "description": "The token itself. It is shown only now; tdeemon keeps only its hash.",
+            "examples": [
+              "tdm_…"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -176,6 +224,64 @@
         ],
         "type": "object"
       },
+      "TokenBody": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The token's handle; revoke it by this.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "When it was last used, to the hour or so; absent until then.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "description": "What the user calls the token.",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "What the token may do.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scopes",
+          "created_at"
+        ],
+        "type": "object"
+      },
+      "TokensOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/TokenBody"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "tokens"
+        ],
+        "type": "object"
+      },
       "UserBody": {
         "additionalProperties": false,
         "properties": {
@@ -231,6 +337,37 @@
           "locale",
           "timezone",
           "day_start_hour"
+        ],
+        "type": "object"
+      },
+      "WhoamiOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "scopes": {
+            "description": "What the token may do (via token).",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserBody"
+          },
+          "via": {
+            "description": "How the request authenticated.",
+            "enum": [
+              "session",
+              "token"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "user",
+          "via"
         ],
         "type": "object"
       }
@@ -439,6 +576,56 @@
         ]
       }
     },
+    "/api/v1/auth/whoami": {
+      "get": {
+        "description": "The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token.",
+        "operationId": "whoami",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoamiOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "description": "no-store",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get who the request acts for",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/info": {
       "get": {
         "description": "Name and version of the running server.",
@@ -468,6 +655,220 @@
         "summary": "Get server info",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/api/v1/tokens": {
+      "get": {
+        "description": "Needs a web session. The tokens themselves are never shown again.",
+        "operationId": "list-tokens",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokensOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "description": "no-store",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List your API tokens",
+        "tags": [
+          "tokens"
+        ]
+      },
+      "post": {
+        "description": "Needs a web session. The response carries the token, once. A device or a client then sends it as `Authorization: Bearer \u003ctoken\u003e`.",
+        "operationId": "create-token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTokenInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateTokenOutputBody"
+                }
+              }
+            },
+            "description": "Created",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "description": "no-store",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Create an API token",
+        "tags": [
+          "tokens"
+        ]
+      }
+    },
+    "/api/v1/tokens/{id}": {
+      "delete": {
+        "description": "Needs a web session. The token stops working at once.",
+        "operationId": "revoke-token",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Revoke an API token",
+        "tags": [
+          "tokens"
         ]
       }
     }

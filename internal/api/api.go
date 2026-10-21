@@ -233,6 +233,7 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 // register adds every API operation to a.
 func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.register(a)
+	s.registerTokens(a)
 	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",

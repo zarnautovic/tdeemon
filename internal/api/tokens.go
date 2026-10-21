@@ -1,0 +1,244 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+	"uuid"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/store"
+)
+
+// requireSession returns the principal of a request that came with a web
+// session: a person in a browser. Settings, and the tokens themselves,
+// change only that way, never with an API token (DESIGN.md §8).
+func requireSession(ctx context.Context) (auth.Principal, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	switch {
+	case !ok:
+		return auth.Principal{}, huma.Error401Unauthorized("not signed in")
+	case p.Via != auth.ViaSession:
+		return auth.Principal{}, huma.Error403Forbidden("this needs a web session, not an API token")
+	}
+	return p, nil
+}
+
+// errBadToken is the answer to an Authorization header that names no live
+// API token, with the challenge RFC 6750 asks for.
+func writeBadToken(w http.ResponseWriter) {
+	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
+	writeProblem(w, http.StatusUnauthorized, "the API token is not valid")
+}
+
+// authenticateToken handles a request with an Authorization header.
+func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, header string, next http.Handler) {
+	scheme, token, ok := strings.Cut(header, " ")
+	if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(token, auth.TokenPrefix) {
+		writeBadToken(w)
+		return
+	}
+	t, u, err := s.db.APITokenUser(r.Context(), auth.SessionID(token))
+	if errors.Is(err, store.ErrNotFound) {
+		writeBadToken(w)
+		return
+	}
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "looking up an API token failed", "error", err)
+		writeProblem(w, http.StatusInternalServerError, "the API token could not be checked")
+		return
+	}
+	scopes, err := auth.ParseScopes(t.Scopes)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "a stored API token has bad scopes", "token_id", t.ID.String(), "error", err)
+		writeBadToken(w)
+		return
+	}
+	now := s.now()
+	if now.Sub(t.LastUsedAt) >= touchEvery {
+		if err := s.db.TouchAPIToken(r.Context(), t.ID, now); err != nil {
+			s.logger.WarnContext(r.Context(), "recording token use failed", "error", err)
+		}
+	}
+	ctx := auth.WithPrincipal(r.Context(), auth.Principal{User: u, Via: auth.ViaToken, TokenID: t.ID.String(), Scopes: scopes})
+	next.ServeHTTP(w, r.WithContext(ctx))
+}
+
+type tokenBody struct {
+	ID         string     `json:"id" format:"uuid" doc:"The token's handle; revoke it by this."`
+	Name       string     `json:"name" doc:"What the user calls the token."`
+	Scopes     []string   `json:"scopes" doc:"What the token may do."`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty" doc:"When it was last used, to the hour or so; absent until then."`
+}
+
+func newTokenBody(t store.APIToken) tokenBody {
+	b := tokenBody{ID: t.ID.String(), Name: t.Name, Scopes: strings.Fields(t.Scopes), CreatedAt: t.CreatedAt.UTC()}
+	if !t.LastUsedAt.IsZero() {
+		last := t.LastUsedAt.UTC()
+		b.LastUsedAt = &last
+	}
+	return b
+}
+
+type tokensOutput struct {
+	CacheControl string `header:"Cache-Control" doc:"no-store"`
+	Body         struct {
+		Tokens []tokenBody `json:"tokens"`
+	}
+}
+
+type createTokenInput struct {
+	Body struct {
+		Name   string   `json:"name" minLength:"1" maxLength:"100" example:"iPhone" doc:"What to call the token."`
+		Scopes []string `json:"scopes" minItems:"1" maxItems:"3" uniqueItems:"true" doc:"What it may do: ingest (the phone's health data), tools (log and change through MCP), read."`
+	}
+}
+
+type createTokenOutput struct {
+	CacheControl string `header:"Cache-Control" doc:"no-store"`
+	Body         struct {
+		tokenBody
+		Token string `json:"token" example:"tdm_…" doc:"The token itself. It is shown only now; tdeemon keeps only its hash."`
+	}
+}
+
+type revokeTokenInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+
+type whoamiOutput struct {
+	CacheControl string `header:"Cache-Control" doc:"no-store"`
+	Body         struct {
+		User   userBody `json:"user"`
+		Via    string   `json:"via" enum:"session,token" doc:"How the request authenticated."`
+		Scopes []string `json:"scopes,omitempty" doc:"What the token may do (via token)."`
+	}
+}
+
+func (s *sessions) registerTokens(a huma.API) {
+	huma.Register(a, huma.Operation{
+		OperationID: "whoami",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/auth/whoami",
+		Summary:     "Get who the request acts for",
+		Description: "The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusUnauthorized},
+	}, func(ctx context.Context, _ *struct{}) (*whoamiOutput, error) {
+		p, ok := auth.PrincipalFrom(ctx)
+		if !ok {
+			return nil, huma.Error401Unauthorized("not signed in")
+		}
+		out := &whoamiOutput{CacheControl: "no-store"}
+		out.Body.User = newUserBody(p.User)
+		out.Body.Via = "session"
+		if p.Via == auth.ViaToken {
+			out.Body.Via = "token"
+			for _, sc := range p.Scopes {
+				out.Body.Scopes = append(out.Body.Scopes, string(sc))
+			}
+		}
+		return out, nil
+	})
+	huma.Register(a, huma.Operation{
+		OperationID: "list-tokens",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/tokens",
+		Summary:     "List your API tokens",
+		Description: "Needs a web session. The tokens themselves are never shown again.",
+		Tags:        []string{"tokens"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
+	}, s.listTokens)
+	huma.Register(a, huma.Operation{
+		OperationID:   "create-token",
+		Method:        http.MethodPost,
+		Path:          Prefix + "/tokens",
+		Summary:       "Create an API token",
+		Description:   "Needs a web session. The response carries the token, once. A device or a client then sends it as `Authorization: Bearer <token>`.",
+		Tags:          []string{"tokens"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden},
+	}, s.createToken)
+	huma.Register(a, huma.Operation{
+		OperationID:   "revoke-token",
+		Method:        http.MethodDelete,
+		Path:          Prefix + "/tokens/{id}",
+		Summary:       "Revoke an API token",
+		Description:   "Needs a web session. The token stops working at once.",
+		Tags:          []string{"tokens"},
+		DefaultStatus: http.StatusNoContent,
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
+	}, s.revokeToken)
+}
+
+func (s *sessions) listTokens(ctx context.Context, _ *struct{}) (*tokensOutput, error) {
+	p, err := requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tokens, err := s.db.APITokens(ctx, p.User.ID)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "listing API tokens failed", "error", err)
+		return nil, huma.Error500InternalServerError("listing the tokens failed")
+	}
+	out := &tokensOutput{CacheControl: "no-store"}
+	out.Body.Tokens = make([]tokenBody, 0, len(tokens))
+	for _, t := range tokens {
+		out.Body.Tokens = append(out.Body.Tokens, newTokenBody(t))
+	}
+	return out, nil
+}
+
+func (s *sessions) createToken(ctx context.Context, in *createTokenInput) (*createTokenOutput, error) {
+	p, err := requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(in.Body.Name)
+	if err := user.ValidateName(name); err != nil {
+		return nil, huma.Error422UnprocessableEntity("the token's name: " + strings.TrimPrefix(err.Error(), "name "))
+	}
+	scopes, err := auth.ParseScopes(strings.Join(in.Body.Scopes, " "))
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	token, hash := auth.NewAPIToken()
+	t := store.APIToken{
+		ID: uuid.NewV7(), UserID: p.User.ID, Name: name, Scopes: auth.FormatScopes(scopes),
+		CreatedAt: s.now().Truncate(time.Second),
+	}
+	if err := s.db.CreateAPIToken(ctx, t, hash); err != nil {
+		s.logger.ErrorContext(ctx, "creating an API token failed", "error", err)
+		return nil, huma.Error500InternalServerError("creating the token failed")
+	}
+	s.logger.InfoContext(ctx, "created an API token", "user_id", p.User.ID.String(), "token_id", t.ID.String(), "scopes", t.Scopes)
+	out := &createTokenOutput{CacheControl: "no-store"}
+	out.Body.tokenBody = newTokenBody(t)
+	out.Body.Token = token
+	return out, nil
+}
+
+func (s *sessions) revokeToken(ctx context.Context, in *revokeTokenInput) (*struct{}, error) {
+	p, err := requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("no such token")
+	}
+	if err := s.db.RevokeAPIToken(ctx, p.User.ID, id); errors.Is(err, store.ErrNotFound) {
+		return nil, huma.Error404NotFound("no such token")
+	} else if err != nil {
+		s.logger.ErrorContext(ctx, "revoking an API token failed", "error", err)
+		return nil, huma.Error500InternalServerError("revoking the token failed")
+	}
+	s.logger.InfoContext(ctx, "revoked an API token", "user_id", p.User.ID.String(), "token_id", id.String())
+	return nil, nil //nolint:nilnil // huma answers a nil output with the DefaultStatus, 204.
+}

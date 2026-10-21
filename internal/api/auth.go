@@ -69,13 +69,23 @@ func (s *sessions) clearedCookie() http.Cookie {
 	return c
 }
 
-// authenticate attaches the principal of the request's session cookie, if
-// it names a live session, to the request context. A request without one
-// goes on anonymous; operations that need a user refuse it.
+// authenticate attaches the principal of an API request to its context:
+// the API token in its Authorization header or, without that header, the
+// live session its cookie names. A request with neither goes on
+// anonymous, and operations that need a user refuse it; one with a bad
+// token is refused here (401), since it meant to authenticate.
 func (s *sessions) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isAPIPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if h := r.Header.Get("Authorization"); h != "" {
+			s.authenticateToken(w, r, h, next)
+			return
+		}
 		c, err := r.Cookie(s.cookieName())
-		if err != nil || c.Value == "" || !isAPIPath(r.URL.Path) {
+		if err != nil || c.Value == "" {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -96,7 +106,7 @@ func (s *sessions) authenticate(next http.Handler) http.Handler {
 				s.logger.WarnContext(r.Context(), "recording session use failed", "error", err)
 			}
 		}
-		ctx := auth.WithPrincipal(r.Context(), auth.Principal{User: u, SessionID: id, SessionExpiresAt: sess.ExpiresAt})
+		ctx := auth.WithPrincipal(r.Context(), auth.Principal{User: u, Via: auth.ViaSession, SessionID: id, SessionExpiresAt: sess.ExpiresAt})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -233,7 +243,7 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 func (s *sessions) start(ctx context.Context, u user.User, now time.Time, method string,
 	create func(store.Session) error,
 ) (http.Cookie, store.Session, error) {
-	if p, ok := auth.PrincipalFrom(ctx); ok {
+	if p, ok := auth.PrincipalFrom(ctx); ok && p.Via == auth.ViaSession {
 		if err := s.db.DeleteSession(ctx, p.SessionID); err != nil {
 			s.logger.WarnContext(ctx, "ending the previous session failed", "error", err)
 		}
@@ -272,7 +282,7 @@ func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password st
 }
 
 func (s *sessions) logout(ctx context.Context, _ *struct{}) (*logoutOutput, error) {
-	if p, ok := auth.PrincipalFrom(ctx); ok {
+	if p, ok := auth.PrincipalFrom(ctx); ok && p.Via == auth.ViaSession {
 		if err := s.db.DeleteSession(ctx, p.SessionID); err != nil {
 			s.logger.ErrorContext(ctx, "ending a session failed", "error", err)
 			return nil, huma.Error500InternalServerError("signing out failed")
@@ -283,9 +293,9 @@ func (s *sessions) logout(ctx context.Context, _ *struct{}) (*logoutOutput, erro
 }
 
 func (s *sessions) current(ctx context.Context, _ *struct{}) (*currentSessionOutput, error) {
-	p, ok := auth.PrincipalFrom(ctx)
-	if !ok {
-		return nil, huma.Error401Unauthorized("not signed in")
+	p, err := requireSession(ctx)
+	if err != nil {
+		return nil, err
 	}
 	return &currentSessionOutput{
 		CacheControl: "no-store",

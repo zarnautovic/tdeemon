@@ -20,7 +20,7 @@ hashes, the API contract and an empty web app exist.
 | `internal/auth` | credentials: password rules, argon2id hashes, session tokens, sealed values and who a request acts for |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`, with sign-in and sessions |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions and API tokens |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |
