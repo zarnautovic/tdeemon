@@ -96,7 +96,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `food_servings` | food_id, user_id, name, amount | named amounts of a food by weight or volume: "piece" = 60 g of egg, "slice" = 40 g of bread |
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
-| `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import) | |
+| `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import), note, fingerprint | the fingerprint of the create, for idempotent retries (§9) |
 | `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
 | `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log) |
@@ -167,7 +167,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | --- | --- |
 | `get_profile` | current phase and goal, current targets (day-type aware), profile notes, locale, units |
 | `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
-| `log_meal(eaten_at?, description, items[], note?)` | stores the meal; returns breakdown + day status |
+| `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
 | `delete_meal(meal_id)` / `undo_last()` | |
 | `upsert_food(...)` | save or correct a food (label values); same-name-same-portion rule |
@@ -470,10 +470,33 @@ the first spec.
   - ECharts, keeping the validated palette.
   - `vite-plugin-pwa` for install and web push.
   - Later, Capacitor wraps the same app for iOS with a HealthKit plugin.
-- **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals, items
-  and later sets, and writes are idempotent on that ID. The future
-  in-gym workout logger can queue writes offline and sync without
-  duplicates.
+- **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals, their
+  items and later sets, and writes are idempotent on that ID: the same
+  write sent again returns what is stored, and other content under the
+  ID is a conflict (409). IDs are per user (the key is the user and the
+  ID), so another user's row under the same ID is not there for this
+  one, and no answer tells it is.
+  - "The same" is what the client said (a meal's `Fingerprint`: the time
+    to the second, text, foods and quantities in order, an estimate's
+    values), not what the server worked out, so a retry after a food was
+    corrected is still a retry. A client gives the meal's `id`; when
+    `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
+    the clock, so a retry has the same one. A new meal's ID must be a
+    version 7 ID whose time is near the clock, so a model cannot reuse
+    yesterday's meal ID or make one up; an ID already stored goes to the
+    fingerprint instead, so an offline queue's late retry still finds its
+    meal.
+  - The fingerprint is the create's: an edit leaves it, so a late retry
+    of the create (an offline queue that lost the answer) returns the
+    meal as it is now.
+  - An item keeps its ID across edits; a new item may carry the
+    client's, and an "add" of an item the meal already has under that ID
+    is a retry: the same content changes nothing, other content is a
+    conflict (409). A server-made ID fills in for an item without one.
+  - A deleted meal leaves no trace yet, so a late retry of its create
+    brings it back; the event log (#104) is to keep a tombstone.
+  - The future in-gym workout logger can queue writes offline and sync
+    without duplicates.
 
 ## 10. Migration from the predecessor
 
