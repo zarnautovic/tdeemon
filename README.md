@@ -250,12 +250,13 @@ curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/
 `GET /api/v1/tokens` lists them (name, scopes, when last used) and
 `DELETE /api/v1/tokens/{id}` revokes one at once. A token reaches only
 the operations open to its scopes (today `GET /api/v1/auth/whoami` and
-`GET /api/v1/info`, with any scope); everything else, like managing
-tokens and every setting, takes a web session, so a token can never
-create, list or revoke tokens. Only the `Bearer` scheme carries a token:
-another `Authorization` header, such as a reverse proxy's Basic
-credentials, leaves the request to its session cookie. The web app's
-settings page comes with the web UI.
+`GET /api/v1/info`, with any scope); every other operation is closed to
+tokens (403), so a token can never create, list or revoke tokens, read
+the session or change a setting. Only `Authorization: Bearer tdm_…`
+carries a token: another header, such as a reverse proxy's Basic
+credentials or the ID token an authenticating proxy passes on as a
+Bearer, leaves the request to its session cookie. The web app's settings
+page comes with the web UI.
 
 ## Data
 

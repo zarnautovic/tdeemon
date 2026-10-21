@@ -49,6 +49,25 @@ func TestGateTokensChecksTheScope(t *testing.T) {
 	}
 }
 
+// An empty scope, a variable that was never set, opens nothing.
+func TestGateTokensEmptyScopeOpensNothing(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	a := newAPI(mux)
+	huma.Register(a, huma.Operation{
+		OperationID: "empty", Method: http.MethodGet, Path: "/empty", DefaultStatus: http.StatusNoContent,
+		Metadata: openToTokens(""),
+	}, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil }) //nolint:nilnil // 204
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/empty", http.NoBody)
+	r = r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Via: auth.ViaToken, Scopes: auth.Scopes()}))
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, r)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("a token on an operation opened to scope \"\": %d, want 403", rec.Code)
+	}
+}
+
 // requireSession refuses a token even where gateTokens let it through.
 func TestRequireSessionRefusesATokenItself(t *testing.T) {
 	t.Parallel()

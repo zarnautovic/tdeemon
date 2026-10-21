@@ -37,12 +37,18 @@ func requireSession(ctx context.Context) (auth.Principal, error) {
 // scope they need (DESIGN.md §8: settings only through a web session).
 const tokenScopeKey = "tokenScope"
 
-// anyScope opens an operation to a token with any scope.
-const anyScope auth.Scope = ""
+// anyScope, in tokenScopeKey, opens an operation to a token with any
+// scope. It is no scope's name, and not the zero value: an empty scope
+// opens nothing.
+const anyScope auth.Scope = "*"
 
-// openToTokens is the Metadata of an operation API tokens may call: those
-// with scope, or every token for anyScope.
+// openToTokens is the Metadata of an operation API tokens with scope may
+// call.
 func openToTokens(scope auth.Scope) map[string]any { return map[string]any{tokenScopeKey: scope} }
+
+// openToAnyToken is the Metadata of an operation every API token may
+// call.
+func openToAnyToken() map[string]any { return openToTokens(anyScope) }
 
 // gateTokens is the API's middleware that keeps tokens to the operations
 // open to them (tokenScopeKey). Requests with a session, or with no one,
@@ -66,17 +72,24 @@ func gateTokens(a huma.API) func(huma.Context, func(huma.Context)) {
 	}
 }
 
-// bearerToken returns the credentials of an Authorization header in the
-// Bearer scheme, whose name is case-insensitive (RFC 7235). A header in
-// another scheme is not for tdeemon (a reverse proxy's Basic credentials,
-// which the browser then sends with every request), so the request is
-// left to its cookie: RFC 6750 §3.1 treats it as not authenticated.
+// bearerToken returns the API token of an Authorization header: the
+// Bearer scheme, whose name is case-insensitive (RFC 7235), with a
+// credential that starts with auth.TokenPrefix, or none at all (which
+// fails as a token). Anything else is not for tdeemon, so the request is
+// left to its cookie (RFC 6750 §3.1 treats it as not authenticated): a
+// reverse proxy's Basic credentials, or the ID token an authenticating
+// proxy (oauth2-proxy) passes on as a Bearer, which the browser's
+// requests then all carry.
 func bearerToken(header string) (string, bool) {
 	scheme, token, _ := strings.Cut(header, " ")
 	if !strings.EqualFold(scheme, "Bearer") {
 		return "", false
 	}
-	return strings.TrimLeft(token, " "), true
+	token = strings.TrimLeft(token, " ")
+	if token != "" && !strings.HasPrefix(token, auth.TokenPrefix) {
+		return "", false
+	}
+	return token, true
 }
 
 // writeBadToken answers a Bearer token that is no live API token, with
@@ -179,7 +192,7 @@ func (s *sessions) registerTokens(a huma.API) {
 		Description: "The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token. Any token may call it.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized},
-		Metadata:    openToTokens(anyScope),
+		Metadata:    openToAnyToken(),
 	}, func(ctx context.Context, _ *struct{}) (*whoamiOutput, error) {
 		p, ok := auth.PrincipalFrom(ctx)
 		if !ok {

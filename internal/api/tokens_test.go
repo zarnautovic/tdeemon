@@ -2,9 +2,11 @@ package api_test
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +85,11 @@ func TestCreateAndUseAToken(t *testing.T) {
 }
 
 // operation is one operation of the API, as the OpenAPI document has it.
-type operation struct{ id, method, path string }
+type operation struct {
+	id, method, path string
+	// statuses are the response codes the document lists for it.
+	statuses []string
+}
 
 // operations lists every operation in the OpenAPI document, with path
 // parameters filled in with a fresh UUID.
@@ -95,7 +101,8 @@ func operations(t *testing.T) []operation {
 	}
 	var spec struct {
 		Paths map[string]map[string]struct {
-			OperationID string `json:"operationId"`
+			OperationID string         `json:"operationId"`
+			Responses   map[string]any `json:"responses"`
 		} `json:"paths"`
 	}
 	if err := json.Unmarshal(raw, &spec); err != nil {
@@ -105,7 +112,10 @@ func operations(t *testing.T) []operation {
 	var ops []operation
 	for path, methods := range spec.Paths {
 		for method, op := range methods {
-			ops = append(ops, operation{op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String())})
+			ops = append(ops, operation{
+				op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String()),
+				slices.Collect(maps.Keys(op.Responses)),
+			})
 		}
 	}
 	if len(ops) == 0 {
@@ -134,6 +144,10 @@ func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 					t.Errorf("%s %s with %d cookies: %d %s; open to tokens: %v", op.method, op.path, len(cookies), rec.Code, rec.Body.String(), open[op.id])
 				}
 			}
+			// The document says so.
+			if !open[op.id] && !slices.Contains(op.statuses, "403") {
+				t.Errorf("the OpenAPI document lists %v for %s, not the 403 a token gets", op.statuses, op.id)
+			}
 		})
 	}
 }
@@ -158,7 +172,7 @@ func TestBadTokens(t *testing.T) {
 	in, session := signedIn(t)
 	for name, header := range map[string]string{
 		"unknown token":              "Bearer " + auth.TokenPrefix + strings.Repeat("A", 43),
-		"no tdm_ prefix":             "Bearer " + strings.Repeat("A", 47),
+		"two spaces":                 "Bearer  " + auth.TokenPrefix + strings.Repeat("A", 43),
 		"no token":                   "Bearer",
 		"empty token":                "Bearer ",
 		"unknown, lower-case scheme": "bearer " + auth.TokenPrefix + "x",
@@ -189,14 +203,29 @@ func TestBadTokens(t *testing.T) {
 	}
 }
 
-// Another scheme in the Authorization header is not an API token: a
-// reverse proxy's Basic credentials, which the browser sends with every
-// request, leave it to the session cookie, and the sign-in still works.
-func TestOtherSchemesAreNoToken(t *testing.T) {
+// An Authorization header that is no API token leaves the request to the
+// session cookie, and the sign-in still works: a reverse proxy's Basic
+// credentials, or the ID token an authenticating proxy passes on as a
+// Bearer, which the browser's requests then all carry.
+func TestOtherCredentialsAreNoToken(t *testing.T) {
 	t.Parallel()
 
+	//nolint:gosec // G101: made-up credentials of other schemes, the point of the test.
+	for name, header := range map[string]string{
+		"Basic":                "Basic YW5hOnB3",
+		"a proxy's Bearer":     "Bearer eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJhbmEifQ.c2ln",
+		"two spaces, not tdm_": "Bearer  something",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			otherCredentialsAreNoToken(t, map[string]string{"Authorization": header})
+		})
+	}
+}
+
+func otherCredentialsAreNoToken(t *testing.T, basic map[string]string) {
+	t.Helper()
 	in := newInstance(t, "http://localhost", passwordHash(t))
-	basic := map[string]string{"Authorization": "Basic YW5hOnB3"}
 	rec := in.do(t, http.MethodPost, "/api/v1/auth/login", `{"email":"ana@example.com","password":"`+password+`"}`, nil, basic)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login with Basic credentials: %d %s, want 200", rec.Code, rec.Body.String())

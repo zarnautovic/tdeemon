@@ -502,6 +502,7 @@ func registerMethods(a huma.API, o *oidcLogin) {
 		Summary:     "Get the ways to sign in",
 		Description: "What the sign-in page offers: a password, and an OpenID Connect provider when one is configured.",
 		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusForbidden},
 	}, func(context.Context, *struct{}) (*methodsOutput, error) {
 		out := &methodsOutput{Body: methodsBody{Password: true}}
 		if o != nil {

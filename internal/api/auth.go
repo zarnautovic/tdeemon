@@ -172,7 +172,7 @@ func (s *sessions) register(a huma.API) {
 			"message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent.",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusOK,
-		Errors:        []int{http.StatusUnauthorized},
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, s.login)
 	huma.Register(a, huma.Operation{
 		OperationID:   "logout",
@@ -182,6 +182,7 @@ func (s *sessions) register(a huma.API) {
 		Description:   "Ends the request's web session, if any, and clears the cookie. Signing out twice is fine.",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusNoContent,
+		Errors:        []int{http.StatusForbidden},
 	}, s.logout)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-session",
@@ -190,7 +191,7 @@ func (s *sessions) register(a huma.API) {
 		Summary:     "Get the current session",
 		Description: "The signed-in user and when the session ends; 401 without a live session.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusUnauthorized},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, s.current)
 }
 

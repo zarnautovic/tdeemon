@@ -299,8 +299,9 @@ it read while researching. So limits are enforced by the server.
   tool reads-for-write or changes limits. The settings endpoint accepts
   only an interactive web session (cookie + CSRF), never a Bearer token,
   so not even a leaked MCP token can relax them. The API refuses tokens
-  on every operation that does not open itself to a scope, so a new
-  endpoint starts closed to them.
+  on every operation in its OpenAPI document that does not open itself
+  to a scope, so a new endpoint starts closed to them; routes outside it
+  (`/mcp`, ingest) check their scope themselves.
 - **The user can change them,** with an explicit warning, e.g. for a
   medically supervised very-low-calorie diet. Adults decide; models
   don't.

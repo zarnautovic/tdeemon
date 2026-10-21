@@ -443,6 +443,16 @@
             },
             "description": "Unauthorized"
           },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
           "422": {
             "content": {
               "application/problem+json": {
@@ -492,7 +502,7 @@
               }
             }
           },
-          "default": {
+          "403": {
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -500,7 +510,17 @@
                 }
               }
             },
-            "description": "Error"
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "summary": "Sign out",
@@ -524,7 +544,7 @@
             },
             "description": "OK"
           },
-          "default": {
+          "403": {
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -532,7 +552,17 @@
                 }
               }
             },
-            "description": "Error"
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
           }
         },
         "summary": "Get the ways to sign in",
@@ -573,6 +603,16 @@
               }
             },
             "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
           },
           "500": {
             "content": {
