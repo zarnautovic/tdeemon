@@ -21,8 +21,8 @@ import (
 )
 
 // maxPasswordInput is the longest password line read from standard
-// input, in bytes: a character takes at most four.
-const maxPasswordInput = 4 * auth.MaxPasswordLen
+// input, in bytes.
+const maxPasswordInput = auth.MaxPasswordBytes
 
 // userCommand runs "tdeemon user <subcommand>".
 func userCommand(ctx context.Context, args []string, lookup config.LookupFunc, in io.Reader, out io.Writer) error {
@@ -35,6 +35,8 @@ func userCommand(ctx context.Context, args []string, lookup config.LookupFunc, i
 		return err
 	case "create":
 		return createUser(ctx, args[1:], lookup, in, out)
+	case "set-password":
+		return setPassword(ctx, args[1:], lookup, in, out)
 	}
 	return fmt.Errorf("%w: user: unknown subcommand %q", errUsage, args[0])
 }
@@ -94,11 +96,8 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 	if err := u.Validate(); err != nil {
 		return fmt.Errorf("invalid user:\n%w", err)
 	}
-	generated := !f.passwordStdin
-	var password string
-	if generated {
-		password = auth.GeneratePassword()
-	} else if password, err = readPassword(in); err != nil {
+	password, generated, err := choosePassword(f.passwordStdin, in)
+	if err != nil {
 		return err
 	}
 	hash, err := auth.HashPassword(password)
@@ -106,21 +105,114 @@ func createUser(ctx context.Context, args []string, lookup config.LookupFunc, in
 		return err
 	}
 
-	if err := storeUser(ctx, filepath.Join(cfg.DataDir, store.FileName), u, hash); err != nil {
+	err = withDatabase(ctx, cfg.DataDir, func(db *store.DB) error {
+		if err := db.CreateUser(ctx, u, hash); errors.Is(err, store.ErrEmailTaken) {
+			return fmt.Errorf("%s: %w", u.Email, err)
+		} else if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(out, "Created %s %s (id %s).\n", u.Role, u.Email, u.ID); err != nil {
 		return err
 	}
-	if generated {
-		_, err = fmt.Fprintf(out, "Password: %s\nIt is shown only this once; keep it in a password manager.\n", password)
+	return printPassword(out, password, generated)
+}
+
+type setPasswordFlags struct {
+	email         string
+	passwordStdin bool
+}
+
+func parseSetPasswordFlags(args []string) (setPasswordFlags, error) {
+	var f setPasswordFlags
+	set := flag.NewFlagSet("user set-password", flag.ContinueOnError)
+	set.SetOutput(io.Discard) // exitCode prints the error and the usage.
+	set.StringVar(&f.email, "email", "", "")
+	set.BoolVar(&f.passwordStdin, "password-stdin", false, "")
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return f, err
+	} else if err != nil {
+		return f, fmt.Errorf("%w: user set-password: %w", errUsage, err)
 	}
+	if set.NArg() > 0 {
+		return f, fmt.Errorf("%w: user set-password: unexpected argument %q", errUsage, set.Arg(0))
+	}
+	if f.email == "" {
+		return f, fmt.Errorf("%w: user set-password: --email is required", errUsage)
+	}
+	return f, nil
+}
+
+// setPassword gives the user with --email a new password and ends their
+// sessions: the way back when a password is lost or leaked. Like
+// createUser, it never migrates.
+func setPassword(ctx context.Context, args []string, lookup config.LookupFunc, in io.Reader, out io.Writer) error {
+	f, err := parseSetPasswordFlags(args)
+	if errors.Is(err, flag.ErrHelp) {
+		_, err = io.WriteString(out, usage)
+		return err
+	} else if err != nil {
+		return err
+	}
+	cfg, err := config.Load(lookup)
+	if err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	password, generated, err := choosePassword(f.passwordStdin, in)
+	if err != nil {
+		return err
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+
+	email := user.NormalizeEmail(f.email)
+	err = withDatabase(ctx, cfg.DataDir, func(db *store.DB) error {
+		u, err := db.UserByEmail(ctx, email)
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("no user with the address %q", email)
+		} else if err != nil {
+			return err
+		}
+		return db.SetPasswordHash(ctx, u.ID, hash, time.Now(), true)
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "Set a new password for %s and ended their sessions.\n", email); err != nil {
+		return err
+	}
+	return printPassword(out, password, generated)
+}
+
+// choosePassword reads the password from in with --password-stdin, and
+// generates one otherwise.
+func choosePassword(fromStdin bool, in io.Reader) (password string, generated bool, err error) {
+	if !fromStdin {
+		return auth.GeneratePassword(), true, nil
+	}
+	password, err = readPassword(in)
+	return password, false, err
+}
+
+func printPassword(out io.Writer, password string, generated bool) error {
+	if !generated {
+		return nil
+	}
+	_, err := fmt.Fprintf(out, "Password: %s\nIt is shown only this once; keep it in a password manager.\n", password)
 	return err
 }
 
-// storeUser writes u to the database at path, which a server must have
-// created and migrated to this binary's schema.
-func storeUser(ctx context.Context, path string, u user.User, passwordHash string) (err error) {
+// withDatabase runs fn on the database in dataDir, which a server must
+// have created and migrated to this binary's schema. Every write fn makes
+// checks that the schema is still that version.
+func withDatabase(ctx context.Context, dataDir string, fn func(db *store.DB) error) (err error) {
+	path := filepath.Join(dataDir, store.FileName)
 	// store.Open would create a missing file, and an empty database next
 	// to a server that has not started yet helps nobody.
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
@@ -133,17 +225,10 @@ func storeUser(ctx context.Context, path string, u user.User, passwordHash strin
 		return fmt.Errorf("database: %w", err)
 	}
 	defer func() { err = errors.Join(err, db.Close()) }()
-	// From here on, every write checks the schema is still this version.
 	if err := db.RequireCurrentSchema(ctx); err != nil {
 		return fmt.Errorf("database: %w", err)
 	}
-	if err := db.CreateUser(ctx, u, passwordHash); err != nil {
-		if errors.Is(err, store.ErrEmailTaken) {
-			return fmt.Errorf("%s: %w", u.Email, err)
-		}
-		return err
-	}
-	return nil
+	return fn(db)
 }
 
 // newUser builds the user the flags describe, with the defaults for the

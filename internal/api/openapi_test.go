@@ -70,10 +70,7 @@ func TestServedSpecIsTheCommittedOne(t *testing.T) {
 func TestSpecServesConcurrently(t *testing.T) {
 	t.Parallel()
 
-	h, err := api.NewHandler(testInfo, nil)
-	if err != nil {
-		t.Fatalf("NewHandler: %v", err)
-	}
+	h := newHandler(t, nil)
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {

@@ -354,3 +354,111 @@ func TestNewUserTimeZone(t *testing.T) {
 		}
 	}
 }
+
+func TestUserSetPassword(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, input string
+		args        []string
+		generated   bool
+	}{
+		{"generated", "", nil, true},
+		{"from stdin", "a brand new passphrase\n", []string{"--password-stdin"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			env, dbPath := instance(t, nil)
+			if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com"}, env, noInput(), io.Discard, io.Discard); err != nil {
+				t.Fatalf("user create: %v", err)
+			}
+			u, _ := stored(t, dbPath, "ana@example.com")
+			db, err := store.Open(t.Context(), dbPath)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			now := time.Now()
+			if err := db.CreateSession(t.Context(), store.Session{ID: "s", UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(time.Hour)}); err != nil {
+				t.Fatalf("CreateSession: %v", err)
+			}
+			if err := db.Close(); err != nil {
+				t.Fatalf("close: %v", err)
+			}
+
+			var out bytes.Buffer
+			args := append([]string{"user", "set-password", "--email", " ANA@example.com "}, tc.args...)
+			if err := run(t.Context(), args, env, strings.NewReader(tc.input), &out, io.Discard); err != nil {
+				t.Fatalf("user set-password: %v", err)
+			}
+			if !strings.HasPrefix(out.String(), "Set a new password for ana@example.com and ended their sessions.\n") {
+				t.Errorf("output %q does not report the change", out.String())
+			}
+			want := strings.TrimSuffix(tc.input, "\n")
+			if m := printedPassword.FindStringSubmatch(out.String()); tc.generated {
+				if m == nil {
+					t.Fatalf("output %q prints no password", out.String())
+				}
+				want = m[1]
+			} else if m != nil {
+				t.Errorf("output %q prints a password the user typed", out.String())
+			}
+			_, hash := stored(t, dbPath, "ana@example.com")
+			if ok, err := auth.VerifyPassword(want, hash); err != nil || !ok {
+				t.Errorf("the new password does not match the stored hash (ok %v, err %v)", ok, err)
+			}
+			db, err = store.Open(t.Context(), dbPath)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			defer func() { _ = db.Close() }()
+			if _, _, err := db.SessionUser(t.Context(), "s", now); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("the session outlived the new password: %v", err)
+			}
+		})
+	}
+}
+
+func TestUserSetPasswordRejects(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--password-stdin"}, env,
+		strings.NewReader("the old passphrase\n"), io.Discard, io.Discard); err != nil {
+		t.Fatalf("user create: %v", err)
+	}
+	for _, tc := range []struct {
+		name, input string
+		args        []string
+		want        error
+		wantText    string
+	}{
+		{"unknown address", "", []string{"--email", "nobody@example.com"}, nil, `no user with the address "nobody@example.com"`},
+		{"short password", "short\n", []string{"--email", "ana@example.com", "--password-stdin"}, auth.ErrPasswordTooShort, ""},
+		{"no address", "", nil, errUsage, ""},
+		{"extra argument", "", []string{"--email", "ana@example.com", "now"}, errUsage, ""},
+		{"unknown flag", "", []string{"--email", "ana@example.com", "--admin"}, errUsage, ""},
+	} {
+		var out bytes.Buffer
+		err := run(t.Context(), append([]string{"user", "set-password"}, tc.args...), env, strings.NewReader(tc.input), &out, io.Discard)
+		switch {
+		case err == nil:
+			t.Errorf("%s: succeeded, want an error", tc.name)
+		case tc.want != nil && !errors.Is(err, tc.want):
+			t.Errorf("%s: error %v, want %v", tc.name, err, tc.want)
+		case tc.wantText != "" && !strings.Contains(err.Error(), tc.wantText):
+			t.Errorf("%s: error %v, want it to contain %q", tc.name, err, tc.wantText)
+		}
+		if out.Len() > 0 {
+			t.Errorf("%s: printed %q on failure", tc.name, out.String())
+		}
+	}
+	// The old password still works after every failed attempt.
+	if _, hash := stored(t, dbPath, "ana@example.com"); func() bool { ok, _ := auth.VerifyPassword("the old passphrase", hash); return !ok }() {
+		t.Error("a failed set-password changed the password")
+	}
+	var out bytes.Buffer
+	if err := run(t.Context(), []string{"user", "set-password", "--help"}, lookup(nil), noInput(), &out, io.Discard); err != nil || !strings.Contains(out.String(), "Flags of user set-password:") {
+		t.Errorf("set-password --help = %v, printed %q; want the usage", err, out.String())
+	}
+}
