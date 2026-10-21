@@ -73,6 +73,10 @@ linters:
       - path: _test\.go
         linters: [gosec]
         text: G304
+      # A huma middleware gets the request's context from huma.Context,
+      # which contextcheck takes for a context it should have been passed.
+      - linters: [contextcheck]
+        text: "->gateTokens\\$"
 
 formatters:
   enable:

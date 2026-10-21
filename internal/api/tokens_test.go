@@ -4,13 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
 type createdToken struct {
@@ -79,30 +82,70 @@ func TestCreateAndUseAToken(t *testing.T) {
 	}
 }
 
-// A token cannot do what only a person in a browser may: manage tokens,
-// read the session.
-func TestTokensCannotActForASession(t *testing.T) {
+// operation is one operation of the API, as the OpenAPI document has it.
+type operation struct{ id, method, path string }
+
+// operations lists every operation in the OpenAPI document, with path
+// parameters filled in with a fresh UUID.
+func operations(t *testing.T) []operation {
+	t.Helper()
+	raw, err := api.Spec()
+	if err != nil {
+		t.Fatalf("Spec: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]struct {
+			OperationID string `json:"operationId"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatalf("decode the spec: %v", err)
+	}
+	param := regexp.MustCompile(`\{[^}]+\}`)
+	var ops []operation
+	for path, methods := range spec.Paths {
+		for method, op := range methods {
+			ops = append(ops, operation{op.OperationID, strings.ToUpper(method), param.ReplaceAllString(path, uuid.NewV7().String())})
+		}
+	}
+	if len(ops) == 0 {
+		t.Fatal("the spec has no operations")
+	}
+	return ops
+}
+
+// A token reaches only the operations open to it; everything else, a new
+// endpoint included, takes a web session: managing tokens, reading the
+// session, signing in or out. The session cookie next to the token (a
+// browser that has both) does not change that.
+func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 	t.Parallel()
 
+	open := map[string]bool{"get-info": true, "whoami": true}
 	in, session := signedIn(t)
 	tok, _ := in.createToken(t, session, `{"name":"Claude","scopes":["tools","read","ingest"]}`)
-	for _, tc := range []struct{ method, path, body string }{
-		{http.MethodGet, "/api/v1/tokens", ""},
-		{http.MethodPost, "/api/v1/tokens", `{"name":"more","scopes":["read"]}`},
-		{http.MethodDelete, "/api/v1/tokens/" + tok.ID, ""},
-		{http.MethodGet, "/api/v1/auth/session", ""},
-	} {
-		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+	for _, op := range operations(t) {
+		t.Run(op.id, func(t *testing.T) {
 			t.Parallel()
-			rec := in.do(t, tc.method, tc.path, tc.body, nil, bearer(tok.Token))
-			if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "needs a web session") {
-				t.Errorf("%d %s, want 403", rec.Code, rec.Body.String())
+			for _, cookies := range [][]*http.Cookie{nil, {session}} {
+				rec := in.do(t, op.method, op.path, "", cookies, bearer(tok.Token))
+				refused := rec.Code == http.StatusForbidden && strings.Contains(rec.Body.String(), "needs a web session")
+				if refused == open[op.id] {
+					t.Errorf("%s %s with %d cookies: %d %s; open to tokens: %v", op.method, op.path, len(cookies), rec.Code, rec.Body.String(), open[op.id])
+				}
 			}
 		})
 	}
-	// Signing out with a token ends nothing; the token and the session go on.
-	if rec := in.do(t, http.MethodPost, "/api/v1/auth/logout", "", nil, bearer(tok.Token)); rec.Code != http.StatusNoContent {
-		t.Errorf("logout with a token: %d", rec.Code)
+}
+
+// A token cannot sign out the session it came with: the session goes on.
+func TestATokenCannotSignOut(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	tok, _ := in.createToken(t, session, `{"name":"Claude","scopes":["tools"]}`)
+	if rec := in.do(t, http.MethodPost, "/api/v1/auth/logout", "", []*http.Cookie{session}, bearer(tok.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("logout with a token: %d, want 403", rec.Code)
 	}
 	if rec := in.do(t, http.MethodGet, "/api/v1/tokens", "", []*http.Cookie{session}, nil); rec.Code != http.StatusOK {
 		t.Errorf("the session after a token's logout: %d, want 200", rec.Code)
@@ -116,7 +159,6 @@ func TestBadTokens(t *testing.T) {
 	for name, header := range map[string]string{
 		"unknown token":              "Bearer " + auth.TokenPrefix + strings.Repeat("A", 43),
 		"no tdm_ prefix":             "Bearer " + strings.Repeat("A", 47),
-		"another scheme":             "Basic YW5hOnB3",
 		"no token":                   "Bearer",
 		"empty token":                "Bearer ",
 		"unknown, lower-case scheme": "bearer " + auth.TokenPrefix + "x",
@@ -131,9 +173,43 @@ func TestBadTokens(t *testing.T) {
 			}
 		})
 	}
+	// A token with scopes tdeemon does not know (a row from a later
+	// version, say) is not valid.
+	token, hash := auth.NewAPIToken()
+	odd := store.APIToken{ID: uuid.NewV7(), UserID: in.user.ID, Name: "odd", Scopes: "read admin", CreatedAt: in.clock.Now()}
+	if err := in.db.CreateAPIToken(t.Context(), odd, hash); err != nil {
+		t.Fatalf("CreateAPIToken: %v", err)
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(token)); rec.Code != http.StatusUnauthorized {
+		t.Errorf("a token with an unknown scope: %d, want 401", rec.Code)
+	}
 	// Outside /api/ a header changes nothing.
 	if rec := in.do(t, http.MethodGet, "/healthz", "", nil, map[string]string{"Authorization": "Bearer nonsense"}); rec.Code != http.StatusOK {
 		t.Errorf("/healthz with a bad token: %d, want 200", rec.Code)
+	}
+}
+
+// Another scheme in the Authorization header is not an API token: a
+// reverse proxy's Basic credentials, which the browser sends with every
+// request, leave it to the session cookie, and the sign-in still works.
+func TestOtherSchemesAreNoToken(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", passwordHash(t))
+	basic := map[string]string{"Authorization": "Basic YW5hOnB3"}
+	rec := in.do(t, http.MethodPost, "/api/v1/auth/login", `{"email":"ana@example.com","password":"`+password+`"}`, nil, basic)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login with Basic credentials: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	session := sessionCookie(t, rec)
+	if who := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", []*http.Cookie{session}, basic); who.Code != http.StatusOK ||
+		!strings.Contains(who.Body.String(), `"via":"session"`) {
+		t.Errorf("whoami with Basic credentials and the session: %d %s, want the session", who.Code, who.Body.String())
+	}
+	if who := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, basic); who.Code != http.StatusUnauthorized ||
+		who.Header().Get("WWW-Authenticate") != "" {
+		t.Errorf("whoami with Basic credentials only: %d, WWW-Authenticate %q; want 401 without a token challenge",
+			who.Code, who.Header().Get("WWW-Authenticate"))
 	}
 }
 
@@ -149,9 +225,12 @@ func TestRevokeAToken(t *testing.T) {
 		t.Errorf("the revoked token: %d, want 401", rec.Code)
 	}
 	for name, id := range map[string]string{"again": tok.ID, "unknown": uuid.NewV7().String()} {
-		if rec := in.do(t, http.MethodDelete, "/api/v1/tokens/"+id, "", []*http.Cookie{session}, nil); rec.Code != http.StatusNotFound {
-			t.Errorf("revoke %s: %d, want 404", name, rec.Code)
-		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if rec := in.do(t, http.MethodDelete, "/api/v1/tokens/"+id, "", []*http.Cookie{session}, nil); rec.Code != http.StatusNotFound {
+				t.Errorf("revoke: %d, want 404", rec.Code)
+			}
+		})
 	}
 }
 
@@ -191,6 +270,7 @@ func TestCreateTokenRefuses(t *testing.T) {
 		"a blank name":     `{"name":"   ","scopes":["read"]}`,
 		"a control char":   `{"name":"a\u0007b","scopes":["read"]}`,
 		"a repeated scope": `{"name":"x","scopes":["read","read"]}`,
+		"two in one item":  `{"name":"x","scopes":["read tools"]}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()

@@ -48,7 +48,7 @@ func TestAPITokenLifecycle(t *testing.T) {
 		t.Errorf("APITokenUser of an unknown hash = %v, want ErrNotFound", err)
 	}
 
-	if err := db.TouchAPIToken(t.Context(), tok.ID, t0.Add(time.Hour)); err != nil {
+	if err := db.TouchAPIToken(t.Context(), ana, tok.ID, t0.Add(time.Hour)); err != nil {
 		t.Fatalf("TouchAPIToken: %v", err)
 	}
 	if got, _, _ := db.APITokenUser(t.Context(), sid("iphone")); !got.LastUsedAt.Equal(t0.Add(time.Hour)) {
@@ -94,6 +94,35 @@ func TestAPITokensBelongToTheirUser(t *testing.T) {
 	}
 	if list, err := db.APITokens(t.Context(), uuid.NewV7()); err != nil || len(list) != 0 {
 		t.Errorf("the tokens of nobody = %+v, %v; want none", list, err)
+	}
+}
+
+// Recording one token's use leaves the others alone, and another user
+// cannot record it.
+func TestTouchAPITokenTouchesOnlyItsToken(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	for _, tok := range []struct {
+		hash string
+		t    store.APIToken
+	}{{"used", newToken(ana, "iPhone", t0)}, {"other", newToken(ana, "Claude", t0)}, {"ivos", newToken(ivo, "Hermes", t0)}} {
+		if err := db.CreateAPIToken(t.Context(), tok.t, sid(tok.hash)); err != nil {
+			t.Fatalf("CreateAPIToken: %v", err)
+		}
+	}
+	used, _, _ := db.APITokenUser(t.Context(), sid("used"))
+	ivos, _, _ := db.APITokenUser(t.Context(), sid("ivos"))
+	if err := db.TouchAPIToken(t.Context(), ana, used.ID, t0.Add(time.Hour)); err != nil {
+		t.Fatalf("TouchAPIToken: %v", err)
+	}
+	if err := db.TouchAPIToken(t.Context(), ana, ivos.ID, t0.Add(time.Hour)); err != nil {
+		t.Fatalf("TouchAPIToken of ivo's token as ana: %v", err)
+	}
+	for hash, want := range map[string]time.Time{"used": t0.Add(time.Hour), "other": {}, "ivos": {}} {
+		if got, _, err := db.APITokenUser(t.Context(), sid(hash)); err != nil || !got.LastUsedAt.Equal(want) {
+			t.Errorf("token %s: last used %v, %v; want %v", got.Name, got.LastUsedAt, err, want)
+		}
 	}
 }
 

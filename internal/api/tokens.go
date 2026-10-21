@@ -17,7 +17,9 @@ import (
 
 // requireSession returns the principal of a request that came with a web
 // session: a person in a browser. Settings, and the tokens themselves,
-// change only that way, never with an API token (DESIGN.md §8).
+// change only that way, never with an API token (DESIGN.md §8). gateTokens
+// refuses tokens before such an operation runs; this keeps the operation
+// safe if it is ever opened to them by mistake.
 func requireSession(ctx context.Context) (auth.Principal, error) {
 	p, ok := auth.PrincipalFrom(ctx)
 	switch {
@@ -29,17 +31,64 @@ func requireSession(ctx context.Context) (auth.Principal, error) {
 	return p, nil
 }
 
-// errBadToken is the answer to an Authorization header that names no live
-// API token, with the challenge RFC 6750 asks for.
+// tokenScopeKey, in an operation's Metadata (see openToTokens), lets API
+// tokens call the operation. An operation without it refuses every token
+// with 403, so a new endpoint is closed to tokens until it names the
+// scope they need (DESIGN.md §8: settings only through a web session).
+const tokenScopeKey = "tokenScope"
+
+// anyScope opens an operation to a token with any scope.
+const anyScope auth.Scope = ""
+
+// openToTokens is the Metadata of an operation API tokens may call: those
+// with scope, or every token for anyScope.
+func openToTokens(scope auth.Scope) map[string]any { return map[string]any{tokenScopeKey: scope} }
+
+// gateTokens is the API's middleware that keeps tokens to the operations
+// open to them (tokenScopeKey). Requests with a session, or with no one,
+// pass; the operation decides about those.
+func gateTokens(a huma.API) func(huma.Context, func(huma.Context)) {
+	return func(ctx huma.Context, next func(huma.Context)) {
+		p, ok := auth.PrincipalFrom(ctx.Context())
+		if !ok || p.Via != auth.ViaToken {
+			next(ctx)
+			return
+		}
+		scope, open := ctx.Operation().Metadata[tokenScopeKey].(auth.Scope)
+		switch {
+		case !open:
+			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "this needs a web session, not an API token")
+		case scope != anyScope && !p.Can(scope):
+			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "the API token does not have the "+string(scope)+" scope")
+		default:
+			next(ctx)
+		}
+	}
+}
+
+// bearerToken returns the credentials of an Authorization header in the
+// Bearer scheme, whose name is case-insensitive (RFC 7235). A header in
+// another scheme is not for tdeemon (a reverse proxy's Basic credentials,
+// which the browser then sends with every request), so the request is
+// left to its cookie: RFC 6750 §3.1 treats it as not authenticated.
+func bearerToken(header string) (string, bool) {
+	scheme, token, _ := strings.Cut(header, " ")
+	if !strings.EqualFold(scheme, "Bearer") {
+		return "", false
+	}
+	return strings.TrimLeft(token, " "), true
+}
+
+// writeBadToken answers a Bearer token that is no live API token, with
+// the challenge RFC 6750 asks for.
 func writeBadToken(w http.ResponseWriter) {
 	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 	writeProblem(w, http.StatusUnauthorized, "the API token is not valid")
 }
 
-// authenticateToken handles a request with an Authorization header.
-func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, header string, next http.Handler) {
-	scheme, token, ok := strings.Cut(header, " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") || !strings.HasPrefix(token, auth.TokenPrefix) {
+// authenticateToken handles a request with a Bearer token.
+func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, token string, next http.Handler) {
+	if !strings.HasPrefix(token, auth.TokenPrefix) {
 		writeBadToken(w)
 		return
 	}
@@ -61,7 +110,7 @@ func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, hea
 	}
 	now := s.now()
 	if now.Sub(t.LastUsedAt) >= touchEvery {
-		if err := s.db.TouchAPIToken(r.Context(), t.ID, now); err != nil {
+		if err := s.db.TouchAPIToken(r.Context(), u.ID, t.ID, now); err != nil {
 			s.logger.WarnContext(r.Context(), "recording token use failed", "error", err)
 		}
 	}
@@ -72,7 +121,7 @@ func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, hea
 type tokenBody struct {
 	ID         string     `json:"id" format:"uuid" doc:"The token's handle; revoke it by this."`
 	Name       string     `json:"name" doc:"What the user calls the token."`
-	Scopes     []string   `json:"scopes" doc:"What the token may do."`
+	Scopes     []string   `json:"scopes" enum:"ingest,tools,read" doc:"What the token may do."`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty" doc:"When it was last used, to the hour or so; absent until then."`
 }
@@ -96,7 +145,7 @@ type tokensOutput struct {
 type createTokenInput struct {
 	Body struct {
 		Name   string   `json:"name" minLength:"1" maxLength:"100" example:"iPhone" doc:"What to call the token."`
-		Scopes []string `json:"scopes" minItems:"1" maxItems:"3" uniqueItems:"true" doc:"What it may do: ingest (the phone's health data), tools (log and change through MCP), read."`
+		Scopes []string `json:"scopes" minItems:"1" maxItems:"3" uniqueItems:"true" enum:"ingest,tools,read" doc:"What it may do: ingest (the phone's health data), tools (log and change through MCP), read."`
 	}
 }
 
@@ -117,7 +166,7 @@ type whoamiOutput struct {
 	Body         struct {
 		User   userBody `json:"user"`
 		Via    string   `json:"via" enum:"session,token" doc:"How the request authenticated."`
-		Scopes []string `json:"scopes,omitempty" doc:"What the token may do (via token)."`
+		Scopes []string `json:"scopes,omitempty" enum:"ingest,tools,read" doc:"What the token may do (via token)."`
 	}
 }
 
@@ -127,9 +176,10 @@ func (s *sessions) registerTokens(a huma.API) {
 		Method:      http.MethodGet,
 		Path:        Prefix + "/auth/whoami",
 		Summary:     "Get who the request acts for",
-		Description: "The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token.",
+		Description: "The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token. Any token may call it.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized},
+		Metadata:    openToTokens(anyScope),
 	}, func(ctx context.Context, _ *struct{}) (*whoamiOutput, error) {
 		p, ok := auth.PrincipalFrom(ctx)
 		if !ok {

@@ -9,15 +9,16 @@ same rules; the full versions are in
 
 tdeemon is a self-hosted nutrition tracker with an adaptive TDEE: one Go
 binary with SQLite and a React web app inside, an MCP server and a REST
-API. It is early: the skeleton, the database layer, users with password
-hashes, the API contract and an empty web app exist.
+API. It is early: the skeleton, the database layer, users, sign-in
+(password, sessions, OpenID Connect), API tokens with scopes, the API
+contract and an empty web app exist.
 
 | Path | What |
 | --- | --- |
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create` and `user set-password` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
 | `internal/domain` | the domain types and their rules, one package each (`user`) |
-| `internal/auth` | credentials: password rules, argon2id hashes, session tokens, sealed values and who a request acts for |
+| `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
 | `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions and API tokens |
@@ -72,6 +73,10 @@ details.
     (`(cd web/codegen && npm ci && npm run gen:api)`);
   - after a migration, refresh the schema snapshot
     (`go test ./internal/store -run TestSchema -update`).
+- **API tokens are kept out by default.** An operation refuses API
+  tokens unless its `Metadata` opens it to a scope
+  (`openToTokens(auth.ScopeIngest)`, in `internal/api/tokens.go`);
+  settings and anything about tokens or sessions stay closed to them.
 - **Migrations only go forward.** Never edit a migration once it is
   merged; add a new one. The rules are in
   `internal/store/migrations/README.md`.

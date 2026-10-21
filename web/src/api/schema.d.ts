@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * Get who the request acts for
-         * @description The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token.
+         * @description The user, and whether the request came with a web session or an API token (with its scopes): a way for a client to check its token. Any token may call it.
          */
         get: operations["whoami"];
         put?: never;
@@ -179,7 +179,7 @@ export interface components {
              */
             name: string;
             /** @description What it may do: ingest (the phone's health data), tools (log and change through MCP), read. */
-            scopes: string[] | null;
+            scopes: ("ingest" | "tools" | "read")[] | null;
         };
         CreateTokenOutputBody: {
             /**
@@ -288,7 +288,7 @@ export interface components {
             /** @description What the user calls the token. */
             name: string;
             /** @description What the token may do. */
-            scopes: string[] | null;
+            scopes: ("ingest" | "tools" | "read")[] | null;
         };
         TokensOutputBody: {
             tokens: components["schemas"]["TokenBody"][] | null;
@@ -326,7 +326,7 @@ export interface components {
         };
         WhoamiOutputBody: {
             /** @description What the token may do (via token). */
-            scopes?: string[] | null;
+            scopes?: ("ingest" | "tools" | "read")[] | null;
             user: components["schemas"]["UserBody"];
             /**
              * @description How the request authenticated.

@@ -131,10 +131,11 @@ func (db *DB) RevokeAPIToken(ctx context.Context, userID, id uuid.UUID) error {
 	})
 }
 
-// TouchAPIToken records that the token with id was used at now.
-func (db *DB) TouchAPIToken(ctx context.Context, id uuid.UUID, now time.Time) error {
+// TouchAPIToken records that userID's token with id was used at now.
+func (db *DB) TouchAPIToken(ctx context.Context, userID, id uuid.UUID, now time.Time) error {
 	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, "UPDATE api_tokens SET last_used_at = ? WHERE id = ?", formatTime(now), id.String()); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE api_tokens SET last_used_at = ? WHERE id = ? AND user_id = ?",
+			formatTime(now), id.String(), userID.String()); err != nil {
 			return fmt.Errorf("touch API token: %w", err)
 		}
 		return nil

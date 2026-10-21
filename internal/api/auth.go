@@ -70,18 +70,18 @@ func (s *sessions) clearedCookie() http.Cookie {
 }
 
 // authenticate attaches the principal of an API request to its context:
-// the API token in its Authorization header or, without that header, the
-// live session its cookie names. A request with neither goes on
-// anonymous, and operations that need a user refuse it; one with a bad
-// token is refused here (401), since it meant to authenticate.
+// the API token in its Authorization header (the Bearer scheme) or,
+// without one, the live session its cookie names. A request with neither
+// goes on anonymous, and operations that need a user refuse it; one with
+// a bad token is refused here (401), since it meant to authenticate.
 func (s *sessions) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !isAPIPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if h := r.Header.Get("Authorization"); h != "" {
-			s.authenticateToken(w, r, h, next)
+		if token, ok := bearerToken(r.Header.Get("Authorization")); ok {
+			s.authenticateToken(w, r, token, next)
 			return
 		}
 		c, err := r.Cookie(s.cookieName())

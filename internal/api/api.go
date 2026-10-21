@@ -212,7 +212,11 @@ func newAPI(mux *http.ServeMux) huma.API {
 	// A misspelled query parameter is an error, not silently ignored.
 	cfg.RejectUnknownQueryParameters = true
 	cfg.Transformers = append(cfg.Transformers, dropErrorValues)
-	return humago.New(mux, cfg)
+	a := humago.New(mux, cfg)
+	// Before any operation registers: huma fixes an operation's
+	// middlewares when it registers.
+	a.UseMiddleware(gateTokens(a))
+	return a
 }
 
 // dropErrorValues keeps an error response from echoing what the request
@@ -242,6 +246,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 		Summary:     "Get server info",
 		Description: "Name and version of the running server.",
 		Tags:        []string{"meta"},
+		Metadata:    openToTokens(anyScope),
 	}, func(context.Context, *struct{}) (*infoOutput, error) {
 		return &infoOutput{Body: info}, nil
 	})

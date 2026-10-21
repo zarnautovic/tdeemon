@@ -298,7 +298,9 @@ it read while researching. So limits are enforced by the server.
 - **Out of the AI's reach by construction, not by instruction.** No
   tool reads-for-write or changes limits. The settings endpoint accepts
   only an interactive web session (cookie + CSRF), never a Bearer token,
-  so not even a leaked MCP token can relax them.
+  so not even a leaked MCP token can relax them. The API refuses tokens
+  on every operation that does not open itself to a scope, so a new
+  endpoint starts closed to them.
 - **The user can change them,** with an explicit warning, e.g. for a
   medically supervised very-low-calorie diet. Adults decide; models
   don't.
