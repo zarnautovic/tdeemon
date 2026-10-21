@@ -1,3 +1,5 @@
 # Generated from the migrations by TestSchema.
 internal/store/testdata/
 **/node_modules/
+# sqlfluff cannot parse the arguments of an FTS5 table.
+internal/store/migrations/0006_foods_search.sql

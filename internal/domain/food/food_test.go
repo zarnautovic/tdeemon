@@ -98,6 +98,49 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestValidateAliases(t *testing.T) {
+	t.Parallel()
+
+	f := egg()
+	f.Aliases = []string{"my eggs", "the farm ones"}
+	if err := f.Validate(); err != nil {
+		t.Fatalf("aliases: %v", err)
+	}
+	for name, aliases := range map[string][]string{
+		"an empty alias":   {""},
+		"one twice":        {"my eggs", "My  Eggs"},
+		"too long":         {strings.Repeat("a", MaxAliasLen+1)},
+		"too many aliases": make([]string, MaxAliases+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := egg()
+			f.Aliases = aliases
+			if err := f.Validate(); err == nil {
+				t.Error("accepted")
+			}
+		})
+	}
+}
+
+func TestKey(t *testing.T) {
+	t.Parallel()
+
+	for a, b := range map[string]string{
+		"Greek  yoghurt": "greek Yoghurt",
+		"c\u030cevapi":   "\u010cevapi",
+		" Egg ":          "egg",
+		"STRASSE":        "straße",
+	} {
+		if Key(a) != Key(b) {
+			t.Errorf("Key(%q) = %q, Key(%q) = %q; want the same", a, Key(a), b, Key(b))
+		}
+	}
+	if Key("Cevapi") == Key("Ćevapi") {
+		t.Error("Key folds diacritics; it should not")
+	}
+}
+
 func TestServing(t *testing.T) {
 	t.Parallel()
 
