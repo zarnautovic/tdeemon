@@ -158,7 +158,8 @@ func (s *sessions) register(a huma.API) {
 		Path:        Prefix + "/auth/login",
 		Summary:     "Sign in with a password",
 		Description: "Checks the email and password and starts a web session: the response sets the session cookie. " +
-			"A session the request already carries ends. Every failure answers 401 with the same message.",
+			"A session the request already carries ends. A wrong address or password answers 401, always with the same " +
+			"message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent.",
 		Tags:          []string{"auth"},
 		DefaultStatus: http.StatusOK,
 		Errors:        []int{http.StatusUnauthorized},

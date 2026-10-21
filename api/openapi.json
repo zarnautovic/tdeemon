@@ -203,7 +203,7 @@
   "paths": {
     "/api/v1/auth/login": {
       "post": {
-        "description": "Checks the email and password and starts a web session: the response sets the session cookie. A session the request already carries ends. Every failure answers 401 with the same message.",
+        "description": "Checks the email and password and starts a web session: the response sets the session cookie. A session the request already carries ends. A wrong address or password answers 401, always with the same message; a body that breaks the schema answers 400, 413, 415 or 422, and no error detail echoes a value it sent.",
         "operationId": "login",
         "requestBody": {
           "content": {
