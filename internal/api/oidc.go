@@ -235,7 +235,8 @@ func (o *oidcLogin) callback(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query()
 	if e := q.Get("error"); e != "" {
-		o.sessions.logger.InfoContext(ctx, "the OIDC provider refused the sign-in", "error", e)
+		// The code as safeCode cleans it: the query is the browser's to write.
+		o.sessions.logger.InfoContext(ctx, "the OIDC provider refused the sign-in", "error", safeCode(e))
 		writeProblem(w, http.StatusUnauthorized, "the sign-in provider refused the sign-in ("+safeCode(e)+")")
 		return
 	}
@@ -428,8 +429,12 @@ func asciiLower(s string) string {
 // the browser to another site (and JSON does not triple stray bytes into
 // U+FFFD).
 func safeReturnTo(s string) string {
-	if len(s) > maxReturnTo || !utf8.ValidString(s) || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") ||
-		strings.ContainsAny(s, "\\\r\n\t") {
+	// One slash first, and no slash or backslash after it: a browser reads
+	// "//host" and "/\host" as another site.
+	if s == "" || s[0] != '/' || (len(s) > 1 && (s[1] == '/' || s[1] == '\\')) {
+		return "/"
+	}
+	if len(s) > maxReturnTo || !utf8.ValidString(s) || strings.ContainsAny(s, "\\\r\n\t") {
 		return "/"
 	}
 	u, err := url.Parse(s)

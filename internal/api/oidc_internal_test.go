@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -92,5 +93,21 @@ func TestRedirectsStayOnHTTPS(t *testing.T) {
 	via := make([]*http.Request, 10)
 	if err := strict(req("https://idp.example/x"), via); err == nil {
 		t.Error("an eleventh redirect was followed")
+	}
+}
+
+// The provider's error code comes in the browser's query, so the log gets
+// it as safeCode cleans it, not as sent.
+func TestOIDCLogsTheCleanedErrorCode(t *testing.T) {
+	t.Parallel()
+
+	var log bytes.Buffer
+	now := time.Now()
+	s := &sessions{logger: slog.New(slog.NewTextHandler(&log, nil)), now: func() time.Time { return now }}
+	o := newOIDCLogin(s, config.OIDC{Issuer: "https://idp.example", ClientID: "tdeemon"}, []byte(strings.Repeat("k", 32)), "https://tdeemon.example/cb")
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/oidc/callback?error=access_denied%0Aforged%3Cscript%3E", http.NoBody)
+	o.callback(httptest.NewRecorder(), r)
+	if !strings.Contains(log.String(), "error=access_deniedforgedscript") || strings.Contains(log.String(), "<script>") {
+		t.Errorf("log = %q, want the cleaned code only", log.String())
 	}
 }
