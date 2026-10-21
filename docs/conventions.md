@@ -304,19 +304,26 @@ in `web/`.
   [`internal/store/migrations/README.md`](../internal/store/migrations/README.md).
 - **One user's data stays theirs:**
   - every store method that reads or writes a user's rows takes the
-    user's ID as a parameter and filters by it (`WHERE user_id = ?`), so
-    the compiler, not a value hidden in a context, makes sure no query
-    goes without it. Lookups by a secret (a session token's or an API
-    token's hash) are how a request learns its user, and filter by the
-    secret;
+    user's ID as a parameter and filters by it (`WHERE user_id = ?`).
+    The compiler makes sure the ID is passed rather than hidden in a
+    context; `TestIsolation` makes sure the query uses it. The
+    exceptions are how a request learns its user (a lookup by the hash
+    of a session's or an API token's secret; by address for the sign-in
+    and the admin's commands) and housekeeping that shows or changes no
+    one's data (removing expired sessions);
   - a handler takes the user from the request's principal
     (`auth.PrincipalFrom`), never from the path, the query or the body;
   - another user's row answers exactly like one that does not exist
-    (404, or an empty list);
-  - `TestIsolation` in `internal/api` runs every operation of the API as
-    a second user against what the first one owns, and
-    `TestIsolationCoversEveryOperation` fails for an operation in the
-    OpenAPI document without a case there. A new endpoint adds its case.
+    (the same 404, or a list without it);
+  - `TestIsolation` in `internal/api` runs every operation in the
+    OpenAPI document as the other of two users, both ways (an admin and
+    a user acting), and checks that the answer shows nothing of the
+    owner's and that what the owner sees has not changed;
+    `TestIsolationCoversEveryOperation` fails for an operation without a
+    case in `isolationCases`, so a new operation adds its case. Routes
+    outside the OpenAPI document are not covered by it: the OpenID
+    Connect browser flow has its own tests (`internal/api/oidc_test.go`),
+    and MCP needs its own list of cases over the tool registry.
 
 ### Tests
 
