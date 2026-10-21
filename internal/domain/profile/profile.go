@@ -12,6 +12,7 @@ import (
 	"math"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
 
 // Sex is the sex the energy equations take: they have a term for each.
@@ -147,5 +148,13 @@ func (p Profile) BMR(weightKg float64, d day.Date) float64 {
 func (p Profile) ProteinReferenceMass(trendKg float64) float64 {
 	return math.Min(trendKg, p.WeightAt(ProteinMassBMI))
 }
+
+// MaxNotesLen bounds the notes for a coach, in characters.
+const MaxNotesLen = 4000
+
+// ValidateNotes checks the notes a coach reads with the profile: the
+// user's preferences, dislikes, schedule. They may run over several
+// lines, and "" means none.
+func ValidateNotes(notes string) error { return text.CheckLines("notes", notes, MaxNotesLen, false) }
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }

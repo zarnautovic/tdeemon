@@ -17,8 +17,11 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/domain/plan"
+	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -89,6 +92,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		bread := saveIsolationFoods(t, in.db, p.user, now)
 		saveIsolationMeals(t, in.db, p.user, bread, now)
 		saveIsolationMetrics(t, in.db, p.user, now)
+		saveIsolationPlan(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
@@ -214,6 +218,40 @@ func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time
 		{Kind: metric.Steps, Value: 6400, Source: metric.Import},
 	}, now); err != nil {
 		t.Fatalf("save %s's metrics: %v", u.Name, err)
+	}
+}
+
+// saveIsolationPlan gives u a profile, a phase, a target, training
+// weekdays, limits of their own, a toggle of a day's type and notes for a
+// coach, which name u, so they are text unique to u.
+func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
+	t.Helper()
+	today := day.DateOf(now)
+	ctx := t.Context()
+	p := profile.Profile{Sex: profile.Female, BirthDate: today.AddDays(-12000), HeightCm: 170}
+	if err := db.SetProfile(ctx, u.ID, isolationActor, p, today, now); err != nil {
+		t.Fatalf("save %s's profile: %v", u.Name, err)
+	}
+	if err := db.SetPhase(ctx, u.ID, isolationActor, plan.Phase{Type: plan.Cut, Start: today, RatePctWeek: -0.5, GoalWeight: new(70.0)}, now); err != nil {
+		t.Fatalf("save %s's phase: %v", u.Name, err)
+	}
+	d := plan.DayTarget{Kcal: 2100, Protein: 150, Fat: 60}
+	if err := db.SetTarget(ctx, u.ID, isolationActor, plan.Target{EffectiveFrom: today, Training: d, Rest: d}, now); err != nil {
+		t.Fatalf("save %s's target: %v", u.Name, err)
+	}
+	if err := db.SetTrainingWeekdays(ctx, u.ID, isolationActor, plan.Weekdays(0b0101010), now); err != nil {
+		t.Fatalf("save %s's training weekdays: %v", u.Name, err)
+	}
+	l := limits.UserDefaults()
+	l.ProteinFloorGrams = 120
+	if err := db.SetUserLimits(ctx, u.ID, isolationActor, l, limits.Instance(), now); err != nil {
+		t.Fatalf("save %s's limits: %v", u.Name, err)
+	}
+	if err := db.SetTrainingDay(ctx, u.ID, isolationActor, today, new(true), now); err != nil {
+		t.Fatalf("save %s's training day: %v", u.Name, err)
+	}
+	if err := db.SetProfileNotes(ctx, u.ID, isolationActor, "Notes of "+u.Name+": no fish, trains at dawn.", now); err != nil {
+		t.Fatalf("save %s's notes: %v", u.Name, err)
 	}
 }
 
