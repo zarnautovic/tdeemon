@@ -203,8 +203,11 @@ for when the provider is down):
    ```
 
    An address that changes afterwards (by the user, an admin or a source
-   sync) is no longer vouched for until it is confirmed again. If only
-   the admin sets addresses, `"email_verified": True` does instead.
+   sync) is no longer vouched for until it is confirmed again, unless it
+   returns to the address confirmed before; to require a new
+   confirmation then too, clear the attribute on every change, as the
+   guide says. If only the admin sets addresses, `"email_verified": True`
+   does instead.
    Authentik's own warning applies: do not assert verified addresses
    that users can change freely, or one of them could take over another's
    tdeemon account at the first sign-in.

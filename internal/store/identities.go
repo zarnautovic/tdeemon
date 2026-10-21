@@ -14,8 +14,8 @@ import (
 var (
 	// ErrNoAccount: no user has the identity's email, or it has none.
 	ErrNoAccount = errors.New("no account on this instance")
-	// ErrEmailNotLinkable: the provider gives an address that is written
-	// differently from any here in more than ASCII letter case.
+	// ErrEmailNotLinkable: the provider gives an address that normalizing
+	// changes in more than ASCII letter case, so it matches no account.
 	ErrEmailNotLinkable = errors.New("the provider's email address is not written as addresses here are")
 	// ErrEmailNotVerified: the provider does not vouch for the email.
 	ErrEmailNotVerified = errors.New("the provider did not verify the email address")

@@ -669,8 +669,8 @@ func TestOIDCLookAlikeAddressDoesNotLink(t *testing.T) {
 	flow, callback := in.begin(t, p, "")
 	rec := in.finish(t, callback, flow)
 	if rec.Code != http.StatusForbidden || cookieNamed(rec, "tdeemon_session") != nil ||
-		!strings.Contains(rec.Body.String(), "written differently from the one on your account here") {
-		t.Errorf("callback: %d %s, want 403 saying the address is written differently, and no session", rec.Code, rec.Body.String())
+		!strings.Contains(rec.Body.String(), "cannot be matched to an account here") {
+		t.Errorf("callback: %d %s, want 403 saying the address cannot be matched, and no session", rec.Code, rec.Body.String())
 	}
 	// The same address in plain ASCII, in another case, links.
 	p.mu.Lock()

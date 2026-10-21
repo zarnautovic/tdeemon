@@ -291,8 +291,8 @@ func refusal(err error) (string, bool) {
 	case errors.Is(err, store.ErrAlreadyLinked):
 		return "your account here is linked to another account at this sign-in provider; ask the admin", true
 	case errors.Is(err, store.ErrEmailNotLinkable):
-		return "the sign-in provider gives your email address written differently from the one on your account here " +
-			"(beyond letter case), so it cannot be linked; ask the admin", true
+		return "the sign-in provider gives your email address in a form that cannot be matched to an account here " +
+			"(only ASCII letter case may differ); ask the admin", true
 	case errors.Is(err, store.ErrNoAccount):
 		return "there is no account for you on this instance; ask its admin to add you", true
 	}
