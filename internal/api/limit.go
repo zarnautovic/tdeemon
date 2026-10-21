@@ -42,9 +42,16 @@ type limiter struct {
 	keys map[string]*failures
 	// oldest is the earliest start of a window in keys, or before it: no
 	// key can expire before oldest+window, so a full map is swept only
-	// from then on.
-	oldest time.Time
+	// from then on, and at most every window/maxSweeps (nextSweep): keys
+	// expire one by one, and a full map would be swept for every new one.
+	oldest, nextSweep time.Time
+	sweeps            int // how many sweeps ran, for tests
 }
+
+// maxSweeps bounds how often a full limiter is swept in one window. A
+// key that could take an expired one's place waits for the next sweep,
+// a window/maxSweeps at most (14 seconds of 15 minutes).
+const maxSweeps = 64
 
 type failures struct {
 	n     int
@@ -79,7 +86,7 @@ func (l *limiter) take(key string) (reservation, time.Duration, bool) {
 		return reservation{key, f.since}, 0, true
 	}
 	delete(l.keys, key)
-	if len(l.keys) >= l.maxKeys && !now.Before(l.oldest.Add(l.window)) {
+	if len(l.keys) >= l.maxKeys && !now.Before(l.oldest.Add(l.window)) && !now.Before(l.nextSweep) {
 		l.sweep(now)
 	}
 	if len(l.keys) >= l.maxKeys {
@@ -95,6 +102,8 @@ func (l *limiter) take(key string) (reservation, time.Duration, bool) {
 // sweep removes the keys whose window has passed and finds the oldest of
 // the others.
 func (l *limiter) sweep(now time.Time) {
+	l.sweeps++
+	l.nextSweep = now.Add(l.window / maxSweeps)
 	l.oldest = now
 	for k, f := range l.keys {
 		if !now.Before(f.since.Add(l.window)) {

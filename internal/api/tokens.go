@@ -123,7 +123,7 @@ func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, tok
 	}
 	s.badTokens.release(attempt)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "looking up an API token failed", "error", err)
+		s.logger.Log(r.Context(), logLevel(err), "looking up an API token failed", "error", err)
 		writeProblem(w, http.StatusInternalServerError, "the API token could not be checked")
 		return
 	}

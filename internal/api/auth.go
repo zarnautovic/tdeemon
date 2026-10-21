@@ -354,7 +354,7 @@ func (s *sessions) start(ctx context.Context, u user.User, now time.Time, method
 	sess := store.Session{ID: id, UserID: u.ID, CreatedAt: now, LastSeenAt: now, ExpiresAt: now.Add(auth.SessionLifetime)}
 	if err := create(sess); err != nil {
 		if !errors.Is(err, store.ErrCredentialsChanged) {
-			s.logger.ErrorContext(ctx, "starting a session failed", "error", err)
+			s.logger.Log(ctx, logLevel(err), "starting a session failed", "error", err)
 		}
 		return http.Cookie{}, store.Session{}, err
 	}

@@ -1,9 +1,14 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/zarnautovic/tdeemon/internal/auth"
 )
 
 func TestLimiter(t *testing.T) {
@@ -104,6 +109,71 @@ func TestRetryAfter(t *testing.T) {
 			t.Parallel()
 			if got := retryAfter(wait).Get("Retry-After"); got != want {
 				t.Errorf("retryAfter(%v) = %q, want %q", wait, got, want)
+			}
+		})
+	}
+}
+
+// After a sweep, oldest is the oldest key left, so the next key to expire
+// makes room when its time comes, not a window later.
+func TestLimiterSweepFindsTheOldestLeft(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
+	now := start
+	l := newLimiter(1, time.Minute, func() time.Time { return now })
+	l.maxKeys = 2
+	l.take("x")
+	now = start.Add(30 * time.Second)
+	l.take("y")
+	now = start.Add(time.Minute)
+	l.take("z") // x has expired: swept
+	now = start.Add(90 * time.Second)
+	l.take("w") // y has expired: room for w
+	if _, _, ok := l.take("w"); ok {
+		t.Error("w was not counted, though y had expired")
+	}
+}
+
+// A full limiter whose keys expire one by one is swept at most maxSweeps
+// times a window, not for every new key.
+func TestLimiterSweepsAFullMapRarely(t *testing.T) {
+	t.Parallel()
+
+	start := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
+	now := start
+	l := newLimiter(1, 64*time.Minute, func() time.Time { return now })
+	l.maxKeys = 100
+	for i := range 100 {
+		now = start.Add(time.Duration(i) * time.Second)
+		l.take(fmt.Sprint("old ", i))
+	}
+	// The old keys expire a second apart; new ones come every second.
+	for i := range 100 {
+		now = start.Add(64*time.Minute + time.Duration(i)*time.Second)
+		l.take(fmt.Sprint("new ", i))
+	}
+	if l.sweeps > 2 {
+		t.Errorf("%d sweeps in 100 seconds, want at most 2 (one a minute)", l.sweeps)
+	}
+}
+
+func TestLogLevel(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		err  error
+		want slog.Level
+	}{
+		{context.Canceled, slog.LevelDebug},
+		{fmt.Errorf("query: %w", context.DeadlineExceeded), slog.LevelDebug},
+		{auth.ErrBusy, slog.LevelWarn},
+		{errors.New("disk I/O error"), slog.LevelError},
+	} {
+		t.Run(tc.err.Error(), func(t *testing.T) {
+			t.Parallel()
+			if got := logLevel(tc.err); got != tc.want {
+				t.Errorf("logLevel = %v, want %v", got, tc.want)
 			}
 		})
 	}

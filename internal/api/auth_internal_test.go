@@ -169,17 +169,18 @@ func TestLoginNotCheckedGivesBack(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		ctx    context.Context //nolint:containedctx // A table of contexts to sign in with.
-		busy   bool
+		verify error           // what verifyLogin returns; nil for the real one
 		status int
 	}{
-		{"no hashing slot in time", t.Context(), true, http.StatusServiceUnavailable},
-		{"the client went away", gone, false, http.StatusInternalServerError},
+		{"no hashing slot in time", t.Context(), auth.ErrBusy, http.StatusServiceUnavailable},
+		{"the client went away while it waited for a slot", t.Context(), context.Canceled, http.StatusServiceUnavailable},
+		{"the client went away before the credentials were read", gone, nil, http.StatusInternalServerError},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			s := newTestSessions(storetest.Open(t), time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC))
-			if tc.busy {
-				s.verifyLogin = func(context.Context, string, string) (bool, error) { return false, auth.ErrBusy }
+			if tc.verify != nil {
+				s.verifyLogin = func(context.Context, string, string) (bool, error) { return false, tc.verify }
 			}
 			in := &loginInput{}
 			in.Body.Email, in.Body.Password = "ana@example.com", "correct horse battery staple"
@@ -188,7 +189,7 @@ func TestLoginNotCheckedGivesBack(t *testing.T) {
 			if !ok || se.GetStatus() != tc.status {
 				t.Errorf("login = %v, want %d", err, tc.status)
 			}
-			if he, ok := errors.AsType[huma.HeadersError](err); tc.busy && (!ok || he.GetHeaders().Get("Retry-After") == "") {
+			if he, ok := errors.AsType[huma.HeadersError](err); tc.status == http.StatusServiceUnavailable && (!ok || he.GetHeaders().Get("Retry-After") == "") {
 				t.Errorf("the 503 has no Retry-After: %v", err)
 			}
 			for _, l := range []*limiter{s.signInByAddr, s.signInByAccount} {
