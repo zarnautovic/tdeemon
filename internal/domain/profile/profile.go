@@ -111,13 +111,14 @@ func AgeOn(birth, on day.Date) int {
 func (p Profile) AgeOn(d day.Date) int { return AgeOn(p.BirthDate, d) }
 
 // BMI returns the body mass index of weightKg at p's height: the weight
-// over the square of the height in metres.
+// over the square of the height in metres. p must give the height.
 func (p Profile) BMI(weightKg float64) float64 {
 	m := p.HeightCm / 100
 	return weightKg / (m * m)
 }
 
-// WeightAt returns the weight, in kg, at which p's BMI is bmi.
+// WeightAt returns the weight, in kg, at which p's BMI is bmi. p must
+// give the height.
 func (p Profile) WeightAt(bmi float64) float64 {
 	m := p.HeightCm / 100
 	return bmi * m * m
@@ -142,6 +143,7 @@ func (p Profile) BMR(weightKg float64, d day.Date) float64 {
 // ProteinMassBMI, as the sources' values are per kg of body weight and
 // the actual weight overstates the need above it. The fat-free mass is
 // not used: its values per kg are others (docs/limits.md, "Protein").
+// p must give the height.
 func (p Profile) ProteinReferenceMass(trendKg float64) float64 {
 	return math.Min(trendKg, p.WeightAt(ProteinMassBMI))
 }

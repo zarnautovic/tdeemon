@@ -2,15 +2,25 @@ package plan
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
+func weekdays(tb testing.TB, ds ...time.Weekday) Weekdays {
+	tb.Helper()
+	w, err := WeekdaysOf(ds...)
+	if err != nil {
+		tb.Fatalf("WeekdaysOf(%v): %v", ds, err)
+	}
+	return w
+}
+
 func TestWeekdays(t *testing.T) {
 	t.Parallel()
 
-	w := WeekdaysOf(time.Monday, time.Wednesday, time.Friday)
+	w := weekdays(t, time.Monday, time.Wednesday, time.Friday)
 	if w.Count() != 3 {
 		t.Errorf("Count() = %d, want 3", w.Count())
 	}
@@ -20,10 +30,10 @@ func TestWeekdays(t *testing.T) {
 	if got, want := w.Days(), []time.Weekday{time.Monday, time.Wednesday, time.Friday}; !slices.Equal(got, want) {
 		t.Errorf("Days() = %v, want %v", got, want)
 	}
-	if got := WeekdaysOf(time.Monday, time.Monday); got != WeekdaysOf(time.Monday) {
+	if got := weekdays(t, time.Monday, time.Monday); got != weekdays(t, time.Monday) {
 		t.Errorf("a day given twice = %#b, want it once", got)
 	}
-	all := WeekdaysOf(time.Sunday, time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday)
+	all := weekdays(t, time.Sunday, time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday)
 	if all.Count() != 7 || len(all.Days()) != 7 {
 		t.Errorf("every day: Count() = %d, Days() = %v", all.Count(), all.Days())
 	}
@@ -32,10 +42,28 @@ func TestWeekdays(t *testing.T) {
 	}
 }
 
+// A number that is no day of the week, as a request could send, is
+// refused, and is in no set.
+func TestWeekdaysOfNoDay(t *testing.T) {
+	t.Parallel()
+
+	for _, d := range []time.Weekday{-1, 7, 8, 255} {
+		t.Run(strconv.Itoa(int(d)), func(t *testing.T) {
+			t.Parallel()
+			if w, err := WeekdaysOf(time.Monday, d); err == nil || w != 0 || !strings.Contains(err.Error(), "want 0 (Sunday) to 6 (Saturday)") {
+				t.Errorf("WeekdaysOf(Monday, %d) = %#b, %v; want an error", d, w, err)
+			}
+			if Weekdays(255).Has(d) {
+				t.Errorf("Has(%d) = true", d)
+			}
+		})
+	}
+}
+
 func TestWeekdaysValidate(t *testing.T) {
 	t.Parallel()
 
-	w := WeekdaysOf(time.Monday, time.Wednesday, time.Friday)
+	w := weekdays(t, time.Monday, time.Wednesday, time.Friday)
 	all := Weekdays(1<<7 - 1)
 	for _, ok := range []Weekdays{0, w, all} {
 		if err := ok.Validate(); err != nil {
@@ -55,7 +83,7 @@ func TestWeekdaysValidate(t *testing.T) {
 func TestTypeOf(t *testing.T) {
 	t.Parallel()
 
-	plan := WeekdaysOf(time.Monday, time.Wednesday, time.Friday)
+	plan := weekdays(t, time.Monday, time.Wednesday, time.Friday)
 	monday, tuesday := date(t, "2026-10-19"), date(t, "2026-10-20")
 	yes, no := true, false
 	for _, tc := range []struct {
@@ -69,7 +97,6 @@ func TestTypeOf(t *testing.T) {
 		{"a planned rest day", "tuesday", false, nil, Rest},
 		{"a session on a rest day makes it a training day", "tuesday", true, nil, Training},
 		{"a session on a training day", "monday", true, nil, Training},
-		{"no session leaves a training day as planned", "monday", false, nil, Training},
 		{"the toggle turns a training day into rest", "monday", false, &no, Rest},
 		{"the toggle turns a rest day into training", "tuesday", false, &yes, Training},
 		{"the toggle beats a session", "tuesday", true, &no, Rest},

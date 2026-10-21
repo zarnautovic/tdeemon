@@ -3,6 +3,7 @@ package plan
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
@@ -14,6 +15,12 @@ const (
 	kcalPerGramCarbs   = 4
 	kcalPerGramFat     = 9
 )
+
+// kcalTolerance is how far the energy of protein and fat may pass the
+// day's kcal before a target is refused: the error of float arithmetic
+// on grams with decimals (4 × 100 + 9 × 30.7 comes to a little over
+// 676.3), not a margin anyone could use.
+const kcalTolerance = 0.001
 
 // MaxKcal bounds a day's target, a guard against a typo (25000 for
 // 2500), not a limit of a plan: the most a person can eat in a day, as
@@ -31,7 +38,8 @@ type DayTarget struct {
 }
 
 // Carbs returns the grams of carbs the target leaves: the energy that is
-// not protein's or fat's, at 4 kcal a gram.
+// not protein's or fat's, at 4 kcal a gram. For a target with no carbs
+// it may be a hair under 0, from float arithmetic.
 func (t DayTarget) Carbs() float64 {
 	return (t.Kcal - kcalPerGramProtein*t.Protein - kcalPerGramFat*t.Fat) / kcalPerGramCarbs
 }
@@ -56,9 +64,8 @@ func (t DayTarget) Validate() error {
 			errs = append(errs, fmt.Errorf("%s %v g: want a number, zero or more", g.name, g.v))
 		}
 	}
-	if len(errs) == 0 && t.Carbs() < 0 {
-		errs = append(errs, fmt.Errorf("protein and fat give %v kcal, more than the day's %v",
-			kcalPerGramProtein*t.Protein+kcalPerGramFat*t.Fat, t.Kcal))
+	if pf := kcalPerGramProtein*t.Protein + kcalPerGramFat*t.Fat; len(errs) == 0 && pf > t.Kcal+kcalTolerance {
+		errs = append(errs, fmt.Errorf("protein and fat give %v kcal, more than the day's %v", round2(pf), t.Kcal))
 	}
 	return errors.Join(errs...)
 }
@@ -166,3 +173,5 @@ func ProteinGrams(perKg, refKg float64) float64 { return perKg * refKg }
 
 // ProteinPerKg returns the g/kg of refKg that grams of protein are.
 func ProteinPerKg(grams, refKg float64) float64 { return grams / refKg }
+
+func round2(v float64) float64 { return math.Round(v*100) / 100 }

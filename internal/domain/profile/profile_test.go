@@ -132,17 +132,23 @@ func TestBMI(t *testing.T) {
 	t.Parallel()
 
 	p := Profile{HeightCm: 180}
-	for _, tc := range []struct{ weight, bmi float64 }{
-		{81, 25},
-		{97.2, 30},
-		{59.94, 18.5},
+	for _, tc := range []struct {
+		name        string
+		weight, bmi float64
+	}{
+		{"a BMI of 25", 81, 25},
+		{"a BMI of 30", 97.2, 30},
+		{"a BMI of 18.5", 59.94, 18.5},
 	} {
-		if got := p.BMI(tc.weight); !near(got, tc.bmi) {
-			t.Errorf("BMI(%v kg at 180 cm) = %v, want %v", tc.weight, got, tc.bmi)
-		}
-		if got := p.WeightAt(tc.bmi); !near(got, tc.weight) {
-			t.Errorf("WeightAt(%v at 180 cm) = %v, want %v", tc.bmi, got, tc.weight)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := p.BMI(tc.weight); !near(got, tc.bmi) {
+				t.Errorf("BMI(%v kg at 180 cm) = %v, want %v", tc.weight, got, tc.bmi)
+			}
+			if got := p.WeightAt(tc.bmi); !near(got, tc.weight) {
+				t.Errorf("WeightAt(%v at 180 cm) = %v, want %v", tc.bmi, got, tc.weight)
+			}
+		})
 	}
 }
 

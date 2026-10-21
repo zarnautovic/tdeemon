@@ -108,8 +108,8 @@ func (p Phase) On(d day.Date) bool {
 
 // ValidateTimeline checks a user's phases together: each valid, in the
 // order they start, none starting on or before the day the one before
-// starts, and none starting before the planned end of the one before. A
-// phase without an end lasts until the next one starts.
+// starts, and none starting on or before the planned end of the one
+// before. A phase without an end lasts until the next one starts.
 func ValidateTimeline(phases []Phase) error {
 	var errs []error
 	for i, p := range phases {

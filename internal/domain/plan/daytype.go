@@ -25,17 +25,25 @@ type Weekdays uint8
 // allWeekdays holds every day of the week.
 const allWeekdays Weekdays = 1<<7 - 1
 
-// WeekdaysOf returns the set of the days ds.
-func WeekdaysOf(ds ...time.Weekday) Weekdays {
+// WeekdaysOf returns the set of the days ds, or an error for a value that
+// is no day of the week (Sunday, 0, to Saturday, 6), as a number read
+// from a request could be.
+func WeekdaysOf(ds ...time.Weekday) (Weekdays, error) {
 	var w Weekdays
 	for _, d := range ds {
+		if !isWeekday(d) {
+			return 0, fmt.Errorf("weekday %d: want 0 (Sunday) to 6 (Saturday)", int(d))
+		}
 		w |= 1 << d
 	}
-	return w
+	return w, nil
 }
 
-// Has reports whether d is in w.
-func (w Weekdays) Has(d time.Weekday) bool { return w&(1<<d) != 0 }
+// Has reports whether d is in w; a value that is no day of the week is
+// in no set.
+func (w Weekdays) Has(d time.Weekday) bool { return isWeekday(d) && w&(1<<d) != 0 }
+
+func isWeekday(d time.Weekday) bool { return d >= time.Sunday && d <= time.Saturday }
 
 // Count returns how many days w holds, 0 to 7.
 func (w Weekdays) Count() int { return bits.OnesCount8(uint8(w & allWeekdays)) }

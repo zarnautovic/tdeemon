@@ -2,6 +2,7 @@ package plan
 
 import (
 	"math"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -39,6 +40,11 @@ func TestDayTargetValidate(t *testing.T) {
 	for _, d := range []DayTarget{
 		{2400, 160, 70},
 		{1000, 115, 60}, // protein and fat give exactly the day's energy
+		// The same with grams with decimals: 4 × 100 + 9 × 30.1 comes to a
+		// little over 670.9 in float arithmetic.
+		{670.9, 100, 30.1},
+		{676.3, 100, 30.7},
+		{4*176.66 + 9*61.3, 176.66, 61.3},
 		{MaxKcal, 0, 0},
 		{0.5, 0, 0}, // a floor is a limit, not a rule of the shape
 	} {
@@ -59,6 +65,9 @@ func TestDayTargetValidate(t *testing.T) {
 		{"protein that is no number", DayTarget{2000, math.Inf(1), 60}, "protein +Inf g"},
 		{"negative fat", DayTarget{2000, 150, -5}, "fat -5 g"},
 		{"more in protein and fat than the day", DayTarget{1000, 120, 60}, "protein and fat give 1020 kcal, more than the day's 1000"},
+		{"a hundredth of a gram of fat too much", DayTarget{676.3, 100, 30.71}, "protein and fat give 676.39 kcal, more than the day's 676.3"},
+		// The energy is shown as a person would write it, not as a float.
+		{"a tenth of a kcal too little", DayTarget{670.8, 100, 30.1}, "protein and fat give 670.9 kcal, more than the day's 670.8"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -138,21 +147,26 @@ func TestShiftKcal(t *testing.T) {
 
 	tg := split(t)
 	for _, delta := range []float64{-100, 50, 0} {
-		got := tg.ShiftKcal(delta)
-		for n := range 8 {
-			if diff := got.WeeklyAverage(n).Kcal - tg.WeeklyAverage(n).Kcal; !near(diff, delta) {
-				t.Errorf("ShiftKcal(%v) with %d training days moved the average by %v", delta, n, diff)
+		t.Run(strconv.FormatFloat(delta, 'f', -1, 64), func(t *testing.T) {
+			t.Parallel()
+			got := tg.ShiftKcal(delta)
+			for n := range 8 {
+				if diff := got.WeeklyAverage(n).Kcal - tg.WeeklyAverage(n).Kcal; !near(diff, delta) {
+					t.Errorf("with %d training days the average moved by %v", n, diff)
+				}
 			}
-		}
-		if got.Training.Kcal-got.Rest.Kcal != 400 {
-			t.Errorf("ShiftKcal(%v): the split is %v, want 400", delta, got.Training.Kcal-got.Rest.Kcal)
-		}
-		if got.Training.Protein != 170 || got.Rest.Fat != 70 || got.EffectiveFrom != tg.EffectiveFrom {
-			t.Errorf("ShiftKcal(%v) = %+v, changed more than the kcal", delta, got)
-		}
-		if !near(got.Rest.Carbs()-tg.Rest.Carbs(), delta/4) {
-			t.Errorf("ShiftKcal(%v): the carbs moved by %v, want %v", delta, got.Rest.Carbs()-tg.Rest.Carbs(), delta/4)
-		}
+			if got.Training.Kcal-got.Rest.Kcal != 400 {
+				t.Errorf("the split is %v, want 400", got.Training.Kcal-got.Rest.Kcal)
+			}
+			want := tg
+			want.Training.Kcal, want.Rest.Kcal = got.Training.Kcal, got.Rest.Kcal
+			if got != want {
+				t.Errorf("ShiftKcal = %+v, changed more than the kcal of %+v", got, tg)
+			}
+			if !near(got.Rest.Carbs()-tg.Rest.Carbs(), delta/4) {
+				t.Errorf("the carbs moved by %v, want %v", got.Rest.Carbs()-tg.Rest.Carbs(), delta/4)
+			}
+		})
 	}
 	if tg.Training.Kcal != 2600 {
 		t.Error("ShiftKcal changed the target it was called on")
@@ -252,7 +266,7 @@ func TestDayTargetOn(t *testing.T) {
 
 	hs := history(t)
 	monday, tuesday := date(t, "2026-11-16"), date(t, "2026-11-17")
-	plan := WeekdaysOf(monday.Weekday())
+	plan := weekdays(t, monday.Weekday())
 	if got, ok := DayTargetOn(hs, monday, TypeOf(monday, plan, false, nil)); !ok || got.Kcal != 2500 {
 		t.Errorf("Monday's target = %+v, %v; want 2500 kcal", got, ok)
 	}
