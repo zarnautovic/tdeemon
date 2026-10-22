@@ -378,6 +378,20 @@ func TestSentFood(t *testing.T) {
 	if f := base(); func() bool { f.ID = uuid.NewV7(); return SentFood(f) != d }() {
 		t.Error("another id changed SentFood")
 	}
+	// Servings and aliases are sets: in another order, the same food.
+	two := base()
+	two.Servings = []food.Serving{{Name: "piece", Amount: 60}, {Name: "half", Amount: 30}}
+	two.Aliases = []string{"hen's egg", "egg"}
+	swapped := two
+	swapped.Servings = []food.Serving{two.Servings[1], two.Servings[0]}
+	swapped.Aliases = []string{"egg", "hen's egg"}
+	if SentFood(swapped) != SentFood(two) {
+		t.Error("servings and aliases in another order changed SentFood")
+	}
+	SentFood(two)
+	if two.Servings[0].Name != "piece" || two.Aliases[0] != "hen's egg" {
+		t.Errorf("SentFood changed the food's order: %+v, %v", two.Servings, two.Aliases)
+	}
 	for name, change := range map[string]func(*food.Food){
 		"a name":               func(f *food.Food) { f.Name = "Duck egg" },
 		"a brand":              func(f *food.Food) { f.Brand = "" },

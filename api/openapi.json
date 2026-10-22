@@ -3868,7 +3868,7 @@
         ]
       },
       "patch": {
-        "description": "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. An item no op touches keeps what it brought when logged, though its food was corrected since. An add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not; a remove of an item no longer there changes nothing.",
+        "description": "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. An item no op touches keeps what it brought when logged, though its food was corrected since. An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. A remove of an item no longer there changes nothing.",
         "operationId": "update-meal",
         "parameters": [
           {

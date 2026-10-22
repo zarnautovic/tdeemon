@@ -776,3 +776,52 @@ func TestRetryAfterTheFoodChanged(t *testing.T) {
 		t.Errorf("the add again: %d %s, want 200", rec.Code, rec.Body.String())
 	}
 }
+
+// An item_id is a UUID in any of the forms it may be written in: upper
+// case, in braces.
+func TestUpdateMealItemIDForms(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id, soup, tea := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}},
+		{"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}]}`, id, soup, tea))
+	replace := fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": {"name": "Stew", "nutrients": {"kcal": 300, "protein": 15, "carbs": 30, "fat": 12}}}]}`, strings.ToUpper(soup))
+	if rec := e.patch(t, id, replace); rec.Code != http.StatusOK {
+		t.Fatalf("a replace by an id in upper case: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := e.patch(t, id, fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": "{%s}"}]}`, tea)); rec.Code != http.StatusOK {
+		t.Fatalf("a remove by an id in braces: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := e.mealOf(t, id).Items; len(got) != 1 || got[0].ID.String() != soup || got[0].Name != "Stew" {
+		t.Errorf("the meal's items = %+v, want the stew alone", got)
+	}
+	// A form the document takes and a UUID does not.
+	urn := fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": "URN:UUID:%s"}]}`, soup)
+	if rec := e.patch(t, id, urn); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "op 1: the item_id") {
+		t.Errorf("an item_id in a form no UUID takes: %d %s, want 422", rec.Code, rec.Body.String())
+	}
+}
+
+// A request of several ops on one item, sent again, is done already: the
+// ops are told done by the meal as the ops before them leave it.
+func TestUpdateMealOpsOnOneItemAgain(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id, soup := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id, soup))
+	ops := fmt.Sprintf(`{"ops": [
+		{"op": "replace", "item_id": %q, "item": {"name": "Broth", "nutrients": {"kcal": 40, "protein": 4, "carbs": 2, "fat": 2}}},
+		{"op": "replace", "item_id": %q, "item": {"name": "Stew", "nutrients": {"kcal": 300, "protein": 15, "carbs": 30, "fat": 12}}},
+		{"op": "add", "item": {"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}
+	]}`, soup, soup, meal.NewIDAt(e.now))
+	for _, name := range []string{"the ops", "the ops again"} {
+		if rec := e.patch(t, id, ops); rec.Code != http.StatusOK {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	if got := e.mealOf(t, id).Items; len(got) != 2 || got[0].Name != "Stew" || got[1].Name != "Tea" {
+		t.Errorf("the meal's items = %+v, want the stew and the tea", got)
+	}
+}

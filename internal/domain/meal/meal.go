@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -363,14 +364,18 @@ var sentFoodForm = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // SentFood returns a digest of new food f as a client sent it, its id
 // left out: every field in a fixed order, each quoted or in its shortest
-// exact form, so no two foods write the same text.
+// exact form, so no two foods write the same text. Its servings and
+// aliases are sets: in any order, the same digest.
 func SentFood(f food.Food) string {
+	servings := slices.Clone(f.Servings)
+	// A food names each serving once.
+	slices.SortFunc(servings, func(a, b food.Serving) int { return strings.Compare(a.Name, b.Name) })
 	lines := []string{
 		fmt.Sprintf("%q %q %q %q %q %v", f.Name, f.Brand, f.Basis, f.Source, f.Note, f.PortionGrams),
 		nutrientsText(f.Nutrients),
-		fmt.Sprintf("%q", f.Aliases),
+		fmt.Sprintf("%q", slices.Sorted(slices.Values(f.Aliases))),
 	}
-	for _, sv := range f.Servings {
+	for _, sv := range servings {
 		lines = append(lines, fmt.Sprintf("%q %v", sv.Name, sv.Amount))
 	}
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))

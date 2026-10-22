@@ -25,7 +25,7 @@ func TestApplyOpOfAnItemChangedMeanwhile(t *testing.T) {
 		t.Fatal(err)
 	}
 	soup.ID = tea.ID
-	sent := opItem{sent: tea}
+	sent := opItem{target: tea.ID, sent: tea}
 	add := &mealOp{Op: "add"}
 	replace := &mealOp{Op: "replace", ItemID: tea.ID.String()}
 	for _, tc := range []struct {

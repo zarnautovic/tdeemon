@@ -463,60 +463,82 @@ func (s *sessions) updateMeal(ctx context.Context, in *updateMealInput) (*mealOu
 }
 
 // opItem is the item of an op: as sent, which tells an op done already,
-// and worked out whole, unless the meal as read has it as sent.
+// and worked out whole, unless the meal had it as sent; and the id of the
+// item the op is about.
 type opItem struct {
+	target uuid.UUID
 	sent   meal.Item
 	item   meal.Item
 	worked bool
 }
 
 // opItems works out the items of ops, each at its place (none for a
-// remove), with the new foods to save with them and their warnings. An op
-// whose item the meal as read has as sent (an add, or a replace, sent
-// again) is not worked out: nothing of it is read, and its food is not
-// saved.
-func (s *sessions) opItems(ctx context.Context, p auth.Principal, had *meal.Meal, ops []mealOp) ([]opItem, []food.Food, []meal.Warning, error) {
+// remove), with the new foods to save with them and their warnings. The
+// ops are dry run in order on m, the meal as read, which they change: an
+// op whose item the meal, as the ops before it leave it, has as sent (one
+// of a request sent again) is done already, and is not worked out:
+// nothing of it is read, and its food is not saved.
+func (s *sessions) opItems(ctx context.Context, p auth.Principal, m *meal.Meal, ops []mealOp) ([]opItem, []food.Food, []meal.Warning, error) {
 	items := make([]opItem, len(ops))
 	var foods []food.Food
 	var warnings []meal.Warning
 	for i := range ops {
 		op := &ops[i]
-		if err := checkOp(op); err != nil {
-			return nil, nil, nil, opError(i, err)
+		oi, nf, ws, err := s.opItem(ctx, p, m, op)
+		if err == nil {
+			err = applyOp(m, op, oi)
 		}
-		if op.Item == nil {
-			continue
-		}
-		sent, nf, ws, err := sentItem(op.Item)
 		if err != nil {
 			return nil, nil, nil, opError(i, err)
 		}
-		warnings = append(warnings, ws...)
-		items[i].sent = sent
-		if at := opTarget(had, op, sent); at >= 0 && had.Items[at].SameAs(sent) {
-			continue
-		}
-		if items[i].item, err = s.item(ctx, p, sent, nf); err != nil {
-			return nil, nil, nil, opError(i, err)
-		}
-		items[i].worked = true
+		items[i] = oi
 		if nf != nil {
 			foods = append(foods, *nf)
 		}
+		warnings = append(warnings, ws...)
 	}
 	return items, foods, warnings, nil
 }
 
-// opTarget is the index in m of the item op is about, sent its item:
-// the one it adds, by the item's id, or the one it replaces or removes;
-// -1 when m has none.
-func opTarget(m *meal.Meal, op *mealOp, sent meal.Item) int {
-	return slices.IndexFunc(m.Items, func(had meal.Item) bool {
-		if op.Op == "add" {
-			return had.ID == sent.ID
+// opItem works out the item of op on m, the meal as the ops before it
+// leave it, with its new food to save when it is worked out, and its
+// warnings.
+func (s *sessions) opItem(ctx context.Context, p auth.Principal, m *meal.Meal, op *mealOp) (opItem, *food.Food, []meal.Warning, error) {
+	var oi opItem
+	if err := checkOp(op); err != nil {
+		return oi, nil, nil, err
+	}
+	if op.ItemID != "" {
+		var err error
+		if oi.target, err = uuid.Parse(op.ItemID); err != nil {
+			return oi, nil, nil, huma.Error422UnprocessableEntity("the item_id: " + err.Error())
 		}
-		return had.ID.String() == op.ItemID
-	})
+	}
+	if op.Item == nil {
+		return oi, nil, nil, nil
+	}
+	sent, nf, ws, err := sentItem(op.Item)
+	if err != nil {
+		return oi, nil, nil, err
+	}
+	oi.sent = sent
+	if op.Op == "add" {
+		oi.target = sent.ID
+	}
+	if at := opTarget(m, oi); at >= 0 && m.Items[at].SameAs(sent) {
+		return oi, nil, ws, nil
+	}
+	if oi.item, err = s.item(ctx, p, sent, nf); err != nil {
+		return oi, nil, nil, err
+	}
+	oi.worked = true
+	return oi, nf, ws, nil
+}
+
+// opTarget is the index in m of the item oi is about, or -1 when m has
+// none.
+func opTarget(m *meal.Meal, oi opItem) int {
+	return slices.IndexFunc(m.Items, func(had meal.Item) bool { return had.ID == oi.target })
 }
 
 // edit is m changed as b says: its time, which may move it to another day
@@ -554,7 +576,7 @@ var errChanged = huma.Error409Conflict("the item changed while the meal was bein
 // of m's is a conflict; a remove of an item m does not have is one done
 // already.
 func applyOp(m *meal.Meal, op *mealOp, oi opItem) error {
-	at := opTarget(m, op, oi.sent)
+	at := opTarget(m, oi)
 	switch {
 	case op.Op == "remove":
 		if at >= 0 {
