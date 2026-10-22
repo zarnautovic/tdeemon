@@ -189,8 +189,9 @@ type State struct {
 	Target       *plan.Target
 	TrainingDays plan.Weekdays
 	// TDEE is the measured TDEE, and TDEETrusted whether calibration
-	// trusts it enough for a verdict; only then does a target's implied
-	// rate count.
+	// trusts it: one from before the current phase may be, a TDEE all the
+	// same, though it gives no verdict on the phase. Only a trusted one
+	// makes a target's implied rate count.
 	TDEE        float64
 	TDEETrusted bool
 	// LeanMassKg is the fat-free mass, 0 when unknown, and ActiveKcal the

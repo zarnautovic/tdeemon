@@ -70,20 +70,20 @@ func bodyOf(days map[day.Date]Day, from, to day.Date) Body {
 	if len(recent) >= minRecentSteps && len(before) >= minBeforeSteps {
 		b.StepsRecent, b.StepsBefore = mean(recent), mean(before)
 	}
-	if spread(leanX) {
-		b.LeanMeasured, b.LeanKgPerWeek, b.LeanHalfWidth = slopeOf(leanX, leanY)
+	if b.LeanMeasured = spread(leanX); b.LeanMeasured {
+		b.LeanKgPerWeek, b.LeanHalfWidth = slopeOf(leanX, leanY)
 	}
-	if spread(fatX) {
-		b.BodyFatMeasured, b.BodyFatPerWeek, b.BodyFatHalfWidth = slopeOf(fatX, fatY)
+	if b.BodyFatMeasured = spread(fatX); b.BodyFatMeasured {
+		b.BodyFatPerWeek, b.BodyFatHalfWidth = slopeOf(fatX, fatY)
 	}
 	return b
 }
 
 // slopeOf returns the slope a week of the values ys on the days xs, and
 // half its 80 % interval, by the regression the weight's slope has.
-func slopeOf(xs, ys []float64) (ok bool, perWeek, halfWidth float64) {
+func slopeOf(xs, ys []float64) (perWeek, halfWidth float64) {
 	f := regress(xs, ys)
-	return true, 7 * f.slope, 7 * tQuantile(f.df) * f.se
+	return 7 * f.slope, 7 * tQuantile(f.df) * f.se
 }
 
 // leanMass returns d's lean mass: the one measured, else the weight's

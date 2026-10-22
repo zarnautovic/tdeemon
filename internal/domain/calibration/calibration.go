@@ -66,7 +66,9 @@ const maxAutocorrelation = 0.9
 
 // Params are calibration's settings. They are the same for every user
 // until the autopilot comes (P1), which makes them a user's within the
-// limits.
+// limits, and checks them. Until then a Params is DefaultParams, or one
+// changed from it: a field left at 0 is no setting but a bound of 0 (no
+// tolerance, no change of steps, no drift allowed).
 type Params struct {
 	// WindowDays is how many days, up to the last, an estimate reads.
 	WindowDays int
@@ -170,8 +172,9 @@ type Estimate struct {
 	// last weigh-in it took, which says how old it is.
 	TrendKg   float64
 	TrendDate day.Date
-	// PhaseStartTrendKg is the trend weight on the day the current phase
-	// started, 0 without a phase or a weigh-in before it.
+	// PhaseStartTrendKg is the trend weight the day before the current
+	// phase started, so never from a weigh-in past the last day asked
+	// for; 0 without a phase or a weigh-in before it.
 	PhaseStartTrendKg float64
 	// Body is what the window says of the body besides the weight, for
 	// the verdict's guards, and Now what the 7 days up to the last day
@@ -251,7 +254,9 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	trend := Trend(days, p.TrendAlpha)
 	e.TrendKg, e.TrendDate = trendAt(trend, last)
 	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
-		e.PhaseStartTrendKg, _ = trendAt(trend, ph.Start)
+		// The phase on today starts on today at the latest, so the day
+		// before it is last at the latest.
+		e.PhaseStartTrendKg, _ = trendAt(trend, ph.Start.AddDays(-1))
 	}
 	e.Body = bodyOf(days, e.From, e.To)
 	e.Now = nowOf(days, last)
