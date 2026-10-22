@@ -21,14 +21,14 @@ const dailyPrefix = "daily-"
 var dailyFile = regexp.MustCompile(`^daily-(\d{8}T\d{6}\.\d{6}Z)\.db$`)
 
 // DailyEvery is how old the newest daily snapshot is when the next one is
-// due: a little less than a day, so that checks once an hour keep the
-// snapshots at about the same time of day.
-const DailyEvery = 23 * time.Hour
+// due: half an hour less than a day, so that checks once an hour find it
+// due at the same hour each day, with room for a check a little early.
+const DailyEvery = 23*time.Hour + 30*time.Minute
 
 // DailySnapshot writes a snapshot of the database to the backups directory
-// next to the database file, when the newest daily snapshot there is
-// DailyEvery old or there is none, and returns its path; "" when none was
-// due. It keeps the newest keep daily snapshots, and removes the older
+// next to the database file, when there is none younger than DailyEvery
+// (one of a time to come is none), and returns its path; "" when none
+// was due. It keeps the newest keep daily snapshots, and removes the older
 // ones and the temporary files of one interrupted; the snapshots before a
 // migration are not touched.
 func (db *DB) DailySnapshot(ctx context.Context, now time.Time, keep int) (string, error) {
@@ -40,8 +40,12 @@ func (db *DB) DailySnapshot(ctx context.Context, now time.Time, keep int) (strin
 	if err != nil {
 		return "", fmt.Errorf("daily snapshot: %w", err)
 	}
-	if len(snapshots) > 0 && now.Sub(snapshots[0].at) < DailyEvery {
-		return "", nil
+	// One of a time to come does not count, or a clock that was ahead
+	// would stop the snapshots until it is reached.
+	for _, s := range snapshots {
+		if age := now.Sub(s.at); age >= 0 && age < DailyEvery {
+			return "", nil
+		}
 	}
 	// The read pool is query only, which refuses VACUUM INTO; the copy
 	// holds the write connection, so writes wait for it, a moment for a

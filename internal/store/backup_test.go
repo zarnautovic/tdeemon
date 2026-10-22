@@ -69,17 +69,53 @@ func TestDailySnapshot(t *testing.T) {
 	if dst, err := db.DailySnapshot(t.Context(), at.Add(store.DailyEvery-time.Second), 2); dst != "" || err != nil {
 		t.Errorf("before it is due = %q, %v", dst, err)
 	}
-	for i := 1; i <= 2; i++ {
-		if dst, err := db.DailySnapshot(t.Context(), at.Add(time.Duration(i)*store.DailyEvery), 2); dst == "" || err != nil {
-			t.Fatalf("the snapshot %d = %q, %v", i+1, dst, err)
+	for _, later := range []time.Duration{store.DailyEvery, 48 * time.Hour} {
+		if dst, err := db.DailySnapshot(t.Context(), at.Add(later), 2); dst == "" || err != nil {
+			t.Fatalf("%v later = %q, %v", later, dst, err)
 		}
 	}
-	want := []string{"daily-20261023T020000.000000Z.db", "daily-20261024T010000.000000Z.db", "notes.txt", "pre-migrate-0001-20260101T000000.000000Z.db"}
+	want := []string{"daily-20261023T023000.000000Z.db", "daily-20261024T030000.000000Z.db", "notes.txt", "pre-migrate-0001-20260101T000000.000000Z.db"}
 	if got := files(t, dir); !slices.Equal(got, want) {
 		t.Errorf("files = %v, want %v", got, want)
 	}
 	if _, err := db.DailySnapshot(t.Context(), at, 0); err == nil {
 		t.Error("keeping none succeeded")
+	}
+}
+
+// Checks once an hour take a snapshot a day, at the same hour.
+func TestDailySnapshotHourly(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	at := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
+	for h := range 10 * 24 {
+		if _, err := db.DailySnapshot(t.Context(), at.Add(time.Duration(h)*time.Hour), 30); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := files(t, backupsDir(t, db))
+	if len(got) != 10 || slices.ContainsFunc(got, func(f string) bool { return !strings.Contains(f, "T030000") }) {
+		t.Errorf("files = %v, want ten at 03:00", got)
+	}
+}
+
+// A snapshot of a time to come, from a clock that was ahead, does not
+// stop the daily ones, nor make one at every check.
+func TestDailySnapshotAfterAClockAhead(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	ahead := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := db.DailySnapshot(t.Context(), ahead, 7); err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
+	if dst, err := db.DailySnapshot(t.Context(), at, 7); dst == "" || err != nil {
+		t.Errorf("after a clock ahead = %q, %v", dst, err)
+	}
+	if dst, err := db.DailySnapshot(t.Context(), at.Add(time.Hour), 7); dst != "" || err != nil {
+		t.Errorf("an hour later = %q, %v", dst, err)
 	}
 }
 
@@ -116,15 +152,19 @@ func TestStartDailySnapshots(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, got[0])); err != nil {
 		t.Fatal(err)
 	}
+	// A finished one, not the temporary file of one under way.
 	deadline := time.Now().Add(5 * time.Second)
-	for len(files(t, dir)) == 0 {
+	var snaps []string
+	for len(snaps) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("no snapshot at a later check")
 		}
 		time.Sleep(10 * time.Millisecond)
+		snaps, _ = filepath.Glob(filepath.Join(dir, "daily-*.db"))
 	}
 	cancel()
 	wait()
+	checkSnapshot(t, snaps[0])
 
 	broken := storetest.Open(t)
 	if err := os.WriteFile(backupsDir(t, broken), nil, 0o600); err != nil {

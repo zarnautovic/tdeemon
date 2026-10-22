@@ -456,13 +456,17 @@ migrates a database that already has data, it saves a snapshot to
 newest snapshot of each schema version, for the three newest versions.
 
 Once a day it saves a snapshot to
-`TDEEMON_DATA_DIR/backups/daily-<time>.db` (the time in UTC): at startup,
-when the newest is 23 hours old or there is none, and then at a check
-every hour. It keeps the newest `TDEEMON_BACKUP_KEEP` of them, 7 unless
-set; `0` takes none. A snapshot is a whole copy of the database, written
-with `VACUUM INTO` while tdeemon runs; writes wait for it. The snapshots
-sit on the same disk as the database: copy the backups directory off it,
-for example with a volume snapshot or a job of your backup tool.
+`TDEEMON_DATA_DIR/backups/daily-<time>.db` (the time in UTC): at startup
+when there is none of the last 23½ hours, and then at a check every hour,
+so at the same hour each day. It keeps the newest `TDEEMON_BACKUP_KEEP`
+of them, 7 unless set, and removes the older ones after each snapshot: a
+lower number takes effect with the next one, and `0` takes no more but
+leaves the ones there. A snapshot is a whole copy of the database,
+written with `VACUUM INTO` while tdeemon runs; writes wait for it. Leave
+room on the volume for one copy more than it keeps, as the oldest goes
+only once the new one is written. The snapshots sit on the same disk as
+the database: copy the backups directory off it, for example with a
+volume snapshot or a job of your backup tool.
 
 To restore a snapshot:
 

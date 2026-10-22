@@ -36,3 +36,6 @@ node_modules/
 .idea/
 .vscode/
 .DS_Store
+
+# The binary `go build ./cmd/tdeemon` writes at the root.
+/tdeemon
