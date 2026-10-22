@@ -175,8 +175,8 @@ func TestMCPCallsATool(t *testing.T) {
 	if isErr || !strings.Contains(text, `"date":"`+day.DateOf(in.clock.Now()).String()+`"`) || !strings.Contains(text, id) {
 		t.Errorf("get_day of no day: %v %s", isErr, text)
 	}
-	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": 5}); isErr {
-		t.Errorf("find_foods with a number in the query: %s", text)
+	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": []any{"soup", "bread"}, "limit": 5}); isErr {
+		t.Errorf("find_foods of two queries and a number: %s", text)
 	}
 	// An argument of null, or a parameter of "", is one left out, as a
 	// model may send it.

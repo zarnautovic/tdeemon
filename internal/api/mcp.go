@@ -233,6 +233,18 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 			body[name] = raw
 			continue
 		}
+		// A query parameter takes several values, an array of them.
+		var many []json.RawMessage
+		if where == "query" && json.Unmarshal(raw, &many) == nil {
+			for _, r := range many {
+				v, err := paramValue(r)
+				if err != nil {
+					return "", nil, nil, fmt.Errorf("%s: %w", name, err)
+				}
+				query.Add(name, v)
+			}
+			continue
+		}
 		v, err := paramValue(raw)
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("%s: %w", name, err)

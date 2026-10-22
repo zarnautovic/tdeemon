@@ -153,8 +153,9 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodGet,
 			Path:        Prefix + "/foods",
 			Summary:     "Find foods",
-			Description: "Your foods whose name, brand or an alias has words starting with each word of the query, in any case and without the diacritics: " +
-				"the name's matches first, then the shorter name. Each has how much a meal had of it last. Archived foods are left out.",
+			Description: "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: " +
+				"the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which query found it. " +
+				"Each has how much a meal had of it last. Archived foods are left out.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.findFoods),
 		newTool("get_food", readScopes, huma.Operation{

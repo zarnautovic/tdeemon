@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -487,11 +488,11 @@ func TestFindFoods(t *testing.T) {
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{"foods": [
 		{"id": %[1]q, "name": "Rye roll", "brand": "Bakery", "basis": "100g", "source": "label", "archived": false,
 		 "nutrients": {"kcal": 251.3, "protein": 8.04, "carbs": 46.07, "fat": 2.9, "salt": 1.234},
-		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}},
+		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}, "query": "rye"},
 		{"id": %[2]q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": false,
 		 "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
 		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"],
-		 "last_use": {"at": %[3]q, "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}}
+		 "last_use": {"at": %[3]q, "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}, "query": "rye"}
 	]}`, roll.ID, bread.ID, now.Format(time.RFC3339), m.ID))
 	// By an alias; an archived food not at all; at most limit.
 	for query, want := range map[string]string{"loaf": `"name":"Ana's rye bread"`, "stew": `{"foods":[]}`} {
@@ -689,4 +690,42 @@ func zagrebNow(t *testing.T, now time.Time) string {
 		t.Fatal(err)
 	}
 	return now.In(loc).Format(time.RFC3339)
+}
+
+// find_foods takes several queries, one a food, in one call: each one's
+// foods, each told by the query that found it, and a food two find
+// once.
+func TestFindFoodsOfSeveralQueries(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	now := in.clock.Now()
+	bread := saveIsolationFoods(t, in.db, in.user, now)
+	yoghurt := food.Food{
+		ID: uuid.NewV7(), Name: "Greek yoghurt", Brand: "Dukat", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 73, Protein: 9.5, Carbs: 3.6, Fat: 2},
+	}
+	if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, yoghurt, now); err != nil {
+		t.Fatal(err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=greek+yog&query=rye+bread", "", []*http.Cookie{session}, nil)
+	var got struct {
+		Foods []struct {
+			ID, Query string
+		} `json:"foods"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	want := []string{bread.ID.String() + " rye", yoghurt.ID.String() + " greek yog"}
+	var have []string
+	for _, f := range got.Foods {
+		have = append(have, f.ID+" "+f.Query)
+	}
+	if !slices.Equal(have, want) {
+		t.Errorf("foods = %v, want %v", have, want)
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=", "", []*http.Cookie{session}, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("an empty query among two: %d %s, want 422", rec.Code, rec.Body.String())
+	}
 }
