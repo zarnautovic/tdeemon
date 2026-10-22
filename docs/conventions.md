@@ -67,8 +67,11 @@ for the author and the reviewer.
   values, in `internal/ingest/testdata/` (Health Auto Export's in
   `hae/`). Real ones stay outside git: `TestRealPayloads` reads the
   directory `TDEEMON_HAE_PAYLOADS` names, such as an instance's archive
-  (`DATA_DIR/ingest/<user>`), `.json` and `.json.gz`, fails for what does
-  not read and logs what it left out, without the values; without the
+  (`TDEEMON_DATA_DIR/ingest/<user>`), `.json` and `.json.gz`. It fails
+  for a shape that does not read (a unit, a point, a date, a sleep
+  stage) and for a metric whose points give no value; run with `-v`
+  (`go test ./internal/ingest -run TestRealPayloads -v`), it says what
+  each day kept and what it left out, without the values. Without the
   variable it is skipped.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.

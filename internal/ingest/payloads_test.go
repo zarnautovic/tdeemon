@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"compress/gzip"
+	"encoding/json"
 	"io"
 	"io/fs"
 	"os"
@@ -58,6 +59,56 @@ func checkShape(t *testing.T, r Result) {
 	t.Helper()
 	for _, x := range shapeProblems(r) {
 		t.Errorf("%s left out (%q): %s", x.Kind, x.RawDate, x.Reason)
+	}
+}
+
+// unread returns the names of the metrics tdeemon reads that body has
+// points of, but that gave r no value: points without a field the parser
+// knows, or every value out of its bounds, as a unit or a scale off by a
+// factor gives. Either is the shape, not a glitch.
+func unread(t *testing.T, body []byte, r Result) []string {
+	t.Helper()
+	var p struct {
+		Data struct {
+			Metrics []struct {
+				Name string            `json:"name"`
+				Data []json.RawMessage `json:"data"`
+			} `json:"metrics"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		t.Fatal(err)
+	}
+	read := map[metric.Kind]bool{}
+	for _, d := range r.Days {
+		for _, v := range d.Values {
+			read[v.Kind] = true
+		}
+	}
+	var out []string
+	for _, m := range p.Data.Metrics {
+		if k, ok := haeKinds[m.Name]; ok && len(m.Data) > 0 && !read[k] {
+			out = append(out, m.Name)
+		}
+	}
+	return out
+}
+
+// Each summarized payload reads whole: nothing left out for its shape, and
+// a value from every metric tdeemon reads.
+func TestPayloadsRead(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"morning-sync.json", "evening-sync.json", "evening-weighing.json"} {
+		body := readPayload(t, filepath.Join("testdata", "hae", name))
+		r, err := ParseHAE(body)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		checkShape(t, r)
+		if u := unread(t, body, r); len(u) != 0 {
+			t.Errorf("%s: unread %v", name, u)
+		}
 	}
 }
 
@@ -122,8 +173,9 @@ func TestPayloadEveningSync(t *testing.T) {
 	}
 }
 
-// An export HAE does not summarize gives a night in stages: they are left
-// out, once, with what to turn on, and the rest of the payload is read.
+// An export HAE does not summarize gives a night in stages, and steps in
+// parts: the stages are left out, once, with what to turn on, and the
+// parts add up.
 func TestPayloadUnsummarizedSleep(t *testing.T) {
 	t.Parallel()
 
@@ -131,14 +183,38 @@ func TestPayloadUnsummarizedSleep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep || !strings.Contains(r.Rejected[0].Reason, "Summarize Data") {
-		t.Errorf("rejected = %+v, want the stages once", r.Rejected)
+	if len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep || !strings.Contains(r.Rejected[0].Reason, "Summarize Data") ||
+		r.Rejected[0].RawDate != "2026-10-22 01:10:00 +0200" {
+		t.Errorf("rejected = %+v, want the stages once, at the first one's end", r.Rejected)
 	}
 	if _, ok := valueOf(t, r, "2026-10-22", metric.Sleep); ok {
 		t.Error("a stage was taken for the night")
 	}
 	if got, ok := valueOf(t, r, "2026-10-22", metric.Steps); !ok || got != 310 {
-		t.Errorf("steps = %v, %v; want 310", got, ok)
+		t.Errorf("steps = %v, %v; want the points added up, 310", got, ok)
+	}
+}
+
+// A metric whose points give no value, or only values out of bounds, is
+// unread; one that gives a value, or that tdeemon skips, is not.
+func TestUnread(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{"data": {"metrics": [
+		{"name": "step_count", "units": "count", "data": [{"date": "2026-10-21 00:00:00 +0200", "Avg": 5}]},
+		{"name": "body_fat_percentage", "units": "%", "data": [{"date": "2026-10-21 07:00:00 +0200", "qty": 0.195}]},
+		{"name": "weight_body_mass", "units": "kg", "data": [
+			{"date": "2026-10-21 07:00:00 +0200", "qty": 0.5}, {"date": "2026-10-21 08:00:00 +0200", "qty": 80}
+		]},
+		{"name": "lean_body_mass", "units": "kg", "data": []},
+		{"name": "heart_rate", "units": "count/min", "data": [{"date": "2026-10-21 00:00:00 +0200", "Avg": 60}]}
+	]}}`)
+	r, err := ParseHAE(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unread(t, body, r); !slices.Equal(got, []string{"step_count", "body_fat_percentage"}) {
+		t.Errorf("unread = %v", got)
 	}
 }
 
@@ -163,10 +239,11 @@ func TestShapeProblems(t *testing.T) {
 
 // TestRealPayloads reads the payloads in the directory
 // TDEEMON_HAE_PAYLOADS names: real ones, kept outside git, such as the
-// archive of an instance (DATA_DIR/ingest/<user>). Each must read as
-// HAE's, with nothing left out for its shape; the test says what it left
-// out and ignored, without the values. It is skipped without the
-// variable.
+// archive of an instance (TDEEMON_DATA_DIR/ingest/<user>). Each must read
+// as HAE's, with nothing left out for its shape and a value from every
+// metric tdeemon reads that it has points of; with -v the test says what
+// each day kept, what it left out and what it ignored, without the
+// values. It is skipped without the variable.
 func TestRealPayloads(t *testing.T) {
 	t.Parallel()
 
@@ -177,10 +254,11 @@ func TestRealPayloads(t *testing.T) {
 	var paths []string
 	//nolint:gosec // G703: the directory is the one the test's runner names
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
 		name := d.Name()
 		switch {
-		case err != nil:
-			return err
 		case d.IsDir():
 			return nil
 		// The simple form, in the archive beside HAE's bodies.
@@ -200,12 +278,23 @@ func TestRealPayloads(t *testing.T) {
 		rel, _ := filepath.Rel(dir, path)
 		t.Run(rel, func(t *testing.T) {
 			t.Parallel()
-			r, err := ParseHAE(readPayload(t, path))
+			body := readPayload(t, path)
+			r, err := ParseHAE(body)
 			if err != nil {
 				t.Fatal(err)
 			}
 			checkShape(t, r)
-			t.Logf("%d days, ignored %v", len(r.Days), r.Ignored)
+			for _, name := range unread(t, body, r) {
+				t.Errorf("%s: no value read; its points have no field tdeemon reads, or every value is out of its bounds", name)
+			}
+			for _, d := range r.Days {
+				kinds := make([]metric.Kind, 0, len(d.Values))
+				for _, v := range d.Values {
+					kinds = append(kinds, v.Kind)
+				}
+				t.Logf("%s: %v", d.Date, kinds)
+			}
+			t.Logf("ignored %v", r.Ignored)
 			// A value out of bounds has its value in the reason, which stays
 			// out of the log.
 			for _, x := range r.Rejected {

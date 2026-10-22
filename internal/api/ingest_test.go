@@ -332,56 +332,90 @@ func haePayload(t *testing.T, name string) string {
 	return string(b)
 }
 
-// A day of syncs as a phone sends them: the morning's, the evening's with
-// the whole day and a second weighing, and the evening's again. The day
-// keeps the morning's weighing, the larger running totals and the latest
-// readings, and the night once.
+// changedOn returns the metrics got changed on date, sorted, and whether
+// got has the day.
+func changedOn(got ingestResponse, date string) ([]string, bool) {
+	for _, d := range got.Days {
+		if d.Date != date {
+			continue
+		}
+		out := []string{}
+		for _, c := range d.Changed {
+			out = append(out, c.Metric)
+		}
+		slices.Sort(out)
+		return out, true
+	}
+	return nil, false
+}
+
+// A day of syncs as a phone sends them, each through the route into the
+// database, checks the merge rules (DESIGN.md §4): a value the user gave
+// stays; the first weighing stays, with its body fat and lean mass, when a
+// later one comes alone; a running total and the night only grow, so the
+// morning's, sent late, changes neither; a reading is the latest to
+// arrive; and a sync sent again changes nothing.
 func TestIngestHAESyncs(t *testing.T) {
 	t.Parallel()
 
 	in := newInstance(t, "http://localhost", "")
+	d := day.Date{Year: 2026, Month: 10, Day: 21}
+	if _, err := in.db.SetMetric(t.Context(), in.user.ID, event.Actor{Kind: event.User, Client: "web"}, d,
+		metric.Value{Kind: metric.HRV, Value: 50, Source: metric.Manual}, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
 	tok := ingestToken(t, in, `"ingest"`)
-	post := func(name string) ingestResponse {
-		t.Helper()
-		rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haePayload(t, name), nil, tok)
+	for i, sync := range []struct {
+		name    string
+		changed map[string][]string // by day
+	}{
+		{"morning-sync.json", map[string][]string{
+			"2026-10-20": {"active_kcal", "steps"},
+			"2026-10-21": {"active_kcal", "basal_kcal", "body_fat", "exercise_min", "lean_mass", "rhr", "sleep_h", "steps", "vo2max", "weight"},
+		}},
+		{"evening-weighing.json", map[string][]string{"2026-10-21": {}}},
+		{"evening-sync.json", map[string][]string{"2026-10-21": {"active_kcal", "basal_kcal", "exercise_min", "rhr", "steps"}}},
+		{"evening-sync.json", map[string][]string{"2026-10-21": {}}},
+		{"morning-sync.json", map[string][]string{"2026-10-20": {}, "2026-10-21": {"rhr"}}},
+	} {
+		rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haePayload(t, sync.name), nil, tok)
 		if rec.Code != http.StatusOK {
-			t.Fatalf("POST %s = %d %s", name, rec.Code, rec.Body.String())
+			t.Fatalf("sync %d, %s = %d %s", i, sync.name, rec.Code, rec.Body.String())
 		}
-		return decodeJSON[ingestResponse](t, rec.Body.Bytes())
-	}
-	post("morning-sync.json")
-	evening := post("evening-sync.json")
-	var changed []string
-	for _, c := range evening.Days[0].Changed {
-		changed = append(changed, c.Metric)
-	}
-	slices.Sort(changed)
-	if want := []string{"active_kcal", "basal_kcal", "exercise_min", "hrv", "rhr", "steps"}; !slices.Equal(changed, want) {
-		t.Errorf("the evening changed %v, want %v", changed, want)
-	}
-	if again := post("evening-sync.json"); len(again.Days[0].Changed) != 0 {
-		t.Errorf("the evening's again changed %+v", again.Days[0].Changed)
+		got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
+		for date, want := range sync.changed {
+			if changed, ok := changedOn(got, date); !ok || !slices.Equal(changed, want) {
+				t.Errorf("sync %d, %s changed %v on %s, want %v", i, sync.name, changed, date, want)
+			}
+		}
 	}
 
-	d := day.Date{Year: 2026, Month: 10, Day: 21}
 	ms, err := in.db.Metrics(t.Context(), in.user.ID, d.AddDays(-1), d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[day.Date]map[metric.Kind]float64{
-		d.AddDays(-1): {metric.Steps: 8650, metric.ActiveKcal: 600},
+	imported := func(k metric.Kind, v float64) metric.Value {
+		return metric.Value{Kind: k, Value: v, Source: metric.Import}
+	}
+	want := map[day.Date][]metric.Value{
+		d.AddDays(-1): {imported(metric.Steps, 8650), imported(metric.ActiveKcal, 600)},
 		d: {
-			metric.Steps: 11380, metric.ActiveKcal: 500, metric.BasalKcal: 1710, metric.ExerciseMin: 38, metric.Sleep: 6.8,
-			metric.Weight: 78.4, metric.BodyFat: 19.5, metric.LeanMass: 63.1, metric.RestingHR: 57, metric.HRV: 47.1, metric.VO2Max: 40.2,
+			imported(metric.Steps, 11380), imported(metric.ActiveKcal, 500), imported(metric.BasalKcal, 1710),
+			imported(metric.ExerciseMin, 38), imported(metric.Sleep, 6.8), imported(metric.Weight, 78.4),
+			imported(metric.BodyFat, 19.5), imported(metric.LeanMass, 63.1), imported(metric.RestingHR, 59),
+			{Kind: metric.HRV, Value: 50, Source: metric.Manual},
+			imported(metric.VO2Max, 40.2),
 		},
 	}
-	for dd, kinds := range want {
-		if len(ms[dd]) != len(kinds) {
-			t.Errorf("%s = %+v, want %v", dd, ms[dd], kinds)
+	for dd, values := range want {
+		if len(ms[dd]) != len(values) {
+			t.Errorf("%s = %+v, want %+v", dd, ms[dd], values)
 		}
-		for _, v := range ms[dd] {
-			if w, ok := kinds[v.Kind]; !ok || math.Abs(v.Value-w) > 1e-9 || v.Source != metric.Import {
-				t.Errorf("%s %s = %v (%s), want %v (import)", dd, v.Kind, v.Value, v.Source, w)
+		for _, w := range values {
+			if !slices.ContainsFunc(ms[dd], func(v metric.Value) bool {
+				return v.Kind == w.Kind && v.Source == w.Source && math.Abs(v.Value-w.Value) < 1e-9
+			}) {
+				t.Errorf("%s: want %+v in %+v", dd, w, ms[dd])
 			}
 		}
 	}
@@ -397,7 +431,10 @@ func TestIngestHAEUnsummarizedSleep(t *testing.T) {
 	rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haePayload(t, "unsummarized-sleep.json"), nil, tok)
 	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
 	if rec.Code != http.StatusOK || len(got.Rejected) != 1 || !strings.Contains(got.Rejected[0].Reason, "Summarize Data") ||
-		got.Rejected[0].RawDate == "" || len(got.Days) != 1 || len(got.Days[0].Changed) != 1 || got.Days[0].Changed[0].Metric != "steps" {
+		got.Rejected[0].RawDate != "2026-10-22 01:10:00 +0200" {
 		t.Errorf("POST = %d %s", rec.Code, rec.Body.String())
+	}
+	if changed, ok := changedOn(got, "2026-10-22"); !ok || !slices.Equal(changed, []string{"steps"}) || got.Days[0].Changed[0].Value != 310 {
+		t.Errorf("the day = %+v, want the steps added up", got.Days)
 	}
 }

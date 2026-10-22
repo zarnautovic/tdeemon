@@ -5,16 +5,18 @@
         "name": "sleep_analysis",
         "units": "hr",
         "data": [
-          { "startDate": "2026-10-21 23:30:00 +0200", "endDate": "2026-10-22 01:10:00 +0200", "date": "2026-10-22 01:10:00 +0200", "qty": 1.67, "value": "Core", "source": "Apple Watch" },
-          { "startDate": "2026-10-22 01:10:00 +0200", "endDate": "2026-10-22 01:55:00 +0200", "date": "2026-10-22 01:55:00 +0200", "qty": 0.75, "value": "Deep", "source": "Apple Watch" },
-          { "startDate": "2026-10-22 01:55:00 +0200", "endDate": "2026-10-22 04:40:00 +0200", "date": "2026-10-22 04:40:00 +0200", "qty": 2.75, "value": "In Bed", "source": "iPhone" }
+          { "startDate": "2026-10-21 23:30:00 +0200", "endDate": "2026-10-22 01:10:00 +0200", "qty": 1.67, "value": "Core", "source": "Apple Watch" },
+          { "startDate": "2026-10-22 01:10:00 +0200", "endDate": "2026-10-22 01:55:00 +0200", "qty": 0.75, "value": "Deep", "source": "Apple Watch" },
+          { "startDate": "2026-10-22 01:55:00 +0200", "endDate": "2026-10-22 04:40:00 +0200", "qty": 2.75, "value": "In Bed", "source": "iPhone" }
         ]
       },
       {
         "name": "step_count",
         "units": "count",
         "data": [
-          { "date": "2026-10-22 00:00:00 +0200", "qty": 310, "source": "iPhone" }
+          { "date": "2026-10-22 06:00:00 +0200", "qty": 120, "source": "iPhone" },
+          { "date": "2026-10-22 06:00:00 +0200", "qty": 45, "source": "Apple Watch" },
+          { "date": "2026-10-22 07:00:00 +0200", "qty": 145, "source": "iPhone" }
         ]
       }
     ],
