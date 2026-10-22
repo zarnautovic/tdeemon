@@ -207,11 +207,16 @@ A change is done when:
   - the release is a `vX.Y.Z` tag and a GitHub Release whose notes list
     the commits by type, with a link to each, and for a breaking change
     a BREAKING mark and its footer (`.github/release-notes.tera`);
+  - and the image `ghcr.io/zarnautovic/tdeemon`, for linux/amd64 and
+    linux/arm64, tagged `X.Y.Z`, `X.Y` and `sha-<commit>`
+    (`scripts/image-tags.sh`), with its SBOM and provenance; it builds
+    without a cache, in a job of the same workflow, as a release the
+    workflow's token makes starts no other;
   - other types (docs, chore, ci, refactor…) make no release;
   - a commit that is already in a release makes no other, so re-running
     the workflow is safe.
 - `make next-version` shows the version the next release would get, and
-  `make test-scripts` checks those rules.
+  `make test-scripts` checks those rules and the image's tags.
 - **The changelog is the list of GitHub Releases**, not a `CHANGELOG.md`:
   committing one would mean pushing to `main`, which the ruleset allows
   no one.

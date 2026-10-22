@@ -35,7 +35,7 @@ exist.
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
 | `docs/` | the design, the conventions, and the limits of a plan with their sources (`limits.md`) |
 | `.github/` | the CI workflows, the ruleset for `main`, issue and PR templates |
-| `scripts/` | `next-version.sh` for releases, with its test; `apply-github-settings.sh`, for the maintainer only |
+| `scripts/` | `next-version.sh` for releases and `image-tags.sh` for their image, with their tests; `apply-github-settings.sh`, for the maintainer only |
 
 ## Commands
 
