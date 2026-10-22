@@ -1176,7 +1176,7 @@ export interface components {
             resting_hr_base?: number;
             /**
              * Format: double
-             * @description The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too.
+             * @description The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends.
              */
             sleep_h?: number;
         };
@@ -1258,7 +1258,7 @@ export interface components {
         SummaryBody: {
             /**
              * Format: date
-             * @description Today, the user's day now. The summary is of the days up to yesterday; today is open.
+             * @description Today, the user's day now. The summary is of the days up to yesterday, as today is open; recovery's are up to today, for last night's sleep.
              */
             date: string;
             /** @description Complete days of the weeks whose meals come under half their target: possibly not all logged. The user may log the rest, or exclude the day. */

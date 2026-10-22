@@ -10,6 +10,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
@@ -21,15 +22,17 @@ import (
 type summaryAnswer struct {
 	Date  string `json:"date"`
 	Weeks []struct {
-		From       string   `json:"from"`
-		To         string   `json:"to"`
-		LoggedDays int      `json:"logged_days"`
-		Kcal       *float64 `json:"kcal"`
-		WeighIns   int      `json:"weigh_ins"`
-		WeightKg   *float64 `json:"weight_kg"`
-		TrendKg    *float64 `json:"trend_kg"`
-		Steps      *float64 `json:"steps"`
-		SleepH     *float64 `json:"sleep_h"`
+		From         string   `json:"from"`
+		To           string   `json:"to"`
+		LoggedDays   int      `json:"logged_days"`
+		Kcal         *float64 `json:"kcal"`
+		Protein      *float64 `json:"protein"`
+		TrainingDays int      `json:"training_days"`
+		WeighIns     int      `json:"weigh_ins"`
+		WeightKg     *float64 `json:"weight_kg"`
+		TrendKg      *float64 `json:"trend_kg"`
+		Steps        *float64 `json:"steps"`
+		SleepH       *float64 `json:"sleep_h"`
 	} `json:"weeks"`
 	Trend *struct {
 		Kg   float64 `json:"kg"`
@@ -116,7 +119,21 @@ func summaryOfHistory(t *testing.T) (summaryAnswer, day.Date) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
 		t.Fatal(err)
 	}
-	return b, day.DateOf(in.clock.Now())
+	return b, userToday(t, in)
+}
+
+// is reports whether v is want, nil being none.
+func is(v *float64, want float64) bool { return v != nil && *v == want }
+
+// userToday returns today as in's user's calendar has it, as the handler
+// does.
+func userToday(t *testing.T, in *instance) day.Date {
+	t.Helper()
+	cal, err := day.NewCalendar(in.user.TimeZone, in.user.DayStartHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cal.DayOf(in.clock.Now())
 }
 
 // get_summary gives the weeks up to yesterday.
@@ -129,10 +146,10 @@ func TestGetSummaryWeeks(t *testing.T) {
 	}
 	// The last week: 7 days logged, the day of 500 kcal among them.
 	w := b.Weeks[1]
-	if w.LoggedDays != 7 || w.WeighIns != 7 || w.Kcal == nil || *w.Kcal != math.Round((6*2000+500)/7.0) {
-		t.Errorf("the last week %+v: 7 days, %v kcal", w, math.Round((6*2000+500)/7.0))
+	if w.LoggedDays != 7 || w.WeighIns != 7 || !is(w.Kcal, math.Round((6*2000+500)/7.0)) || !is(w.Protein, 150) {
+		t.Errorf("the last week %+v: 7 days, %v kcal, 150 g of protein", w, math.Round((6*2000+500)/7.0))
 	}
-	if w.Steps == nil || *w.Steps != 7000 || w.SleepH == nil || *w.SleepH != 6 || w.TrendKg == nil {
+	if !is(w.Steps, 7000) || !is(w.SleepH, 6) || w.TrendKg == nil {
 		t.Errorf("the last week %+v: 7000 steps, 6 hours of sleep, a trend", w)
 	}
 }
@@ -227,10 +244,10 @@ func TestGetSummaryRefuses(t *testing.T) {
 	}
 }
 
-// summaryOf returns the summary of in's user, of the query q.
-func summaryOf(t *testing.T, in *instance, q string) summaryAnswer {
+// summaryOf returns the summary of in's user, of the last week.
+func summaryOf(t *testing.T, in *instance) summaryAnswer {
 	t.Helper()
-	rec := in.do(t, http.MethodGet, "/api/v1/summary?"+q, "", []*http.Cookie{sessionOf(t, in)}, nil)
+	rec := in.do(t, http.MethodGet, "/api/v1/summary?weeks=1", "", []*http.Cookie{sessionOf(t, in)}, nil)
 	var b summaryAnswer
 	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil || rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
@@ -246,7 +263,7 @@ func TestGetSummaryReadsTheDays(t *testing.T) {
 	in := newInstance(t, "http://localhost", "")
 	saveSummaryHistory(t, in.db, in.user, in.clock.Now())
 	saveDaysToRead(t, in)
-	b := summaryOf(t, in, "weeks=1")
+	b := summaryOf(t, in)
 	// Six days logged, yesterday with the snack: 2300, 500 and four of
 	// 2000; six weigh-ins; the steps of five days, as the excluded day's
 	// count for nothing; the sleep of six.
@@ -305,7 +322,7 @@ func TestGetSummaryDriftOfAnOldPhase(t *testing.T) {
 	in := newInstance(t, "http://localhost", "")
 	now := in.clock.Now()
 	ctx := t.Context()
-	today := day.DateOf(now)
+	today := userToday(t, in)
 	start := today.AddDays(-250)
 	if err := in.db.SetPhase(ctx, in.user.ID, isolationActor, plan.Phase{Type: plan.Maintain, Start: start}, now); err != nil {
 		t.Fatal(err)
@@ -324,7 +341,7 @@ func TestGetSummaryDriftOfAnOldPhase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	b := summaryOf(t, in, "weeks=1")
+	b := summaryOf(t, in)
 	if !slices.Contains(b.Verdict.Flags, "maintenance_drift") {
 		t.Errorf("flags %v, want maintenance_drift: 83 kg against the 80 the phase started with", b.Verdict.Flags)
 	}
@@ -379,7 +396,157 @@ func TestGetSummaryWindowStartsAtTheFirstMeal(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if b := summaryOf(t, in, "weeks=1"); !slices.Contains(b.TDEE.Doubts, "few_logged_days") {
+	if b := summaryOf(t, in); !slices.Contains(b.TDEE.Doubts, "few_logged_days") {
 		t.Errorf("TDEE %+v, want the doubt few_logged_days: 21 logged days in a window of 42", b.TDEE)
+	}
+}
+
+// get_summary reads each day's type, for the week's training days and
+// the target a day is incomplete against: a training weekday, a rest day
+// toggled to training, and one with a workout.
+func TestGetSummaryDayTypes(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	ctx := t.Context()
+	saveSummaryHistory(t, in.db, in.user, now)
+	today := userToday(t, in)
+	// Monday, Wednesday and Friday; a training day's target so high that
+	// 2000 kcal is under half of it, a rest day's not.
+	if err := in.db.SetTrainingWeekdays(ctx, in.user.ID, isolationActor, plan.Weekdays(0b0101010), now); err != nil {
+		t.Fatal(err)
+	}
+	training, rest := plan.DayTarget{Kcal: 4100, Protein: 160, Fat: 70}, plan.DayTarget{Kcal: 2200, Protein: 160, Fat: 70}
+	if err := in.db.SetTarget(ctx, in.user.ID, isolationActor, plan.Target{EffectiveFrom: today.AddDays(-20), Training: training, Rest: rest}, now); err != nil {
+		t.Fatal(err)
+	}
+	var restDays []day.Date
+	for i := 1; i <= 7; i++ {
+		if d := today.AddDays(-i); !slices.Contains([]time.Weekday{time.Monday, time.Wednesday, time.Friday}, d.Weekday()) {
+			restDays = append(restDays, d)
+		}
+	}
+	if err := in.db.SetTrainingDay(ctx, in.user.ID, isolationActor, restDays[0], new(true), now); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := in.db.SetWorkoutDays(ctx, in.user.ID, isolationActor, store.Strong, []day.Date{restDays[1]}, now); err != nil {
+		t.Fatal(err)
+	}
+	b := summaryOf(t, in)
+	if w := b.Weeks[0]; w.TrainingDays != 5 {
+		t.Errorf("the week %+v: 5 training days, the 3 weekdays, the toggled day and the workout's", w)
+	}
+	// The training days of 2000 kcal, and the day of 500.
+	var want []string
+	for i := 7; i >= 1; i-- {
+		d := today.AddDays(-i)
+		isTraining := slices.Contains([]time.Weekday{time.Monday, time.Wednesday, time.Friday}, d.Weekday()) || d == restDays[0] || d == restDays[1]
+		if isTraining || i == 3 {
+			want = append(want, d.String())
+		}
+	}
+	if !slices.Equal(b.IncompleteDays, want) {
+		t.Errorf("incomplete days %v, want %v", b.IncompleteDays, want)
+	}
+	// The weekly average of 3 training days and 4 rest days.
+	if v := b.Verdict; !is(v.TargetKcal, math.Round((3*4100+4*2200)/7.0)) {
+		t.Errorf("verdict %+v: a target of %v, the weekly average", v, math.Round((3*4100+4*2200)/7.0))
+	}
+}
+
+// get_summary holds a trusted estimate to the user's limits of data,
+// which they may have tightened: five logged days a week are enough for
+// the defaults, too few for six.
+func TestGetSummaryTakesTheUsersLimits(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	ctx := t.Context()
+	saveSummaryHistory(t, in.db, in.user, now)
+	today := userToday(t, in)
+	for i := 1; i <= 56; i++ {
+		if d := today.AddDays(-i); i%7 == 2 || i%7 == 5 {
+			if err := in.db.ExcludeDay(ctx, in.user.ID, isolationActor, d, day.Exclusion{Reason: "away"}, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if b := summaryOf(t, in); slices.Contains(b.TDEE.Doubts, "few_logged_days") {
+		t.Errorf("TDEE %+v with the default limits: five logged days a week are enough", b.TDEE)
+	}
+	l := limits.UserDefaults()
+	l.LoggedDays = 6
+	if err := in.db.SetUserLimits(ctx, in.user.ID, isolationActor, l, limits.Instance(), now); err != nil {
+		t.Fatal(err)
+	}
+	if b := summaryOf(t, in); !slices.Contains(b.TDEE.Doubts, "few_logged_days") || b.TDEE.Trusted {
+		t.Errorf("TDEE %+v with 6 logged days a week: want few_logged_days", b.TDEE)
+	}
+}
+
+// get_summary's recovery reads today too: last night's sleep is dated by
+// the morning it ends.
+func TestGetSummaryRecoveryReadsLastNight(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	saveSummaryHistory(t, in.db, in.user, now)
+	if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, userToday(t, in), []metric.Value{{Kind: metric.Sleep, Value: 13, Source: metric.Import}}, now); err != nil {
+		t.Fatal(err)
+	}
+	// Six nights of 6 hours and last night of 13: 7 on average.
+	if b := summaryOf(t, in); b.Recovery.SleepH == nil || *b.Recovery.SleepH != 7 || slices.Contains(b.Recovery.Flags, "short_sleep") {
+		t.Errorf("recovery %+v: 7 hours of sleep with last night's, not short", b.Recovery)
+	}
+}
+
+// saveDayLongAgo gives in's user a weigh-in and a meal ago days before
+// today.
+func saveDayLongAgo(t *testing.T, in *instance, ago int) {
+	t.Helper()
+	now := in.clock.Now()
+	on := userToday(t, in).AddDays(-ago)
+	if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, on, []metric.Value{{Kind: metric.Weight, Value: 82, Source: metric.Import}}, now); err != nil {
+		t.Fatal(err)
+	}
+	item, err := meal.Estimate("a day's food", food.Nutrients{Kcal: 2000, Protein: 150, Carbs: 250, Fat: 50}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cal, err := day.NewCalendar(in.user.TimeZone, in.user.DayStartHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := cal.Start(on).Add(8 * time.Hour)
+	m := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: on, Description: "the day's food", Client: meal.ClientMCP, Items: []meal.Item{item}}
+	if _, _, err := in.db.CreateMeal(t.Context(), in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// get_summary reads a day's body as calibration does: with the lean mass,
+// the body fat and the active energy of each day, the guards of a cut
+// have their data, and no flag says they lack it.
+func TestGetSummaryReadsTheBody(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	saveSummaryHistory(t, in.db, in.user, now)
+	today := userToday(t, in)
+	for i := 1; i <= 60; i++ {
+		if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, today.AddDays(-i), []metric.Value{
+			{Kind: metric.BodyFat, Value: 22, Source: metric.Import},
+			{Kind: metric.LeanMass, Value: 62 + 0.01*float64(i), Source: metric.Import},
+			{Kind: metric.ActiveKcal, Value: 500, Source: metric.Import},
+		}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if v := summaryOf(t, in).Verdict; !slices.Equal(v.Flags, []string{"no_height"}) {
+		t.Errorf("flags %v, want only no_height: the lean mass and body fat are there", v.Flags)
 	}
 }

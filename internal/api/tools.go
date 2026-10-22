@@ -391,6 +391,15 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 // weekdays and the check-in's toggle of the day's type, if there is one.
 // A workout a source recorded on d (Strong's export) makes it a training
 // day unless the toggle says otherwise.
+// toggleOn returns the check-in's toggle of day d's type, of toggles,
+// nil for none.
+func toggleOn(toggles map[day.Date]bool, d day.Date) *bool {
+	if v, ok := toggles[d]; ok {
+		return &v
+	}
+	return nil
+}
+
 func (s *sessions) dayType(ctx context.Context, userID uuid.UUID, d day.Date) (plan.DayType, plan.Weekdays, *bool, error) {
 	weekdays, err := s.db.TrainingWeekdays(ctx, userID)
 	if err != nil {
@@ -400,10 +409,7 @@ func (s *sessions) dayType(ctx context.Context, userID uuid.UUID, d day.Date) (p
 	if err != nil {
 		return "", 0, nil, err
 	}
-	var toggle *bool
-	if v, ok := toggles[d]; ok {
-		toggle = &v
-	}
+	toggle := toggleOn(toggles, d)
 	workouts, err := s.db.WorkoutDays(ctx, userID, d, d)
 	if err != nil {
 		return "", 0, nil, err

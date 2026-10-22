@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"maps"
 	"math"
 	"time"
 	"uuid"
@@ -16,12 +15,11 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
-// summaryHistory is how many days up to yesterday the summary reads in
-// full: calibration's window and its look-back before a phase lie well
-// within it. Of the days before, it reads what calibration reads of the
-// whole history: the weigh-ins, for the trend weight, and the day of the
-// first meal, where the window may start.
-const summaryHistory = 180
+// summaryWeeks is the most weeks the summary gives, the input's maximum.
+// It reads in full the days of those weeks or the ones calibration reads
+// in full (calibration.FullDays), whichever are more, and of the days
+// before them what calibration reads of the whole history.
+const summaryWeeks = 12
 
 // incompleteShare is the share of its target under which a complete day
 // with meals is possibly incomplete (DESIGN.md §4).
@@ -39,7 +37,7 @@ type summaryOutput struct {
 // summaryBody is calibration's summary (DESIGN.md §5 and §7): what the
 // server computes, for a model to explain, not to compute again.
 type summaryBody struct {
-	Date           string       `json:"date" format:"date" doc:"Today, the user's day now. The summary is of the days up to yesterday; today is open."`
+	Date           string       `json:"date" format:"date" doc:"Today, the user's day now. The summary is of the days up to yesterday, as today is open; recovery's are up to today, for last night's sleep."`
 	Weeks          []weekBody   `json:"weeks" nullable:"false" doc:"The last weeks up to yesterday, each of 7 days, the latest last."`
 	Trend          *trendBody   `json:"trend,omitempty" doc:"The trend weight; absent before the first weigh-in."`
 	TDEE           tdeeBody     `json:"tdee"`
@@ -97,7 +95,7 @@ type verdictBody struct {
 }
 
 type recoveryBody struct {
-	SleepH        *float64 `json:"sleep_h,omitempty" doc:"The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too."`
+	SleepH        *float64 `json:"sleep_h,omitempty" doc:"The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends."`
 	RestingHR     *float64 `json:"resting_hr,omitempty" doc:"The last 7 days' average resting heart rate, of 4 days or more."`
 	RestingHRBase *float64 `json:"resting_hr_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
 	HRV           *float64 `json:"hrv,omitempty" doc:"The last 7 days' average HRV, of 4 days or more."`
@@ -114,12 +112,12 @@ type summaryDay struct {
 }
 
 // summaryData is what the summary reads of the user: the days and their
-// measurements, what calibration reads of the days before them, and the
-// plan.
+// measurements, today's too; the days as calibration reads them, with
+// what it reads of those before; and the plan.
 type summaryData struct {
 	days     map[day.Date]summaryDay
 	values   map[day.Date][]metric.Value
-	before   map[day.Date]calibration.Day
+	calDays  map[day.Date]calibration.Day
 	phases   []plan.Phase
 	targets  []plan.Target
 	training plan.Weekdays
@@ -146,8 +144,7 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	if err != nil {
 		return nil, internalError("reading the summary failed", err)
 	}
-	days := data.calibrationDays()
-	e := calibration.Calibrate(days, data.phases, last, data.params)
+	e := calibration.Calibrate(data.calDays, data.phases, last, data.params)
 	var ph *plan.Phase
 	if got, ok := plan.PhaseOn(data.phases, today); ok {
 		ph = &got
@@ -159,12 +156,12 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	v := calibration.Judge(e, ph, t, data.training, pr, data.lim, data.params)
 	b := summaryBody{
 		Date: today.String(), Weeks: []weekBody{}, TDEE: newTDEEBody(e), Verdict: newVerdictBody(v),
-		Recovery: newRecoveryBody(recovery.Of(data.values, last)),
+		Recovery: newRecoveryBody(recovery.Of(data.values, today)),
 	}
 	if e.TrendKg > 0 {
 		b.Trend = &trendBody{Kg: round2(e.TrendKg), Date: e.TrendDate.String()}
 	}
-	trend := calibration.Trend(days, data.params.TrendAlpha)
+	trend := calibration.Trend(data.calDays, data.params.TrendAlpha)
 	for w := in.Weeks - 1; w >= 0; w-- {
 		to := last.AddDays(-7 * w)
 		b.Weeks = append(b.Weeks, data.week(to.AddDays(-6), to, trend))
@@ -173,25 +170,35 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	return &summaryOutput{CacheControl: "no-store", Body: b}, nil
 }
 
-// readSummary reads the user's plan, their summaryHistory days up to
-// yesterday, as the calendar cal splits them at now, and what
-// calibration reads of the days before them.
+// readSummary reads the user's plan and limits, their days up to
+// yesterday, as the calendar cal splits them at now, and what calibration
+// reads of the days before them.
 func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Calendar, today day.Date, now time.Time) (summaryData, error) {
 	var data summaryData
-	var err error
+	user, err := s.db.UserLimits(ctx, userID)
+	if err != nil {
+		return data, err
+	}
+	// The data an estimate needs to be trusted are the autopilot's
+	// limits, which the user may have tightened.
+	data.lim = limits.Effective(user, s.instance)
+	data.params = calibration.DefaultParams()
+	data.params.LoggedDays, data.params.WeighIns = data.lim.LoggedDays, data.lim.WeighIns
 	if data.phases, err = s.db.Phases(ctx, userID); err != nil {
 		return data, err
 	}
 	to := today.AddDays(-1)
-	from := to.AddDays(1 - summaryHistory)
-	if data.before, err = s.daysBefore(ctx, userID, cal, from, now); err != nil {
+	from := to.AddDays(1 - max(calibration.FullDays(data.params), 7*summaryWeeks))
+	if data.calDays, err = s.daysBefore(ctx, userID, cal, from, now); err != nil {
 		return data, err
 	}
 	intake, err := s.db.IntakeOfDays(ctx, userID, from, to)
 	if err != nil {
 		return data, err
 	}
-	if data.values, err = s.db.Metrics(ctx, userID, from, to); err != nil {
+	// Today's too, for recovery: a night's sleep is dated by the morning
+	// it ends.
+	if data.values, err = s.db.Metrics(ctx, userID, from, today); err != nil {
 		return data, err
 	}
 	exclusions, err := s.db.Exclusions(ctx, userID, from, to)
@@ -212,27 +219,13 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 	if err != nil {
 		return data, err
 	}
-	user, err := s.db.UserLimits(ctx, userID)
-	if err != nil {
-		return data, err
-	}
-	// The data an estimate needs to be trusted are the autopilot's
-	// limits, which the user may have tightened.
-	data.lim = limits.Effective(user, s.instance)
-	data.params = calibration.DefaultParams()
-	data.params.LoggedDays, data.params.WeighIns = data.lim.LoggedDays, data.lim.WeighIns
 	data.days = map[day.Date]summaryDay{}
 	for d := from; !to.Before(d); d = d.AddDays(1) {
 		_, excluded := exclusions[d]
-		var toggle *bool
-		if v, ok := toggles[d]; ok {
-			toggle = &v
-		}
 		in := intake[d]
-		data.days[d] = summaryDay{
-			Day: calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d]), protein: in.Protein,
-			dayType: plan.TypeOf(d, data.training, workouts[d], toggle),
-		}
+		c := calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d])
+		data.calDays[d] = c
+		data.days[d] = summaryDay{Day: c, protein: in.Protein, dayType: plan.TypeOf(d, data.training, workouts[d], toggleOn(toggles, d))}
 	}
 	return data, nil
 }
@@ -285,19 +278,6 @@ func (s *sessions) daysBefore(ctx context.Context, userID uuid.UUID, cal day.Cal
 		out[first] = c
 	}
 	return out, nil
-}
-
-// calibrationDays returns the days as calibration reads them, the
-// weigh-ins before them too.
-func (data summaryData) calibrationDays() map[day.Date]calibration.Day {
-	out := maps.Clone(data.before)
-	if out == nil {
-		out = map[day.Date]calibration.Day{}
-	}
-	for d, sd := range data.days {
-		out[d] = sd.Day
-	}
-	return out
 }
 
 // calibrationDay is a day as calibration reads it.

@@ -3,6 +3,7 @@ package calibration
 import (
 	"math"
 	"math/rand/v2"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -785,5 +786,57 @@ func TestDefaultParamsTakeTheAutopilotsData(t *testing.T) {
 	p, l := DefaultParams(), limits.UserDefaults()
 	if p.LoggedDays != l.LoggedDays || p.WeighIns != l.WeighIns {
 		t.Errorf("%v logged days and %v weigh-ins a week, want the autopilot's %v and %v", p.LoggedDays, p.WeighIns, l.LoggedDays, l.WeighIns)
+	}
+}
+
+// Calibrate reads the FullDays days up to last in full, and of the days
+// before them only the weigh-ins and the first day with a meal: a history
+// cut so gives the same estimate as the whole one.
+func TestCalibrateReadsTheFullDaysAndTheWeighInsBefore(t *testing.T) {
+	t.Parallel()
+
+	p := DefaultParams()
+	start := day.Date{Year: 2025, Month: time.January, Day: 1}
+	r := rand.New(rand.NewPCG(7, 8)) //nolint:gosec // G404: noise for a test, no secret
+	days := map[day.Date]Day{}
+	for i := range 400 {
+		d := Day{Status: day.Complete}
+		if r.Float64() < 0.85 {
+			d.WeightKg = 90 - 0.02*float64(i) + 0.4*r.NormFloat64()
+			d.BodyFatPct = 25 - 0.005*float64(i) + 0.3*r.NormFloat64()
+		}
+		// A gap in the meals from day 100 to 180.
+		if i < 100 || i > 180 {
+			d.Meals, d.Kcal = 3, 2300+200*r.NormFloat64()
+		}
+		d.Steps = 8000 + 1500*r.NormFloat64()
+		if r.Float64() < 0.03 {
+			d.Status = day.Excluded
+		}
+		days[start.AddDays(i)] = d
+	}
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: start, RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: start.AddDays(200), End: start.AddDays(260)},
+		{Type: plan.Cut, Start: start.AddDays(300), RatePctWeek: -0.5},
+	}
+	for _, n := range []int{399, 330, 305, 301, 270, 262, 230, 190} {
+		last := start.AddDays(n)
+		cut := map[day.Date]Day{}
+		first := firstData(days)
+		for d, v := range days {
+			switch {
+			case last.Before(d):
+			case last.DaysSince(d) < FullDays(p):
+				cut[d] = v
+			case d == first:
+				cut[d] = Day{Status: v.Status, Meals: v.Meals, WeightKg: v.WeightKg}
+			case v.WeightKg > 0:
+				cut[d] = Day{Status: v.Status, WeightKg: v.WeightKg}
+			}
+		}
+		if got, want := Calibrate(cut, phases, last, p), Calibrate(days, phases, last, p); !reflect.DeepEqual(got, want) {
+			t.Errorf("day %d: the cut history gives %+v, the whole one %+v", n, got, want)
+		}
 	}
 }

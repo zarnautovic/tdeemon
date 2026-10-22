@@ -1593,7 +1593,7 @@
             "type": "number"
           },
           "sleep_h": {
-            "description": "The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too.",
+            "description": "The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends.",
             "format": "double",
             "type": "number"
           }
@@ -1763,7 +1763,7 @@
         "additionalProperties": false,
         "properties": {
           "date": {
-            "description": "Today, the user's day now. The summary is of the days up to yesterday; today is open.",
+            "description": "Today, the user's day now. The summary is of the days up to yesterday, as today is open; recovery's are up to today, for last night's sleep.",
             "format": "date",
             "type": "string"
           },

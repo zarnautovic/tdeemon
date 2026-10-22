@@ -165,6 +165,7 @@ func toolFailCases() []failCase {
 		{"get-summary", "/api/v1/summary", "ALTER TABLE meals RENAME TO gone", "no such table: meals"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE meal_items RENAME TO gone", "meal_items"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE metrics RENAME COLUMN source TO gone", "source"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE targets RENAME TO gone", "targets"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
@@ -178,6 +179,22 @@ func toolFailCases() []failCase {
 			name: b.op + ", " + b.secret, op: b.op, method: http.MethodGet, path: b.path, signedIn: true,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
 				t.Helper()
+				in.exec(t, b.stmt)
+				return ""
+			}, inside: b.secret,
+		})
+	}
+	// What the summary reads of the days before its full ones, read for
+	// a user with a weigh-in and a meal of 200 days ago.
+	for _, b := range []struct{ stmt, secret string }{
+		{"ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
+		{"ALTER TABLE meal_items RENAME TO gone", "meal_items"},
+	} {
+		cases = append(cases, failCase{
+			name: "get-summary of a day long ago, " + b.secret, op: "get-summary", method: http.MethodGet, path: "/api/v1/summary", signedIn: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				saveDayLongAgo(t, in, 200)
 				in.exec(t, b.stmt)
 				return ""
 			}, inside: b.secret,

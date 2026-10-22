@@ -213,10 +213,11 @@ type Estimate struct {
 // days holds the days by date; a date it lacks is a day with nothing
 // logged, though no window starts before the first day with a meal: the
 // intake before it is unknown, as the user had not begun to log, even
-// with weigh-ins imported from before. It should
-// hold the user's history up to last: the trend weight starts at the
-// first weigh-in it has, and an estimate from before a phase reads the
-// Params.WindowDays before the phase started.
+// with weigh-ins imported from before. Of the user's history up to last,
+// Calibrate reads the FullDays days up to last in full, and of the days
+// before them only the weigh-ins (whether the day is excluded included),
+// for the trend weight, which starts at the first weigh-in, and the
+// first day with a meal: a caller may load just those.
 //
 // phases is the user's timeline, in the order they start
 // (plan.ValidateTimeline). The intake changes when a phase starts, and on
@@ -261,6 +262,11 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	e.Now = nowOf(days, last)
 	return e
 }
+
+// FullDays returns how many days up to last Calibrate reads in full with
+// p: its window, and the one before a phase it may fall back to, which
+// ends less than Params.WindowDays before last.
+func FullDays(p Params) int { return 2 * p.WindowDays }
 
 // firstData returns the first day of days with a meal, the zero Date for
 // none.
