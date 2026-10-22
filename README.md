@@ -93,6 +93,7 @@ All settings come from environment variables:
 | `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; seals the single sign-on state, and will encrypt stored secrets (sessions do not depend on it) |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
 | `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |
+| `TDEEMON_BACKUP_KEEP` | `7` | how many daily snapshots of the database to keep in `TDEEMON_DATA_DIR/backups`, up to 366; `0` takes none ([Data](#data)) |
 | `TDEEMON_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `TDEEMON_LOG_FORMAT` | `json` | `json` or `text` |
 | `TDEEMON_OIDC_ISSUER` | — | issuer URL of an OpenID Connect provider for single sign-on (https; http only for localhost) |
@@ -455,6 +456,20 @@ days, in `TDEEMON_DATA_DIR/ingest/` (see
 migrates a database that already has data, it saves a snapshot to
 `TDEEMON_DATA_DIR/backups/pre-migrate-<version>-<time>.db`. It keeps the
 newest snapshot of each schema version, for the three newest versions.
+
+Once a day it saves a snapshot to
+`TDEEMON_DATA_DIR/backups/daily-<time>.db` (the time in UTC): at startup
+when there is none of the last 23½ hours, and then at a check every hour,
+so at the same hour each day. It keeps the newest `TDEEMON_BACKUP_KEEP`
+of them, 7 unless set, and removes the older ones after each snapshot: a
+lower number takes effect with the next one, and `0` takes no more but
+leaves the ones there. A snapshot is a whole copy of the database,
+written with `VACUUM INTO` while tdeemon runs; writes wait for it. Leave
+room on the volume for one copy more than it keeps, as the oldest goes
+only once the new one is written, besides the three snapshots before a
+migration: with the default, 11 copies of the database. The snapshots
+sit on the same disk as the database: copy the backups directory off
+it, for example with a volume snapshot or a job of your backup tool.
 
 To restore a snapshot:
 

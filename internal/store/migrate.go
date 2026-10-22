@@ -507,18 +507,38 @@ func readView(ctx context.Context, tx *sql.Tx, name string) (err error) {
 
 // backup writes a consistent snapshot of the database at schema version
 // to the backups directory next to the database file and returns its
-// path. The snapshot is written under a temporary name and renamed when
-// complete, so an interrupted backup never looks like a finished one.
-// Only the newest keepPreMigrateBackups snapshots are kept.
+// path. Only the newest keepPreMigrateBackups snapshots are kept.
 func (db *DB) backup(ctx context.Context, conn *sql.Conn, version int, logger *slog.Logger) (string, error) {
-	dir := filepath.Join(filepath.Dir(db.path), "backups")
+	dir := db.backupsDir()
+	dst, err := snapshot(ctx, conn, dir, preMigratePrefix, fmt.Sprintf("%s%04d-%s.db", preMigratePrefix, version,
+		time.Now().UTC().Format(backupTimeFormat)))
+	if err != nil {
+		return "", err
+	}
+	if err := pruneBackups(dir, dst); err != nil {
+		logger.Warn("removing old pre-migration snapshots failed", "error", err)
+	}
+	return dst, nil
+}
+
+// backupsDir is the directory of the snapshots, next to the database file.
+func (db *DB) backupsDir() string { return filepath.Join(filepath.Dir(db.path), "backups") }
+
+// snapshot writes a consistent copy of the database through conn to dir,
+// as name, and returns its path. The copy is written under a temporary
+// name that starts with prefix and renamed when complete, so an
+// interrupted snapshot never looks like a finished one.
+func snapshot(ctx context.Context, conn interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}, dir, prefix, name string,
+) (string, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", err
 	}
 
 	// VACUUM INTO accepts an existing file only if it is empty, which is
 	// what CreateTemp leaves; its random name never collides.
-	tmp, err := os.CreateTemp(dir, preMigratePrefix+"*.tmp")
+	tmp, err := os.CreateTemp(dir, prefix+"*.tmp")
 	if err != nil {
 		return "", err
 	}
@@ -539,20 +559,12 @@ func (db *DB) backup(ctx context.Context, conn *sql.Conn, version int, logger *s
 	if err := syncPath(tmpPath); err != nil {
 		return "", err
 	}
-	dst := filepath.Join(dir, fmt.Sprintf("%s%04d-%s.db", preMigratePrefix, version,
-		time.Now().UTC().Format(backupTimeFormat)))
+	dst := filepath.Join(dir, name)
 	if err := os.Rename(tmpPath, dst); err != nil {
 		return "", err
 	}
 	done = true
-	if err := syncPath(dir); err != nil {
-		return "", err
-	}
-
-	if err := pruneBackups(dir, dst); err != nil {
-		logger.Warn("removing old pre-migration snapshots failed", "error", err)
-	}
-	return dst, nil
+	return dst, syncPath(dir)
 }
 
 // pruneBackups keeps the snapshot just written (current) and the newest

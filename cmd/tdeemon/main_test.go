@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -39,21 +40,22 @@ func TestRunRejectsInvalidConfig(t *testing.T) {
 	}
 }
 
-func TestRunStartsAndStops(t *testing.T) {
-	t.Parallel()
-
-	dataDir := filepath.Join(t.TempDir(), "data")
-	env := lookup(map[string]string{
+// startAndStop runs the server with env and the data directory dataDir
+// until it serves, stops it, and returns its logs.
+func startAndStop(t *testing.T, dataDir string, env map[string]string) string {
+	t.Helper()
+	vars := map[string]string{
 		"TDEEMON_LISTEN":     "127.0.0.1:0",
 		"TDEEMON_BASE_URL":   "http://localhost",
 		"TDEEMON_SECRET_KEY": strings.Repeat("s", 32),
 		"TDEEMON_DATA_DIR":   dataDir,
-	})
+	}
+	maps.Copy(vars, env)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	var logs syncBuffer
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, nil, env, noInput(), io.Discard, &logs) }()
+	go func() { done <- run(ctx, nil, lookup(vars), noInput(), io.Discard, &logs) }()
 
 	// Stop only once run has opened the database and is serving.
 	waitFor(t, &logs, `"msg":"listening"`)
@@ -67,6 +69,14 @@ func TestRunStartsAndStops(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("run did not return after cancel")
 	}
+	return logs.String()
+}
+
+func TestRunStartsAndStops(t *testing.T) {
+	t.Parallel()
+
+	dataDir := filepath.Join(t.TempDir(), "data")
+	startAndStop(t, dataDir, nil)
 
 	if info, err := os.Stat(dataDir); err != nil || !info.IsDir() {
 		t.Errorf("data directory was not created: %v", err)
@@ -81,6 +91,22 @@ func TestRunStartsAndStops(t *testing.T) {
 	var n int
 	if err := db.Read().QueryRowContext(t.Context(), "SELECT count(*) FROM schema_migrations").Scan(&n); err != nil {
 		t.Errorf("schema_migrations is missing, migrations did not run: %v", err)
+	}
+
+	// It took the daily snapshot before it served.
+	if snaps, _ := filepath.Glob(filepath.Join(dataDir, "backups", "daily-*.db")); len(snaps) != 1 {
+		t.Errorf("daily snapshots = %v, want one", snaps)
+	}
+}
+
+// With TDEEMON_BACKUP_KEEP=0 the server takes no daily snapshot.
+func TestRunWithoutDailySnapshots(t *testing.T) {
+	t.Parallel()
+
+	dataDir := filepath.Join(t.TempDir(), "data")
+	logs := startAndStop(t, dataDir, map[string]string{"TDEEMON_BACKUP_KEEP": "0"})
+	if snaps, _ := filepath.Glob(filepath.Join(dataDir, "backups", "daily-*.db")); len(snaps) != 0 || strings.Contains(logs, "daily snapshot") {
+		t.Errorf("daily snapshots = %v, logs:\n%s", snaps, logs)
 	}
 }
 

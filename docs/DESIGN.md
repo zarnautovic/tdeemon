@@ -648,12 +648,12 @@ the first spec.
 - **Deploy:**
   - Docker image with one volume, `/data`.
   - Env, all prefixed `TDEEMON_`: `BASE_URL`, `SECRET_KEY`, `LISTEN`,
-    `DATA_DIR`, `LOG_LEVEL`, `LOG_FORMAT`, the optional `OIDC_*`, later
-    `TELEGRAM_BOT_TOKEN`; plus the standard `TZ`. The README has the
-    current table.
+    `DATA_DIR`, `BACKUP_KEEP`, `LOG_LEVEL`, `LOG_FORMAT`, the optional
+    `OIDC_*`, `LIMIT_*`, later `TELEGRAM_BOT_TOKEN`; plus the standard
+    `TZ`. The README has the current table.
   - Ships a `docker-compose.yml`; the homelab gets its own manifests.
-- **Backup:** a built-in nightly `VACUUM INTO` snapshot with retention
-  (plus one before every migration),
+- **Backup:** a built-in daily `VACUUM INTO` snapshot with retention
+  (`TDEEMON_BACKUP_KEEP`, 7 by default; plus one before every migration),
   and documented Litestream for continuous replication to S3/B2. Never
   put the DB on NFS.
 - **Dev process:**
