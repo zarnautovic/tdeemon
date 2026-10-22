@@ -145,6 +145,9 @@ func TestJudgeWithoutAVerdict(t *testing.T) {
 		{"no estimate", Estimate{}, phase(plan.Cut, -0.5), target, []string{ReasonNoEstimate}},
 		{"an estimate from before the phase", before, phase(plan.Cut, -0.5), target, []string{ReasonBeforePhase}},
 		{"an estimate not trusted", untrusted, phase(plan.Cut, -0.5), target, []string{ReasonNotTrusted}},
+		// An intake logged far under the real one, with a weight that
+		// rises, makes a TDEE no body spends.
+		{"a TDEE of 0 or less", func() Estimate { e := trusted(0.5); e.TDEE = -100; return e }(), phase(plan.Cut, -0.5), target, []string{ReasonNoTDEE}},
 		{"nothing", Estimate{}, nil, nil, []string{ReasonNoPhase, ReasonNoTarget, ReasonNoEstimate}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -191,8 +194,9 @@ func TestJudgeGuards(t *testing.T) {
 		{"a stalled cut below a BMI of 18.5", trustedAt(0.05, 58), phase(plan.Cut, -0.5), person, ActionMaintain, []string{GuardUnderweight}, 0, 0},
 		{"a cut gaining below a BMI of 18.5", trustedAt(0.4, 58), phase(plan.Cut, -0.5), person, ActionMaintain, []string{GuardUnderweight}, 0, 0},
 		// A bulk whose target is under the TDEE loses by the limits'
-		// reading too: maintenance, eating 191 kcal more.
-		{"a bulk losing below a BMI of 18.5", trustedAt(-0.3, 58), phase(plan.Bulk, 0.25), person, ActionMaintain, []string{GuardUnderweight}, 191.4, 0},
+		// reading too: it stays a bulk, and eats what its rate asks, 351
+		// kcal more, past the 191 to the TDEE; no autopilot step.
+		{"a bulk losing below a BMI of 18.5", trustedAt(-0.3, 58), phase(plan.Bulk, 0.25), person, ActionRaiseKcal, []string{GuardUnderweight}, 350.9, 0},
 		{
 			"the underweight guard before the lean mass's", with(trustedAt(-0.5, 58), leanLoss), phase(plan.Cut, -0.5), person,
 			ActionMaintain,
@@ -419,6 +423,25 @@ func TestCalibrateTakesTheLeanMassFromTheBodyFat(t *testing.T) {
 	}
 }
 
+func TestCalibrateKeepsTheLeanMassOfOneKind(t *testing.T) {
+	t.Parallel()
+
+	// 3 weeks of a scale that gives the body fat, 60 kg of lean mass by
+	// it, then 3 of one that gives 56 kg of lean mass: the measured, not
+	// a slope of the switch.
+	days := map[day.Date]Day{}
+	for i := range 42 {
+		d := Day{Status: day.Complete, Meals: 1, Kcal: 2000, WeightKg: 80, BodyFatPct: 25}
+		if i < 21 {
+			d.LeanMassKg = 56
+		}
+		days[last.AddDays(-i)] = d
+	}
+	if b := Calibrate(days, nil, last, DefaultParams()).Body; !b.LeanMeasured || !near(b.LeanKgPerWeek, 0, 1e-9) {
+		t.Errorf("lean %v %v, want the measured, level", b.LeanMeasured, b.LeanKgPerWeek)
+	}
+}
+
 func TestCalibrateKnowsThePhasesStart(t *testing.T) {
 	t.Parallel()
 
@@ -450,18 +473,18 @@ func TestCalibrateKnowsThePhasesStartWithoutAWeighInBefore(t *testing.T) {
 	}{
 		// The first weigh-in is the phase's first day's.
 		{"the first weigh-in in the phase", 0},
-		// Weighed 60 days before at another weight, then not until the
-		// phase: its first weigh-in, not that one.
-		{"a weigh-in long before", 90},
+		// Weighed 16 days before at another weight, then not until the
+		// phase: its first weigh-in, with nothing of that one, which the
+		// trend would still hold a fifth of.
+		{"a weigh-in long before", 84},
 	} {
 		days := map[day.Date]Day{}
 		line(days, last, 31, 80, 0, 2000)
 		if tc.before > 0 {
-			days[start.AddDays(-60)] = Day{Status: day.Complete, WeightKg: tc.before}
+			days[start.AddDays(-16)] = Day{Status: day.Complete, WeightKg: tc.before}
 		}
-		// After 60 days, the trend takes nearly all of the next weigh-in.
-		if e := Calibrate(days, phases, last, DefaultParams()); !near(e.PhaseStartTrendKg, 80, 0.05) {
-			t.Errorf("%s: the trend at the phase's start %v, want about 80", tc.name, e.PhaseStartTrendKg)
+		if e := Calibrate(days, phases, last, DefaultParams()); e.PhaseStartTrendKg != 80 {
+			t.Errorf("%s: the trend at the phase's start %v, want 80", tc.name, e.PhaseStartTrendKg)
 		}
 	}
 }

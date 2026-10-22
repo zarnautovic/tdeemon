@@ -174,8 +174,8 @@ type Estimate struct {
 	TrendDate day.Date
 	// PhaseStartTrendKg is the trend weight the current phase started
 	// with: on the day before it, from a weigh-in at most 14 days older,
-	// else the first in the phase, up to the last day asked for; 0
-	// without a phase or a weigh-in of either.
+	// else the phase's first weigh-in, up to the last day asked for, as a
+	// trend starts at it; 0 without a phase or a weigh-in of either.
 	PhaseStartTrendKg float64
 	// Body is what the window says of the body besides the weight, for
 	// the verdict's guards, and Now what the 7 days up to the last day
@@ -255,7 +255,7 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	trend := Trend(days, p.TrendAlpha)
 	e.TrendKg, e.TrendDate = trendAt(trend, last)
 	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
-		e.PhaseStartTrendKg = startTrend(trend, ph.Start, last)
+		e.PhaseStartTrendKg = startTrend(days, trend, ph.Start, last)
 	}
 	e.Body = bodyOf(days, e.From, e.To)
 	e.Now = nowOf(days, last)
@@ -279,19 +279,21 @@ func firstData(days map[day.Date]Day) day.Date {
 const startGap = 14
 
 // startTrend returns the trend weight a phase that starts on start
-// started with, of trend, in the order of its dates, up to last: the one
-// on the day before it, when a weigh-in at most startGap days older made
-// it, else the first in the phase; 0 for neither.
-func startTrend(trend []Point, start, last day.Date) float64 {
+// started with, of the trend of days, in the order of its dates, up to
+// last: the one on the day before it, when a weigh-in at most startGap
+// days older made it, else the phase's first weigh-in, as a trend started
+// there, without what an older weigh-in leaves in the trend; 0 for
+// neither.
+func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) float64 {
 	// The phase on today starts on today at the latest, so the day before
 	// it is last at the latest.
 	before := start.AddDays(-1)
 	if kg, on := trendAt(trend, before); kg > 0 && before.DaysSince(on) <= startGap {
 		return kg
 	}
-	for _, pt := range trend {
-		if !pt.Date.Before(start) && !last.Before(pt.Date) {
-			return pt.Kg
+	for d := start; !last.Before(d); d = d.AddDays(1) {
+		if v := days[d]; weighed(v) {
+			return v.WeightKg
 		}
 	}
 	return 0

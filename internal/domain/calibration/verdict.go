@@ -85,6 +85,9 @@ const (
 	ReasonNoEstimate  = "no_estimate"
 	ReasonBeforePhase = "before_phase"
 	ReasonNotTrusted  = "not_trusted"
+	// ReasonNoTDEE: the trusted estimate's TDEE is no energy a body
+	// spends, 0 or less, as an intake logged far under the real one gives.
+	ReasonNoTDEE = "no_tdee"
 )
 
 // leanFlatKgWeek is the most the lean mass may rise, in kg a week, and be
@@ -190,6 +193,8 @@ func reasons(e Estimate, ph *plan.Phase, t *plan.Target) []string {
 		out = append(out, ReasonBeforePhase)
 	case !e.Trusted:
 		out = append(out, ReasonNotTrusted)
+	case e.TDEE <= 0:
+		out = append(out, ReasonNoTDEE)
 	}
 	return out
 }
@@ -220,15 +225,21 @@ func (v *Verdict) flagData(ph *plan.Phase, b Body) {
 	if b.StepsBefore == 0 {
 		v.Flags = append(v.Flags, FlagNoSteps)
 	}
+	noLean, noFat := !b.LeanMeasured, !b.BodyFatMeasured
 	switch ph.Type {
-	case plan.Cut, plan.Recomp, plan.Bulk:
-		if !b.LeanMeasured {
-			v.Flags = append(v.Flags, FlagNoLeanMass)
-		}
+	case plan.Cut, plan.Recomp:
+		v.addFlag(noLean, FlagNoLeanMass)
+	case plan.Bulk:
+		v.addFlag(noLean, FlagNoLeanMass)
+		v.addFlag(noFat, FlagNoBodyFat)
 	case plan.Maintain:
 	}
-	if ph.Type == plan.Bulk && !b.BodyFatMeasured {
-		v.Flags = append(v.Flags, FlagNoBodyFat)
+}
+
+// addFlag adds flag when on.
+func (v *Verdict) addFlag(on bool, flag string) {
+	if on {
+		v.Flags = append(v.Flags, flag)
 	}
 }
 
@@ -237,11 +248,27 @@ func (v *Verdict) flagData(ph *plan.Phase, b Body) {
 func (v *Verdict) guard(e Estimate, ph *plan.Phase, underweight bool, avg, step float64, p Params) {
 	b := e.Body
 	switch {
-	case underweight:
+	case underweight && ph.RatePctWeek < 0:
 		// Maintenance: the gap to the TDEE, for a coach to propose, but
 		// never a cut; no step deepens the loss, and none is the
 		// autopilot's to take.
 		v.trip(GuardUnderweight, ActionMaintain, max(e.TDEE-avg, 0), 0)
+	case underweight:
+		// A phase that does not lose, whose target does: at least to the
+		// TDEE, more if the phase's rate asks for it; the limits take no
+		// autopilot step during the loss.
+		v.trip(GuardUnderweight, ActionRaiseKcal, max(v.GapKcal, e.TDEE-avg), 0)
+	case v.guardBody(e, ph, avg, step, p):
+	case b.StepsBefore > 0 && v.activityExplains(b.StepsRecent/b.StepsBefore-1, p):
+		v.trip(GuardActivity, ActionHold, 0, 0)
+	}
+}
+
+// guardBody applies the guard of the body ph has, the lean mass's or the
+// fat's, when it trips, and reports whether it did.
+func (v *Verdict) guardBody(e Estimate, ph *plan.Phase, avg, step float64, p Params) bool {
+	b := e.Body
+	switch {
 	case (ph.Type == plan.Cut || ph.Type == plan.Recomp) && b.LeanMeasured &&
 		b.LeanKgPerWeek <= -p.LeanLossKgWeek+limits.Epsilon && b.LeanKgPerWeek+b.LeanHalfWidth < 0:
 		v.trip(GuardLeanMass, ActionRaiseProteinOrKcal, max(v.GapKcal, step), step)
@@ -250,9 +277,10 @@ func (v *Verdict) guard(e Estimate, ph *plan.Phase, underweight bool, avg, step 
 		// The surplus shrinks by a step at most, never below the TDEE.
 		shrink := min(step, avg-e.TDEE)
 		v.trip(GuardFatGain, ActionShrinkSurplus, min(v.GapKcal, -shrink), -shrink)
-	case b.StepsBefore > 0 && v.activityExplains(b.StepsRecent/b.StepsBefore-1, p):
-		v.trip(GuardActivity, ActionHold, 0, 0)
+	default:
+		return false
 	}
+	return true
 }
 
 // activityExplains reports whether steps that changed by the share

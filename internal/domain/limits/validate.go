@@ -434,19 +434,22 @@ func Underweight(bmi float64) bool { return bmi < UnderweightBMI-Epsilon }
 
 // LossUnderWay reports whether the plan s holds loses weight: its phase's
 // rate is a loss, or its target implies one with a TDEE calibration
-// trusts, at the trend weight now.
+// trusts, at the trend weight now, past the error of float arithmetic: a
+// target set to the TDEE is no loss. It reads the phase, the target, the
+// training weekdays, the TDEE and the trend weight of s, nothing else.
 func LossUnderWay(s State) bool {
 	if s.Phase != nil && s.Phase.RatePctWeek < 0 {
 		return true
 	}
 	return s.TDEETrusted && s.TDEE > 0 && s.Target != nil &&
-		plan.ImpliedRate(s.Target.WeeklyAverage(s.TrainingDays.Count()).Kcal, s.TDEE, s.TrendKg) < 0
+		plan.ImpliedRate(s.Target.WeeklyAverage(s.TrainingDays.Count()).Kcal, s.TDEE, s.TrendKg) < -Epsilon
 }
 
 // UnderweightLoss reports whether s holds a loss under way below a BMI of
 // UnderweightBMI, by the trend weight now: no step deepens it, and the
 // autopilot proposes maintenance (docs/limits.md). The profile must give
-// the height.
+// the height. It reads the profile and what LossUnderWay reads, not the
+// day.
 func UnderweightLoss(s State) bool { return Underweight(s.Profile.BMI(s.TrendKg)) && LossUnderWay(s) }
 
 // target returns the target as the change leaves it, nil when there is

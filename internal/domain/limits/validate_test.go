@@ -798,6 +798,8 @@ func TestLossUnderWay(t *testing.T) {
 		{"a bulk", State{Phase: &bulk, TrendKg: 70}, false},
 		{"a bulk whose target is under a trusted TDEE", State{Phase: &bulk, Target: &under, TDEE: 2600, TDEETrusted: true, TrendKg: 70}, true},
 		{"the same under a TDEE not trusted", State{Phase: &bulk, Target: &under, TDEE: 2600, TrendKg: 70}, false},
+		// A target at the TDEE, by float arithmetic, is no loss.
+		{"a bulk whose target is the TDEE", State{Phase: &bulk, Target: &under, TDEE: 2000 + 1e-12, TDEETrusted: true, TrendKg: 70}, false},
 		{"nothing", State{TrendKg: 70}, false},
 	} {
 		if got := LossUnderWay(tc.s); got != tc.want {

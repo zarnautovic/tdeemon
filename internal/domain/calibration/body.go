@@ -36,10 +36,11 @@ type Now struct {
 }
 
 // The fewest days with steps the activity guard compares: 4 of the last
-// 7, and 7 of the up to 21 before them.
+// 7, and 5 of the up to 21 before them, so a window of 14 days misses
+// one or two.
 const (
 	minRecentSteps = 4
-	minBeforeSteps = 7
+	minBeforeSteps = 5
 	stepsBefore    = 21
 )
 
@@ -47,29 +48,26 @@ const (
 func bodyOf(days map[day.Date]Day, from, to day.Date) Body {
 	n := to.DaysSince(from) + 1
 	var b Body
-	var leanX, leanY, fatX, fatY []float64
-	var recent, before []float64
+	// The lean mass measured, else the weight's share that is not fat:
+	// the two of a window would make a slope of the switch between them.
+	var leanX, leanY, derivedX, derivedY, fatX, fatY []float64
 	for i := range max(n, 0) {
 		d := days[from.AddDays(i)]
 		if d.Status == day.Excluded {
 			continue
 		}
-		if kg, ok := leanMass(d); ok {
-			leanX, leanY = append(leanX, float64(i)), append(leanY, kg)
+		if measured(d.LeanMassKg) {
+			leanX, leanY = append(leanX, float64(i)), append(leanY, d.LeanMassKg)
+		} else if kg, ok := leanMass(d); ok {
+			derivedX, derivedY = append(derivedX, float64(i)), append(derivedY, kg)
 		}
 		if measured(d.BodyFatPct) {
 			fatX, fatY = append(fatX, float64(i)), append(fatY, d.BodyFatPct)
 		}
-		switch {
-		case !measured(d.Steps):
-		case i >= n-week:
-			recent = append(recent, d.Steps)
-		case i >= n-week-stepsBefore:
-			before = append(before, d.Steps)
-		}
 	}
-	if len(recent) >= minRecentSteps && len(before) >= minBeforeSteps {
-		b.StepsRecent, b.StepsBefore = mean(recent), mean(before)
+	b.StepsRecent, b.StepsBefore = stepsOf(days, from, n)
+	if len(leanX) == 0 {
+		leanX, leanY = derivedX, derivedY
 	}
 	if b.LeanMeasured = spread(leanX) && fresh(leanX, n); b.LeanMeasured {
 		b.LeanKgPerWeek, b.LeanHalfWidth = slopeOf(leanX, leanY)
@@ -78,6 +76,28 @@ func bodyOf(days map[day.Date]Day, from, to day.Date) Body {
 		b.BodyFatPerWeek, b.BodyFatHalfWidth = slopeOf(fatX, fatY)
 	}
 	return b
+}
+
+// stepsOf returns the average steps of the last 7 of the n days from
+// from, and of the up to 21 before them, both 0 for too few days with
+// steps; an excluded day's do not count.
+func stepsOf(days map[day.Date]Day, from day.Date, n int) (recentAvg, beforeAvg float64) {
+	var recent, before []float64
+	for i := max(n-week-stepsBefore, 0); i < n; i++ {
+		d := days[from.AddDays(i)]
+		if d.Status == day.Excluded || !measured(d.Steps) {
+			continue
+		}
+		if i >= n-week {
+			recent = append(recent, d.Steps)
+		} else {
+			before = append(before, d.Steps)
+		}
+	}
+	if len(recent) < minRecentSteps || len(before) < minBeforeSteps {
+		return 0, 0
+	}
+	return mean(recent), mean(before)
 }
 
 // bodyRecent is how many of a window's last days its last measurement of
