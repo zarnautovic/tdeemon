@@ -592,6 +592,23 @@ func (db *DB) IntakeOfDays(ctx context.Context, userID uuid.UUID, from, to day.D
 	return out, nil
 }
 
+// FirstMealDay returns the day of userID's first meal, and false for no
+// meal.
+func (db *DB) FirstMealDay(ctx context.Context, userID uuid.UUID) (day.Date, bool, error) {
+	var d sql.NullString
+	if err := db.read.QueryRowContext(ctx, "SELECT MIN(day) FROM meals WHERE user_id = ?", userID.String()).Scan(&d); err != nil {
+		return day.Date{}, false, fmt.Errorf("first meal day: %w", err)
+	}
+	if !d.Valid {
+		return day.Date{}, false, nil
+	}
+	date, err := day.ParseDate(d.String)
+	if err != nil {
+		return day.Date{}, false, fmt.Errorf("first meal day: %w", err)
+	}
+	return date, true, nil
+}
+
 // queryMeals returns userID's meals that q (mealByID, mealsOfDay or
 // mealsBetween) selects with args, with their items, read in one
 // snapshot.

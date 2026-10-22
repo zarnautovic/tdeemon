@@ -5,6 +5,8 @@
 package recovery
 
 import (
+	"math"
+
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 )
@@ -45,7 +47,9 @@ const (
 
 // Recovery is the last 7 days' averages and their bases, 0 for none, and
 // the flags they raise. A value of 0 or less is none, as no night has no
-// sleep and no heart rests at 0.
+// sleep and no heart rests at 0. The averages are rounded as they are
+// shown, sleep to a hundredth of an hour and the rest to a tenth, and the
+// flags judged on them, so that what is shown does not say otherwise.
 type Recovery struct {
 	SleepH                   float64
 	RestingHR, RestingHRBase float64
@@ -77,8 +81,9 @@ func Of(values map[day.Date][]metric.Value, last day.Date) Recovery {
 		}
 	}
 	r := Recovery{
-		SleepH: mean(sleep, MinRecentDays), RestingHR: mean(rhr, MinRecentDays), RestingHRBase: mean(rhrBase, MinBaseDays),
-		HRV: mean(hrv, MinRecentDays), HRVBase: mean(hrvBase, MinBaseDays),
+		SleepH: round(mean(sleep, MinRecentDays), 100), RestingHR: round(mean(rhr, MinRecentDays), 10),
+		RestingHRBase: round(mean(rhrBase, MinBaseDays), 10),
+		HRV:           round(mean(hrv, MinRecentDays), 10), HRVBase: round(mean(hrvBase, MinBaseDays), 10),
 	}
 	r.flag()
 	return r
@@ -104,6 +109,10 @@ func add(recentVs, baseVs []float64, recent bool, v float64) (recentOut, baseOut
 	}
 	return recentVs, append(baseVs, v)
 }
+
+// round rounds v to the nearest 1/per; it divides last, so a hundredth
+// prints as one.
+func round(v, per float64) float64 { return math.Round(v*per) / per }
 
 // mean returns the average of vs, 0 for fewer than lowest.
 func mean(vs []float64, lowest int) float64 {

@@ -115,3 +115,15 @@ func TestOfLeavesOutZero(t *testing.T) {
 		t.Errorf("recovery %+v, want 7.5 hours of sleep and no flag", r)
 	}
 }
+
+func TestOfJudgesTheAveragesAsShown(t *testing.T) {
+	t.Parallel()
+
+	// Six nights of 6.5 hours and one of 6.4972 average 6.4996, which
+	// shows as 6.5: not short.
+	values := days([3]float64{6.5, 55, 60}, [3]float64{7.5, 55, 60})
+	values[last] = []metric.Value{{Kind: metric.Sleep, Value: 6.4972, Source: metric.Import}}
+	if r := Of(values, last); r.SleepH != 6.5 || len(r.Flags) != 0 {
+		t.Errorf("recovery %+v, want 6.5 hours and no flag", r)
+	}
+}

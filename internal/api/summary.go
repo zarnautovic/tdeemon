@@ -16,16 +16,12 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
-// summaryHistory is how many days up to yesterday the summary reads at
-// least: calibration's window and its look-back before a phase lie well
-// within it.
+// summaryHistory is how many days up to yesterday the summary reads in
+// full: calibration's window and its look-back before a phase lie well
+// within it. Of the days before, it reads what calibration reads of the
+// whole history: the weigh-ins, for the trend weight, and the day of the
+// first meal, where the window may start.
 const summaryHistory = 180
-
-// trendLead is how many days before the current phase's start the
-// summary reads too, when that is earlier, for the trend weight the
-// phase started with (the maintenance drift's base): at the trend's 0.1
-// a day, a weigh-in older than that weighs under 0.2 % in it.
-const trendLead = 60
 
 // incompleteShare is the share of its target under which a complete day
 // with meals is possibly incomplete (DESIGN.md §4).
@@ -45,7 +41,7 @@ type summaryOutput struct {
 type summaryBody struct {
 	Date           string       `json:"date" format:"date" doc:"Today, the user's day now. The summary is of the days up to yesterday; today is open."`
 	Weeks          []weekBody   `json:"weeks" nullable:"false" doc:"The last weeks up to yesterday, each of 7 days, the latest last."`
-	Trend          *trendBody   `json:"trend,omitempty" doc:"The trend weight; absent with no weigh-in in the days read: the 180 up to yesterday, and from 60 days before the current phase's start."`
+	Trend          *trendBody   `json:"trend,omitempty" doc:"The trend weight; absent before the first weigh-in."`
 	TDEE           tdeeBody     `json:"tdee"`
 	Verdict        verdictBody  `json:"verdict"`
 	Recovery       recoveryBody `json:"recovery"`
@@ -62,7 +58,7 @@ type weekBody struct {
 	WeightKg     *float64 `json:"weight_kg,omitempty" doc:"The average weigh-in."`
 	TrendKg      *float64 `json:"trend_kg,omitempty" doc:"The trend weight on the week's last day, for a week with a weigh-in."`
 	Steps        *float64 `json:"steps,omitempty" doc:"The average steps of the days not excluded that have them."`
-	SleepH       *float64 `json:"sleep_h,omitempty" doc:"The average hours of sleep of the days that have them."`
+	SleepH       *float64 `json:"sleep_h,omitempty" doc:"The average hours of sleep of the days that have them, excluded ones too, as recovery counts them: an excluded day's intake and weight say nothing of the phase, its sleep is still the body's."`
 	TrainingDays int      `json:"training_days" doc:"The days of the training type, as each day's type is."`
 }
 
@@ -75,7 +71,7 @@ type tdeeBody struct {
 	Measured    bool     `json:"measured" doc:"Whether the window held enough for an estimate; doubts say what is missing."`
 	Kcal        *float64 `json:"kcal,omitempty" doc:"The measured TDEE, in kcal a day."`
 	HalfWidth   *float64 `json:"half_width,omitempty" doc:"Half its 80 % interval."`
-	Trusted     bool     `json:"trusted" doc:"Whether its interval and data are enough for a verdict."`
+	Trusted     bool     `json:"trusted" doc:"Whether its interval and data are enough for a verdict on the phase it measures: none on the current one while before_phase."`
 	BeforePhase bool     `json:"before_phase" doc:"The estimate is of the days before the current phase, whose own are too few yet: no verdict on the phase."`
 	From        string   `json:"from" format:"date" doc:"The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday."`
 	To          string   `json:"to" format:"date" doc:"The window's last day."`
@@ -101,28 +97,28 @@ type verdictBody struct {
 }
 
 type recoveryBody struct {
-	SleepH        *float64 `json:"sleep_h,omitempty" doc:"The last 7 days' average sleep, in hours, of 4 days or more."`
+	SleepH        *float64 `json:"sleep_h,omitempty" doc:"The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too."`
 	RestingHR     *float64 `json:"resting_hr,omitempty" doc:"The last 7 days' average resting heart rate, of 4 days or more."`
 	RestingHRBase *float64 `json:"resting_hr_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
 	HRV           *float64 `json:"hrv,omitempty" doc:"The last 7 days' average HRV, of 4 days or more."`
 	HRVBase       *float64 `json:"hrv_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
-	Flags         []string `json:"flags" nullable:"false" doc:"What falls short: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base)."`
+	Flags         []string `json:"flags" nullable:"false" doc:"What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base)."`
 }
 
 // summaryDay is one of the user's days as the summary reads it: as
-// calibration does, with its protein, its type and all its measurements.
+// calibration does, with its protein and its type.
 type summaryDay struct {
 	calibration.Day
 	protein float64
 	dayType plan.DayType
-	values  []metric.Value
 }
 
-// summaryData is what the summary reads of the user: the days, the
-// weigh-ins of the days before them it reads for the trend weight the
-// current phase started with, and the plan.
+// summaryData is what the summary reads of the user: the days and their
+// measurements, what calibration reads of the days before them, and the
+// plan.
 type summaryData struct {
 	days     map[day.Date]summaryDay
+	values   map[day.Date][]metric.Value
 	before   map[day.Date]calibration.Day
 	phases   []plan.Phase
 	targets  []plan.Target
@@ -163,7 +159,7 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	v := calibration.Judge(e, ph, t, data.training, pr, data.lim, data.params)
 	b := summaryBody{
 		Date: today.String(), Weeks: []weekBody{}, TDEE: newTDEEBody(e), Verdict: newVerdictBody(v),
-		Recovery: newRecoveryBody(recovery.Of(data.values(), last)),
+		Recovery: newRecoveryBody(recovery.Of(data.values, last)),
 	}
 	if e.TrendKg > 0 {
 		b.Trend = &trendBody{Kg: round2(e.TrendKg), Date: e.TrendDate.String()}
@@ -177,10 +173,9 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	return &summaryOutput{CacheControl: "no-store", Body: b}, nil
 }
 
-// readSummary reads the user's plan, and their summaryHistory days up to
-// yesterday, as the calendar cal splits them at now. When the current
-// phase starts before trendLead days after them, it reads the weigh-ins
-// from trendLead days before its start too.
+// readSummary reads the user's plan, their summaryHistory days up to
+// yesterday, as the calendar cal splits them at now, and what
+// calibration reads of the days before them.
 func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Calendar, today day.Date, now time.Time) (summaryData, error) {
 	var data summaryData
 	var err error
@@ -189,17 +184,14 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 	}
 	to := today.AddDays(-1)
 	from := to.AddDays(1 - summaryHistory)
-	if ph, ok := plan.PhaseOn(data.phases, today); ok && ph.Start.AddDays(-trendLead).Before(from) {
-		if data.before, err = s.weighIns(ctx, userID, cal, ph.Start.AddDays(-trendLead), from.AddDays(-1), now); err != nil {
-			return data, err
-		}
+	if data.before, err = s.daysBefore(ctx, userID, cal, from, now); err != nil {
+		return data, err
 	}
 	intake, err := s.db.IntakeOfDays(ctx, userID, from, to)
 	if err != nil {
 		return data, err
 	}
-	values, err := s.db.Metrics(ctx, userID, from, to)
-	if err != nil {
+	if data.values, err = s.db.Metrics(ctx, userID, from, to); err != nil {
 		return data, err
 	}
 	exclusions, err := s.db.Exclusions(ctx, userID, from, to)
@@ -238,31 +230,59 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 		}
 		in := intake[d]
 		data.days[d] = summaryDay{
-			Day: calibrationDay(cal.StatusOf(d, now, excluded), in, values[d]), protein: in.Protein,
-			dayType: plan.TypeOf(d, data.training, workouts[d], toggle), values: values[d],
+			Day: calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d]), protein: in.Protein,
+			dayType: plan.TypeOf(d, data.training, workouts[d], toggle),
 		}
 	}
 	return data, nil
 }
 
-// weighIns returns the user's days from from to to that have a weigh-in,
-// as calibration reads them: the weigh-in and whether the day is
-// excluded.
-func (s *sessions) weighIns(ctx context.Context, userID uuid.UUID, cal day.Calendar, from, to day.Date, now time.Time) (map[day.Date]calibration.Day, error) {
-	values, err := s.db.Metrics(ctx, userID, from, to)
+// daysBefore returns what calibration reads of the user's days before
+// from: their weigh-ins, as the trend weight reads the whole history, and
+// the day of the first meal, where the window may start, each with
+// whether it is excluded.
+func (s *sessions) daysBefore(ctx context.Context, userID uuid.UUID, cal day.Calendar, from day.Date, now time.Time) (map[day.Date]calibration.Day, error) {
+	weights, err := s.db.WeighIns(ctx, userID, from.AddDays(-1))
 	if err != nil {
 		return nil, err
 	}
-	exclusions, err := s.db.Exclusions(ctx, userID, from, to)
+	first, meals, err := s.db.FirstMealDay(ctx, userID)
 	if err != nil {
 		return nil, err
+	}
+	meals = meals && first.Before(from)
+	earliest := from
+	for d := range weights {
+		if d.Before(earliest) {
+			earliest = d
+		}
+	}
+	if meals && first.Before(earliest) {
+		earliest = first
 	}
 	out := map[day.Date]calibration.Day{}
-	for d, vs := range values {
+	if earliest == from {
+		return out, nil
+	}
+	exclusions, err := s.db.Exclusions(ctx, userID, earliest, from.AddDays(-1))
+	if err != nil {
+		return nil, err
+	}
+	status := func(d day.Date) day.Status {
 		_, excluded := exclusions[d]
-		if c := calibrationDay(cal.StatusOf(d, now, excluded), store.Intake{}, vs); c.WeightKg > 0 {
-			out[d] = calibration.Day{Status: c.Status, WeightKg: c.WeightKg}
+		return cal.StatusOf(d, now, excluded)
+	}
+	for d, kg := range weights {
+		out[d] = calibration.Day{Status: status(d), WeightKg: kg}
+	}
+	if meals {
+		in, err := s.db.IntakeOfDays(ctx, userID, first, first)
+		if err != nil {
+			return nil, err
 		}
+		c := out[first]
+		c.Status, c.Meals, c.Kcal = status(first), in[first].Meals, in[first].Kcal
+		out[first] = c
 	}
 	return out, nil
 }
@@ -276,15 +296,6 @@ func (data summaryData) calibrationDays() map[day.Date]calibration.Day {
 	}
 	for d, sd := range data.days {
 		out[d] = sd.Day
-	}
-	return out
-}
-
-// values returns the days' measurements.
-func (data summaryData) values() map[day.Date][]metric.Value {
-	out := map[day.Date][]metric.Value{}
-	for d, sd := range data.days {
-		out[d] = sd.values
 	}
 	return out
 }
@@ -330,7 +341,7 @@ func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekB
 		if sd.Stepped() {
 			steps = append(steps, sd.Steps)
 		}
-		for _, v := range sd.values {
+		for _, v := range data.values[d] {
 			if v.Kind == metric.Sleep && v.Value > 0 {
 				sleep = append(sleep, v.Value)
 			}
@@ -385,8 +396,8 @@ func newVerdictBody(v calibration.Verdict) verdictBody {
 
 func newRecoveryBody(r recovery.Recovery) recoveryBody {
 	return recoveryBody{
-		SleepH: positive(r.SleepH, round2), RestingHR: positive(r.RestingHR, math.Round), RestingHRBase: positive(r.RestingHRBase, math.Round),
-		HRV: positive(r.HRV, math.Round), HRVBase: positive(r.HRVBase, math.Round), Flags: append([]string{}, r.Flags...),
+		SleepH: positive(r.SleepH), RestingHR: positive(r.RestingHR), RestingHRBase: positive(r.RestingHRBase),
+		HRV: positive(r.HRV), HRVBase: positive(r.HRVBase), Flags: append([]string{}, r.Flags...),
 	}
 }
 
@@ -402,12 +413,12 @@ func averageOf(vs []float64, round func(float64) float64) *float64 {
 	return new(round(sum / float64(len(vs))))
 }
 
-// positive returns v rounded, nil for 0, which is none.
-func positive(v float64, round func(float64) float64) *float64 {
+// positive returns v, nil for 0, which is none.
+func positive(v float64) *float64 {
 	if v <= 0 {
 		return nil
 	}
-	return new(round(v))
+	return new(v)
 }
 
 // round2 rounds to a hundredth: kg, hours and rates as they are shown.

@@ -229,6 +229,29 @@ func TestMetricsAcrossDays(t *testing.T) {
 	}
 }
 
+func TestWeighIns(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	d := day.DateOf(t0)
+	for i := range 4 {
+		if _, err := db.MergeMetrics(t.Context(), ana, testActor, d.AddDays(-400*i), []metric.Value{
+			{Kind: metric.Weight, Value: 80 + float64(i), Source: metric.Import},
+			{Kind: metric.Steps, Value: 5000, Source: metric.Import},
+		}, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.MergeMetrics(t.Context(), ivo, testActor, d.AddDays(-1), []metric.Value{{Kind: metric.Weight, Value: 70, Source: metric.Import}}, t0); err != nil {
+		t.Fatal(err)
+	}
+	// Up to the day before d: three of ana's, years apart, and no steps.
+	got, err := db.WeighIns(t.Context(), ana, d.AddDays(-1))
+	if err != nil || len(got) != 3 || got[d.AddDays(-1200)] != 83 || got[d.AddDays(-400)] != 81 {
+		t.Errorf("WeighIns = %v, %v; want ana's three weigh-ins before d", got, err)
+	}
+}
+
 func TestMetricStoreFailures(t *testing.T) {
 	t.Parallel()
 

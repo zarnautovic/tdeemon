@@ -1152,7 +1152,7 @@ export interface components {
             unit?: "g" | "ml";
         };
         RecoveryBody: {
-            /** @description What falls short: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base). */
+            /** @description What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base). */
             flags: string[];
             /**
              * Format: double
@@ -1176,7 +1176,7 @@ export interface components {
             resting_hr_base?: number;
             /**
              * Format: double
-             * @description The last 7 days' average sleep, in hours, of 4 days or more.
+             * @description The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too.
              */
             sleep_h?: number;
         };
@@ -1265,7 +1265,7 @@ export interface components {
             incomplete_days: string[];
             recovery: components["schemas"]["RecoveryBody"];
             tdee: components["schemas"]["TdeeBody"];
-            /** @description The trend weight; absent with no weigh-in in the days read: the 180 up to yesterday, and from 60 days before the current phase's start. */
+            /** @description The trend weight; absent before the first weigh-in. */
             trend?: components["schemas"]["TrendBody"];
             verdict: components["schemas"]["VerdictBody"];
             /** @description The last weeks up to yesterday, each of 7 days, the latest last. */
@@ -1316,7 +1316,7 @@ export interface components {
              * @description The window's last day.
              */
             to: string;
-            /** @description Whether its interval and data are enough for a verdict. */
+            /** @description Whether its interval and data are enough for a verdict on the phase it measures: none on the current one while before_phase. */
             trusted: boolean;
             /** Format: int64 */
             weigh_ins: number;
@@ -1554,7 +1554,7 @@ export interface components {
             protein?: number;
             /**
              * Format: double
-             * @description The average hours of sleep of the days that have them.
+             * @description The average hours of sleep of the days that have them, excluded ones too, as recovery counts them: an excluded day's intake and weight say nothing of the phase, its sleep is still the body's.
              */
             sleep_h?: number;
             /**

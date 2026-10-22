@@ -162,6 +162,7 @@ func toolFailCases() []failCase {
 		{"get-day", "/api/v1/days/today", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN mood TO gone", "mood"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE phases RENAME TO gone", "phases"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE meals RENAME TO gone", "no such table: meals"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE meal_items RENAME TO gone", "meal_items"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
 		{"get-summary", "/api/v1/summary", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},

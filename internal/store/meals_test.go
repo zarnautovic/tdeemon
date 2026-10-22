@@ -422,6 +422,22 @@ func TestIntakeOfDays(t *testing.T) {
 	}
 }
 
+func TestFirstMealDay(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	if _, ok, err := db.FirstMealDay(t.Context(), ana); ok || err != nil {
+		t.Errorf("no meal: %v, %v; want none", ok, err)
+	}
+	bar := saveFood(t, db, ana, bar())
+	createMeal(t, db, ana, breakfast(t, bar, t0))
+	createMeal(t, db, ana, breakfast(t, bar, t0.Add(-48*time.Hour)))
+	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar), t0.Add(-96*time.Hour)))
+	if got, ok, err := db.FirstMealDay(t.Context(), ana); !ok || err != nil || got != day.DateOf(t0).AddDays(-2) {
+		t.Errorf("FirstMealDay = %s, %v, %v; want ana's of two days before t0", got, ok, err)
+	}
+}
+
 func TestLastUses(t *testing.T) {
 	t.Parallel()
 

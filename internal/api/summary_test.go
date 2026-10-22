@@ -208,13 +208,22 @@ func TestGetSummaryRefuses(t *testing.T) {
 
 	in := newInstance(t, "http://localhost", "")
 	session := []*http.Cookie{sessionOf(t, in)}
-	for _, q := range []string{"weeks=0", "weeks=13", "weeks=a"} {
-		if rec := in.do(t, http.MethodGet, "/api/v1/summary?"+q, "", session, nil); rec.Code != http.StatusUnprocessableEntity {
-			t.Errorf("%s: %d %s, want 422", q, rec.Code, rec.Body.String())
-		}
-	}
-	if rec := in.do(t, http.MethodGet, "/api/v1/summary", "", nil, nil); rec.Code != http.StatusUnauthorized {
-		t.Errorf("no session: %d, want 401", rec.Code)
+	for _, tc := range []struct {
+		name, query string
+		session     []*http.Cookie
+		want        int
+	}{
+		{"no week", "weeks=0", session, http.StatusUnprocessableEntity},
+		{"13 weeks", "weeks=13", session, http.StatusUnprocessableEntity},
+		{"weeks that are no number", "weeks=a", session, http.StatusUnprocessableEntity},
+		{"no session", "", nil, http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if rec := in.do(t, http.MethodGet, "/api/v1/summary?"+tc.query, "", tc.session, nil); rec.Code != tc.want {
+				t.Errorf("%d %s, want %d", rec.Code, rec.Body.String(), tc.want)
+			}
+		})
 	}
 }
 
@@ -322,5 +331,55 @@ func TestGetSummaryDriftOfAnOldPhase(t *testing.T) {
 	// The last week has no weigh-in, so no trend of its own.
 	if b.Weeks[0].TrendKg != nil || b.Trend == nil || b.Trend.Date != today.AddDays(-8).String() {
 		t.Errorf("week %+v, trend %+v: no trend for the week, the trend of 8 days ago", b.Weeks[0], b.Trend)
+	}
+}
+
+// get_summary's window starts at the user's first meal of the whole
+// history, though it is older than the days the summary reads in full:
+// a user back to logging for 21 days, after a meal 300 days ago, has 21
+// logged days in a window of 42, too few a week.
+func TestGetSummaryWindowStartsAtTheFirstMeal(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	ctx := t.Context()
+	cal, err := day.NewCalendar(in.user.TimeZone, in.user.DayStartHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := cal.DayOf(now)
+	start := today.AddDays(-300)
+	if err := in.db.SetPhase(ctx, in.user.ID, isolationActor, plan.Phase{Type: plan.Cut, Start: start, RatePctWeek: -0.5}, now); err != nil {
+		t.Fatal(err)
+	}
+	d := plan.DayTarget{Kcal: 2400, Protein: 160, Fat: 70}
+	if err := in.db.SetTarget(ctx, in.user.ID, isolationActor, plan.Target{EffectiveFrom: start, Training: d, Rest: d}, now); err != nil {
+		t.Fatal(err)
+	}
+	logDay := func(on day.Date) {
+		item, err := meal.Estimate("a day's food", food.Nutrients{Kcal: 2000, Protein: 150, Carbs: 250, Fat: 50}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := cal.Start(on).Add(8 * time.Hour)
+		m := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: on, Description: "the day's food", Client: meal.ClientMCP, Items: []meal.Item{item}}
+		if _, _, err := in.db.CreateMeal(ctx, in.user.ID, isolationActor, m, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	logDay(start)
+	for i := 1; i <= 60; i++ {
+		if i <= 21 {
+			logDay(today.AddDays(-i))
+		}
+		if _, err := in.db.MergeMetrics(ctx, in.user.ID, isolationActor, today.AddDays(-i), []metric.Value{
+			{Kind: metric.Weight, Value: 80 + 0.05*float64(i), Source: metric.Import},
+		}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b := summaryOf(t, in, "weeks=1"); !slices.Contains(b.TDEE.Doubts, "few_logged_days") {
+		t.Errorf("TDEE %+v, want the doubt few_logged_days: 21 logged days in a window of 42", b.TDEE)
 	}
 }

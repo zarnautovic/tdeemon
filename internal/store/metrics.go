@@ -203,6 +203,34 @@ func (db *DB) Metrics(ctx context.Context, userID uuid.UUID, from, to day.Date) 
 	return out, nil
 }
 
+// WeighIns returns userID's weigh-ins of the days up to to, by day: the
+// whole history's, which a trend weight reads.
+func (db *DB) WeighIns(ctx context.Context, userID uuid.UUID, to day.Date) (map[day.Date]float64, error) {
+	rows, err := db.read.QueryContext(ctx, `SELECT day, value FROM metrics
+		WHERE user_id = ? AND metric = ? AND day <= ? ORDER BY day`, userID.String(), string(metric.Weight), to.String())
+	if err != nil {
+		return nil, fmt.Errorf("weigh-ins: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[day.Date]float64{}
+	for rows.Next() {
+		var d string
+		var v float64
+		if err := rows.Scan(&d, &v); err != nil {
+			return nil, fmt.Errorf("weigh-ins: %w", err)
+		}
+		date, err := day.ParseDate(d)
+		if err != nil {
+			return nil, fmt.Errorf("weigh-ins: %w", err)
+		}
+		out[date] = v
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("weigh-ins: %w", err)
+	}
+	return out, nil
+}
+
 // metricsState is a metrics.merge event's state: the value of each kind
 // that changed, nil where the day had none.
 type metricsState map[metric.Kind]*metric.Value
