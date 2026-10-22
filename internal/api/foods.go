@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf8"
 	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -96,7 +95,7 @@ type foodBody struct {
 	FoodFields
 	Archived bool         `json:"archived" doc:"An archived food stays out of a search, and keeps its name and aliases."`
 	LastUse  *lastUseBody `json:"last_use,omitempty" doc:"The last time a meal used the food; absent when none has."`
-	Query    string       `json:"query,omitempty" doc:"The query of find_foods that found the food, of those it was sent."`
+	Queries  []string     `json:"queries,omitempty" nullable:"false" doc:"The queries of find_foods that found the food, of those it was sent."`
 }
 
 func newFoodBody(f *food.Food) foodBody {
@@ -117,13 +116,12 @@ type foodsOutput struct {
 	}
 }
 
+// findFoodsInput's maxItems is store.MaxFoodQueries, and its limit's
+// maximum store.MaxFoodResults.
 type findFoodsInput struct {
-	Query []string `query:"query,explode" required:"true" minItems:"1" maxItems:"20" example:"greek yog" doc:"Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's."`
+	Query []string `query:"query,explode" required:"true" nullable:"false" minItems:"1" maxItems:"20" minLength:"1" maxLength:"200" example:"greek yog" doc:"Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's."`
 	Limit int      `query:"limit" default:"10" minimum:"1" maximum:"50" doc:"The most foods of each query."`
 }
-
-// maxQueryLen bounds a query of find_foods, in characters.
-const maxQueryLen = 200
 
 func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOutput, error) {
 	p, err := requireUser(ctx)
@@ -131,23 +129,22 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		return nil, err
 	}
 	// The foods of each query, in the order of the queries; a food two
-	// find, once, told by the first.
+	// find, once, with both.
 	var foods []food.Food
-	var queries []string
-	seen := map[uuid.UUID]bool{}
+	var queries [][]string
+	at := map[uuid.UUID]int{}
 	for _, q := range in.Query {
-		if n := utf8.RuneCountInString(q); n == 0 || n > maxQueryLen {
-			return nil, huma.Error422UnprocessableEntity(fmt.Sprintf("the query %q: want 1 to %d characters", q, maxQueryLen))
-		}
 		found, err := s.db.FindFoods(ctx, p.User.ID, q, in.Limit)
 		if err != nil {
 			return nil, internalError("finding foods failed", err)
 		}
 		for i := range found {
-			if !seen[found[i].ID] {
-				seen[found[i].ID] = true
-				foods, queries = append(foods, found[i]), append(queries, q)
+			if j, ok := at[found[i].ID]; ok {
+				queries[j] = append(queries[j], q)
+				continue
 			}
+			at[found[i].ID] = len(foods)
+			foods, queries = append(foods, found[i]), append(queries, []string{q})
 		}
 	}
 	ids := make([]uuid.UUID, len(foods))
@@ -162,7 +159,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 	out.Body.Foods = make([]foodBody, 0, len(foods))
 	for i := range foods {
 		b := newFoodBody(&foods[i])
-		b.Query = queries[i]
+		b.Queries = queries[i]
 		if u, ok := uses[foods[i].ID]; ok {
 			b.LastUse = &lastUseBody{
 				At: u.At, MealID: u.MealID.String(), Amount: u.Amount, Unit: u.Unit,

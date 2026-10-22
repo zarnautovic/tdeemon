@@ -443,9 +443,12 @@
             "minimum": 0,
             "type": "number"
           },
-          "query": {
-            "description": "The query of find_foods that found the food, of those it was sent.",
-            "type": "string"
+          "queries": {
+            "description": "The queries of find_foods that found the food, of those it was sent.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "servings": {
             "description": "Named amounts of a food by weight or volume: a piece, a slice.",
@@ -3427,7 +3430,7 @@
     },
     "/api/v1/foods": {
       "get": {
-        "description": "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which query found it. Each has how much a meal had of it last. Archived foods are left out.",
+        "description": "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out.",
         "operationId": "find-foods",
         "parameters": [
           {
@@ -3444,14 +3447,13 @@
                 ]
               ],
               "items": {
+                "maxLength": 200,
+                "minLength": 1,
                 "type": "string"
               },
               "maxItems": 20,
               "minItems": 1,
-              "type": [
-                "array",
-                "null"
-              ]
+              "type": "array"
             }
           },
           {

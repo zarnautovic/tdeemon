@@ -209,6 +209,11 @@ func TestMCPToolErrors(t *testing.T) {
 		{"delete_metric", map[string]any{"date": "today"}, "delete_metric needs kind"},
 		{"get_food", map[string]any{"id": []any{1}}, "id: want a string"},
 		{"get_day", map[string]any{"date": "yesterday"}, "date"},
+		// A list for a parameter of one value, and a list of what no
+		// query holds.
+		{"find_foods", map[string]any{"query": "rye", "limit": []any{1, 2}}, "limit: want a string"},
+		{"find_foods", map[string]any{"query": []any{nil}}, "query: want a string"},
+		{"find_foods", map[string]any{"query": []any{[]any{"rye"}}}, "query: want a string"},
 	} {
 		if text, isErr := callTool(t, cs, tc.name, tc.args); !isErr || !strings.Contains(text, tc.want) {
 			t.Errorf("%s %v: %v %s, want an error saying %q", tc.name, tc.args, isErr, text, tc.want)

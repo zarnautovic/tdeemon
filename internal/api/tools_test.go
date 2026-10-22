@@ -488,11 +488,11 @@ func TestFindFoods(t *testing.T) {
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{"foods": [
 		{"id": %[1]q, "name": "Rye roll", "brand": "Bakery", "basis": "100g", "source": "label", "archived": false,
 		 "nutrients": {"kcal": 251.3, "protein": 8.04, "carbs": 46.07, "fat": 2.9, "salt": 1.234},
-		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}, "query": "rye"},
+		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}, "queries": ["rye"]},
 		{"id": %[2]q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": false,
 		 "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
 		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"],
-		 "last_use": {"at": %[3]q, "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}, "query": "rye"}
+		 "last_use": {"at": %[3]q, "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}, "queries": ["rye"]}
 	]}`, roll.ID, bread.ID, now.Format(time.RFC3339), m.ID))
 	// By an alias; an archived food not at all; at most limit.
 	for query, want := range map[string]string{"loaf": `"name":"Ana's rye bread"`, "stew": `{"foods":[]}`} {
@@ -708,24 +708,75 @@ func TestFindFoodsOfSeveralQueries(t *testing.T) {
 	if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, yoghurt, now); err != nil {
 		t.Fatal(err)
 	}
+	// The bread is found by two queries: once, with both.
 	rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=greek+yog&query=rye+bread", "", []*http.Cookie{session}, nil)
 	var got struct {
 		Foods []struct {
-			ID, Query string
+			ID      string
+			Queries []string
 		} `json:"foods"`
 	}
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	want := []string{bread.ID.String() + " rye", yoghurt.ID.String() + " greek yog"}
+	want := []string{bread.ID.String() + " rye,rye bread", yoghurt.ID.String() + " greek yog"}
 	var have []string
 	for _, f := range got.Foods {
-		have = append(have, f.ID+" "+f.Query)
+		have = append(have, f.ID+" "+strings.Join(f.Queries, ","))
 	}
 	if !slices.Equal(have, want) {
 		t.Errorf("foods = %v, want %v", have, want)
 	}
-	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=", "", []*http.Cookie{session}, nil); rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("an empty query among two: %d %s, want 422", rec.Code, rec.Body.String())
+	// The limit is of each query.
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=greek&limit=1", "", []*http.Cookie{session}, nil); !strings.Contains(rec.Body.String(), yoghurt.ID.String()) {
+		t.Errorf("a limit of 1 of two queries: %d %s, want the yoghurt too", rec.Code, rec.Body.String())
+	}
+	for _, q := range []string{"rye&query=", "rye&query=" + strings.Repeat("a", 201)} {
+		rec := in.do(t, http.MethodGet, "/api/v1/foods?query="+q, "", []*http.Cookie{session}, nil)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"location":"query.query[1]"`) {
+			t.Errorf("a bad second query: %d %s, want 422 at query.query[1]", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestFindFoodsLastUseOfManyFoods holds that every food found, past the
+// most one query finds, says when it was last eaten.
+func TestFindFoodsLastUseOfManyFoods(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	now := in.clock.Now()
+	ctx := t.Context()
+	n := food.Nutrients{Kcal: 100, Protein: 1, Carbs: 1, Fat: 1}
+	for i := range 50 {
+		f := food.Food{ID: uuid.NewV7(), Name: fmt.Sprintf("Wa %02d", i), Basis: food.Per100g, Source: food.User, Nutrients: n}
+		if _, err := in.db.SaveFood(ctx, in.user.ID, isolationActor, f, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wb := food.Food{ID: uuid.NewV7(), Name: "Wb", Basis: food.Per100g, Source: food.User, Nutrients: n}
+	if _, err := in.db.SaveFood(ctx, in.user.ID, isolationActor, wb, now); err != nil {
+		t.Fatal(err)
+	}
+	item, err := meal.FromFood(wb, meal.Quantity{Amount: 30, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := meal.Meal{ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: "Snack", Client: meal.ClientWeb, Items: []meal.Item{item}}
+	if _, _, err := in.db.CreateMeal(ctx, in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatal(err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/foods?query=wa&query=wb&limit=50", "", []*http.Cookie{session}, nil)
+	var got struct {
+		Foods []struct {
+			ID      string
+			LastUse *struct{ Amount float64 } `json:"last_use"`
+		} `json:"foods"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil || len(got.Foods) != 51 {
+		t.Fatalf("%d %d foods", rec.Code, len(got.Foods))
+	}
+	if f := got.Foods[50]; f.ID != wb.ID.String() || f.LastUse == nil || f.LastUse.Amount != 30 {
+		t.Errorf("the 51st food: %+v, want Wb, last eaten 30 g", f)
 	}
 }

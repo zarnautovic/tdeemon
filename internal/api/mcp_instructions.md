@@ -19,8 +19,11 @@ rather than log.
 - Look a meal's foods up with one `find_foods`, a `query` each: the
   start of the word as the user says it, in their language, its ending
   left off ("jaj" for "2 jaja", "egg" for "eggs"), as a search finds
-  words by their start. Use a food of the user's by its `food_id`, with
-  an amount in its unit, a named serving or portions.
+  words by their start. A user who writes in another language than
+  English may have a food under its English name: send its English
+  start too, in the same call ("jaj" and "egg"). Use a food of the
+  user's by its `food_id`, with an amount in its unit, a named serving
+  or portions.
 - A food the user does not have goes in as a new food, so it is there
   next time: a packaged one with its label's values per 100 g or 100 ml,
   a piece of it (a bar of 55 g) as one of its `servings`; a plain one (a
@@ -30,7 +33,8 @@ rather than log.
   it; `upsert_food` corrects it. A restaurant or home-cooked plate: your
   estimate of the whole plate, its name and nutrients.
 - One `log_meal` per meal. Make its `id`, a UUIDv7, only with a tool
-  that runs code: never make one up, as its time is the meal's. The same
+  that runs code: never make one up, as it holds the time it is made,
+  which the server checks against its clock. The same
   request sent again under it, after a timeout, is safe. Without such a
   tool, leave the id out and the server makes it, but then the meal sent
   again is another: look at `get_day` before sending again. Give

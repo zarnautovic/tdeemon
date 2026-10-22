@@ -161,7 +161,7 @@ export interface paths {
         };
         /**
          * Find foods
-         * @description Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which query found it. Each has how much a meal had of it last. Archived foods are left out.
+         * @description Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out.
          */
         get: operations["find-foods"];
         put?: never;
@@ -684,8 +684,8 @@ export interface components {
              * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
              */
             portion_grams?: number;
-            /** @description The query of find_foods that found the food, of those it was sent. */
-            query?: string;
+            /** @description The queries of find_foods that found the food, of those it was sent. */
+            queries?: string[];
             /** @description Named amounts of a food by weight or volume: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
@@ -2343,7 +2343,7 @@ export interface operations {
         parameters: {
             query: {
                 /** @description Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's. */
-                query: string[] | null;
+                query: string[];
                 /** @description The most foods of each query. */
                 limit?: number;
             };

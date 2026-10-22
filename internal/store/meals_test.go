@@ -469,13 +469,19 @@ func TestLastUses(t *testing.T) {
 	if got, _ := db.LastUses(t.Context(), ivo, []uuid.UUID{bar.ID}); len(got) != 1 || got[bar.ID].MealID != ivosMeal.ID {
 		t.Errorf("ivo's last use = %+v, want his own meal", got)
 	}
-	many := make([]uuid.UUID, store.MaxFoodResults+1)
+	// The most a search finds are looked up, and no more.
+	limit := store.MaxFoodQueries * store.MaxFoodResults
+	many := make([]uuid.UUID, limit+1)
 	for i := range many {
 		many[i] = uuid.NewV7()
 	}
-	many[store.MaxFoodResults] = bar.ID
+	many[limit-1] = bar.ID
+	if got, _ := db.LastUses(t.Context(), ana, many); len(got) != 1 {
+		t.Errorf("the last id a search finds was not looked up: %+v", got)
+	}
+	many[limit-1], many[limit] = uuid.NewV7(), bar.ID
 	if got, _ := db.LastUses(t.Context(), ana, many); len(got) != 0 {
-		t.Errorf("an id past MaxFoodResults was looked up: %+v", got)
+		t.Errorf("an id past what a search finds was looked up: %+v", got)
 	}
 }
 

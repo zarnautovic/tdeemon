@@ -728,10 +728,11 @@ type LastUse struct {
 
 // LastUses returns, for each of userID's foods in ids that a meal has
 // used, the last item that used it: what search offers as the usual
-// amount. At most MaxFoodResults ids are looked up.
+// amount. At most the foods of a search of MaxFoodQueries queries,
+// MaxFoodResults each, are looked up.
 func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]LastUse, error) {
 	out := map[uuid.UUID]LastUse{}
-	for _, id := range ids[:min(len(ids), MaxFoodResults)] {
+	for _, id := range ids[:min(len(ids), MaxFoodQueries*MaxFoodResults)] {
 		var u LastUse
 		var at, mealID string
 		q := &u.Quantity

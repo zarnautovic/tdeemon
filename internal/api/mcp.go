@@ -39,11 +39,18 @@ const MCPPath = "/mcp"
 type mcpTool struct {
 	tool tool
 	def  *mcp.Tool
-	// params are the operation's parameters, by name: "path" or "query".
-	params map[string]string
+	// params are the operation's parameters, by name.
+	params map[string]param
 	// body says the operation takes a JSON body, of the arguments that
 	// are not parameters.
 	body bool
+}
+
+// param is where a parameter goes, "path" or "query", and whether it
+// takes a list, as a query parameter repeated.
+type param struct {
+	in   string
+	list bool
 }
 
 // mcpServer serves the tools of the registry over MCP. A call runs the
@@ -225,7 +232,7 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 		if string(raw) == "null" {
 			continue
 		}
-		where, isParam := t.params[name]
+		prm, isParam := t.params[name]
 		if !isParam {
 			if !t.body {
 				return "", nil, nil, fmt.Errorf("no argument %q: %s takes %s", name, t.tool.name, strings.Join(slices.Sorted(maps.Keys(t.params)), ", "))
@@ -233,9 +240,9 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 			body[name] = raw
 			continue
 		}
-		// A query parameter takes several values, an array of them.
+		// A list goes as the parameter repeated.
 		var many []json.RawMessage
-		if where == "query" && json.Unmarshal(raw, &many) == nil {
+		if prm.list && json.Unmarshal(raw, &many) == nil {
 			for _, r := range many {
 				v, err := paramValue(r)
 				if err != nil {
@@ -249,7 +256,7 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("%s: %w", name, err)
 		}
-		if where == "path" {
+		if prm.in == "path" {
 			// An empty one is left out too: no path takes it.
 			if v == "" {
 				continue
@@ -327,7 +334,7 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 	if !ok {
 		return mcpTool{}, fmt.Errorf("no %s %s in the document", t.op.Method, t.op.Path)
 	}
-	mt := mcpTool{tool: t, params: map[string]string{}}
+	mt := mcpTool{tool: t, params: map[string]param{}}
 	props := map[string]any{}
 	required, err := d.params(op, &mt, props)
 	if err != nil {
@@ -374,7 +381,8 @@ func (d openAPIDoc) params(op openAPIOp, mt *mcpTool, props map[string]any) ([]s
 		if err != nil {
 			return nil, err
 		}
-		mt.params[prm.Name] = prm.In
+		typ, _ := s.(map[string]any)["type"].(string)
+		mt.params[prm.Name] = param{in: prm.In, list: prm.In == "query" && typ == "array"}
 		props[prm.Name] = s
 		// The day of a tool is today when left out.
 		if prm.Required && prm.Name != "date" {
