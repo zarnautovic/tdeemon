@@ -327,12 +327,13 @@ in `web/`.
     `internalError("reading the profile failed", err)`, and does not log
     it. The answer keeps no word of it, as a file, a query or a user
     could be in it: `hideInternalErrors` drops the details of every 5xx
-    and logs them once, with the operation, the method, the path and
-    the user, at the level of the error (`logLevel`: debug for a client
-    that went away). A plain error is logged the same way, at error
-    level; a body that did not come whole, which huma answers with a
-    500 before any handler, at debug level (`recordBodyErrors`). A 5xx
-    without details (the server is busy) is not logged.
+    and logs them once, with the operation, its route (not the
+    request's path: nothing the client sent) and the user, at the
+    level of the error (`logLevel`: debug for a client that went
+    away). A plain error is logged the same way, at error level; a body
+    that did not come whole, which huma answers with a 500 before any
+    handler, at debug level (`recordBodyErrors`). A 5xx without details
+    (the server is busy) is not logged.
     What answers before an operation runs (the session and token
     lookups) or outside one (OpenID Connect's browser flow, and the
     session a sign-in starts, which the two share) logs its failures

@@ -395,7 +395,9 @@ func logInternalError(r *http.Request, logger *slog.Logger, op *huma.Operation, 
 	}
 	attrs := []any{
 		"status", e.Status, "error", strings.Join(msgs, "; "),
-		"operation_id", op.OperationID, "method", r.Method, "path", r.URL.Path,
+		// The operation's route, not the request's path: nothing the
+		// client sent goes into the log as it came.
+		"operation_id", op.OperationID, "method", op.Method, "path", op.Path,
 	}
 	if p, ok := auth.PrincipalFrom(r.Context()); ok {
 		attrs = append(attrs, "user_id", p.User.ID.String())

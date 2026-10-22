@@ -50,6 +50,18 @@ func (in *instance) logRecords(t *testing.T) []logRecord {
 	return out
 }
 
+// route is the path of the operation opID, as the document has it.
+func route(t *testing.T, opID string) string {
+	t.Helper()
+	for _, op := range document().ops {
+		if op.OperationID == opID {
+			return op.Path
+		}
+	}
+	t.Fatalf("no operation %s", opID)
+	return ""
+}
+
 // checkLogged fails unless the log has a record that is want but for its
 // error.
 func (in *instance) checkLogged(t *testing.T, want logRecord) {
@@ -234,7 +246,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Errorf("the answer %s tells what failed inside", rec.Body.String())
 			}
 
-			want := logRecord{Level: "ERROR", Msg: "an API operation failed", OperationID: tc.op, Method: tc.method, Path: path}
+			want := logRecord{Level: "ERROR", Msg: "an API operation failed", OperationID: tc.op, Method: tc.method, Path: route(t, tc.op)}
 			if tc.signedIn || tc.withToken {
 				want.UserID = in.user.ID.String()
 			}

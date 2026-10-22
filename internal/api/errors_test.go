@@ -94,8 +94,13 @@ func TestHideInternalErrors(t *testing.T) {
 			var log bytes.Buffer
 			mux := http.NewServeMux()
 			a := newAPI(mux, slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})))
-			huma.Register(a, huma.Operation{OperationID: "fail", Method: http.MethodGet, Path: "/fail", Metadata: openToAnyToken()},
-				func(context.Context, *struct{}) (*struct{}, error) { return nil, tc.err })
+			huma.Register(a, huma.Operation{OperationID: "fail", Method: http.MethodGet, Path: "/fail/{id}", Metadata: openToAnyToken()},
+				func(context.Context, *struct {
+					ID string `path:"id"`
+				},
+				) (*struct{}, error) {
+					return nil, tc.err
+				})
 
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -105,7 +110,7 @@ func TestHideInternalErrors(t *testing.T) {
 			u := user.User{ID: uuid.NewV7()}
 			ctx = auth.WithPrincipal(ctx, auth.Principal{User: u, Via: auth.ViaSession})
 			rec := httptest.NewRecorder()
-			mux.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, "/fail", nil))
+			mux.ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, "/fail/what-the-client-sent", nil))
 
 			body := rec.Body.String()
 			if rec.Code != tc.status || !strings.Contains(body, tc.keeps) {
@@ -121,7 +126,7 @@ func TestHideInternalErrors(t *testing.T) {
 				}
 				return
 			}
-			wants := []string{"level=" + tc.wantLevel, `msg="an API operation failed"`, "operation_id=fail", "method=GET", "path=/fail", "user_id=" + u.ID.String()}
+			wants := []string{"level=" + tc.wantLevel, `msg="an API operation failed"`, "operation_id=fail", "method=GET", "path=/fail/{id}", "user_id=" + u.ID.String()}
 			if !tc.unsaid {
 				wants = append(wants, inside)
 			}
@@ -129,6 +134,10 @@ func TestHideInternalErrors(t *testing.T) {
 				if !strings.Contains(got, want) {
 					t.Errorf("logged %q, want %q in it", got, want)
 				}
+			}
+			// Nothing the client sent: the route, not the path.
+			if strings.Contains(got, "what-the-client-sent") {
+				t.Errorf("logged %q, with what the client sent", got)
 			}
 		})
 	}
