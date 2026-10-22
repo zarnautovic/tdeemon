@@ -1782,7 +1782,7 @@
           },
           "trend": {
             "$ref": "#/components/schemas/TrendBody",
-            "description": "The trend weight; absent before the first weigh-in."
+            "description": "The trend weight; absent with no weigh-in in the days read: the 180 up to yesterday, and from 60 days before the current phase's start."
           },
           "verdict": {
             "$ref": "#/components/schemas/VerdictBody"
@@ -2388,7 +2388,7 @@
             "type": "number"
           },
           "steps": {
-            "description": "The average steps of the days that have them.",
+            "description": "The average steps of the days not excluded that have them.",
             "format": "double",
             "type": "number"
           },

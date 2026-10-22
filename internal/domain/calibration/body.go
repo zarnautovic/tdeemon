@@ -85,7 +85,7 @@ func stepsOf(days map[day.Date]Day, from day.Date, n int) (recentAvg, beforeAvg 
 	var recent, before []float64
 	for i := max(n-week-stepsBefore, 0); i < n; i++ {
 		d := days[from.AddDays(i)]
-		if d.Status == day.Excluded || !measured(d.Steps) {
+		if !d.Stepped() {
 			continue
 		}
 		if i >= n-week {
@@ -122,7 +122,7 @@ func leanMass(d Day) (float64, bool) {
 	switch {
 	case measured(d.LeanMassKg):
 		return d.LeanMassKg, true
-	case weighed(d) && measured(d.BodyFatPct) && d.BodyFatPct < 100:
+	case d.Weighed() && measured(d.BodyFatPct) && d.BodyFatPct < 100:
 		return d.WeightKg * (1 - d.BodyFatPct/100), true
 	}
 	return 0, false
@@ -137,8 +137,8 @@ func nowOf(days map[day.Date]Day, last day.Date) Now {
 		if d.Status == day.Excluded {
 			continue
 		}
-		n.WeighIns += btoi(weighed(d))
-		n.LoggedDays += btoi(loggedDay(d))
+		n.WeighIns += btoi(d.Weighed())
+		n.LoggedDays += btoi(d.Logged())
 		if kg, ok := leanMass(d); ok {
 			lean = append(lean, kg)
 		}

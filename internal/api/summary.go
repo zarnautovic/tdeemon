@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"maps"
 	"math"
 	"time"
 	"uuid"
@@ -44,7 +45,7 @@ type summaryOutput struct {
 type summaryBody struct {
 	Date           string       `json:"date" format:"date" doc:"Today, the user's day now. The summary is of the days up to yesterday; today is open."`
 	Weeks          []weekBody   `json:"weeks" nullable:"false" doc:"The last weeks up to yesterday, each of 7 days, the latest last."`
-	Trend          *trendBody   `json:"trend,omitempty" doc:"The trend weight; absent before the first weigh-in."`
+	Trend          *trendBody   `json:"trend,omitempty" doc:"The trend weight; absent with no weigh-in in the days read: the 180 up to yesterday, and from 60 days before the current phase's start."`
 	TDEE           tdeeBody     `json:"tdee"`
 	Verdict        verdictBody  `json:"verdict"`
 	Recovery       recoveryBody `json:"recovery"`
@@ -60,7 +61,7 @@ type weekBody struct {
 	WeighIns     int      `json:"weigh_ins" doc:"The weigh-ins of the days not excluded, as calibration counts them."`
 	WeightKg     *float64 `json:"weight_kg,omitempty" doc:"The average weigh-in."`
 	TrendKg      *float64 `json:"trend_kg,omitempty" doc:"The trend weight on the week's last day, for a week with a weigh-in."`
-	Steps        *float64 `json:"steps,omitempty" doc:"The average steps of the days that have them."`
+	Steps        *float64 `json:"steps,omitempty" doc:"The average steps of the days not excluded that have them."`
 	SleepH       *float64 `json:"sleep_h,omitempty" doc:"The average hours of sleep of the days that have them."`
 	TrainingDays int      `json:"training_days" doc:"The days of the training type, as each day's type is."`
 }
@@ -108,14 +109,21 @@ type recoveryBody struct {
 	Flags         []string `json:"flags" nullable:"false" doc:"What falls short: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base)."`
 }
 
-// summaryData is what the summary reads of the user: the days as
-// calibration reads them, with their protein, their type and the rest of
-// their measurements, and the plan.
+// summaryDay is one of the user's days as the summary reads it: as
+// calibration does, with its protein, its type and all its measurements.
+type summaryDay struct {
+	calibration.Day
+	protein float64
+	dayType plan.DayType
+	values  []metric.Value
+}
+
+// summaryData is what the summary reads of the user: the days, the
+// weigh-ins of the days before them it reads for the trend weight the
+// current phase started with, and the plan.
 type summaryData struct {
-	days     map[day.Date]calibration.Day
-	protein  map[day.Date]float64
-	types    map[day.Date]plan.DayType
-	values   map[day.Date][]metric.Value
+	days     map[day.Date]summaryDay
+	before   map[day.Date]calibration.Day
 	phases   []plan.Phase
 	targets  []plan.Target
 	training plan.Weekdays
@@ -134,7 +142,7 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 		return nil, internalError("reading the summary failed", err)
 	}
 	last := today.AddDays(-1)
-	data, err := s.summaryData(ctx, p.User.ID, cal, today, now)
+	data, err := s.readSummary(ctx, p.User.ID, cal, today, now)
 	if err != nil {
 		return nil, internalError("reading the summary failed", err)
 	}
@@ -142,7 +150,8 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	if err != nil {
 		return nil, internalError("reading the summary failed", err)
 	}
-	e := calibration.Calibrate(data.days, data.phases, last, data.params)
+	days := data.calibrationDays()
+	e := calibration.Calibrate(days, data.phases, last, data.params)
 	var ph *plan.Phase
 	if got, ok := plan.PhaseOn(data.phases, today); ok {
 		ph = &got
@@ -154,12 +163,12 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	v := calibration.Judge(e, ph, t, data.training, pr, data.lim, data.params)
 	b := summaryBody{
 		Date: today.String(), Weeks: []weekBody{}, TDEE: newTDEEBody(e), Verdict: newVerdictBody(v),
-		Recovery: newRecoveryBody(recovery.Of(data.values, last)),
+		Recovery: newRecoveryBody(recovery.Of(data.values(), last)),
 	}
 	if e.TrendKg > 0 {
 		b.Trend = &trendBody{Kg: round2(e.TrendKg), Date: e.TrendDate.String()}
 	}
-	trend := calibration.Trend(data.days, data.params.TrendAlpha)
+	trend := calibration.Trend(days, data.params.TrendAlpha)
 	for w := in.Weeks - 1; w >= 0; w-- {
 		to := last.AddDays(-7 * w)
 		b.Weeks = append(b.Weeks, data.week(to.AddDays(-6), to, trend))
@@ -168,10 +177,11 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	return &summaryOutput{CacheControl: "no-store", Body: b}, nil
 }
 
-// summaryData reads the user's plan, and their days up to yesterday, as
-// the calendar cal splits them at now: summaryHistory of them, or from
-// trendLead days before the current phase's start when that is earlier.
-func (s *sessions) summaryData(ctx context.Context, userID uuid.UUID, cal day.Calendar, today day.Date, now time.Time) (summaryData, error) {
+// readSummary reads the user's plan, and their summaryHistory days up to
+// yesterday, as the calendar cal splits them at now. When the current
+// phase starts before trendLead days after them, it reads the weigh-ins
+// from trendLead days before its start too.
+func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Calendar, today day.Date, now time.Time) (summaryData, error) {
 	var data summaryData
 	var err error
 	if data.phases, err = s.db.Phases(ctx, userID); err != nil {
@@ -180,13 +190,16 @@ func (s *sessions) summaryData(ctx context.Context, userID uuid.UUID, cal day.Ca
 	to := today.AddDays(-1)
 	from := to.AddDays(1 - summaryHistory)
 	if ph, ok := plan.PhaseOn(data.phases, today); ok && ph.Start.AddDays(-trendLead).Before(from) {
-		from = ph.Start.AddDays(-trendLead)
+		if data.before, err = s.weighIns(ctx, userID, cal, ph.Start.AddDays(-trendLead), from.AddDays(-1), now); err != nil {
+			return data, err
+		}
 	}
 	intake, err := s.db.IntakeOfDays(ctx, userID, from, to)
 	if err != nil {
 		return data, err
 	}
-	if data.values, err = s.db.Metrics(ctx, userID, from, to); err != nil {
+	values, err := s.db.Metrics(ctx, userID, from, to)
+	if err != nil {
 		return data, err
 	}
 	exclusions, err := s.db.Exclusions(ctx, userID, from, to)
@@ -216,7 +229,7 @@ func (s *sessions) summaryData(ctx context.Context, userID uuid.UUID, cal day.Ca
 	data.lim = limits.Effective(user, s.instance)
 	data.params = calibration.DefaultParams()
 	data.params.LoggedDays, data.params.WeighIns = data.lim.LoggedDays, data.lim.WeighIns
-	data.days, data.protein, data.types = map[day.Date]calibration.Day{}, map[day.Date]float64{}, map[day.Date]plan.DayType{}
+	data.days = map[day.Date]summaryDay{}
 	for d := from; !to.Before(d); d = d.AddDays(1) {
 		_, excluded := exclusions[d]
 		var toggle *bool
@@ -224,10 +237,56 @@ func (s *sessions) summaryData(ctx context.Context, userID uuid.UUID, cal day.Ca
 			toggle = &v
 		}
 		in := intake[d]
-		data.days[d] = calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d])
-		data.protein[d], data.types[d] = in.Protein, plan.TypeOf(d, data.training, workouts[d], toggle)
+		data.days[d] = summaryDay{
+			Day: calibrationDay(cal.StatusOf(d, now, excluded), in, values[d]), protein: in.Protein,
+			dayType: plan.TypeOf(d, data.training, workouts[d], toggle), values: values[d],
+		}
 	}
 	return data, nil
+}
+
+// weighIns returns the user's days from from to to that have a weigh-in,
+// as calibration reads them: the weigh-in and whether the day is
+// excluded.
+func (s *sessions) weighIns(ctx context.Context, userID uuid.UUID, cal day.Calendar, from, to day.Date, now time.Time) (map[day.Date]calibration.Day, error) {
+	values, err := s.db.Metrics(ctx, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	exclusions, err := s.db.Exclusions(ctx, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	out := map[day.Date]calibration.Day{}
+	for d, vs := range values {
+		_, excluded := exclusions[d]
+		if c := calibrationDay(cal.StatusOf(d, now, excluded), store.Intake{}, vs); c.WeightKg > 0 {
+			out[d] = calibration.Day{Status: c.Status, WeightKg: c.WeightKg}
+		}
+	}
+	return out, nil
+}
+
+// calibrationDays returns the days as calibration reads them, the
+// weigh-ins before them too.
+func (data summaryData) calibrationDays() map[day.Date]calibration.Day {
+	out := maps.Clone(data.before)
+	if out == nil {
+		out = map[day.Date]calibration.Day{}
+	}
+	for d, sd := range data.days {
+		out[d] = sd.Day
+	}
+	return out
+}
+
+// values returns the days' measurements.
+func (data summaryData) values() map[day.Date][]metric.Value {
+	out := map[day.Date][]metric.Value{}
+	for d, sd := range data.days {
+		out[d] = sd.values
+	}
+	return out
 }
 
 // calibrationDay is a day as calibration reads it.
@@ -251,31 +310,27 @@ func calibrationDay(status day.Status, in store.Intake, values []metric.Value) c
 	return c
 }
 
-// logged reports whether d's intake counts: complete, not excluded, with
-// a meal.
-func logged(d calibration.Day) bool { return d.Status == day.Complete && d.Meals > 0 }
-
 // week returns the week from from to to, with the trend weight of trend.
-// A value of 0 is none, and an excluded day's weigh-in counts for
-// nothing, as in calibration.
+// Its intake, weigh-ins and steps count as calibration counts them: an
+// excluded day's for nothing, a value of 0 as none.
 func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekBody {
 	w := weekBody{From: from.String(), To: to.String()}
 	var kcal, protein, weights, steps, sleep []float64
 	for d := from; !to.Before(d); d = d.AddDays(1) {
-		c := data.days[d]
-		if logged(c) {
-			kcal, protein = append(kcal, c.Kcal), append(protein, data.protein[d])
+		sd := data.days[d]
+		if sd.Logged() {
+			kcal, protein = append(kcal, sd.Kcal), append(protein, sd.protein)
 		}
-		if data.types[d] == plan.Training {
+		if sd.dayType == plan.Training {
 			w.TrainingDays++
 		}
-		if c.WeightKg > 0 && c.Status != day.Excluded {
-			weights = append(weights, c.WeightKg)
+		if sd.Weighed() {
+			weights = append(weights, sd.WeightKg)
 		}
-		if c.Steps > 0 {
-			steps = append(steps, c.Steps)
+		if sd.Stepped() {
+			steps = append(steps, sd.Steps)
 		}
-		for _, v := range data.values[d] {
+		for _, v := range sd.values {
 			if v.Kind == metric.Sleep && v.Value > 0 {
 				sleep = append(sleep, v.Value)
 			}
@@ -295,8 +350,8 @@ func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekB
 func (data summaryData) incomplete(from, to day.Date) []string {
 	out := []string{}
 	for d := from; !to.Before(d); d = d.AddDays(1) {
-		c := data.days[d]
-		if t, ok := plan.DayTargetOn(data.targets, d, data.types[d]); ok && logged(c) && c.Kcal < incompleteShare*t.Kcal {
+		sd := data.days[d]
+		if t, ok := plan.DayTargetOn(data.targets, d, sd.dayType); ok && sd.Logged() && sd.Kcal < incompleteShare*t.Kcal {
 			out = append(out, d.String())
 		}
 	}
@@ -310,7 +365,7 @@ func newTDEEBody(e calibration.Estimate) tdeeBody {
 		Doubts: append([]string{}, e.Doubts...),
 	}
 	if e.Measured {
-		b.Kcal, b.HalfWidth, b.KgPerWeek = new(math.Round(e.TDEE)), new(math.Round(e.HalfWidth)), new(round2(e.KgPerWeek))
+		b.Kcal, b.HalfWidth, b.KgPerWeek = new(noNegativeZero(math.Round(e.TDEE))), new(math.Round(e.HalfWidth)), new(round2(e.KgPerWeek))
 	}
 	return b
 }

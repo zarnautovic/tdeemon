@@ -24,7 +24,7 @@ type Point struct {
 func Trend(days map[day.Date]Day, alpha float64) []Point {
 	dates := make([]day.Date, 0, len(days))
 	for d, v := range days {
-		if weighed(v) {
+		if v.Weighed() {
 			dates = append(dates, d)
 		}
 	}

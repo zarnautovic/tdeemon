@@ -292,7 +292,7 @@ func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) floa
 		return kg
 	}
 	for d := start; !last.Before(d); d = d.AddDays(1) {
-		if v := days[d]; weighed(v) {
+		if v := days[d]; v.Weighed() {
 			return v.WeightKg
 		}
 	}
@@ -375,7 +375,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 		d := days[from.AddDays(i)]
 		recent, inWeeks := i >= e.Days-week, i >= e.Days-dt.weekDays
 		kcal[i] = math.NaN()
-		if weighed(d) {
+		if d.Weighed() {
 			xs, kgs = append(xs, float64(i)), append(kgs, d.WeightKg)
 			e.RecentWeighIns += btoi(recent)
 			dt.weighIns += btoi(inWeeks)
@@ -383,7 +383,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 				weighedWeeks[(e.Days-1-i)/week] = true
 			}
 		}
-		if loggedDay(d) {
+		if d.Logged() {
 			kcal[i] = d.Kcal
 			e.LoggedDays++
 			e.RecentLoggedDays += btoi(recent)
@@ -437,15 +437,19 @@ func spread(xs []float64) bool {
 	return len(xs) >= minWeighIns && xs[len(xs)-1]-xs[0] >= minWeighInsSpan
 }
 
-// loggedDay reports whether d's intake counts: a complete day with a meal
+// Logged reports whether d's intake counts: a complete day with a meal
 // and kcal that are a number.
-func loggedDay(d Day) bool {
+func (d Day) Logged() bool {
 	return d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0
 }
 
-// weighed reports whether d has a weigh-in that counts: a number, on a
+// Weighed reports whether d has a weigh-in that counts: a number, on a
 // day not excluded.
-func weighed(d Day) bool { return d.Status != day.Excluded && d.WeightKg > 0 && finite(d.WeightKg) }
+func (d Day) Weighed() bool { return d.Status != day.Excluded && d.WeightKg > 0 && finite(d.WeightKg) }
+
+// Stepped reports whether d has steps that count: a number over 0, on a
+// day not excluded.
+func (d Day) Stepped() bool { return d.Status != day.Excluded && measured(d.Steps) }
 
 // doubts lists why e is missing or not trusted, with the data dt of its
 // window. A window too short has only that doubt: its counts say nothing

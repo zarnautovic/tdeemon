@@ -1265,7 +1265,7 @@ export interface components {
             incomplete_days: string[];
             recovery: components["schemas"]["RecoveryBody"];
             tdee: components["schemas"]["TdeeBody"];
-            /** @description The trend weight; absent before the first weigh-in. */
+            /** @description The trend weight; absent with no weigh-in in the days read: the 180 up to yesterday, and from 60 days before the current phase's start. */
             trend?: components["schemas"]["TrendBody"];
             verdict: components["schemas"]["VerdictBody"];
             /** @description The last weeks up to yesterday, each of 7 days, the latest last. */
@@ -1559,7 +1559,7 @@ export interface components {
             sleep_h?: number;
             /**
              * Format: double
-             * @description The average steps of the days that have them.
+             * @description The average steps of the days not excluded that have them.
              */
             steps?: number;
             /** Format: date */

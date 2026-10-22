@@ -239,7 +239,8 @@ func TestGetSummaryReadsTheDays(t *testing.T) {
 	saveDaysToRead(t, in)
 	b := summaryOf(t, in, "weeks=1")
 	// Six days logged, yesterday with the snack: 2300, 500 and four of
-	// 2000; six weigh-ins; the steps and sleep of six days.
+	// 2000; six weigh-ins; the steps of five days, as the excluded day's
+	// count for nothing; the sleep of six.
 	w := b.Weeks[0]
 	if w.LoggedDays != 6 || w.Kcal == nil || *w.Kcal != 1800 || w.WeighIns != 6 {
 		t.Errorf("the week %+v: 6 days of 1800 kcal on average, 6 weigh-ins", w)
@@ -251,8 +252,8 @@ func TestGetSummaryReadsTheDays(t *testing.T) {
 
 // saveDaysToRead adds to saveSummaryHistory's days a snack of 300 kcal
 // yesterday by its day but eaten today by the calendar, a day excluded
-// two days ago, and a night of 0 hours and a day of 0 steps four days
-// ago.
+// two days ago with 1000 steps, and a night of 0 hours and a day of 0
+// steps four days ago.
 func saveDaysToRead(t *testing.T, in *instance) {
 	t.Helper()
 	now := in.clock.Now()
@@ -274,6 +275,9 @@ func saveDaysToRead(t *testing.T, in *instance) {
 		t.Fatal(err)
 	}
 	if err := in.db.ExcludeDay(ctx, in.user.ID, isolationActor, today.AddDays(-2), day.Exclusion{Reason: "a fever"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.db.MergeMetrics(ctx, in.user.ID, isolationActor, today.AddDays(-2), []metric.Value{{Kind: metric.Steps, Value: 1000, Source: metric.Manual}}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := in.db.MergeMetrics(ctx, in.user.ID, isolationActor, today.AddDays(-4), []metric.Value{

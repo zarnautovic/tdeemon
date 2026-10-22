@@ -161,6 +161,17 @@ func toolFailCases() []failCase {
 		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 		{"get-day", "/api/v1/days/today", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN mood TO gone", "mood"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE phases RENAME TO gone", "phases"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE meal_items RENAME TO gone", "meal_items"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE targets RENAME TO gone", "targets"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE plan_settings RENAME TO gone", "plan_settings"},
+		{"get-summary", "/api/v1/summary", "ALTER TABLE users RENAME COLUMN height_cm TO gone", "height_cm"},
+		{"get-summary", "/api/v1/summary", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 	} {
 		cases = append(cases, failCase{
 			name: b.op + ", " + b.secret, op: b.op, method: http.MethodGet, path: b.path, signedIn: true,
