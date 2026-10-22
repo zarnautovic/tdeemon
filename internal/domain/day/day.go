@@ -55,6 +55,19 @@ func (d Date) Weekday() time.Weekday { return d.at(time.UTC).Weekday() }
 // Before reports whether d comes before e.
 func (d Date) Before(e Date) bool { return d.at(time.UTC).Before(e.at(time.UTC)) }
 
+// DaysSince returns how many days d comes after e: below 0 when it comes
+// before, 0 on the same date. It counts in seconds of the Unix epoch, so
+// dates centuries apart do not overflow a time.Duration.
+func (d Date) DaysSince(e Date) int {
+	return int((d.at(time.UTC).Unix() - e.at(time.UTC).Unix()) / secondsPerDay)
+}
+
+const secondsPerDay = 24 * 60 * 60
+
+// Compare returns -1 when d comes before e, 1 when after, 0 on the same
+// date: the order slices.SortFunc takes, and Before's.
+func (d Date) Compare(e Date) int { return d.at(time.UTC).Compare(e.at(time.UTC)) }
+
 func (d Date) at(loc *time.Location) time.Time {
 	return time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, loc)
 }
@@ -165,6 +178,39 @@ func ValidateExclusion(e Exclusion) error {
 		return errors.New("excluding a day needs a reason, such as \"restaurant\" or \"sick\"")
 	}
 	return text.Check("the reason", e.Reason, MaxReasonLen, true)
+}
+
+// MaxNoteLen bounds a check-in's note, in characters.
+const MaxNoteLen = 2000
+
+// The scale of a check-in's mood and hunger: from MinScale, low, to
+// MaxScale, high.
+const (
+	MinScale = 1
+	MaxScale = 5
+)
+
+// CheckIn is what the user says of a day: their mood and their hunger,
+// from MinScale to MaxScale (0 when not said), and a note.
+type CheckIn struct {
+	Mood, Hunger int
+	Note         string
+}
+
+// Validate checks c: a mood and a hunger not said or on the scale, and
+// the note's text.
+func (c CheckIn) Validate() error {
+	var errs []error
+	for _, s := range []struct {
+		name  string
+		value int
+	}{{"mood", c.Mood}, {"hunger", c.Hunger}} {
+		if s.value != 0 && (s.value < MinScale || s.value > MaxScale) {
+			errs = append(errs, fmt.Errorf("%s %d: want %d (low) to %d (high)", s.name, s.value, MinScale, MaxScale))
+		}
+	}
+	errs = append(errs, text.CheckLines("the note", c.Note, MaxNoteLen, false))
+	return errors.Join(errs...)
 }
 
 // StatusOf returns the status of day d at instant now: excluded when the

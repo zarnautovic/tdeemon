@@ -278,6 +278,49 @@ func TestDate(t *testing.T) {
 	}
 }
 
+func TestDaysSince(t *testing.T) {
+	t.Parallel()
+
+	d := Date{2026, time.February, 28}
+	for _, tc := range []struct {
+		e    Date
+		want int
+	}{
+		{d, 0},
+		{d.AddDays(-1), 1},
+		{d.AddDays(1), -1},
+		// Across a leap day and a year.
+		{Date{2024, time.February, 28}, 731},
+		// Further apart than a time.Duration reaches, about 292 years.
+		{Date{1, time.January, 1}, 739674},
+	} {
+		if got := d.DaysSince(tc.e); got != tc.want {
+			t.Errorf("%s.DaysSince(%s) = %d, want %d", d, tc.e, got, tc.want)
+		}
+	}
+}
+
+func TestCompare(t *testing.T) {
+	t.Parallel()
+
+	d := Date{2026, time.February, 28}
+	for _, tc := range []struct {
+		e    Date
+		want int
+	}{
+		{d, 0},
+		{d.AddDays(1), -1},
+		{d.AddDays(-1), 1},
+		{Date{2025, time.December, 31}, 1},
+		{Date{2026, time.March, 1}, -1},
+		{Date{2027, time.January, 1}, -1},
+	} {
+		if got := d.Compare(tc.e); got != tc.want {
+			t.Errorf("%s.Compare(%s) = %d, want %d", d, tc.e, got, tc.want)
+		}
+	}
+}
+
 func TestValidateExclusion(t *testing.T) {
 	t.Parallel()
 
@@ -297,5 +340,32 @@ func TestValidateExclusion(t *testing.T) {
 				t.Error("accepted")
 			}
 		})
+	}
+}
+
+// A check-in's mood and hunger are on the scale or not said, and its
+// note is text of its bounds.
+func TestCheckInValidate(t *testing.T) {
+	t.Parallel()
+
+	for _, ok := range []CheckIn{{}, {Mood: 1, Hunger: 5}, {Mood: 3, Note: "tired\nslept badly"}, {Note: strings.Repeat("a", MaxNoteLen)}} {
+		if err := ok.Validate(); err != nil {
+			t.Errorf("%+v: %v", ok, err)
+		}
+	}
+	for _, tc := range []struct {
+		c    CheckIn
+		want string
+	}{
+		{CheckIn{Mood: 6}, "mood 6"},
+		{CheckIn{Mood: -1}, "mood -1"},
+		{CheckIn{Hunger: 6}, "hunger 6"},
+		{CheckIn{Hunger: -2}, "hunger -2"},
+		{CheckIn{Note: strings.Repeat("a", MaxNoteLen+1)}, "the note"},
+		{CheckIn{Note: "a\x00b"}, "the note"},
+	} {
+		if err := tc.c.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%+v: %v, want %q", tc.c, err, tc.want)
+		}
 	}
 }

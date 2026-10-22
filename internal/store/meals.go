@@ -731,11 +731,12 @@ func (db *DB) IncludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d
 // DayExclusionRecorded reports whether userID's day d was ever excluded,
 // by anyone, whatever came after (an inclusion, an undo): an import that
 // excludes days leaves a day decided before as it is. A day is only ever
-// included after it was excluded.
+// included after it was excluded. A check-in that excluded it counts.
 func (db *DB) DayExclusionRecorded(ctx context.Context, userID uuid.UUID, d day.Date) (bool, error) {
 	var n int
-	err := db.read.QueryRowContext(ctx, "SELECT count(*) FROM events WHERE user_id = ? AND entity = ? AND operation = ?",
-		userID.String(), d.String(), string(event.DayExclude)).Scan(&n)
+	err := db.read.QueryRowContext(ctx, `SELECT count(*) FROM events WHERE user_id = ? AND entity = ?
+		AND (operation = ? OR operation = ? AND json_extract(after_state, '$.excluded_reason') IS NOT NULL)`,
+		userID.String(), d.String(), string(event.DayExclude), string(event.DayCheckIn)).Scan(&n)
 	if err != nil {
 		return false, fmt.Errorf("day exclusion recorded: %w", err)
 	}

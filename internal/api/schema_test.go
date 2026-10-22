@@ -186,6 +186,21 @@ func answerCases() map[string]answerCase {
 			id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
 			in.do(t, http.MethodPatch, "/api/v1/meals/"+id.String(), `{"note": "with tea", "ops": [{"op": "add", "item": {"id": "`+meal.NewIDAt(in.clock.Now()).String()+`", "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, []*http.Cookie{session}, nil)
 		},
+		"log-metric": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			saveIsolationPlan(t, in.db, in.user, in.clock.Now())
+			in.do(t, http.MethodPut, "/api/v1/days/today/metrics/weight", `{"value": 80.4}`, []*http.Cookie{session}, nil)
+		},
+		"delete-metric": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			saveIsolationMetrics(t, in.db, in.user, in.clock.Now())
+			in.do(t, http.MethodDelete, "/api/v1/days/today/metrics/steps", "", []*http.Cookie{session}, nil)
+		},
+		"check-in": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPatch, "/api/v1/days/today", `{"mood": 4, "hunger": 2, "note": "slept well", "training_day": "training", "excluded_reason": "restaurant"}`,
+				[]*http.Cookie{session}, nil)
+		},
 		"delete-meal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
