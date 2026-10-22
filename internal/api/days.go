@@ -128,6 +128,23 @@ type remainingBody struct {
 	Carbs   float64 `json:"carbs" doc:"The target's grams of carbs less the total's (not what the remaining kcal leave)."`
 }
 
+// newRemainingBody is what t leaves after total: from the values as they
+// are, rounded once, and never -0, which a client would show as "-0".
+func newRemainingBody(t plan.DayTarget, total food.Nutrients) remainingBody {
+	return remainingBody{
+		Kcal: noNegativeZero(math.Round(t.Kcal - total.Kcal)), Protein: noNegativeZero(roundGrams(t.Protein - total.Protein)),
+		Fat: noNegativeZero(roundGrams(t.Fat - total.Fat)), Carbs: noNegativeZero(roundGrams(max(t.Carbs(), 0) - total.Carbs)),
+	}
+}
+
+// noNegativeZero is v, but 0 for -0.
+func noNegativeZero(v float64) float64 {
+	if v == 0 {
+		return 0
+	}
+	return v
+}
+
 type dayOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         dayBody
@@ -197,11 +214,7 @@ func (s *sessions) readDay(ctx context.Context, userID uuid.UUID, d day.Date) (d
 	if t, ok := plan.DayTargetOn(targets, d, dt); ok {
 		target := newDayTargetBody(t)
 		b.Target = &target
-		// From the values as they are, rounded once.
-		b.Remaining = &remainingBody{
-			Kcal: math.Round(t.Kcal - total.Kcal), Protein: roundGrams(t.Protein - total.Protein),
-			Fat: roundGrams(t.Fat - total.Fat), Carbs: roundGrams(max(t.Carbs(), 0) - total.Carbs),
-		}
+		b.Remaining = new(newRemainingBody(t, total))
 	}
 	return b, nil
 }

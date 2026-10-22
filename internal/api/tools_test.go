@@ -325,7 +325,7 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 	tg := plan.Target{
 		EffectiveFrom: today.AddDays(-7),
 		Training:      plan.DayTarget{Kcal: 2300.4, Protein: 160.04, Fat: 70.06},
-		Rest:          plan.DayTarget{Kcal: 1800, Protein: 150, Fat: 60},
+		Rest:          plan.DayTarget{Kcal: 1800.6, Protein: 150, Fat: 60},
 	}
 	if err := in.db.SetTarget(ctx, in.user.ID, isolationActor, tg, now); err != nil {
 		t.Fatalf("SetTarget: %v", err)
@@ -344,10 +344,12 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 	}
 	// Shown rounded: kcal to a whole number, grams to a tenth.
 	training := `{"kcal": 2300, "protein": 160, "fat": 70.1, "carbs": 257.4}`
-	rest := `{"kcal": 1800, "protein": 150, "fat": 60, "carbs": 165}`
+	rest := `{"kcal": 1801, "protein": 150, "fat": 60, "carbs": 165.1}`
 	// Tuesday's fry-up goes past the rest day's target: what remains is
 	// below 0 there.
-	fryUp, err := meal.Estimate("Fry-up", food.Nutrients{Kcal: 1900, Protein: 50, Carbs: 150, Fat: 120}, "")
+	// What remains comes from the values as they are, rounded once:
+	// 1800.6 - 1900.4 is -100, where the rounded 1801 - 1900 would be -99.
+	fryUp, err := meal.Estimate("Fry-up", food.Nutrients{Kcal: 1900.4, Protein: 50, Carbs: 150, Fat: 120}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +365,7 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 		toggle, meals          string
 	}{
 		{today.AddDays(-2), "training", training, training, "", none}, // Monday
-		{tuesday, "rest", rest, `{"kcal": -100, "protein": 100, "fat": -60, "carbs": 15}`, "", `"meals": "*",
+		{tuesday, "rest", rest, `{"kcal": -100, "protein": 100, "fat": -60, "carbs": 15.1}`, "", `"meals": "*",
 			"total": {"kcal": 1900, "protein": 50, "carbs": 150, "fat": 120}`},
 		{today, "rest", rest, rest, `"training_toggle": false,`, none},
 		{today.AddDays(1), "training", training, training, `"training_toggle": true,`, none},
@@ -377,7 +379,7 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 	rec := in.do(t, http.MethodGet, "/api/v1/me", "", session, nil)
 	want := `"today_type":"rest"`
 	if !strings.Contains(rec.Body.String(), want) ||
-		!strings.Contains(rec.Body.String(), `"training":{"kcal":2300,"protein":160,"fat":70.1,"carbs":257.4},"rest":{"kcal":1800,`) {
+		!strings.Contains(rec.Body.String(), `"training":{"kcal":2300,"protein":160,"fat":70.1,"carbs":257.4},"rest":{"kcal":1801,`) {
 		t.Errorf("get_profile: %s, want a rest day today and both targets", rec.Body.String())
 	}
 }
@@ -408,4 +410,36 @@ func TestGetDayKeepsTheQuantityAsGiven(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"quantity":{"amount":225,"unit":"g"},"amount":0.5,"unit":"portion"`) {
 		t.Errorf("%s, want 225 g given, half a portion", rec.Body.String())
 	}
+}
+
+// Every nutrient a label may give comes back, rounded as it is shown
+// (salt to a hundredth), and so does a meal's note.
+func TestGetDayShowsEveryNutrient(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	n := food.Nutrients{
+		Kcal: 250.4, Protein: 10.04, Carbs: 30.06, Fat: 8.02,
+		Fiber: new(3.33), SaturatedFat: new(1.27), Sugars: new(4.44), Salt: new(0.083), Polyols: new(2.22), Alcohol: new(1.16),
+	}
+	item, err := meal.Estimate("Cake", n, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := meal.Meal{ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: "Tea", Client: meal.ClientChat, Note: "At the office", Items: []meal.Item{item}}
+	if _, _, err := in.db.CreateMeal(t.Context(), in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatalf("CreateMeal: %v", err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/days/today", "", []*http.Cookie{sessionOf(t, in)}, nil)
+	nutrients := `{"kcal": 250, "protein": 10, "carbs": 30.1, "fat": 8, "fiber": 3.3, "saturated_fat": 1.3, "sugars": 4.4, "salt": 0.08, "polyols": 2.2, "alcohol": 1.2}`
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
+		"date": %q, "status": "open", "type": "rest", "metrics": [],
+		"meals": [{
+			"id": "*", "eaten_at": "*", "description": "Tea", "client": "chat", "note": "At the office",
+			"items": [{"id": "*", "name": "Cake", "quantity": {"portions": 1}, "amount": 1, "unit": "portion", "nutrients": %[2]s, "source": "estimate"}],
+			"total": %[2]s
+		}],
+		"total": %[2]s
+	}`, day.DateOf(now), nutrients))
 }

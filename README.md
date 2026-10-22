@@ -273,7 +273,8 @@ provider's endpoints must use https, like its issuer.
 Devices and clients act for a user with an API token instead of a
 session: the phone (Health Auto Export) sends health data, an AI client
 logs meals through MCP. A token has scopes: `ingest` (health data from
-the phone), `tools` (log and change through the tools) and `read`.
+the phone), `tools` (the tools: read, log and change, through MCP) and
+`read` (the tools that only read).
 
 ```sh
 # Signed in (the session cookie in cookies.txt), create one; the token is

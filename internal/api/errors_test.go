@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
@@ -279,5 +281,20 @@ func TestDayTargetBodyHasNoNegativeCarbs(t *testing.T) {
 	}
 	if b := newDayTargetBody(tg); b.Carbs != 0 {
 		t.Errorf("carbs = %v, want 0", b.Carbs)
+	}
+}
+
+// What remains is never -0, which a client would show as "-0": a total a
+// hair past its target remains 0.
+func TestRemainingHasNoNegativeZero(t *testing.T) {
+	t.Parallel()
+
+	b := newRemainingBody(plan.DayTarget{Kcal: 2100, Protein: 150, Fat: 60}, food.Nutrients{Kcal: 2100.3, Protein: 150.04, Carbs: 239.96, Fat: 60.01})
+	got, err := json.Marshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "-0") {
+		t.Errorf("remaining = %s, want no -0", got)
 	}
 }

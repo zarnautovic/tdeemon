@@ -28,7 +28,8 @@ type Scope string
 const (
 	// ScopeIngest sends health data from the phone (Health Auto Export).
 	ScopeIngest Scope = "ingest"
-	// ScopeTools runs the tools that log and change data (MCP).
+	// ScopeTools runs the tools (MCP): those that read, and those that
+	// log and change data.
 	ScopeTools Scope = "tools"
 	// ScopeRead reads data and changes nothing.
 	ScopeRead Scope = "read"

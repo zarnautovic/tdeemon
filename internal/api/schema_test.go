@@ -537,7 +537,7 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 	type problem = requestProblem
 	request := func(t *testing.T, op *huma.Operation, query string, body io.Reader, header map[string]string) *http.Request {
 		t.Helper()
-		path := strings.ReplaceAll(op.Path, "{id}", uuid.NewV7().String())
+		path := strings.NewReplacer("{id}", uuid.NewV7().String(), "{date}", "today").Replace(op.Path)
 		r := httptest.NewRequestWithContext(t.Context(), op.Method, path+query, body)
 		for k, v := range header {
 			if k == "RemoteAddr" {
