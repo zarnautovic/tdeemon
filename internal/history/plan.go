@@ -98,7 +98,11 @@ func (f PlanFile) parse(today day.Date) (thePlan, error) {
 		}
 		w, err := plan.WeekdaysOf(ds...)
 		errs = append(errs, err)
-		p.weekdays = &w
+		// None is no weekdays given, as the store keeps none: a run again
+		// would else write them again, and hold the plan again.
+		if w != 0 {
+			p.weekdays = &w
+		}
 	}
 	for _, x := range f.Phases {
 		ph := plan.Phase{Type: plan.PhaseType(x.Type), RatePctWeek: x.RatePctWeek, GoalWeight: x.GoalWeight, MilestoneWeight: x.MilestoneWeight}
@@ -138,8 +142,8 @@ type PlanReport struct {
 	// each phase and target by its first day, "notes".
 	Written []string
 	// Kept names what the user had already, which differs from the file's
-	// and stays: their own plan (a phase or a target no import before
-	// wrote), training weekdays, fields of the profile, notes.
+	// and stays: a plan not the file's (a phase or a target the file has
+	// not), training weekdays, fields of the profile, notes.
 	Kept []string
 	// Warnings are what the limits warn of, without refusing.
 	Warnings []limits.Warning
@@ -180,8 +184,9 @@ type PlanLimits struct {
 }
 
 // ImportPlan writes f into u's plan, or with dryRun says what it would
-// write. What the user has stays theirs: a plan of their own (a phase or
-// a target an import before did not write), training weekdays, the
+// write. What the user has stays theirs: a plan not the file's (a phase
+// or a target the file has not, so a file changed after its import
+// changes nothing of the plan), training weekdays, the
 // fields of their profile (the file fills the others), notes; a plan an
 // import before wrote in part is written whole. Every phase and target
 // from the current ones (the ones today falls in) on, the future ones

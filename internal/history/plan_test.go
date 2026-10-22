@@ -231,16 +231,16 @@ func TestImportPlanRefusesItsShape(t *testing.T) {
 	}
 }
 
-// The limits hold the plan to the training weekdays the user has: below a
-// BMI of 18.5, a target whose rest day is lower than the one before but
-// whose week, of three training days, is not, passes. Weekdays the same as
-// the file's are not reported kept.
+// The limits hold the plan to the training weekdays the user has, not
+// the file's: below a BMI of 18.5, a target whose week is higher than the
+// one before by the user's seven training days, though lower by the
+// file's three, passes; and the user's weekdays are reported kept.
 func TestImportPlanByTheUsersWeekdays(t *testing.T) {
 	t.Parallel()
 
 	db, u := newUser(t)
 	weighed(t, db, u, 50)
-	if err := db.SetTrainingWeekdays(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, plan.Weekdays(0b0101010), now); err != nil {
+	if err := db.SetTrainingWeekdays(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, plan.Weekdays(0b1111111), now); err != nil {
 		t.Fatal(err)
 	}
 	f := readPlan(t, func(s string) string {
@@ -249,12 +249,29 @@ func TestImportPlanByTheUsersWeekdays(t *testing.T) {
 			`"protein": 130`, `"protein": 90`,
 			`"training": {"kcal": 1950, "protein": 130, "fat": 60}, "rest": {"kcal": 1750, "protein": 130, "fat": 60}}`,
 			`"training": {"kcal": 2000, "protein": 90, "fat": 60}, "rest": {"kcal": 1500, "protein": 90, "fat": 60}},
-    {"effective_from": "2026-11-01", "training": {"kcal": 2400, "protein": 90, "fat": 60}, "rest": {"kcal": 1450, "protein": 90, "fat": 60}}`,
+    {"effective_from": "2026-11-01", "training": {"kcal": 2100, "protein": 90, "fat": 60}, "rest": {"kcal": 1300, "protein": 90, "fat": 60}}`,
 		).Replace(s)
 	})
 	r, err := importPlan(t, db, u, f, history.PlanLimits{}, true)
-	if err != nil || slices.Contains(r.Written, "training weekdays") || len(r.Kept) != 0 {
+	if err != nil || slices.Contains(r.Written, "training weekdays") || !slices.Equal(r.Kept, []string{"training weekdays"}) {
 		t.Errorf("report = %+v, %v", r, err)
+	}
+}
+
+// No training weekdays in the file are none given: a run again writes
+// nothing, and holds nothing.
+func TestImportPlanNoWeekdays(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	weighed(t, db, u, 72)
+	f := readPlan(t, func(s string) string { return strings.Replace(s, `[1, 3, 5]`, `[]`, 1) })
+	if _, err := importPlan(t, db, u, f, history.PlanLimits{}, false); err != nil {
+		t.Fatal(err)
+	}
+	again, err := history.ImportPlan(t.Context(), db, u, f, history.PlanLimits{Instance: limits.Instance()}, now.AddDate(0, 0, 60), false)
+	if err != nil || len(again.Written) != 0 {
+		t.Errorf("the run again = %+v, %v", again, err)
 	}
 }
 

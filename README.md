@@ -428,7 +428,9 @@ refuses the plan whole, and nothing of it is written
 ([docs/limits.md](docs/limits.md)).
 A plan of your own in tdeemon, your training weekdays, the fields of
 your profile you have set and your notes stay yours; a plan a run
-before wrote in part is finished.
+before wrote in part is finished. A phase or a target the file has not
+counts as yours, so a plan file changed after its import changes
+nothing of the plan: run it with `--dry-run` until it is right.
 
 It says which time zone and day start it imports by: create the user
 with your `--timezone` first. Without `--dry-run` it writes, and says
