@@ -487,10 +487,10 @@ The replacement:
   estimate moves at most 150 kcal while its window is of the same phase;
   the switch from the estimate before a phase to the phase's own is
   another window. Its
-  interval holds the TDEE each revision was made on, and the first
-  verdict within a week of each takes the revision's action, named
-  against what was eaten, or the fixture says why there is none
-  (docs/conventions.md).
+  interval holds the TDEE each revision was made on. The first verdict
+  within a week of each takes the revision's action, or the action the
+  fixture says it takes instead, and why; or there is none, for the
+  reason each verdict of the week gives (docs/conventions.md).
 
 ## 8. Coaching: the AI changes the plan
 

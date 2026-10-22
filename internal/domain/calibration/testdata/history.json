@@ -37,12 +37,14 @@
   "revisions": [
     {
       "date": "2030-12-08",
-      "action": "raise_protein_or_kcal"
+      "action": "lower_kcal",
+      "verdict": "raise_protein_or_kcal",
+      "differs": "the target the revision replaced already gave the planned rate with the measured TDEE, as the intake was under it: calibration holds the target, and its lean-mass guard turns that into more protein or kcal, the lean mass of the weight and body fat falling faster than the guard allows; the revision names that fall and leaves room for protein"
     },
     {
       "date": "2031-01-16",
       "action": "lower_kcal",
-      "no_verdict": "none within a week, as in the real history"
+      "no_verdict": "not_trusted"
     }
   ],
   "days": [
