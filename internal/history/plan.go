@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -123,6 +125,7 @@ func (f PlanFile) parse(today day.Date) (thePlan, error) {
 	slices.SortFunc(p.targets, func(a, b plan.Target) int { return strings.Compare(a.EffectiveFrom.String(), b.EffectiveFrom.String()) })
 	errs = append(errs, plan.ValidateTimeline(p.phases), plan.ValidateHistory(p.targets))
 	p.notes = strings.TrimSpace(f.Notes)
+	errs = append(errs, profile.ValidateNotes(p.notes))
 	if err := errors.Join(errs...); err != nil {
 		return thePlan{}, fmt.Errorf("the plan file: %w", err)
 	}
@@ -134,9 +137,9 @@ type PlanReport struct {
 	// Written names what was written: "profile", "training weekdays",
 	// each phase and target by its first day, "notes".
 	Written []string
-	// Kept names what the user had already, which stays: their own plan
-	// (a phase or a target no import before wrote), training weekdays, a
-	// complete profile, notes.
+	// Kept names what the user had already, which differs from the file's
+	// and stays: their own plan (a phase or a target no import before
+	// wrote), training weekdays, fields of the profile, notes.
 	Kept []string
 	// Warnings are what the limits warn of, without refusing.
 	Warnings []limits.Warning
@@ -154,12 +157,18 @@ func (e *PlanRefusedError) Error() string {
 			fmt.Fprintf(&b, " (%s day)", v.DayType)
 		}
 		if v.Level != "" {
-			fmt.Fprintf(&b, ": %v, the limit %v (%s);", v.Proposed, v.Limit, v.Level)
+			fmt.Fprintf(&b, ": %s, the limit %s (%s);", Number(v.Proposed), Number(v.Limit), v.Level)
 		} else {
 			b.WriteString(";")
 		}
 	}
 	return strings.TrimSuffix(b.String(), ";")
+}
+
+// Number formats a value of the limits for a report: to two decimals,
+// as a protein in g/kg needs them, without the zeros after.
+func Number(v float64) string {
+	return strconv.FormatFloat(math.Round(v*100)/100, 'f', -1, 64)
 }
 
 // PlanLimits are what ImportPlan holds a plan to: the instance's limits,
@@ -178,9 +187,11 @@ type PlanLimits struct {
 // from the current ones (the ones today falls in) on, the future ones
 // too, are held to the limits first (the instance's, and the user's own
 // from the store), by the profile and the trend weight of the last week
-// of weigh-ins, each target against the one before it; a violation
+// of weigh-ins, the first target as a new one and each after it against
+// the one before it; a violation
 // refuses the whole plan, and nothing is written. The phases and targets
-// before the current ones are history, written as they were.
+// before the current ones are history, written as they were. A run that
+// writes nothing of the plan holds nothing.
 func ImportPlan(ctx context.Context, db *store.DB, u user.User, f PlanFile, lim PlanLimits, now time.Time, dryRun bool) (PlanReport, error) {
 	var r PlanReport
 	cal, err := day.NewCalendar(u.TimeZone, u.DayStartHour)
@@ -196,12 +207,15 @@ func ImportPlan(ctx context.Context, db *store.DB, u user.User, f PlanFile, lim 
 	if err != nil {
 		return r, err
 	}
-	if !have.plan {
+	r.Written = written(p, have)
+	// A run again that writes nothing of the plan holds nothing: what it
+	// wrote before stays, whatever the limits are now.
+	if !have.plan && slices.ContainsFunc(r.Written, func(s string) bool { return s != "profile" && s != "notes" }) {
 		if err := hold(ctx, db, u, p, have, today, lim, &r); err != nil {
+			r.Written = nil
 			return r, err
 		}
 	}
-	r.Written = written(p, have)
 	if dryRun {
 		return r, nil
 	}
@@ -211,7 +225,9 @@ func ImportPlan(ctx context.Context, db *store.DB, u user.User, f PlanFile, lim 
 // had is what the user has already, and the profile the file's fills.
 type had struct {
 	plan, weekdays, notes bool
-	profile, merged       profile.Profile
+	// trainingDays are the stored training weekdays.
+	trainingDays    plan.Weekdays
+	profile, merged profile.Profile
 	// phases and targets are the stored ones, of an import before.
 	phases  []plan.Phase
 	targets []plan.Target
@@ -240,15 +256,22 @@ func existing(ctx context.Context, db *store.DB, u user.User, p thePlan, r *Plan
 	}
 	h.plan = !inPlan(phases, targets, p)
 	h.phases, h.targets = phases, targets
-	h.weekdays, h.notes = w != 0, notes != ""
+	h.weekdays, h.notes, h.trainingDays = w != 0, notes != "", w
 	h.merged = h.profile
 	if p.profile != nil {
 		h.merged = fill(h.profile, *p.profile)
 	}
+	// Kept is what the user has that differs from the file's, which stays;
+	// what an import before wrote is no more theirs than the file's.
 	for _, k := range []struct {
 		kept bool
 		name string
-	}{{h.plan, "plan"}, {h.weekdays, "training weekdays"}, {h.profile.Complete(), "profile"}, {h.notes, "notes"}} {
+	}{
+		{h.plan, "plan"},
+		{p.weekdays != nil && h.weekdays && w != *p.weekdays, "training weekdays"},
+		{p.profile != nil && h.merged != *p.profile, "profile"},
+		{p.notes != "" && h.notes && notes != p.notes, "notes"},
+	} {
 		if k.kept {
 			r.Kept = append(r.Kept, k.name)
 		}
@@ -309,8 +332,11 @@ func hold(ctx context.Context, db *store.DB, u user.User, p thePlan, h had, toda
 	if h.weekdays || h.plan {
 		weekdays = nil
 	}
-	if weekdays != nil {
+	switch {
+	case weekdays != nil:
 		s.TrainingDays = *weekdays
+	case h.weekdays:
+		s.TrainingDays = h.trainingDays
 	}
 	var changes []limits.Change
 	for _, ph := range fromCurrent(p.phases, today, func(ph plan.Phase) day.Date { return ph.Start }, func(ph plan.Phase) bool { return ph.On(today) }) {
@@ -325,8 +351,10 @@ func hold(ctx context.Context, db *store.DB, u user.User, p thePlan, h had, toda
 		if i == 0 {
 			c.TrainingDays = weekdays
 		}
-		if before := slices.Index(p.targets, t); before > 0 {
-			st.Target = &p.targets[before-1]
+		// The first is held as a new one, as the history before it is the
+		// file's, unchecked; each after against the one before, held too.
+		if i > 0 {
+			st.Target = &targets[i-1]
 		}
 		res := limits.Validate(c, st, levels)
 		violations = append(violations, res.Violations...)

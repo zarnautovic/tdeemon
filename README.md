@@ -422,8 +422,10 @@ with their history, and notes for a coach, in the shape of
 [internal/history/testdata/plan.json](internal/history/testdata/plan.json).
 It runs after the days, as the limits hold the current phase and target,
 and the ones after them, to your weigh-ins of the last week (a dry run
-takes the ones the days would bring); a violation refuses the plan
-whole, and nothing of it is written ([docs/limits.md](docs/limits.md)).
+takes the ones the days would bring); the current target is held as a
+new one, as the history before it vouches for nothing. A violation
+refuses the plan whole, and nothing of it is written
+([docs/limits.md](docs/limits.md)).
 A plan of your own in tdeemon, your training weekdays, the fields of
 your profile you have set and your notes stay yours; a plan a run
 before wrote in part is finished.

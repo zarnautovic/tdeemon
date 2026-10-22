@@ -64,8 +64,8 @@ Flags of import-history (--health-db, --foods, --plan, or more):
   --plan PATH        a plan file (JSON) written from the predecessor's
                      goals note: the profile, training weekdays, phases,
                      targets and notes, each the user has not got; the
-                     limits hold the current phase and target to the
-                     weigh-ins
+                     limits hold the current phase and target, and the
+                     ones after them, to the weigh-ins
   --dry-run          say what it would import, and write nothing
 
 An import runs again without changing what it imported: a value merges

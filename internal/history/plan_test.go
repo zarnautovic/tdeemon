@@ -72,9 +72,21 @@ func TestImportPlan(t *testing.T) {
 	}
 	checkPlan(t, db, u)
 
-	again, err := history.ImportPlan(t.Context(), db, u, f, history.PlanLimits{Instance: limits.Instance()}, now, false)
-	if err != nil || len(again.Written) != 0 || !slices.Equal(again.Kept, []string{"training weekdays", "profile", "notes"}) {
+	// A run again writes nothing, keeps nothing of the user's (what it
+	// wrote is the file's), and holds nothing: weeks later, without a
+	// weigh-in, the limits would refuse the plan.
+	later := now.AddDate(0, 0, 60)
+	again, err := history.ImportPlan(t.Context(), db, u, f, history.PlanLimits{Instance: limits.Instance()}, later, false)
+	if err != nil || len(again.Written) != 0 || len(again.Kept) != 0 {
 		t.Errorf("the run again = %+v, %v", again, err)
+	}
+	// Training weekdays the user cleared since are written again, and move
+	// the plan's average: the plan is held again.
+	if err := db.SetTrainingWeekdays(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, 0, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := history.ImportPlan(t.Context(), db, u, f, history.PlanLimits{Instance: limits.Instance()}, later, true); !refusedFor(err, limits.RuleWeightMissing, "") {
+		t.Errorf("the weekdays again: %v", err)
 	}
 }
 
@@ -200,6 +212,7 @@ func TestImportPlanRefusesItsShape(t *testing.T) {
 		"a target": func(s string) string {
 			return strings.Replace(s, `"effective_from": "2026-10-01"`, `"effective_from": "October"`, 1)
 		},
+		"the notes": func(s string) string { return strings.Replace(s, `No fish. Trains`, `No fish.\tTrains`, 1) },
 	} {
 		if _, err := history.ImportPlan(t.Context(), db, u, readPlan(t, edit), history.PlanLimits{Instance: limits.Instance()}, now, false); err == nil || !strings.Contains(err.Error(), "the plan file") {
 			t.Errorf("%s: %v", name, err)
@@ -212,6 +225,36 @@ func TestImportPlanRefusesItsShape(t *testing.T) {
 	}
 	if ts, _ := db.Targets(t.Context(), u.ID); len(ts) != 0 {
 		t.Error("a plan of a bad shape wrote")
+	}
+	if pr, _ := db.Profile(t.Context(), u.ID); pr != (profile.Profile{}) {
+		t.Errorf("a plan of a bad shape wrote the profile %+v", pr)
+	}
+}
+
+// The limits hold the plan to the training weekdays the user has: below a
+// BMI of 18.5, a target whose rest day is lower than the one before but
+// whose week, of three training days, is not, passes. Weekdays the same as
+// the file's are not reported kept.
+func TestImportPlanByTheUsersWeekdays(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	weighed(t, db, u, 50)
+	if err := db.SetTrainingWeekdays(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, plan.Weekdays(0b0101010), now); err != nil {
+		t.Fatal(err)
+	}
+	f := readPlan(t, func(s string) string {
+		return strings.NewReplacer(
+			`"type": "cut", "rate_pct_week": -0.5, "goal_weight": 64, "milestone_weight": 68`, `"type": "maintain", "rate_pct_week": 0`,
+			`"protein": 130`, `"protein": 90`,
+			`"training": {"kcal": 1950, "protein": 130, "fat": 60}, "rest": {"kcal": 1750, "protein": 130, "fat": 60}}`,
+			`"training": {"kcal": 2000, "protein": 90, "fat": 60}, "rest": {"kcal": 1500, "protein": 90, "fat": 60}},
+    {"effective_from": "2026-11-01", "training": {"kcal": 2400, "protein": 90, "fat": 60}, "rest": {"kcal": 1450, "protein": 90, "fat": 60}}`,
+		).Replace(s)
+	})
+	r, err := importPlan(t, db, u, f, history.PlanLimits{}, true)
+	if err != nil || slices.Contains(r.Written, "training weekdays") || len(r.Kept) != 0 {
+		t.Errorf("report = %+v, %v", r, err)
 	}
 }
 
@@ -353,7 +396,7 @@ func TestImportPlanWeighedOfADryRun(t *testing.T) {
 	if _, err := importPlan(t, db, u, readPlan(t, nil), history.PlanLimits{Weighed: weighedIn}, true); err != nil {
 		t.Errorf("with the days' weigh-ins: %v", err)
 	}
-	if _, err := importPlan(t, db, u, readPlan(t, nil), history.PlanLimits{}, true); !refusedFor(err, limits.RuleWeightMissing, "") {
+	if r, err := importPlan(t, db, u, readPlan(t, nil), history.PlanLimits{}, true); !refusedFor(err, limits.RuleWeightMissing, "") || len(r.Written) != 0 {
 		t.Errorf("without: %v", err)
 	}
 }
@@ -374,26 +417,71 @@ func TestImportPlanFillsTheProfile(t *testing.T) {
 	}
 }
 
-// A target is held against the one before it: one under the user's floor
-// of fat, but nearer it than the target before, passes, as an edit toward
-// the limit does.
-func TestImportPlanTowardTheLimit(t *testing.T) {
+// The history before the current target vouches for nothing: the
+// current one is held as a new one, whether it moves toward the limit
+// from the one before or stays as it was.
+func TestImportPlanHistoryVouchesForNothing(t *testing.T) {
 	t.Parallel()
 
 	db, u := newUser(t)
 	weighed(t, db, u, 72)
-	f := readPlan(t, func(s string) string {
-		return strings.NewReplacer(
-			`{"kcal": 2000, "protein": 130, "fat": 65}`, `{"kcal": 2000, "protein": 130, "fat": 30}`,
-			`"training": {"kcal": 1950, "protein": 130, "fat": 60}, "rest": {"kcal": 1750, "protein": 130, "fat": 60}`,
-			`"training": {"kcal": 2000, "protein": 130, "fat": 38}, "rest": {"kcal": 2000, "protein": 130, "fat": 38}`,
-		).Replace(s)
-	})
-	if _, err := importPlan(t, db, u, f, history.PlanLimits{}, true); err != nil {
-		t.Errorf("a target nearer the floor than the one before: %v", err)
+	for name, current := range map[string]string{
+		"toward the floor": `{"kcal": 500, "protein": 50, "fat": 6}`,
+		"as it was":        `{"kcal": 400, "protein": 40, "fat": 2}`,
+	} {
+		f := readPlan(t, func(s string) string {
+			return strings.NewReplacer(
+				`{"kcal": 2000, "protein": 130, "fat": 65}`, `{"kcal": 400, "protein": 40, "fat": 2}`,
+				`{"kcal": 1950, "protein": 130, "fat": 60}`, current, `{"kcal": 1750, "protein": 130, "fat": 60}`, current,
+			).Replace(s)
+		})
+		if _, err := importPlan(t, db, u, f, history.PlanLimits{}, true); !refusedFor(err, limits.RuleKcalFloor, "") {
+			t.Errorf("%s: %v", name, err)
+		}
 	}
-	f.Targets = f.Targets[1:]
-	if _, err := importPlan(t, db, u, f, history.PlanLimits{}, true); !refusedFor(err, limits.RuleFatFloor, limits.LevelUser) {
-		t.Errorf("the same target alone: %v", err)
+}
+
+// A target after the current one is held against the one before it: below
+// a BMI of 18.5, one that lowers the kcal is refused, though alone it
+// would pass.
+func TestImportPlanAgainstTheOneBefore(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	weighed(t, db, u, 50)
+	maintain := func(s string) string {
+		return strings.NewReplacer(
+			`"type": "cut", "rate_pct_week": -0.5, "goal_weight": 64, "milestone_weight": 68`, `"type": "maintain", "rate_pct_week": 0`,
+			`"protein": 130`, `"protein": 90`,
+		).Replace(s)
+	}
+	if _, err := importPlan(t, db, u, readPlan(t, maintain), history.PlanLimits{}, true); err != nil {
+		t.Fatalf("the plan alone: %v", err)
+	}
+	f := readPlan(t, func(s string) string {
+		return strings.Replace(maintain(s), `
+  ],
+  "notes"`, `,
+    {"effective_from": "2026-11-01", "training": {"kcal": 1700, "protein": 90, "fat": 60}, "rest": {"kcal": 1500, "protein": 90, "fat": 60}}
+  ],
+  "notes"`, 1)
+	})
+	if _, err := importPlan(t, db, u, f, history.PlanLimits{}, true); !refusedFor(err, limits.RuleUnderweightLoss, limits.LevelCode) {
+		t.Errorf("a target lower than the one before: %v", err)
+	}
+}
+
+// A refusal names each rule, its day type if any, and its values to two
+// decimals at most, as a protein in g/kg needs them.
+func TestPlanRefusedError(t *testing.T) {
+	t.Parallel()
+
+	err := &history.PlanRefusedError{Violations: []limits.Violation{
+		{Rule: limits.RuleProteinCeiling, DayType: plan.Rest, Proposed: 2.4166666, Limit: 2.2, Level: limits.LevelInstance},
+		{Rule: limits.RuleWeightMissing},
+	}}
+	want := "the limits refuse the plan: protein_ceiling (rest day): 2.42, the limit 2.2 (instance); weight_missing"
+	if err.Error() != want {
+		t.Errorf("%q, want %q", err.Error(), want)
 	}
 }

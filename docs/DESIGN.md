@@ -612,8 +612,9 @@ the first spec.
    - the vault's goals note, which is prose, through a plan file (JSON)
      the user writes from it and reviews → the profile, the training
      weekdays, `phases`, the `targets` history (from its revision log)
-     and `profile_notes`; the current phase and target are held to the
-     limits, the history before them is written as it was.
+     and `profile_notes`; the current phase and target, and the ones
+     after them, are held to the limits, the history before them is
+     written as it was.
 
    Nothing is read from the predecessor or the vault after it: there is
    no shadow mode and no nightly re-import.

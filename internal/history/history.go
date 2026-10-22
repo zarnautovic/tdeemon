@@ -27,6 +27,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/text"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
@@ -189,6 +190,10 @@ type Report struct {
 	Excluded []string
 	// Rejected are the values left out, by their rule.
 	Rejected []ingest.Rejected
+	// Weighed are the weigh-ins the days bring, by their day, the ones
+	// left out not among them: a dry run holds a plan to them, as it
+	// writes no days.
+	Weighed map[day.Date]float64
 	// Over are the days whose meals have more kcal than the day's total;
 	// their meals stay, with no rest.
 	Over []string
@@ -227,8 +232,14 @@ func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time
 		return r, err
 	}
 	r.Rejected = res.Rejected
+	r.Weighed = map[day.Date]float64{}
 	for _, d := range res.Days {
 		r.Metrics += len(d.Values)
+		for _, v := range d.Values {
+			if v.Kind == metric.Weight {
+				r.Weighed[d.Date] = v.Value
+			}
+		}
 		if dryRun {
 			continue
 		}
