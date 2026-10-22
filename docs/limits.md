@@ -95,6 +95,14 @@ only the warning on energy availability.
   autopilot's steps included.
 - **The trend weight** is the one now, for the reference mass and to
   turn a rate in % into kg.
+- **The one-off import of the predecessor's plan** (`import-history
+  --plan`, DESIGN.md §10) holds every phase and target from the current
+  ones on to these limits, the future ones too, each target against the
+  one before it; the ones before are history, written as they were.
+  Until calibration has a trend weight of its own, the import takes the
+  mean of the weigh-ins of the last week up to today that has any,
+  within 30 days. Its current phase is held as a new one: its cut's row
+  is picked by the trend weight now, not by the one when it started.
 - **A default never passes a limit:** it is cut at the instance's or
   the user's, where that is stricter (above about 150 kg, −1.0 % a week
   is more than 1.5 kg; a user's protein ceiling of 2.0 g/kg cuts a

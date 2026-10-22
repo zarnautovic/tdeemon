@@ -54,13 +54,17 @@ type planDayTarget struct {
 }
 
 // ReadPlan reads a plan file; a field it does not know is an error, as a
-// typo would leave a value out.
+// typo would leave a value out, and so is anything after the plan.
 func ReadPlan(r io.Reader) (PlanFile, error) {
 	var f PlanFile
 	dec := json.NewDecoder(r)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&f); err != nil {
 		return PlanFile{}, fmt.Errorf("the plan file: %w", err)
+	}
+	var more json.RawMessage
+	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
+		return PlanFile{}, errors.New("the plan file: something after the plan")
 	}
 	return f, nil
 }
@@ -75,7 +79,7 @@ type thePlan struct {
 }
 
 // parse checks f's shape and returns it as the domain's types, the phases
-// and targets in order.
+// and targets in order: a timeline and a history as the store keeps them.
 func (f PlanFile) parse(today day.Date) (thePlan, error) {
 	var p thePlan
 	var errs []error
@@ -103,7 +107,6 @@ func (f PlanFile) parse(today day.Date) (thePlan, error) {
 			ph.End, err = day.ParseDate(x.End)
 			errs = append(errs, err)
 		}
-		errs = append(errs, ph.Validate())
 		p.phases = append(p.phases, ph)
 	}
 	for _, x := range f.Targets {
@@ -113,11 +116,12 @@ func (f PlanFile) parse(today day.Date) (thePlan, error) {
 		}
 		var err error
 		t.EffectiveFrom, err = day.ParseDate(x.EffectiveFrom)
-		errs = append(errs, err, t.Validate())
+		errs = append(errs, err)
 		p.targets = append(p.targets, t)
 	}
 	slices.SortFunc(p.phases, func(a, b plan.Phase) int { return strings.Compare(a.Start.String(), b.Start.String()) })
 	slices.SortFunc(p.targets, func(a, b plan.Target) int { return strings.Compare(a.EffectiveFrom.String(), b.EffectiveFrom.String()) })
+	errs = append(errs, plan.ValidateTimeline(p.phases), plan.ValidateHistory(p.targets))
 	p.notes = strings.TrimSpace(f.Notes)
 	if err := errors.Join(errs...); err != nil {
 		return thePlan{}, fmt.Errorf("the plan file: %w", err)
@@ -130,8 +134,9 @@ type PlanReport struct {
 	// Written names what was written: "profile", "training weekdays",
 	// each phase and target by its first day, "notes".
 	Written []string
-	// Kept names what the user had already, which stays: the plan as a
-	// whole (any phase or target), the profile, the notes.
+	// Kept names what the user had already, which stays: their own plan
+	// (a phase or a target no import before wrote), training weekdays, a
+	// complete profile, notes.
 	Kept []string
 	// Warnings are what the limits warn of, without refusing.
 	Warnings []limits.Warning
@@ -157,16 +162,26 @@ func (e *PlanRefusedError) Error() string {
 	return strings.TrimSuffix(b.String(), ";")
 }
 
+// PlanLimits are what ImportPlan holds a plan to: the instance's limits,
+// and weigh-ins the days of a dry run would bring, by their day, which
+// the store does not have yet.
+type PlanLimits struct {
+	Instance limits.Limits
+	Weighed  map[day.Date]float64
+}
+
 // ImportPlan writes f into u's plan, or with dryRun says what it would
-// write. A user who has a plan already (a phase or a target) keeps it,
-// and the file's plan is left out; their profile and their notes stay
-// theirs too. The current phase and target (the ones today falls in) and
-// the training weekdays are held to the limits (instance, the instance's;
-// the user's own from the store) first, by the profile and the trend
-// weight of the last week of weigh-ins, and a violation refuses the whole
-// plan; the phases and targets before them are history, and are written
-// as they were.
-func ImportPlan(ctx context.Context, db *store.DB, u user.User, f PlanFile, instance limits.Limits, now time.Time, dryRun bool) (PlanReport, error) {
+// write. What the user has stays theirs: a plan of their own (a phase or
+// a target an import before did not write), training weekdays, the
+// fields of their profile (the file fills the others), notes; a plan an
+// import before wrote in part is written whole. Every phase and target
+// from the current ones (the ones today falls in) on, the future ones
+// too, are held to the limits first (the instance's, and the user's own
+// from the store), by the profile and the trend weight of the last week
+// of weigh-ins, each target against the one before it; a violation
+// refuses the whole plan, and nothing is written. The phases and targets
+// before the current ones are history, written as they were.
+func ImportPlan(ctx context.Context, db *store.DB, u user.User, f PlanFile, lim PlanLimits, now time.Time, dryRun bool) (PlanReport, error) {
 	var r PlanReport
 	cal, err := day.NewCalendar(u.TimeZone, u.DayStartHour)
 	if err != nil {
@@ -177,36 +192,42 @@ func ImportPlan(ctx context.Context, db *store.DB, u user.User, f PlanFile, inst
 	if err != nil {
 		return r, err
 	}
-	have, err := existing(ctx, db, u, &r)
+	have, err := existing(ctx, db, u, p, &r)
 	if err != nil {
 		return r, err
 	}
 	if !have.plan {
-		if err := hold(ctx, db, u, p, have.profile, today, instance, &r); err != nil {
+		if err := hold(ctx, db, u, p, have, today, lim, &r); err != nil {
 			return r, err
 		}
 	}
+	r.Written = written(p, have)
 	if dryRun {
-		r.Written = written(p, have)
 		return r, nil
 	}
-	err = write(ctx, db, u, p, have, today, now, &r)
-	return r, err
+	return r, write(ctx, db, u, p, have, today, now)
 }
 
-// what the user has already.
+// had is what the user has already, and the profile the file's fills.
 type had struct {
-	plan, notes bool
-	profile     profile.Profile
+	plan, weekdays, notes bool
+	profile, merged       profile.Profile
+	// phases and targets are the stored ones, of an import before.
+	phases  []plan.Phase
+	targets []plan.Target
 }
 
-func existing(ctx context.Context, db *store.DB, u user.User, r *PlanReport) (had, error) {
+func existing(ctx context.Context, db *store.DB, u user.User, p thePlan, r *PlanReport) (had, error) {
 	var h had
 	phases, err := db.Phases(ctx, u.ID)
 	if err != nil {
 		return h, err
 	}
 	targets, err := db.Targets(ctx, u.ID)
+	if err != nil {
+		return h, err
+	}
+	w, err := db.TrainingWeekdays(ctx, u.ID)
 	if err != nil {
 		return h, err
 	}
@@ -217,29 +238,64 @@ func existing(ctx context.Context, db *store.DB, u user.User, r *PlanReport) (ha
 	if err != nil {
 		return h, err
 	}
-	h.plan, h.notes = len(phases) > 0 || len(targets) > 0, notes != ""
-	if h.plan {
-		r.Kept = append(r.Kept, "plan")
+	h.plan = !inPlan(phases, targets, p)
+	h.phases, h.targets = phases, targets
+	h.weekdays, h.notes = w != 0, notes != ""
+	h.merged = h.profile
+	if p.profile != nil {
+		h.merged = fill(h.profile, *p.profile)
 	}
-	if h.profile.Complete() {
-		r.Kept = append(r.Kept, "profile")
-	}
-	if h.notes {
-		r.Kept = append(r.Kept, "notes")
+	for _, k := range []struct {
+		kept bool
+		name string
+	}{{h.plan, "plan"}, {h.weekdays, "training weekdays"}, {h.profile.Complete(), "profile"}, {h.notes, "notes"}} {
+		if k.kept {
+			r.Kept = append(r.Kept, k.name)
+		}
 	}
 	return h, nil
 }
 
-// hold holds the current phase and target, and the training weekdays, to
-// the limits.
-func hold(ctx context.Context, db *store.DB, u user.User, p thePlan, mine profile.Profile, today day.Date, instance limits.Limits,
-	r *PlanReport,
-) error {
-	pr := mine
-	if !pr.Complete() && p.profile != nil {
-		pr = *p.profile
+// inPlan reports whether every phase and target stored is one of p's, as
+// an import of p before wrote them: none, or a part of p.
+func inPlan(phases []plan.Phase, targets []plan.Target, p thePlan) bool {
+	for _, ph := range phases {
+		if !slices.ContainsFunc(p.phases, func(x plan.Phase) bool { return samePhase(x, ph) }) {
+			return false
+		}
 	}
-	trend, err := trendKg(ctx, db, u, today)
+	for _, t := range targets {
+		if !slices.Contains(p.targets, t) {
+			return false
+		}
+	}
+	return true
+}
+
+func samePhase(a, b plan.Phase) bool {
+	same := func(x, y *float64) bool { return x == nil && y == nil || x != nil && y != nil && *x == *y }
+	return a.Type == b.Type && a.Start == b.Start && a.End == b.End && a.RatePctWeek == b.RatePctWeek &&
+		same(a.GoalWeight, b.GoalWeight) && same(a.MilestoneWeight, b.MilestoneWeight)
+}
+
+// fill returns mine with the fields it lacks from the file's.
+func fill(mine, file profile.Profile) profile.Profile {
+	if mine.Sex == "" {
+		mine.Sex = file.Sex
+	}
+	if mine.BirthDate.IsZero() {
+		mine.BirthDate = file.BirthDate
+	}
+	if mine.HeightCm == 0 {
+		mine.HeightCm = file.HeightCm
+	}
+	return mine
+}
+
+// hold holds the phases and targets from the current ones on, and the
+// training weekdays, to the limits.
+func hold(ctx context.Context, db *store.DB, u user.User, p thePlan, h had, today day.Date, lim PlanLimits, r *PlanReport) error {
+	trend, err := trendKg(ctx, db, u, today, lim.Weighed)
 	if err != nil {
 		return err
 	}
@@ -247,50 +303,92 @@ func hold(ctx context.Context, db *store.DB, u user.User, p thePlan, mine profil
 	if err != nil {
 		return err
 	}
-	c := limits.Change{By: limits.ByPlan, TrainingDays: p.weekdays}
-	if ph, ok := plan.PhaseOn(p.phases, today); ok {
-		c.Phase = &ph
+	levels := limits.Levels{Instance: lim.Instance, User: userLimits}
+	s := limits.State{Today: today, Profile: h.merged, TrendKg: trend}
+	weekdays := p.weekdays
+	if h.weekdays || h.plan {
+		weekdays = nil
 	}
-	if t, ok := plan.TargetOn(p.targets, today); ok {
-		c.Target = &t
+	if weekdays != nil {
+		s.TrainingDays = *weekdays
 	}
-	s := limits.State{Today: today, Profile: pr, TrendKg: trend}
-	if p.weekdays != nil {
-		s.TrainingDays = *p.weekdays
+	var changes []limits.Change
+	for _, ph := range fromCurrent(p.phases, today, func(ph plan.Phase) day.Date { return ph.Start }, func(ph plan.Phase) bool { return ph.On(today) }) {
+		changes = append(changes, limits.Change{Phase: &ph, By: limits.ByPlan})
 	}
-	res := limits.Validate(c, s, limits.Levels{Instance: instance, User: userLimits})
-	if !res.OK() {
-		return &PlanRefusedError{Violations: res.Violations}
+	targets := fromCurrent(p.targets, today, func(t plan.Target) day.Date { return t.EffectiveFrom },
+		func(t plan.Target) bool { cur, ok := plan.TargetOn(p.targets, today); return ok && cur == t })
+	var violations []limits.Violation
+	for i, t := range targets {
+		c := limits.Change{Target: &t, By: limits.ByPlan}
+		st := s
+		if i == 0 {
+			c.TrainingDays = weekdays
+		}
+		if before := slices.Index(p.targets, t); before > 0 {
+			st.Target = &p.targets[before-1]
+		}
+		res := limits.Validate(c, st, levels)
+		violations = append(violations, res.Violations...)
+		r.Warnings = append(r.Warnings, res.Warnings...)
 	}
-	r.Warnings = res.Warnings
+	for _, c := range changes {
+		res := limits.Validate(c, s, levels)
+		violations = append(violations, res.Violations...)
+		r.Warnings = append(r.Warnings, res.Warnings...)
+	}
+	if len(violations) > 0 {
+		return &PlanRefusedError{Violations: violations}
+	}
+	return nil
+}
+
+// fromCurrent returns the entries of xs from the current one (the one
+// current reports) on, or those after today when none is current: the
+// ones the limits hold.
+func fromCurrent[T any](xs []T, today day.Date, start func(T) day.Date, current func(T) bool) []T {
+	for i, x := range xs {
+		if current(x) || today.Before(start(x)) {
+			return xs[i:]
+		}
+	}
 	return nil
 }
 
 // trendKg stands in for the trend weight until calibration has its own:
-// the mean of the weigh-ins of the last week before today that has any,
-// within the last 30 days; 0 for none.
-func trendKg(ctx context.Context, db *store.DB, u user.User, today day.Date) (float64, error) {
+// the mean of the weigh-ins of the last week up to today that has any,
+// within the last 30 days, of the store's and the ones of weighed on days
+// the store has none of; 0 for none.
+func trendKg(ctx context.Context, db *store.DB, u user.User, today day.Date, weighed map[day.Date]float64) (float64, error) {
 	ms, err := db.Metrics(ctx, u.ID, today.AddDays(-30), today)
 	if err != nil {
 		return 0, err
 	}
-	var last day.Date
+	kg := map[day.Date]float64{}
+	for d, w := range weighed {
+		if !d.Before(today.AddDays(-30)) && !today.Before(d) {
+			kg[d] = w
+		}
+	}
 	for d, vs := range ms {
-		if slices.ContainsFunc(vs, func(v metric.Value) bool { return v.Kind == metric.Weight }) && last.Before(d) {
+		for _, v := range vs {
+			if v.Kind == metric.Weight {
+				kg[d] = v.Value
+			}
+		}
+	}
+	var last day.Date
+	for d := range kg {
+		if last.Before(d) {
 			last = d
 		}
 	}
 	var sum float64
 	var n int
-	for d, vs := range ms {
-		if d.Before(last.AddDays(-6)) {
-			continue
-		}
-		for _, v := range vs {
-			if v.Kind == metric.Weight {
-				sum += v.Value
-				n++
-			}
+	for d, w := range kg {
+		if !d.Before(last.AddDays(-6)) {
+			sum += w
+			n++
 		}
 	}
 	if n == 0 {
@@ -299,21 +397,27 @@ func trendKg(ctx context.Context, db *store.DB, u user.User, today day.Date) (fl
 	return sum / float64(n), nil
 }
 
-// written names what a write of p would write, by what the user has.
+// written names what a write of p writes, by what the user has: the
+// training weekdays only with a plan, as they move its weekly average,
+// and of the plan what an import before has not written.
 func written(p thePlan, h had) []string {
 	var out []string
-	if p.profile != nil && !h.profile.Complete() {
+	if h.merged != h.profile {
 		out = append(out, "profile")
 	}
+	if p.weekdays != nil && !h.weekdays && !h.plan {
+		out = append(out, "training weekdays")
+	}
 	if !h.plan {
-		if p.weekdays != nil {
-			out = append(out, "training weekdays")
-		}
 		for _, ph := range p.phases {
-			out = append(out, "phase from "+ph.Start.String())
+			if !slices.ContainsFunc(h.phases, func(x plan.Phase) bool { return samePhase(x, ph) }) {
+				out = append(out, "phase from "+ph.Start.String())
+			}
 		}
 		for _, t := range p.targets {
-			out = append(out, "target from "+t.EffectiveFrom.String())
+			if !slices.Contains(h.targets, t) {
+				out = append(out, "target from "+t.EffectiveFrom.String())
+			}
 		}
 	}
 	if p.notes != "" && !h.notes {
@@ -322,19 +426,18 @@ func written(p thePlan, h had) []string {
 	return out
 }
 
-func write(ctx context.Context, db *store.DB, u user.User, p thePlan, h had, today day.Date, now time.Time, r *PlanReport) error {
-	r.Written = written(p, h)
-	if p.profile != nil && !h.profile.Complete() {
-		if err := db.SetProfile(ctx, u.ID, Actor, *p.profile, today, now); err != nil {
+func write(ctx context.Context, db *store.DB, u user.User, p thePlan, h had, today day.Date, now time.Time) error {
+	if h.merged != h.profile {
+		if err := db.SetProfile(ctx, u.ID, Actor, h.merged, today, now); err != nil {
 			return fmt.Errorf("the profile: %w", err)
 		}
 	}
-	if !h.plan {
-		if p.weekdays != nil {
-			if err := db.SetTrainingWeekdays(ctx, u.ID, Actor, *p.weekdays, now); err != nil {
-				return fmt.Errorf("the training weekdays: %w", err)
-			}
+	if p.weekdays != nil && !h.weekdays && !h.plan {
+		if err := db.SetTrainingWeekdays(ctx, u.ID, Actor, *p.weekdays, now); err != nil {
+			return fmt.Errorf("the training weekdays: %w", err)
 		}
+	}
+	if !h.plan {
 		for _, ph := range p.phases {
 			if err := db.SetPhase(ctx, u.ID, Actor, ph, now); err != nil {
 				return fmt.Errorf("the phase from %s: %w", ph.Start, err)

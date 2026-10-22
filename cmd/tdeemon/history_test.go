@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -269,7 +270,7 @@ func TestImportHistoryPlan(t *testing.T) {
 	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--plan", planFile, "--dry-run"}, env, noInput(), &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "the plan for ana@example.com: 0 parts.\nKept, as the user has them (3):\n  plan") {
+	if !strings.Contains(out.String(), "the plan for ana@example.com: 0 parts.\nKept, as the user has them (3):\n  training weekdays") {
 		t.Errorf("the run again said:\n%s", out.String())
 	}
 	err = run(t.Context(), []string{"import-history", "--email", "ivo@example.com", "--plan", planFile}, env, noInput(), io.Discard, io.Discard)
@@ -279,5 +280,47 @@ func TestImportHistoryPlan(t *testing.T) {
 	err = run(t.Context(), []string{"import-history", "--email", "ivo@example.com", "--plan", filepath.Join(t.TempDir(), "none.json")}, env, noInput(), io.Discard, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "the plan file") {
 		t.Errorf("no plan file: %v", err)
+	}
+}
+
+// The instance's limits from TDEEMON_LIMIT_* hold a plan, and a dry run of
+// the days and the plan holds it to the days' weigh-ins, which it does not
+// write.
+func TestImportHistoryPlanLimits(t *testing.T) {
+	t.Parallel()
+
+	env, _ := instance(t, map[string]string{"TDEEMON_LIMIT_CUT_RATE": "-0.4"})
+	loose, _ := instance(t, nil)
+	for _, e := range []func(string) (string, bool){env, loose} {
+		if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, e, noInput(), io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+	}
+	schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "history", "testdata", "predecessor.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(t.TempDir(), "health.db")
+	db, err := sql.Open("sqlite", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := string(schema)
+	today := day.DateOf(time.Now())
+	for i := range 7 {
+		rows += fmt.Sprintf("INSERT INTO days (date, kalorije, kilaza) VALUES ('%s', 1800, 72);\n", today.AddDays(-1-i))
+	}
+	if _, err := db.ExecContext(t.Context(), rows); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	planFile := filepath.Join("..", "..", "internal", "history", "testdata", "plan.json")
+	args := []string{"import-history", "--email", "ana@example.com", "--health-db", old, "--plan", planFile, "--dry-run"}
+	var out bytes.Buffer
+	if err := run(t.Context(), args, loose, noInput(), &out, io.Discard); err != nil || !strings.Contains(out.String(), "the plan for ana@example.com: 6 parts.") {
+		t.Errorf("the dry run: %v\n%s", err, out.String())
+	}
+	if err := run(t.Context(), args, env, noInput(), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "cut_rate") || !strings.Contains(err.Error(), "(instance)") {
+		t.Errorf("past the instance's limit: %v", err)
 	}
 }

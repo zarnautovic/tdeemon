@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/config"
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/history"
 	"github.com/zarnautovic/tdeemon/internal/store"
@@ -134,7 +135,8 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 		// The plan last: its limits hold it to the weigh-ins the days
 		// bring.
 		if f.plan != "" {
-			r, err := history.ImportPlan(ctx, db, u, src.plan, cfg.Limits, now, f.dryRun)
+			lim := history.PlanLimits{Instance: cfg.Limits, Weighed: weighedIn(src.days)}
+			r, err := history.ImportPlan(ctx, db, u, src.plan, lim, now, f.dryRun)
 			if err != nil {
 				return err
 			}
@@ -185,9 +187,26 @@ func writePlanReport(b *strings.Builder, u user.User, r history.PlanReport, dryR
 	list(b, "Kept, as the user has them", r.Kept)
 	warnings := make([]string, len(r.Warnings))
 	for i, w := range r.Warnings {
-		warnings[i] = fmt.Sprintf("%s %s: %v, the threshold %v", w.DayType, w.Rule, w.Value, w.Threshold)
+		of := ""
+		if w.DayType != "" {
+			of = " (" + string(w.DayType) + " day)"
+		}
+		warnings[i] = fmt.Sprintf("%s%s: %.1f, the threshold %.1f", w.Rule, of, w.Value, w.Threshold)
 	}
 	list(b, "Warnings of the limits", warnings)
+}
+
+// weighedIn returns the weigh-ins of days by their day: a dry run holds a
+// plan to them, as it writes no days.
+func weighedIn(days []history.Day) map[day.Date]float64 {
+	out := map[day.Date]float64{}
+	for _, d := range days {
+		date, err := day.ParseDate(d.Date)
+		if w, ok := d.Metrics["weight"]; ok && err == nil {
+			out[date] = w
+		}
+	}
+	return out
 }
 
 // writeReport writes what an import into u did, or would do, by u's
