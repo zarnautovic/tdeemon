@@ -38,13 +38,13 @@ const (
 	ActionRaiseProteinOrKcal = "raise_protein_or_kcal"
 	// ActionShrinkSurplus: a bulk gains fat with the lean mass flat.
 	ActionShrinkSurplus = "shrink_surplus"
-	// ActionMaintain: a loss under way crossed a BMI of 18.5, which no
-	// step deepens (docs/limits.md); maintenance is proposed.
+	// ActionMaintain: a loss under way below a BMI of 18.5, which no step
+	// deepens (docs/limits.md); maintenance is proposed.
 	ActionMaintain = "maintain"
 )
 
 // Guards, which turn or hold a verdict's action, and flags, which the
-// summary shows beside it.
+// summary shows beside it, with a verdict or without.
 const (
 	GuardUnderweight = "underweight"
 	GuardLeanMass    = "lean_mass"
@@ -52,6 +52,12 @@ const (
 	// GuardActivity: the last 7 days' steps differ from the days before
 	// them by more than Params.StepsChange.
 	GuardActivity = "activity"
+	// FlagUnderweight: the plan loses weight below a BMI of 18.5, which
+	// the summary flags whether or not there is a verdict.
+	FlagUnderweight = "underweight"
+	// FlagNoHeight: the profile has no height, so the underweight guard
+	// is off.
+	FlagNoHeight = "no_height"
 	// FlagNoSteps: too few days with steps for the activity guard, which
 	// is off.
 	FlagNoSteps = "no_steps"
@@ -90,12 +96,13 @@ type Verdict struct {
 	// guards that turned or held it.
 	Action string
 	Guards []string
-	// GapKcal is the change of the weekly average, in kcal a day, that
-	// would bring the measured rate to the target, more than 0 to eat
-	// more: what a coach works with. StepKcal is the step toward it that
-	// the autopilot's limits allow, the lesser of the user's step_kcal
-	// and step_pct of the weekly average, and the one a guard's action
-	// takes; 0 when the action keeps the kcal.
+	// GapKcal is the change of the weekly average, in kcal a day, the
+	// action asks for, more than 0 to eat more: what a coach works with.
+	// For the rate's actions it is the gap to the target rate, for
+	// ActionMaintain the gap to a rate of 0, for a guard's own action its
+	// step, and 0 when the action holds. StepKcal is the step toward it
+	// that the autopilot's limits allow (limits.Limits.Step), 0 when the
+	// action keeps the kcal or is no step's to take.
 	GapKcal, StepKcal float64
 	// Flags are what the summary shows beside the verdict (Flag*).
 	Flags []string
@@ -108,31 +115,37 @@ type Verdict struct {
 //
 // A verdict needs a phase with a target and a trusted estimate of its
 // own days, not one from before it. Its guards come in order, the first
-// that trips taking the action: a loss below a BMI of 18.5, lean mass
-// lost on a cut or a recomp, fat gained on a bulk, and a change of
-// activity.
+// that trips taking the action: a loss under way below a BMI of 18.5, by
+// the plan as the limits read it, lean mass lost on a cut or a recomp,
+// fat gained on a bulk, and a change of activity. Its flags hold without
+// a verdict too.
 func Judge(e Estimate, ph *plan.Phase, t *plan.Target, training plan.Weekdays, pr profile.Profile, lim limits.Limits, p Params) Verdict {
 	v := Verdict{Rate: RateNone, Action: ActionNone, Reasons: reasons(e, ph, t)}
+	underweight := v.flag(e, ph, t, training, pr, p)
 	if len(v.Reasons) > 0 {
 		return v
 	}
 	v.MeasuredPctWeek = plan.RatePctWeek(e.KgPerWeek, e.TrendKg)
 	v.TargetPctWeek, v.TolerancePctWeek = ph.RatePctWeek, p.TolerancePctWeek
-	// The kcal a day that move the rate by the gap: its kg a week at the
-	// trend weight, KcalPerKg a kg, over 7 days.
-	v.GapKcal = (v.TargetPctWeek - v.MeasuredPctWeek) / 100 * e.TrendKg * plan.KcalPerKg / 7
-	step := min(lim.StepKcal, lim.StepPct/100*t.WeeklyAverage(training.Count()).Kcal)
+	v.GapKcal = gapKcal(v.MeasuredPctWeek, v.TargetPctWeek, e.TrendKg)
+	step := lim.Step(t.WeeklyAverage(training.Count()).Kcal)
 	switch {
 	case v.MeasuredPctWeek < v.TargetPctWeek-v.TolerancePctWeek:
 		v.Rate, v.Action, v.StepKcal = RateBelow, ActionRaiseKcal, min(v.GapKcal, step)
 	case v.MeasuredPctWeek > v.TargetPctWeek+v.TolerancePctWeek:
 		v.Rate, v.Action, v.StepKcal = RateAbove, ActionLowerKcal, max(v.GapKcal, -step)
 	default:
-		v.Rate, v.Action = RateOnTarget, ActionHold
+		v.Rate, v.Action, v.GapKcal = RateOnTarget, ActionHold, 0
 	}
-	v.guard(e, ph, pr, step, p)
-	v.flag(e, ph, p)
+	v.guard(e, ph, underweight, step, p)
 	return v
+}
+
+// gapKcal returns the change of the weekly average, in kcal a day, that
+// moves the rate from one % a week to another: its kg a week at the trend
+// weight, KcalPerKg a kg, over 7 days.
+func gapKcal(fromPctWeek, toPctWeek, trendKg float64) float64 {
+	return plan.KgPerWeek(toPctWeek-fromPctWeek, trendKg) * plan.KcalPerKg / 7
 }
 
 // reasons lists why there is no verdict on ph from e.
@@ -155,41 +168,55 @@ func reasons(e Estimate, ph *plan.Phase, t *plan.Target) []string {
 	return out
 }
 
-// guard applies the first guard that trips, in their order, to the
-// action, a step being step.
-func (v *Verdict) guard(e Estimate, ph *plan.Phase, pr profile.Profile, step float64, p Params) {
-	b := e.Body
-	loss := v.MeasuredPctWeek < 0
+// flag adds what the summary shows beside the verdict, and reports
+// whether the plan loses weight below a BMI of 18.5.
+func (v *Verdict) flag(e Estimate, ph *plan.Phase, t *plan.Target, training plan.Weekdays, pr profile.Profile, p Params) bool {
+	var underweight bool
 	switch {
-	case loss && pr.HeightCm > 0 && pr.BMI(e.TrendKg) < limits.UnderweightBMI:
-		// Maintenance: the gap to a rate of 0, for a coach to propose; no
-		// step deepens the loss, and none is the autopilot's to take.
-		v.trip(GuardUnderweight, ActionMaintain, 0)
-		v.GapKcal = -v.MeasuredPctWeek / 100 * e.TrendKg * plan.KcalPerKg / 7
-	case (ph.Type == plan.Cut || ph.Type == plan.Recomp) && b.LeanMeasured && b.LeanKgPerWeek <= -p.LeanLossKgWeek:
-		v.trip(GuardLeanMass, ActionRaiseProteinOrKcal, step)
-	case ph.Type == plan.Bulk && b.BodyFatMeasured && b.LeanMeasured &&
-		b.BodyFatPerWeek-tNormal*b.BodyFatPerWeekSE > 0 && b.LeanKgPerWeek < leanFlatKgWeek:
-		v.trip(GuardFatGain, ActionShrinkSurplus, -step)
-	case b.StepsBefore > 0 && math.Abs(b.StepsRecent/b.StepsBefore-1) > p.StepsChange:
-		v.trip(GuardActivity, ActionHold, 0)
+	case pr.HeightCm <= 0:
+		v.Flags = append(v.Flags, FlagNoHeight)
+	case e.TrendKg > 0 && limits.Underweight(pr.BMI(e.TrendKg)):
+		s := limits.State{TrendKg: e.TrendKg, Phase: ph, Target: t, TrainingDays: training}
+		if e.Measured {
+			s.TDEE, s.TDEETrusted = e.TDEE, e.Trusted
+		}
+		if underweight = limits.LossUnderWay(s); underweight {
+			v.Flags = append(v.Flags, FlagUnderweight)
+		}
 	}
-}
-
-// trip sets the action a guard takes, with its step.
-func (v *Verdict) trip(guard, action string, step float64) {
-	v.Guards = append(v.Guards, guard)
-	v.Action, v.StepKcal = action, step
-}
-
-// flag adds what the summary shows beside the verdict.
-func (v *Verdict) flag(e Estimate, ph *plan.Phase, p Params) {
 	if e.Body.StepsBefore == 0 {
 		v.Flags = append(v.Flags, FlagNoSteps)
 	}
-	if ph.Type == plan.Maintain && e.PhaseStartTrendKg > 0 && math.Abs(e.TrendKg/e.PhaseStartTrendKg-1) > p.DriftShare {
+	if ph != nil && ph.Type == plan.Maintain && e.PhaseStartTrendKg > 0 && math.Abs(e.TrendKg/e.PhaseStartTrendKg-1) > p.DriftShare {
 		v.Flags = append(v.Flags, FlagMaintenanceDrift)
 	}
+	return underweight
+}
+
+// guard applies the first guard that trips, in their order, to the
+// action, a step being step.
+func (v *Verdict) guard(e Estimate, ph *plan.Phase, underweight bool, step float64, p Params) {
+	b := e.Body
+	switch {
+	case underweight:
+		// Maintenance: the gap to a rate of 0, for a coach to propose; no
+		// step deepens the loss, and none is the autopilot's to take.
+		v.trip(GuardUnderweight, ActionMaintain, gapKcal(v.MeasuredPctWeek, 0, e.TrendKg), 0)
+	case (ph.Type == plan.Cut || ph.Type == plan.Recomp) && b.LeanMeasured &&
+		b.LeanKgPerWeek <= -p.LeanLossKgWeek && b.LeanKgPerWeek+b.LeanHalfWidth < 0:
+		v.trip(GuardLeanMass, ActionRaiseProteinOrKcal, step, step)
+	case ph.Type == plan.Bulk && b.BodyFatMeasured && b.LeanMeasured &&
+		b.BodyFatPerWeek-b.BodyFatHalfWidth > 0 && b.LeanKgPerWeek < leanFlatKgWeek:
+		v.trip(GuardFatGain, ActionShrinkSurplus, -step, -step)
+	case b.StepsBefore > 0 && math.Abs(b.StepsRecent/b.StepsBefore-1) > p.StepsChange:
+		v.trip(GuardActivity, ActionHold, 0, 0)
+	}
+}
+
+// trip sets the action a guard takes, with its gap and its step.
+func (v *Verdict) trip(guard, action string, gap, step float64) {
+	v.Guards = append(v.Guards, guard)
+	v.Action, v.GapKcal, v.StepKcal = action, gap, step
 }
 
 // StateOf returns what the limits read of the data on today
@@ -198,7 +225,8 @@ func (v *Verdict) flag(e Estimate, ph *plan.Phase, p Params) {
 // and whether it is trusted, which a TDEE from before the phase may be,
 // the fat-free mass and the active energy of the last 7 days, and the
 // days logged and weighed in them. The autopilot's own history, its last
-// step and drift, is the autopilot's (P1).
+// step, its drift and the days since the phase last changed, is the
+// autopilot's (P1): left at 0, the wait for a first step holds.
 func StateOf(e Estimate, today day.Date, pr profile.Profile, ph *plan.Phase, t *plan.Target, training plan.Weekdays) limits.State {
 	s := limits.State{
 		Today: today, Profile: pr, TrendKg: e.TrendKg,
@@ -208,9 +236,6 @@ func StateOf(e Estimate, today day.Date, pr profile.Profile, ph *plan.Phase, t *
 	}
 	if e.Measured {
 		s.TDEE, s.TDEETrusted = e.TDEE, e.Trusted
-	}
-	if ph != nil {
-		s.Autopilot.DaysSincePhaseChange = today.DaysSince(ph.Start)
 	}
 	return s
 }

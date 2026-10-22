@@ -368,11 +368,12 @@ The replacement:
   - Too slow on a cut → lower the target.
   - Gaining too fast on a bulk → shrink the surplus.
   - Drifting during maintenance → nudge back.
-  - The step comes twice: the whole gap in kcal a day, which a coach
-    works with, as a coach's proposal meets no limit of a step; and the
-    step the autopilot's limits allow, the lesser of the user's
-    `step_kcal` and `step_pct` of the weekly average, which the
-    autopilot (P1) takes. In P0 nothing applies itself.
+  - The step comes twice: the gap in kcal a day the action asks for,
+    which a coach works with, as a coach's proposal meets no limit of a
+    step; and the step the autopilot's limits allow, the lesser of the
+    user's `step_kcal` and `step_pct` of the weekly average
+    (`limits.Limits.Step`, the one `Validate` holds a step to), which
+    the autopilot (P1) takes. In P0 nothing applies itself.
   - Each phase type's default target rate, and the rates a user may
     set without a confirmation, are in [limits.md](limits.md), from the
     literature; the summary flags a maintenance phase whose trend
@@ -391,14 +392,21 @@ The replacement:
     verdict's action.
   - Underweight: a loss under way below a BMI of 18.5, by the trend
     weight now, proposes maintenance, with the gap to a rate of 0 and
-    no autopilot step ([limits.md](limits.md)).
+    no autopilot step ([limits.md](limits.md)). The loss is the plan's,
+    as the limits read it (`limits.LossUnderWay`): the phase's rate, or
+    a target that implies a loss with a trusted TDEE. So a cut whose
+    weight stalled gets no deeper cut, and a bulk that loses still eats
+    more. The summary flags such a loss with a verdict or without, and
+    says when the profile has no height to tell.
   - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss, the lean
-    mass's slope over the window, turns a cut into "raise
-    protein/calories", a step up. The lean mass needs measuring as the
-    weight does: six times, at least a week apart.
-  - Fat-gain guard (bulk): body fat % rising beyond its error (80 %),
-    with the lean mass rising less than 0.1 kg a week → shrink the
-    surplus, a step down.
+    mass's slope over the window, beyond its error (80 %), turns a cut
+    into "raise protein/calories", a step up. The lean mass needs
+    measuring as the weight does: six times, from the first to the last
+    at least a week apart. A day with a body fat and a weigh-in but no
+    lean mass has the weight's share that is not fat.
+  - Fat-gain guard (bulk): body fat % rising beyond its error (80 %,
+    Student's t of its regression), with the lean mass rising less than
+    0.1 kg a week → shrink the surplus, a step down.
   - NEAT guard: the last 7 days' steps ±30 % from the up to 21 days
     before them in the window, in either direction, holds the kcal: the
     change is the activity's, not the metabolism's. It needs 4 days with
@@ -410,7 +418,8 @@ The replacement:
   trusted (a TDEE from before the phase may be: it is a TDEE all the
   same), and of the last 7 days the fat-free mass, the active energy and
   the days logged and weighed. The autopilot's own history is the
-  autopilot's.
+  autopilot's, the days since the phase last changed with it: until it
+  counts them, they are 0, and its wait for a first step holds.
 - **Split targets:** a change moves the weekly average and keeps the
   difference between training and rest days as it is; the split itself
   is the plan's, which the coach changes (§8).

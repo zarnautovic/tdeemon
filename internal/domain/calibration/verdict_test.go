@@ -51,13 +51,13 @@ func TestJudgeTheRate(t *testing.T) {
 		// 0.3 % a week of 80 kg is 0.24 kg, 264 kcal a day.
 		{"a cut losing too fast", phase(plan.Cut, -0.5), -0.8, RateBelow, ActionRaiseKcal, 264, 100},
 		{"a cut losing too slowly", phase(plan.Cut, -0.5), -0.2, RateAbove, ActionLowerKcal, -264, -100},
-		{"a cut on target", phase(plan.Cut, -0.5), -0.45, RateOnTarget, ActionHold, -44, 0},
+		{"a cut on target", phase(plan.Cut, -0.5), -0.45, RateOnTarget, ActionHold, 0, 0},
 		// A gap smaller than a step is the step.
 		{"a cut a little too fast", phase(plan.Cut, -0.5), -0.61, RateBelow, ActionRaiseKcal, 96.8, 96.8},
 		{"a bulk gaining too slowly", phase(plan.Bulk, 0.25), 0.05, RateBelow, ActionRaiseKcal, 176, 100},
 		{"a bulk gaining too fast", phase(plan.Bulk, 0.25), 0.5, RateAbove, ActionLowerKcal, -220, -100},
 		{"maintenance gaining", phase(plan.Maintain, 0), 0.15, RateAbove, ActionLowerKcal, -132, -100},
-		{"a recomp on target", phase(plan.Recomp, -0.1), -0.05, RateOnTarget, ActionHold, -44, 0},
+		{"a recomp on target", phase(plan.Recomp, -0.1), -0.05, RateOnTarget, ActionHold, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -100,8 +100,9 @@ func TestJudgeWithoutAVerdict(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			v := Judge(tc.e, tc.ph, tc.t, training, person, limits.UserDefaults(), DefaultParams())
-			if v.Rate != RateNone || v.Action != ActionNone || !slices.Equal(v.Reasons, tc.want) || v.StepKcal != 0 {
-				t.Errorf("rate %s, action %s, step %v, reasons %v; want none for %v", v.Rate, v.Action, v.StepKcal, v.Reasons, tc.want)
+			if v.Rate != RateNone || v.Action != ActionNone || !slices.Equal(v.Reasons, tc.want) || v.StepKcal != 0 || v.GapKcal != 0 {
+				t.Errorf("rate %s, action %s, gap %v, step %v, reasons %v; want none for %v",
+					v.Rate, v.Action, v.GapKcal, v.StepKcal, v.Reasons, tc.want)
 			}
 		})
 	}
@@ -110,15 +111,21 @@ func TestJudgeWithoutAVerdict(t *testing.T) {
 func TestJudgeGuards(t *testing.T) {
 	t.Parallel()
 
-	with := func(rate float64, change func(*Estimate)) Estimate {
+	with := func(rate float64, change ...func(*Estimate)) Estimate {
 		e := trusted(rate)
-		change(&e)
+		for _, c := range change {
+			c(&e)
+		}
 		return e
 	}
-	leanLoss := func(e *Estimate) { e.Body.LeanMeasured, e.Body.LeanKgPerWeek = true, -0.6 }
+	leanLoss := func(e *Estimate) { e.Body.LeanMeasured, e.Body.LeanKgPerWeek, e.Body.LeanHalfWidth = true, -0.6, 0.1 }
 	fatGain := func(e *Estimate) {
-		e.Body.BodyFatMeasured, e.Body.BodyFatPerWeek, e.Body.BodyFatPerWeekSE = true, 0.1, 0.02
+		e.Body.BodyFatMeasured, e.Body.BodyFatPerWeek, e.Body.BodyFatHalfWidth = true, 0.1, 0.03
 		e.Body.LeanMeasured, e.Body.LeanKgPerWeek = true, 0.05
+	}
+	// 58 kg at 180 cm is a BMI of 17.9.
+	thin := func(rate float64) func(*Estimate) {
+		return func(e *Estimate) { e.TrendKg, e.KgPerWeek = 58, plan.KgPerWeek(rate, 58) }
 	}
 	for _, tc := range []struct {
 		name       string
@@ -127,62 +134,50 @@ func TestJudgeGuards(t *testing.T) {
 		pr         profile.Profile
 		wantAction string
 		wantGuards []string
-		wantStep   float64
+		// wantGap and wantStep are the action's gap and step, in kcal.
+		wantGap, wantStep float64
 	}{
-		// 58 kg at 180 cm is a BMI of 17.9: no deeper loss, maintenance.
+		// A cut below a BMI of 18.5: maintenance, the gap to a rate of 0,
+		// 0.5 % a week of 58 kg being 319 kcal a day; no step.
+		{"a cut below a BMI of 18.5", with(-0.5, thin(-0.5)), phase(plan.Cut, -0.5), person, ActionMaintain, []string{GuardUnderweight}, 319, 0},
+		// The plan loses, though the weight stalled: no deeper cut.
+		{"a stalled cut below a BMI of 18.5", with(0.05, thin(0.05)), phase(plan.Cut, -0.5), person, ActionMaintain, []string{GuardUnderweight}, -31.9, 0},
+		// A bulk that loses there eats more, as the limits allow.
+		{"a bulk losing below a BMI of 18.5", with(-0.3, thin(-0.3)), phase(plan.Bulk, 0.25), person, ActionRaiseKcal, nil, 350.9, 100},
+		{"the underweight guard before the lean mass's", with(-0.5, thin(-0.5), leanLoss), phase(plan.Cut, -0.5), person, ActionMaintain, []string{GuardUnderweight}, 319, 0},
+		{"no height, no BMI", with(-0.5, thin(-0.5)), phase(plan.Cut, -0.5), profile.Profile{}, ActionHold, nil, 0, 0},
+		{"lean mass lost on a cut", with(-0.2, leanLoss), phase(plan.Cut, -0.5), person, ActionRaiseProteinOrKcal, []string{GuardLeanMass}, 100, 100},
+		{"lean mass lost on a recomp", with(-0.1, leanLoss), phase(plan.Recomp, -0.1), person, ActionRaiseProteinOrKcal, []string{GuardLeanMass}, 100, 100},
 		{
-			"a loss below a BMI of 18.5", with(-0.5, func(e *Estimate) { e.TrendKg, e.KgPerWeek = 58, plan.KgPerWeek(-0.5, 58) }),
-			phase(plan.Cut, -0.5), person, ActionMaintain,
-			[]string{GuardUnderweight},
-			0,
+			"lean mass lost within its error", with(-0.2, leanLoss, func(e *Estimate) { e.Body.LeanHalfWidth = 0.8 }),
+			phase(plan.Cut, -0.5), person, ActionLowerKcal, nil, -264, -100,
 		},
-		{"the underweight guard before the lean mass's", with(-0.5, func(e *Estimate) {
-			e.TrendKg, e.KgPerWeek = 58, plan.KgPerWeek(-0.5, 58)
-			leanLoss(e)
-		}), phase(plan.Cut, -0.5), person, ActionMaintain, []string{GuardUnderweight}, 0},
+		{"lean mass lost on a bulk", with(0.25, leanLoss), phase(plan.Bulk, 0.25), person, ActionHold, nil, 0, 0},
+		{"fat gained on a bulk", with(0.25, fatGain), phase(plan.Bulk, 0.25), person, ActionShrinkSurplus, []string{GuardFatGain}, -100, -100},
 		{
-			"no height, no BMI", with(-0.5, func(e *Estimate) { e.TrendKg, e.KgPerWeek = 58, plan.KgPerWeek(-0.5, 58) }),
-			phase(plan.Cut, -0.5),
-			profile.Profile{},
-			ActionHold, nil, 0,
+			"fat gained with the lean mass", with(0.25, fatGain, func(e *Estimate) { e.Body.LeanKgPerWeek = 0.2 }),
+			phase(plan.Bulk, 0.25), person, ActionHold, nil, 0, 0,
 		},
-		{"lean mass lost on a cut", with(-0.2, leanLoss), phase(plan.Cut, -0.5), person, ActionRaiseProteinOrKcal, []string{GuardLeanMass}, 100},
-		{"lean mass lost on a recomp", with(-0.1, leanLoss), phase(plan.Recomp, -0.1), person, ActionRaiseProteinOrKcal, []string{GuardLeanMass}, 100},
-		{"lean mass lost on a bulk", with(0.25, leanLoss), phase(plan.Bulk, 0.25), person, ActionHold, nil, 0},
-		{"fat gained on a bulk", with(0.25, fatGain), phase(plan.Bulk, 0.25), person, ActionShrinkSurplus, []string{GuardFatGain}, -100},
-		{"fat gained with the lean mass", with(0.25, func(e *Estimate) {
-			fatGain(e)
-			e.Body.LeanKgPerWeek = 0.2
-		}), phase(plan.Bulk, 0.25), person, ActionHold, nil, 0},
-		{"body fat within its error", with(0.25, func(e *Estimate) {
-			fatGain(e)
-			e.Body.BodyFatPerWeekSE = 0.1
-		}), phase(plan.Bulk, 0.25), person, ActionHold, nil, 0},
+		{
+			"body fat within its error", with(0.25, fatGain, func(e *Estimate) { e.Body.BodyFatHalfWidth = 0.15 }),
+			phase(plan.Bulk, 0.25), person, ActionHold, nil, 0, 0,
+		},
 		// 4500 steps against 7000 is 36 % fewer: the slower loss is the
 		// activity's.
-		{"fewer steps", with(-0.2, func(e *Estimate) { e.Body.StepsRecent = 4500 }), phase(plan.Cut, -0.5), person, ActionHold, []string{GuardActivity}, 0},
-		{"more steps", with(-0.8, func(e *Estimate) { e.Body.StepsRecent = 9500 }), phase(plan.Cut, -0.5), person, ActionHold, []string{GuardActivity}, 0},
-		{"steps 25 % fewer", with(-0.2, func(e *Estimate) { e.Body.StepsRecent = 5250 }), phase(plan.Cut, -0.5), person, ActionLowerKcal, nil, -100},
+		{"fewer steps", with(-0.2, func(e *Estimate) { e.Body.StepsRecent = 4500 }), phase(plan.Cut, -0.5), person, ActionHold, []string{GuardActivity}, 0, 0},
+		{"more steps", with(-0.8, func(e *Estimate) { e.Body.StepsRecent = 9500 }), phase(plan.Cut, -0.5), person, ActionHold, []string{GuardActivity}, 0, 0},
+		{"steps 25 % fewer", with(-0.2, func(e *Estimate) { e.Body.StepsRecent = 5250 }), phase(plan.Cut, -0.5), person, ActionLowerKcal, nil, -264, -100},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			v := Judge(tc.e, tc.ph, target, training, tc.pr, limits.UserDefaults(), DefaultParams())
-			if v.Action != tc.wantAction || !slices.Equal(v.Guards, tc.wantGuards) || !near(v.StepKcal, tc.wantStep, 1e-6) {
-				t.Errorf("action %s, guards %v, step %v; want %s, %v, %v", v.Action, v.Guards, v.StepKcal, tc.wantAction, tc.wantGuards, tc.wantStep)
+			if v.Action != tc.wantAction || !slices.Equal(v.Guards, tc.wantGuards) {
+				t.Errorf("action %s, guards %v; want %s, %v", v.Action, v.Guards, tc.wantAction, tc.wantGuards)
+			}
+			if !near(v.GapKcal, tc.wantGap, 0.1) || !near(v.StepKcal, tc.wantStep, 1e-6) {
+				t.Errorf("gap %v, step %v; want %v and %v", v.GapKcal, v.StepKcal, tc.wantGap, tc.wantStep)
 			}
 		})
-	}
-}
-
-func TestJudgeTheUnderweightGap(t *testing.T) {
-	t.Parallel()
-
-	// The gap is to maintenance: 0.5 % a week of 58 kg is 0.29 kg, 319
-	// kcal a day.
-	e := trusted(-0.5)
-	e.TrendKg, e.KgPerWeek = 58, plan.KgPerWeek(-0.5, 58)
-	if v := Judge(e, phase(plan.Cut, -0.5), target, training, person, limits.UserDefaults(), DefaultParams()); !near(v.GapKcal, 319, 1e-6) {
-		t.Errorf("gap %v, want 319 to maintenance", v.GapKcal)
 	}
 }
 
@@ -193,21 +188,35 @@ func TestJudgeFlags(t *testing.T) {
 		name   string
 		change func(*Estimate)
 		ph     *plan.Phase
+		pr     *profile.Profile
 		want   []string
 	}{
-		{"steps", func(*Estimate) {}, phase(plan.Cut, -0.5), nil},
-		{"no steps", func(e *Estimate) { e.Body = Body{} }, phase(plan.Cut, -0.5), []string{FlagNoSteps}},
+		{"steps", func(*Estimate) {}, phase(plan.Cut, -0.5), nil, nil},
+		{"no steps", func(e *Estimate) { e.Body = Body{} }, phase(plan.Cut, -0.5), nil, []string{FlagNoSteps}},
+		// With no verdict, as the estimate is not trusted, the flags hold.
+		{"a cut below a BMI of 18.5", func(e *Estimate) { e.Trusted, e.TrendKg = false, 58 }, phase(plan.Cut, -0.5), nil, []string{FlagUnderweight}},
+		{"a bulk below a BMI of 18.5", func(e *Estimate) { e.TrendKg = 58 }, phase(plan.Bulk, 0.25), nil, nil},
+		{"no height", func(*Estimate) {}, phase(plan.Cut, -0.5), &profile.Profile{}, []string{FlagNoHeight}},
 		// 83 kg against 80 at the phase's start is 3.75 % off.
-		{"maintenance drifting", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 83, 80 }, phase(plan.Maintain, 0), []string{FlagMaintenanceDrift}},
-		{"maintenance within 3 %", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 82, 80 }, phase(plan.Maintain, 0), nil},
-		{"a cut 3 % down", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 77, 80 }, phase(plan.Cut, -0.5), nil},
-		{"no start", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 83, 0 }, phase(plan.Maintain, 0), nil},
+		{"maintenance drifting", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 83, 80 }, phase(plan.Maintain, 0), nil, []string{FlagMaintenanceDrift}},
+		{
+			"maintenance drifting, no verdict", func(e *Estimate) { e.Measured, e.TrendKg, e.PhaseStartTrendKg = false, 83, 80 },
+			phase(plan.Maintain, 0), nil,
+			[]string{FlagMaintenanceDrift},
+		},
+		{"maintenance within 3 %", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 82, 80 }, phase(plan.Maintain, 0), nil, nil},
+		{"a cut 3 % down", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 77, 80 }, phase(plan.Cut, -0.5), nil, nil},
+		{"no start", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 83, 0 }, phase(plan.Maintain, 0), nil, nil},
+		{"no phase", func(e *Estimate) { e.TrendKg, e.PhaseStartTrendKg = 83, 80 }, nil, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			e := trusted(0)
+			e, pr := trusted(0), person
 			tc.change(&e)
-			if v := Judge(e, tc.ph, target, training, person, limits.UserDefaults(), DefaultParams()); !slices.Equal(v.Flags, tc.want) {
+			if tc.pr != nil {
+				pr = *tc.pr
+			}
+			if v := Judge(e, tc.ph, target, training, pr, limits.UserDefaults(), DefaultParams()); !slices.Equal(v.Flags, tc.want) {
 				t.Errorf("flags %v, want %v", v.Flags, tc.want)
 			}
 		})
@@ -247,6 +256,23 @@ func TestCalibrateReadsTheBody(t *testing.T) {
 	}
 }
 
+func TestCalibrateBodyIntervals(t *testing.T) {
+	t.Parallel()
+
+	// On lines, only the scale's step is uncertain.
+	days := map[day.Date]Day{}
+	line(days, last, 42, 80, -0.05, 2000)
+	for i := range 42 {
+		d := days[last.AddDays(-i)]
+		d.LeanMassKg, d.BodyFatPct = 60+0.1*float64(i), 25-0.02*float64(i)
+		days[last.AddDays(-i)] = d
+	}
+	b := Calibrate(days, nil, last, DefaultParams()).Body
+	if b.LeanHalfWidth <= 0 || b.LeanHalfWidth > 0.01 || b.BodyFatHalfWidth <= 0 || b.BodyFatHalfWidth > 0.01 {
+		t.Errorf("half the intervals %v and %v, want a little over 0", b.LeanHalfWidth, b.BodyFatHalfWidth)
+	}
+}
+
 func TestCalibrateReadsLittleOfTheBody(t *testing.T) {
 	t.Parallel()
 
@@ -270,13 +296,32 @@ func TestCalibrateReadsLittleOfTheBody(t *testing.T) {
 	}
 }
 
+func TestCalibrateTakesTheLeanMassFromTheBodyFat(t *testing.T) {
+	t.Parallel()
+
+	// A scale that reports the body fat, not the lean mass: 60 kg of it
+	// throughout, while the fat goes at 0.05 kg a day.
+	days := map[day.Date]Day{}
+	for i := range 42 {
+		w := 80 + 0.05*float64(i)
+		days[last.AddDays(-i)] = Day{Status: day.Complete, Meals: 1, Kcal: 2000, WeightKg: w, BodyFatPct: 100 * (w - 60) / w}
+	}
+	e := Calibrate(days, nil, last, DefaultParams())
+	if b := e.Body; !b.LeanMeasured || !near(b.LeanKgPerWeek, 0, 1e-9) || !b.BodyFatMeasured {
+		t.Errorf("lean %v %v, body fat %v; want the lean mass level", b.LeanMeasured, b.LeanKgPerWeek, b.BodyFatMeasured)
+	}
+	if !near(e.Now.LeanMassKg, 60, 1e-9) {
+		t.Errorf("lean mass now %v, want 60", e.Now.LeanMassKg)
+	}
+}
+
 func TestCalibrateKnowsThePhasesStart(t *testing.T) {
 	t.Parallel()
 
 	days := map[day.Date]Day{}
 	line(days, last, 100, 80, -0.05, 2000)
 	phases := []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-50), RatePctWeek: -0.5}}
-	want, _ := trendOn(days, last.AddDays(-50), DefaultParams().TrendAlpha)
+	want, _ := trendAt(Trend(days, DefaultParams().TrendAlpha), last.AddDays(-50))
 	if e := Calibrate(days, phases, last, DefaultParams()); e.PhaseStartTrendKg != want || want == 0 {
 		t.Errorf("trend at the phase's start %v, want %v", e.PhaseStartTrendKg, want)
 	}
@@ -301,18 +346,19 @@ func TestStateOf(t *testing.T) {
 	if s.TDEE != 2600 || !s.TDEETrusted || s.LeanMassKg != 60 || s.ActiveKcal != 450 {
 		t.Errorf("TDEE %v trusted %v, lean %v, active %v; want 2600, true, 60, 450", s.TDEE, s.TDEETrusted, s.LeanMassKg, s.ActiveKcal)
 	}
-	want := limits.Autopilot{LoggedDays: 6, WeighIns: 5, DaysSincePhaseChange: 61}
+	// The days since the phase changed are the autopilot's to count: 0
+	// holds its wait for a first step.
+	want := limits.Autopilot{LoggedDays: 6, WeighIns: 5}
 	if a := s.Autopilot; a != want {
-		t.Errorf("autopilot %+v; want %+v: 6 logged, 5 weighed, 61 days in the phase, no step", a, want)
+		t.Errorf("autopilot %+v; want %+v: 6 logged, 5 weighed, nothing of the autopilot's", a, want)
 	}
 }
 
 func TestStateOfLittle(t *testing.T) {
 	t.Parallel()
 
-	// Without an estimate there is no TDEE, and without a phase no days
-	// in it.
-	if s := StateOf(Estimate{TrendKg: 80}, last.AddDays(1), person, nil, nil, 0); s.TDEE != 0 || s.TDEETrusted || s.Autopilot.DaysSincePhaseChange != 0 {
-		t.Errorf("no estimate, no phase: TDEE %v trusted %v, %d days", s.TDEE, s.TDEETrusted, s.Autopilot.DaysSincePhaseChange)
+	// Without an estimate there is no TDEE.
+	if s := StateOf(Estimate{TrendKg: 80}, last.AddDays(1), person, nil, nil, 0); s.TDEE != 0 || s.TDEETrusted {
+		t.Errorf("no estimate: TDEE %v trusted %v", s.TDEE, s.TDEETrusted)
 	}
 }

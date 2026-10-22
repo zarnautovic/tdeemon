@@ -425,7 +425,19 @@ func (v *validator) underweight(rate, was float64) {
 
 // underweightNow reports whether the trend weight now is below a BMI of
 // UnderweightBMI.
-func (v *validator) underweightNow() bool { return v.bmiNow < UnderweightBMI-epsilon }
+func (v *validator) underweightNow() bool { return Underweight(v.bmiNow) }
+
+// Underweight reports whether bmi is below UnderweightBMI, past the error
+// of float arithmetic.
+func Underweight(bmi float64) bool { return bmi < UnderweightBMI-epsilon }
+
+// LossUnderWay reports whether the plan s holds loses weight: its phase's
+// rate is a loss, or its target implies one with a TDEE calibration
+// trusts. Below a BMI of UnderweightBMI, such a loss takes no step.
+func LossUnderWay(s State) bool {
+	v := validator{s: s, trend: s.TrendKg}
+	return v.lossUnderWay()
+}
 
 // target returns the target as the change leaves it, nil when there is
 // none.
@@ -573,8 +585,7 @@ func (v *validator) autopilot() {
 		n := v.s.TrainingDays.Count()
 		before := v.s.Target.WeeklyAverage(n).Kcal
 		delta := v.c.Target.WeeklyAverage(n).Kcal - before
-		step := func(l Limits) float64 { return math.Min(l.StepKcal, l.StepPct/100*before) }
-		v.hold(bound{rule: RuleStep, user: step(v.user), instance: step(v.instance)}, math.Abs(delta), nil)
+		v.hold(bound{rule: RuleStep, user: v.user.Step(before), instance: v.instance.Step(before)}, math.Abs(delta), nil)
 		if v.c.By == ByAutopilot {
 			v.drift(delta)
 		}

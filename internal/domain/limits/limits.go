@@ -82,6 +82,12 @@ type Limits struct {
 	DriftPct float64
 }
 
+// Step returns the largest autopilot step of l from a weekly average of
+// weeklyAvgKcal: the lesser of StepKcal and StepPct % of it.
+func (l Limits) Step(weeklyAvgKcal float64) float64 {
+	return math.Min(l.StepKcal, l.StepPct/100*weeklyAvgKcal)
+}
+
 // Instance returns the instance's limits by default: the column "Hard
 // limit" of docs/limits.md, or the default where it is empty.
 func Instance() Limits {

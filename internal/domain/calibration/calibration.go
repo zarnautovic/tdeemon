@@ -248,9 +248,10 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 			break
 		}
 	}
-	e.TrendKg, e.TrendDate = trendOn(days, last, p.TrendAlpha)
+	trend := Trend(days, p.TrendAlpha)
+	e.TrendKg, e.TrendDate = trendAt(trend, last)
 	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
-		e.PhaseStartTrendKg, _ = trendOn(days, ph.Start, p.TrendAlpha)
+		e.PhaseStartTrendKg, _ = trendAt(trend, ph.Start)
 	}
 	e.Body = bodyOf(days, e.From, e.To)
 	e.Now = nowOf(days, last)
@@ -353,7 +354,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 				weighedWeeks[(e.Days-1-i)/week] = true
 			}
 		}
-		if d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0 {
+		if loggedDay(d) {
 			kcal[i] = d.Kcal
 			e.LoggedDays++
 			e.RecentLoggedDays += btoi(recent)
@@ -368,7 +369,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	dt.spanLogged = e.LoggedDays
 	var span []float64
 	if dt.spread {
-		span = logged(kcal[int(xs[0]) : int(xs[len(xs)-1])+1])
+		span = loggedKcal(kcal[int(xs[0]) : int(xs[len(xs)-1])+1])
 		dt.spanLogged = len(span)
 	}
 	e.Measured = e.Days >= p.MinDays && dt.spread && dt.spanLogged >= minLoggedDays
@@ -389,9 +390,9 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	return e
 }
 
-// logged returns the kcal of the logged days of kcal, leaving out the NaN
-// of a day not logged.
-func logged(kcal []float64) []float64 {
+// loggedKcal returns the kcal of the logged days of kcal, leaving out the
+// NaN of a day not logged.
+func loggedKcal(kcal []float64) []float64 {
 	var out []float64
 	for _, k := range kcal {
 		if !math.IsNaN(k) {
@@ -405,6 +406,12 @@ func logged(kcal []float64) []float64 {
 // enough for a slope: minWeighIns of them, minWeighInsSpan days apart.
 func spread(xs []float64) bool {
 	return len(xs) >= minWeighIns && xs[len(xs)-1]-xs[0] >= minWeighInsSpan
+}
+
+// loggedDay reports whether d's intake counts: a complete day with a meal
+// and kcal that are a number.
+func loggedDay(d Day) bool {
+	return d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0
 }
 
 // weighed reports whether d has a weigh-in that counts: a number, on a

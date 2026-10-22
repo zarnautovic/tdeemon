@@ -12,14 +12,16 @@ type Body struct {
 	// for too few days with steps, 4 of the 7 and 7 before.
 	StepsRecent, StepsBefore float64
 	// LeanMeasured is true when the lean mass was measured enough for a
-	// slope, as the weight is: six times, at least a week apart. Its
-	// slope is LeanKgPerWeek, with the error LeanKgPerWeekSE.
-	LeanMeasured                   bool
-	LeanKgPerWeek, LeanKgPerWeekSE float64
-	// BodyFatMeasured, BodyFatPerWeek and BodyFatPerWeekSE are the same
+	// slope, as the weight is: six times, from the first to the last at
+	// least a week apart. A day without a lean mass but with a weigh-in
+	// and a body fat has the weight's share that is not fat. The slope is
+	// LeanKgPerWeek, and LeanHalfWidth half its 80 % interval.
+	LeanMeasured                 bool
+	LeanKgPerWeek, LeanHalfWidth float64
+	// BodyFatMeasured, BodyFatPerWeek and BodyFatHalfWidth are the same
 	// of the body fat, in % points a week.
 	BodyFatMeasured                  bool
-	BodyFatPerWeek, BodyFatPerWeekSE float64
+	BodyFatPerWeek, BodyFatHalfWidth float64
 }
 
 // Now is what the 7 days up to a day say, whatever the window: the data
@@ -33,7 +35,7 @@ type Now struct {
 }
 
 // The fewest days with steps the activity guard compares: 4 of the last
-// 7, and 7 before them.
+// 7, and 7 of the up to 21 before them.
 const (
 	minRecentSteps = 4
 	minBeforeSteps = 7
@@ -51,8 +53,8 @@ func bodyOf(days map[day.Date]Day, from, to day.Date) Body {
 		if d.Status == day.Excluded {
 			continue
 		}
-		if measured(d.LeanMassKg) {
-			leanX, leanY = append(leanX, float64(i)), append(leanY, d.LeanMassKg)
+		if kg, ok := leanMass(d); ok {
+			leanX, leanY = append(leanX, float64(i)), append(leanY, kg)
 		}
 		if measured(d.BodyFatPct) {
 			fatX, fatY = append(fatX, float64(i)), append(fatY, d.BodyFatPct)
@@ -69,14 +71,31 @@ func bodyOf(days map[day.Date]Day, from, to day.Date) Body {
 		b.StepsRecent, b.StepsBefore = mean(recent), mean(before)
 	}
 	if spread(leanX) {
-		f := regress(leanX, leanY)
-		b.LeanMeasured, b.LeanKgPerWeek, b.LeanKgPerWeekSE = true, 7*f.slope, 7*f.se
+		b.LeanMeasured, b.LeanKgPerWeek, b.LeanHalfWidth = slopeOf(leanX, leanY)
 	}
 	if spread(fatX) {
-		f := regress(fatX, fatY)
-		b.BodyFatMeasured, b.BodyFatPerWeek, b.BodyFatPerWeekSE = true, 7*f.slope, 7*f.se
+		b.BodyFatMeasured, b.BodyFatPerWeek, b.BodyFatHalfWidth = slopeOf(fatX, fatY)
 	}
 	return b
+}
+
+// slopeOf returns the slope a week of the values ys on the days xs, and
+// half its 80 % interval, by the regression the weight's slope has.
+func slopeOf(xs, ys []float64) (ok bool, perWeek, halfWidth float64) {
+	f := regress(xs, ys)
+	return true, 7 * f.slope, 7 * tQuantile(f.df) * f.se
+}
+
+// leanMass returns d's lean mass: the one measured, else the weight's
+// share that is not fat, when the day has a weigh-in and a body fat.
+func leanMass(d Day) (float64, bool) {
+	switch {
+	case measured(d.LeanMassKg):
+		return d.LeanMassKg, true
+	case weighed(d) && measured(d.BodyFatPct) && d.BodyFatPct < 100:
+		return d.WeightKg * (1 - d.BodyFatPct/100), true
+	}
+	return 0, false
 }
 
 // nowOf returns what the 7 days up to last say.
@@ -89,9 +108,9 @@ func nowOf(days map[day.Date]Day, last day.Date) Now {
 			continue
 		}
 		n.WeighIns += btoi(weighed(d))
-		n.LoggedDays += btoi(d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0)
-		if measured(d.LeanMassKg) {
-			lean = append(lean, d.LeanMassKg)
+		n.LoggedDays += btoi(loggedDay(d))
+		if kg, ok := leanMass(d); ok {
+			lean = append(lean, kg)
 		}
 		if measured(d.ActiveKcal) {
 			active = append(active, d.ActiveKcal)
