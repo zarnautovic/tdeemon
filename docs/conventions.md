@@ -101,6 +101,29 @@ for the author and the reviewer.
   (`go test ./internal/ingest -run TestRealPayloads -v`), it says what
   each day kept and what it left out, without the values. Without the
   variable it is skipped.
+- **Calibration:** a history of days, phases, targets and the manual
+  revisions of the target, as a fixture
+  (`internal/domain/calibration/history_test.go`). The anonymised one is
+  `testdata/history.json`. The real one stays outside git:
+  `TestCalibrateRealHistory` reads `calibration.json` in the directory
+  `TDEEMON_PRIVATE_FIXTURES` names, and is skipped without it. Both are
+  held to `checkHistory`: the real one to the manual revisions and the
+  TDEE each was made on, the anonymised one to the same revisions
+  without their TDEE. Run with `-v`, the test says what calibration made
+  of each revision, without the real one's values or dates. The
+  anonymised one is written from the real one, by the anonymisation only
+  the real one holds, with
+  `go test ./internal/domain/calibration -run TestWriteAnonymisedHistory -anonymise`,
+  and read before it is committed. The test writes it only when every
+  kind of value moved from the real one, it gives each revision the
+  verdict the real one does, and it passes `checkHistory`; otherwise the
+  anonymisation needs other parameters. Until then it tells the
+  anonymised history as it tells the real one, without values or
+  dates. The anonymised history is built field by field, so a field
+  added to a history is left out of it until the anonymisation copies
+  it; it needs its line in `anonymised` too, which says what the
+  anonymisation does with each, or `TestAnonymisationCoversEveryField`
+  fails.
 - **Tools** (`tools()` in `internal/api/tools.go`) are operations like
   any other, with their cases in `isolationCases` and `answerCases`;
   `TestToolsAreNamed` lists the tools that exist, by their MCP name

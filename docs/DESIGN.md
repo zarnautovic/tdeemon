@@ -480,9 +480,17 @@ The replacement:
   ([limits.md](limits.md)). In P0 they are the same for everyone
   (`calibration.DefaultParams`); with the autopilot (P1), they become the
   user's.
-- **Test fixtures:** an anonymised multi-week dataset lives in the repo.
-  Real data stays in a private fixture outside git and is checked
-  against past manual target revisions.
+- **Test fixtures:** an anonymised history of 13 weeks lives in the repo
+  (`internal/domain/calibration/testdata/history.json`). Real data stays
+  in a private fixture outside git and is checked against past manual
+  target revisions. From one measured day to the next measured one, the
+  estimate moves at most 150 kcal while its window is of the same phase;
+  the switch from the estimate before a phase to the phase's own is
+  another window. Its
+  interval holds the TDEE each revision was made on. The first verdict
+  within a week of each takes the revision's action, or the action the
+  fixture says it takes instead, and why; or there is none, for the
+  reason each verdict of the week gives (docs/conventions.md).
 
 ## 8. Coaching: the AI changes the plan
 
