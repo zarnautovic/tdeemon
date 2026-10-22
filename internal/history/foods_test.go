@@ -24,9 +24,14 @@ func readFoods(t *testing.T) []history.FoodRow {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(skipped) != 5 || !strings.Contains(skipped[0], "Broken") || !strings.Contains(skipped[1], "3 cells") || !strings.Contains(skipped[2], "8 cells") ||
-		!strings.Contains(skipped[3], `"350-400"`) || !strings.Contains(skipped[4], "No kcal: no kcal") {
-		t.Errorf("skipped = %q", skipped)
+	want := []string{"Broken", "3 cells", "8 cells", `"350-400"`, "No kcal: no kcal", "Shake: no kcal", `"99 g"`, "a row of no food table"}
+	if len(skipped) != len(want) {
+		t.Fatalf("skipped = %q", skipped)
+	}
+	for i, w := range want {
+		if !strings.Contains(skipped[i], w) {
+			t.Errorf("skipped[%d] = %q, want %q in it", i, skipped[i], w)
+		}
 	}
 	return rows
 }
@@ -41,7 +46,7 @@ func TestReadFoods(t *testing.T) {
 	for _, r := range rows {
 		names = append(names, r.Name)
 	}
-	if !slices.Equal(names, []string{"Rye bread", "Skyr cup", "Orange juice", "Kefir", "Apple", "Stew", "Stew", "Cereal bar", "Black coffee", "Pickles", "Odd", "Guessed"}) {
+	if !slices.Equal(names, []string{"Rye bread", "Skyr cup", "Orange juice", "Kefir", "Apple", "Stew", "Stew", "Cereal bar", "Black coffee", "Pickles", "Odd", "Guessed", "Water", "Tea", "Whey"}) {
 		t.Fatalf("names = %q", names)
 	}
 	if bar := rows[7]; bar.Portion != "25 g" || bar.Nutrients != (food.Nutrients{Kcal: 99, Protein: 2.5, Carbs: 16, Fat: 3}) || bar.Line != 15 {
@@ -61,20 +66,20 @@ func TestImportFoods(t *testing.T) {
 	db, u := newUser(t)
 	rows := readFoods(t)
 	dry, err := history.ImportFoods(t.Context(), db, u, rows, now, true)
-	if err != nil || dry.Created != 12 {
+	if err != nil || dry.Created != 15 {
 		t.Fatalf("the dry run = %+v, %v", dry, err)
 	}
 	if es, _ := db.Events(t.Context(), u.ID, 1); len(es) != 0 {
 		t.Fatal("the dry run wrote")
 	}
 	r, err := history.ImportFoods(t.Context(), db, u, rows, now, false)
-	if err != nil || r.Created != 12 || r.Kept != 0 || len(r.Renamed) != 2 || len(r.Skipped) != 0 {
+	if err != nil || r.Created != 15 || r.Kept != 0 || len(r.Renamed) != 2 || len(r.Skipped) != 0 {
 		t.Fatalf("report = %+v, %v", r, err)
 	}
 	checkFoods(t, db, u.ID)
 
 	again, err := history.ImportFoods(t.Context(), db, u, rows, now, false)
-	if err != nil || again.Created != 0 || again.Kept != 12 || len(again.Renamed) != 0 {
+	if err != nil || again.Created != 0 || again.Kept != 15 || len(again.Renamed) != 0 {
 		t.Errorf("the run again = %+v, %v", again, err)
 	}
 }
@@ -98,6 +103,8 @@ func checkFoods(t *testing.T, db *store.DB, userID uuid.UUID) {
 		"Cereal bar":            {food.Per100g, 396, 25, food.Estimate, "a pipe"},
 		"Odd":                   {food.PerPortion, 300, 0, food.Estimate, "Portion: 5 g."},
 		"Guessed":               {food.Per100g, 120, 0, food.Estimate, "bez"},
+		"Water":                 {food.Per100ml, 0, 250, food.Estimate, ""},
+		"Whey":                  {food.Per100g, 400, 30, food.Estimate, "labels"},
 	} {
 		f, err := db.FoodByName(t.Context(), userID, name, "")
 		if err != nil {
@@ -141,17 +148,29 @@ func TestImportFoodsKeepsAndSkips(t *testing.T) {
 	}
 }
 
-// A note too long for a food is cut, and the food stays per 100 g.
-func TestImportFoodsLongNote(t *testing.T) {
+// A note too long for a food is cut, a space at its cut end too, and the
+// food stays per 100 g; a portion larger than a serving may be is a food
+// per portion.
+func TestImportFoodsEdges(t *testing.T) {
 	t.Parallel()
 
 	db, u := newUser(t)
-	rows := []history.FoodRow{{Line: 1, Name: "Granola", Portion: "50 g", Nutrients: food.Nutrients{Kcal: 220}, Note: strings.Repeat("n", 2100)}}
-	if r, err := history.ImportFoods(t.Context(), db, u, rows, now, false); err != nil || r.Created != 1 {
+	rows := []history.FoodRow{
+		{Line: 1, Name: "Granola", Portion: "50 g", Nutrients: food.Nutrients{Kcal: 220}, Note: strings.Repeat("n", 2100)},
+		{Line: 2, Name: "Muesli", Portion: "50 g", Nutrients: food.Nutrients{Kcal: 200}, Note: strings.Repeat("n", food.MaxNoteLen-1) + " more"},
+		{Line: 3, Name: "Pot of stew", Portion: "20000 g", Nutrients: food.Nutrients{Kcal: 2000}},
+	}
+	if r, err := history.ImportFoods(t.Context(), db, u, rows, now, false); err != nil || r.Created != 3 {
 		t.Fatalf("report = %+v, %v", r, err)
 	}
 	f, err := db.FoodByName(t.Context(), u.ID, "Granola", "")
 	if err != nil || f.Basis != food.Per100g || f.Nutrients.Kcal != 440 || len([]rune(f.Note)) != food.MaxNoteLen {
 		t.Errorf("granola = %+v, %v", f, err)
+	}
+	if f, err := db.FoodByName(t.Context(), u.ID, "Muesli", ""); err != nil || len([]rune(f.Note)) != food.MaxNoteLen-1 {
+		t.Errorf("muesli = %+v, %v", f, err)
+	}
+	if f, err := db.FoodByName(t.Context(), u.ID, "Pot of stew", ""); err != nil || f.Basis != food.PerPortion {
+		t.Errorf("the pot = %+v, %v", f, err)
 	}
 }

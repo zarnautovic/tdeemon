@@ -69,6 +69,7 @@ func TestImportHistory(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Imported for ana@example.com, whose days start at 04:00 in Europe/Zagreb: 2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded.",
+		"Days excluded from calibration (1):\n  2026-09-02: At a wedding",
 		"Values left out (1):\n  2026-09-01 sleep_h: sleep_h 30: want 0 to 24 h",
 		"Days whose meals have more kcal than the day's total, kept without a rest (1):\n  2026-09-02",
 		"Meals renamed (1):\n  2026-09-02: aaa",
@@ -154,9 +155,9 @@ func TestImportHistoryFoods(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"Imported foods for ana@example.com: 12 new; 0 kept",
+		"Imported foods for ana@example.com: 15 new; 0 kept",
 		"Foods renamed (2):\n  Stew (1/4 of the pot)",
-		"Rows skipped (5):\n  line 18, Broken",
+		"Rows skipped (8):\n  line 18, Broken",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the import said:\n%s\nwant %q in it", out.String(), want)
@@ -166,7 +167,7 @@ func TestImportHistoryFoods(t *testing.T) {
 	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t), "--dry-run"}, env, noInput(), &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Would import (a dry run, nothing written) foods for ana@example.com: 0 new; 12 kept") ||
+	if !strings.Contains(out.String(), "Would import (a dry run, nothing written) foods for ana@example.com: 0 new; 15 kept") ||
 		!strings.Contains(out.String(), "whose days start at 04:00") {
 		t.Errorf("both, again, dry:\n%s", out.String())
 	}
@@ -192,7 +193,7 @@ func TestImportHistoryReportsBeforeAFailure(t *testing.T) {
 	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
 	var out bytes.Buffer
 	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t)}, env, noInput(), &out, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "calendar") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 12 new") {
+	if err == nil || !strings.Contains(err.Error(), "calendar") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 15 new") {
 		t.Errorf("err = %v, said:\n%s", err, out.String())
 	}
 }

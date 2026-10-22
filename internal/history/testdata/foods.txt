@@ -22,3 +22,14 @@ The predecessor's food table, made up: values per the portion named.
 | Range | 100 g | 350-400 | 1 | 1 | 1 | a range |
 | No kcal | 100 g |  | 1 | 1 | 1 | none given |
 | Guessed | 100 g | 120 | 5 | 10 | 5 | bez deklaracije, procjena |
+| Shake | 1 scoop | — | 25 | 2 | 1 | kcal left out |
+| Water | 250 ml | — | — | — | — | |
+| Tea | 250 ml | 2 | 0 | 0 | 0 ||
+| Whey | 30 g | 120 kcal | P 24 | UH — | M 1,5 | labels before values |
+| Mislabeled | 100 g | 99 g | 1 | 1 | 1 | grams for kcal |
+
+Another table, of no foods:
+
+| A | B | C | D | E | F | G |
+|-|-|-|-|-|-|-|
+| 1 | 2 | 3 | 4 | 5 | 6 | 7 |

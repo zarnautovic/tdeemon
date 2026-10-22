@@ -50,9 +50,20 @@ func ReadFoods(r io.Reader) ([]FoodRow, []string, error) {
 	}
 	var rows []FoodRow
 	var skipped []string
+	// inFoods is whether the rows are under a header of the food table's,
+	// one that names kcal; the rows of another table are no foods.
+	inFoods := false
 	for i, s := range lines {
 		line := i + 1
-		if !strings.HasPrefix(s, "|") || separator(s) || i+1 < len(lines) && separator(lines[i+1]) {
+		switch {
+		case !strings.HasPrefix(s, "|") || separator(s):
+			continue
+		case i+1 < len(lines) && separator(lines[i+1]):
+			cells := splitRow(s)
+			inFoods = len(cells) == foodColumns && strings.Contains(strings.ToLower(cells[2]), "kcal")
+			continue
+		case !inFoods:
+			skipped = append(skipped, fmt.Sprintf("line %d: a row of no food table", line))
 			continue
 		}
 		row, err := foodRow(s)
@@ -67,13 +78,13 @@ func ReadFoods(r io.Reader) ([]FoodRow, []string, error) {
 }
 
 // separatorCell is a cell of the line under a table's header.
-var separatorCell = regexp.MustCompile(`^\s*:?-{3,}:?\s*$`)
+var separatorCell = regexp.MustCompile(`^\s*:?-+:?\s*$`)
 
 func separator(s string) bool {
 	if !strings.HasPrefix(s, "|") {
 		return false
 	}
-	for c := range strings.SplitSeq(strings.Trim(s, "|"), "|") {
+	for _, c := range splitRow(s) {
 		if !separatorCell.MatchString(c) {
 			return false
 		}
@@ -81,25 +92,42 @@ func separator(s string) bool {
 	return true
 }
 
-// foodRow reads a row of the table: its cells, trimmed.
-func foodRow(s string) (FoodRow, error) {
-	cells := strings.Split(strings.Trim(s, "|"), "|")
+// splitRow returns the cells of a table's row, trimmed: between its
+// first and last pipe, or, when that gives no row of the food table's
+// width, between the pipes a hand wrote too many of at either end.
+func splitRow(s string) []string {
+	cells := strings.Split(strings.TrimSuffix(strings.TrimPrefix(s, "|"), "|"), "|")
 	if len(cells) != foodColumns {
-		return FoodRow{}, fmt.Errorf("%d cells, want %d", len(cells), foodColumns)
+		cells = strings.Split(strings.Trim(s, "|"), "|")
 	}
 	for i := range cells {
 		cells[i] = strings.TrimSpace(cells[i])
 	}
-	if cells[2] == "" {
-		return FoodRow{}, fmt.Errorf("%s: no kcal", cells[0])
+	return cells
+}
+
+// foodRow reads a row of the table.
+func foodRow(s string) (FoodRow, error) {
+	cells := splitRow(s)
+	if len(cells) != foodColumns {
+		return FoodRow{}, fmt.Errorf("%d cells, want %d", len(cells), foodColumns)
 	}
 	values := make([]float64, 4)
 	for i := range values {
-		v, err := number(cells[2+i])
+		unit := "g"
+		if i == 0 {
+			unit = "kcal"
+		}
+		v, err := number(cells[2+i], unit)
 		if err != nil {
 			return FoodRow{}, fmt.Errorf("%s: %w", cells[0], err)
 		}
 		values[i] = v
+	}
+	// No kcal, a dash or nothing, is 0 only for what has nothing else
+	// either, water or black coffee; else it is missing.
+	if none(cells[2]) && (values[1] != 0 || values[2] != 0 || values[3] != 0) {
+		return FoodRow{}, fmt.Errorf("%s: no kcal", cells[0])
 	}
 	return FoodRow{
 		Name: cells[0], Portion: cells[1], Note: cells[6],
@@ -107,20 +135,38 @@ func foodRow(s string) (FoodRow, error) {
 	}, nil
 }
 
-// valueCell is a value: a number with a decimal comma or point, after a
-// bound or an approximation sign, and its unit if any.
-var valueCell = regexp.MustCompile(`^[<≤~≈]?\s*(\d+(?:[.,]\d+)?)\s*(kcal|g)?$`)
-
-// number reads a value cell; a dash or nothing is 0. Anything else after
-// the number, a range ("350-400") for one, is no value.
-func number(s string) (float64, error) {
-	switch strings.TrimSpace(s) {
+// none reports whether a value cell gives no value: a dash or nothing.
+func none(s string) bool {
+	switch valueText(s) {
 	case "", "—", "–", "-":
+		return true
+	}
+	return false
+}
+
+// valueLabel is the name of a macronutrient a hand may write before its
+// value, as the table's header does: "P 25", "UH —".
+var valueLabel = regexp.MustCompile(`^(?:P|UH|M)\s+`)
+
+// valueText returns a value cell without its spaces and a label before.
+func valueText(s string) string {
+	return valueLabel.ReplaceAllString(strings.TrimSpace(s), "")
+}
+
+// valueCell is a value: a number with a decimal comma or point, after a
+// bound or an approximation sign, and a unit if any.
+var valueCell = regexp.MustCompile(`^[<≤~≈]?\s*(\d+(?:[.,]\d+)?)\s*([a-z]*)$`)
+
+// number reads a value cell in unit, which it may name; a dash or nothing
+// is 0. Anything else after the number, a range ("350-400") or another
+// unit, is no value.
+func number(s, unit string) (float64, error) {
+	if none(s) {
 		return 0, nil
 	}
-	m := valueCell.FindStringSubmatch(strings.TrimSpace(s))
-	if m == nil {
-		return 0, fmt.Errorf("value %q: want a number", s)
+	m := valueCell.FindStringSubmatch(valueText(s))
+	if len(m) != 3 || m[2] != "" && m[2] != unit {
+		return 0, fmt.Errorf("value %q: want a number of %s", s, unit)
 	}
 	return strconv.ParseFloat(strings.Replace(m[1], ",", ".", 1), 64)
 }
@@ -148,13 +194,17 @@ func toFood(row FoodRow, name string) (food.Food, error) {
 		if m[2] == "ml" {
 			basis = food.Per100ml
 		}
-		// Per 100 when its values per 100 make sense; else per portion.
-		if per100 := row.Nutrients.Scale(100 / amount); amount > 0 && per100.ValidatePer100(basis) == nil {
-			f.Basis, f.Nutrients = basis, per100
+		// Per 100 when the food per 100 makes sense, its values and its
+		// serving; else per portion.
+		if amount > 0 {
+			per100 := f
+			per100.Basis, per100.Nutrients = basis, row.Nutrients.Scale(100/amount)
 			if amount != 100 {
-				f.Servings = []food.Serving{{Name: ServingName, Amount: amount}}
+				per100.Servings = []food.Serving{{Name: ServingName, Amount: amount}}
 			}
-			return f, f.Validate()
+			if per100.Validate() == nil {
+				return per100, nil
+			}
 		}
 	}
 	f.Basis, f.Nutrients = food.PerPortion, row.Nutrients
@@ -165,7 +215,7 @@ func toFood(row FoodRow, name string) (food.Food, error) {
 // cutNote returns s cut to the longest note a food may have.
 func cutNote(s string) string {
 	if r := []rune(s); len(r) > food.MaxNoteLen {
-		return string(r[:food.MaxNoteLen])
+		return strings.TrimSpace(string(r[:food.MaxNoteLen]))
 	}
 	return s
 }
