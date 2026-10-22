@@ -68,6 +68,34 @@ func (s *sessions) tools() []tool {
 				"what remains, its metrics, its type and where it stands (open, complete or excluded).",
 			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.getDay),
+		newTool("find_foods", readScopes, huma.Operation{
+			OperationID: "find-foods",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/foods",
+			Summary:     "Find foods",
+			Description: "Your foods whose name, brand or an alias has words starting with each word of the query, in any case and without the diacritics: " +
+				"the name's matches first, then the shorter name. Each has how much a meal had of it last. Archived foods are left out.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.findFoods),
+		newTool("get_food", readScopes, huma.Operation{
+			OperationID: "get-food",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/foods/{id}",
+			Summary:     "Get a food",
+			Description: "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
+		}, s.getFood),
+		newTool("upsert_food", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "upsert-food",
+			Method:      http.MethodPost,
+			Path:        Prefix + "/foods",
+			Summary:     "Save a food",
+			Description: "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. " +
+				"A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, " +
+				"without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. " +
+				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
+		}, s.upsertFood),
 	}
 }
 

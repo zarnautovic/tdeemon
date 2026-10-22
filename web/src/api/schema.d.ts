@@ -124,6 +124,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/foods": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find foods
+         * @description Your foods whose name, brand or an alias has words starting with each word of the query, in any case and without the diacritics: the name's matches first, then the shorter name. Each has how much a meal had of it last. Archived foods are left out.
+         */
+        get: operations["find-foods"];
+        put?: never;
+        /**
+         * Save a food
+         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
+         */
+        post: operations["upsert-food"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/foods/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a food
+         * @description A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).
+         */
+        get: operations["get-food"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/info": {
         parameters: {
             query?: never;
@@ -422,6 +466,67 @@ export interface components {
              */
             type?: string;
         };
+        FoodBody: {
+            /** @description Other names the user calls the food by; search finds them. */
+            aliases?: string[];
+            /** @description An archived food stays out of a search, and keeps its name and aliases. */
+            archived: boolean;
+            /**
+             * @description What the nutrients are for: 100 g, 100 ml, or a portion.
+             * @enum {string}
+             */
+            basis: "100g" | "100ml" | "portion";
+            /** @description The same name and brand are the same food. */
+            brand?: string;
+            /** Format: uuid */
+            id: string;
+            /** @description The last time a meal used the food; absent when none has. */
+            last_use?: components["schemas"]["LastUseBody"];
+            /** @example Greek yoghurt 2 % */
+            name: string;
+            note?: string;
+            nutrients: components["schemas"]["FoodNutrientsBody"];
+            /**
+             * Format: double
+             * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
+             */
+            portion_grams?: number;
+            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
+            servings?: components["schemas"]["ServingBody"][];
+            /**
+             * @description Where the values come from: a label is exact, an estimate a judgement.
+             * @enum {string}
+             */
+            source: "label" | "estimate" | "user" | "dish";
+        };
+        FoodNutrientsBody: {
+            /** Format: double */
+            alcohol?: number;
+            /**
+             * Format: double
+             * @description Polyols are part of them, as on an EU label.
+             */
+            carbs: number;
+            /** Format: double */
+            fat: number;
+            /** Format: double */
+            fiber?: number;
+            /** Format: double */
+            kcal: number;
+            /** Format: double */
+            polyols?: number;
+            /** Format: double */
+            protein: number;
+            /** Format: double */
+            salt?: number;
+            /** Format: double */
+            saturated_fat?: number;
+            /** Format: double */
+            sugars?: number;
+        };
+        FoodsOutputBody: {
+            foods: components["schemas"]["FoodBody"][];
+        };
         IngestBody: {
             days: components["schemas"]["IngestDay"][];
             /** @description Metric names tdeemon does not read. */
@@ -491,6 +596,21 @@ export interface components {
             quantity: components["schemas"]["QuantityBody"];
             /** @enum {string} */
             source: "label" | "estimate" | "user" | "dish";
+            /** @enum {string} */
+            unit: "g" | "ml" | "portion";
+        };
+        LastUseBody: {
+            /**
+             * Format: double
+             * @description How much, in unit.
+             */
+            amount: number;
+            /** Format: date-time */
+            at: string;
+            /** Format: uuid */
+            meal_id: string;
+            /** @description How much, as it was given. */
+            quantity: components["schemas"]["QuantityBody"];
             /** @enum {string} */
             unit: "g" | "ml" | "portion";
         };
@@ -759,6 +879,15 @@ export interface components {
              */
             version: string;
         };
+        ServingBody: {
+            /**
+             * Format: double
+             * @description In the food's unit: grams or ml.
+             */
+            amount: number;
+            /** @example slice */
+            name: string;
+        };
         SessionBody: {
             /**
              * Format: date-time
@@ -822,6 +951,40 @@ export interface components {
              * @enum {string}
              */
             weight: "kg";
+        };
+        UpsertFoodInputBody: {
+            /** @description Other names the user calls the food by; search finds them. */
+            aliases?: string[];
+            /** @description Archives the food, or keeps it so: out of a search, keeping its name and aliases. Left out, a save brings an archived food back. */
+            archived?: boolean;
+            /**
+             * @description What the nutrients are for: 100 g, 100 ml, or a portion.
+             * @enum {string}
+             */
+            basis: "100g" | "100ml" | "portion";
+            /** @description The same name and brand are the same food. */
+            brand?: string;
+            /**
+             * Format: uuid
+             * @description The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one.
+             */
+            id?: string;
+            /** @example Greek yoghurt 2 % */
+            name: string;
+            note?: string;
+            nutrients: components["schemas"]["FoodNutrientsBody"];
+            /**
+             * Format: double
+             * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
+             */
+            portion_grams?: number;
+            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
+            servings?: components["schemas"]["ServingBody"][];
+            /**
+             * @description Where the values come from: a label is exact, an estimate a judgement.
+             * @enum {string}
+             */
+            source: "label" | "estimate" | "user" | "dish";
         };
         UserBody: {
             /**
@@ -1275,6 +1438,276 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "find-foods": {
+        parameters: {
+            query: {
+                /** @description Words the name, the brand or an alias starts with, in any case and without the diacritics. */
+                query: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodsOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "upsert-food": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertFoodInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-food": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

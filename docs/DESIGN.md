@@ -178,11 +178,12 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | tool | purpose |
 | --- | --- |
 | `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units |
-| `find_foods(query, limit)` | fuzzy match over foods, aliases, recipes; includes last-used portion |
+| `find_foods(query, limit)` | the foods whose name, brand or an alias has words starting with the query's, without case or diacritics, the name's first; with the last use (the amount as given and in the food's unit) |
 | `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
 | `delete_meal(meal_id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
-| `upsert_food(...)` | save or correct a food (label values); same-name-same-portion rule |
+| `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
+| `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name or alias another food has is refused naming that food |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(metric, value, date?)` | weight and other manual measurements |
 | `checkin(date?, mood?, hunger?, note?, training_day?)` | |
@@ -223,10 +224,15 @@ scripts. A tool is one operation of the API, in the registry
 (`internal/api/tools.go`): its MCP name, its REST route, its handler.
 MCP runs a tool through that operation, so the validation, the token
 check and the answers are REST's. A tool that reads takes a token with
-the `read` or the `tools` scope. So far: `get_profile` is
-`GET /api/v1/me`, and `get_day` is `GET /api/v1/days/{date}`, a date or
-`today`, the user's day now; MCP takes its `date` as optional, `today`
-when left out.
+the `read` or the `tools` scope; one that writes, only `tools`. So far:
+`get_profile` is `GET /api/v1/me`; `get_day` is
+`GET /api/v1/days/{date}`, a date or `today`, the user's day now (MCP
+takes its `date` as optional, `today` when left out); `find_foods` is
+`GET /api/v1/foods?query=…`; `get_food` is `GET /api/v1/foods/{id}`,
+archived too; and `upsert_food` is `POST /api/v1/foods`, which corrects
+a food by an id it has (404 for another) or by its name and brand, and
+names the food in the way of a name or an alias (409), archived or not,
+which a search would not find but `get_food` gives.
 
 ## 6. AI layer
 

@@ -102,7 +102,8 @@ for the author and the reviewer.
   any other, with their cases in `isolationCases` and `answerCases`;
   `TestToolsAreNamed` lists the tools that exist, by their MCP name
   (DESIGN.md §5), and `TestToolsTakeReadAndToolsTokens` holds a tool that
-  reads to the `read` and `tools` scopes.
+  reads to the `read` and `tools` scopes, and one that writes to `tools`
+  alone. A tool names its scopes (`newTool`), or cannot be registered.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 

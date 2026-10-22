@@ -290,14 +290,17 @@ curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/
 `DELETE /api/v1/tokens/{id}` revokes one at once. A token reaches only
 the operations open to its scopes: `GET /api/v1/auth/whoami` and
 `GET /api/v1/info` with any scope, the imports below with `ingest`, and
-the tools that read with `read` or `tools` (`GET /api/v1/me`, the
-profile and the plan today, and `GET /api/v1/days/{date}`, a day,
-`today` or `YYYY-MM-DD`). Every other operation is closed to tokens
-(403), so a token can never create, list or revoke tokens, read the
-session or change a setting. Only `Authorization: Bearer tdm_…` carries
-a token (an empty Bearer is a bad one): another header, such as a
-reverse proxy's Basic credentials or the ID token an authenticating
-proxy passes on as a Bearer, leaves the request to its session cookie.
+the tools: those that read with `read` or `tools` (`GET /api/v1/me`,
+the profile and the plan today; `GET /api/v1/days/{date}`, a day,
+`today` or `YYYY-MM-DD`; `GET /api/v1/foods?query=…` and
+`GET /api/v1/foods/{id}`), and those that
+write with `tools` alone (`POST /api/v1/foods`, a food saved or
+corrected). Every other operation is closed to tokens (403), so a
+token can never create, list or revoke tokens, read the session or
+change a setting. Only `Authorization: Bearer tdm_…` carries a token
+(an empty Bearer is a bad one): another header, such as a reverse
+proxy's Basic credentials or the ID token an authenticating proxy
+passes on as a Bearer, leaves the request to its session cookie.
 The web app's settings page comes with the web UI.
 
 ### Import from Apple Health

@@ -52,7 +52,9 @@ func TestToolsAreNamed(t *testing.T) {
 			t.Errorf("tool %q is not snake_case", name)
 		}
 	}
-	for name, op := range map[string]string{"get_profile": "get-me", "get_day": "get-day"} {
+	for name, op := range map[string]string{
+		"get_profile": "get-me", "get_day": "get-day", "find_foods": "find-foods", "get_food": "get-food", "upsert_food": "upsert-food",
+	} {
 		if got[name] != op {
 			t.Errorf("tool %s is operation %q, want %q", name, got[name], op)
 		}
@@ -60,7 +62,8 @@ func TestToolsAreNamed(t *testing.T) {
 }
 
 // A tool that reads takes a token with the read scope or the tools
-// scope, and refuses one with only ingest.
+// scope; one that writes, only the tools scope. Neither takes one with
+// only ingest.
 func TestToolsTakeReadAndToolsTokens(t *testing.T) {
 	t.Parallel()
 
@@ -73,17 +76,19 @@ func TestToolsTakeReadAndToolsTokens(t *testing.T) {
 		}
 		tokens[scope] = created.Token
 	}
-	for name, opID := range tools(t) {
-		var path string
-		for p, op := range document().ops {
-			if op.OperationID == opID {
-				_, path, _ = strings.Cut(p, " ")
-			}
+	for _, op := range document().ops {
+		name, ok := op.Metadata[api.ToolKey].(string)
+		if !ok {
+			continue
 		}
-		path = strings.ReplaceAll(path, "{date}", "today")
+		path := strings.ReplaceAll(op.Path, "{date}", "today")
+		writes, body := op.Method != http.MethodGet, ""
+		if writes {
+			body = "{}" // refused for what it lacks, past the gate
+		}
 		for scope, token := range tokens {
-			rec := in.do(t, http.MethodGet, path, "", nil, bearer(token))
-			if refused := rec.Code == http.StatusForbidden; refused != (scope == "ingest") {
+			rec := in.do(t, op.Method, path, body, nil, bearer(token))
+			if refused := rec.Code == http.StatusForbidden; refused != (scope == "ingest" || (writes && scope == "read")) {
 				t.Errorf("%s with a %s token: %d %s", name, scope, rec.Code, rec.Body.String())
 			}
 		}
@@ -442,4 +447,232 @@ func TestGetDayShowsEveryNutrient(t *testing.T) {
 		}],
 		"total": %[2]s
 	}`, day.DateOf(now), nutrients))
+}
+
+// find_foods finds the user's foods by name, brand or alias, the name's
+// matches first, with how much was eaten last; archived foods stay out.
+func TestFindFoods(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	now := in.clock.Now()
+	bread := saveIsolationFoods(t, in.db, in.user, now) // and an archived stew
+	saveIsolationMeals(t, in.db, in.user, bread, now)
+	roll := food.Food{
+		ID: uuid.NewV7(), Name: "Rye roll", Brand: "Bakery", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 251.3, Protein: 8.04, Carbs: 46.07, Fat: 2.9, Salt: new(1.234)},
+	}
+	if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, roll, now); err != nil {
+		t.Fatal(err)
+	}
+	// A roll and a half, by weight.
+	item, err := meal.FromFood(roll, meal.Quantity{Amount: 120, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := meal.Meal{ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: "Snack", Client: meal.ClientWeb, Items: []meal.Item{item}}
+	if _, _, err := in.db.CreateMeal(t.Context(), in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatal(err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&limit=5", "", session, nil)
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	// The shorter name first, the values as they are stored, and the
+	// bread's last use: two slices at lunch.
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{"foods": [
+		{"id": %[1]q, "name": "Rye roll", "brand": "Bakery", "basis": "100g", "source": "label", "archived": false,
+		 "nutrients": {"kcal": 251.3, "protein": 8.04, "carbs": 46.07, "fat": 2.9, "salt": 1.234},
+		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}},
+		{"id": %[2]q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": false,
+		 "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
+		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"],
+		 "last_use": {"at": %[3]q, "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}}
+	]}`, roll.ID, bread.ID, now.Format(time.RFC3339), m.ID))
+	// By an alias; an archived food not at all; at most limit.
+	for query, want := range map[string]string{"loaf": `"name":"Ana's rye bread"`, "stew": `{"foods":[]}`} {
+		if rec := in.do(t, http.MethodGet, "/api/v1/foods?query="+query, "", session, nil); !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("query %s: %s, want %s", query, rec.Body.String(), want)
+		}
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&limit=1", "", session, nil); strings.Count(rec.Body.String(), `"id"`) != 1 {
+		t.Errorf("limit 1: %s", rec.Body.String())
+	}
+	for _, q := range []string{"", "?query=rye&limit=0", "?query=rye&limit=51"} {
+		if rec := in.do(t, http.MethodGet, "/api/v1/foods"+q, "", session, nil); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("GET /api/v1/foods%s: %d, want 422", q, rec.Code)
+		}
+	}
+}
+
+// upsert_food saves a food: a new one, or one of the same name and brand
+// corrected in place, keeping its id; a food in the way of a name or an
+// alias is named, archived or not.
+func TestUpsertFood(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	const yoghurt = `{"name": "Greek yoghurt 2 %%", "brand": "Dukat", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2, "saturated_fat": 1.3},
+		"servings": [{"name": "cup", "amount": 150}], "aliases": ["%s"], "note": "from the lid"}`
+	rec := in.do(t, http.MethodPost, "/api/v1/foods", fmt.Sprintf(yoghurt, "my yoghurt"), session, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a new food: %d %s", rec.Code, rec.Body.String())
+	}
+	saved := decodeJSON[struct {
+		ID string `json:"id"`
+	}](t, rec.Body.Bytes())
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
+		"id": %q, "name": "Greek yoghurt 2 %%", "brand": "Dukat", "basis": "100g", "source": "label", "archived": false,
+		"nutrients": {"kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2, "saturated_fat": 1.3},
+		"servings": [{"name": "cup", "amount": 150}], "aliases": ["my yoghurt"], "note": "from the lid"
+	}`, saved.ID))
+	// The same name and brand, in any case, is the same food.
+	rec = in.do(t, http.MethodPost, "/api/v1/foods", strings.Replace(fmt.Sprintf(yoghurt, "my yoghurt"), "Dukat", "DUKAT", 1), session, nil)
+	if !strings.Contains(rec.Body.String(), `"id":"`+saved.ID+`"`) {
+		t.Errorf("the same food again: %d %s, want its id kept", rec.Code, rec.Body.String())
+	}
+	// An archived food keeps its alias; a new food that wants it is told
+	// which food has it.
+	id, err := uuid.Parse(saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := in.db.SetFoodArchived(t.Context(), in.user.ID, isolationActor, id, true, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec = in.do(t, http.MethodPost, "/api/v1/foods", strings.Replace(fmt.Sprintf(yoghurt, "my yoghurt"), "Dukat", "Vindija", 1), session, nil)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), saved.ID) ||
+		!strings.Contains(rec.Body.String(), `the alias \"my yoghurt\" is taken by food `) || !strings.Contains(rec.Body.String(), "archived") {
+		t.Errorf("a taken alias: %d %s", rec.Code, rec.Body.String())
+	}
+	// The archived food, corrected without its alias, stays archived when
+	// the save says so: out of a search.
+	body := fmt.Sprintf(`{"id": %q, "archived": true, `, saved.ID) + strings.Replace(fmt.Sprintf(yoghurt, "x")[1:], `"aliases": ["x"], `, "", 1)
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods", body, session, nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"archived":true`) ||
+		strings.Contains(rec.Body.String(), "aliases") {
+		t.Errorf("the archived food corrected: %d %s", rec.Code, rec.Body.String())
+	}
+	// A food that breaks the rules.
+	rec = in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Air", "basis": "100g", "source": "label", "nutrients": {"kcal": 950, "protein": 0, "carbs": 0, "fat": 0}}`, session, nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("an invalid food: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A food is corrected by an id it has, and its event says who wrote it:
+// the web app with a session, the API with a token.
+func TestUpsertFoodIDAndActor(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	// An id no food has corrects nothing, and makes no food: a new one
+	// comes without one.
+	body := fmt.Sprintf(`{"id": %q, "name": "Skyr", "basis": "100g", "source": "label", "nutrients": {"kcal": 63, "protein": 11, "carbs": 4, "fat": 0.2}}`, uuid.NewV7())
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods", body, session, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("an id no food has: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+	if foods, err := in.db.FindFoods(t.Context(), in.user.ID, "skyr", 10); err != nil || len(foods) != 0 {
+		t.Errorf("foods after it: %v, %v; want none", foods, err)
+	}
+	in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Skyr", "basis": "100g", "source": "label", "nutrients": {"kcal": 63, "protein": 11, "carbs": 4, "fat": 0.2}}`, session, nil)
+	tok, _ := in.createToken(t, session[0], `{"name":"agent","scopes":["tools"]}`)
+	in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}`, nil, bearer(tok.Token))
+	if es, err := in.db.Events(t.Context(), in.user.ID, 2); err != nil || len(es) != 2 || es[0].Actor.Client != "api" || es[1].Actor.Client != "web" {
+		t.Errorf("the events = %+v, %v; want the API's, then the web app's", es, err)
+	}
+}
+
+// A food's id, name and aliases are the user's: another user's id is no
+// food of theirs (404, as one that does not exist), and another user's
+// name, brand and alias are no conflict.
+func TestUpsertFoodIDsArePerUser(t *testing.T) {
+	t.Parallel()
+
+	e := newIsolationEnv(t, false)
+	b := e.owner.bread
+	body := fmt.Sprintf(`{"id": %q, "name": "Crackers", "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`, b.ID)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/foods", body, nil, bearer(e.other.token.Token))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("the owner's id: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+	body = fmt.Sprintf(`{"name": %q, "brand": %q, "aliases": [%q], "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`,
+		b.Name, b.Brand, b.Aliases[0])
+	rec = e.in.do(t, http.MethodPost, "/api/v1/foods", body, nil, bearer(e.other.token.Token))
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), b.ID.String()) {
+		t.Fatalf("the other's food of the owner's name and alias: %d %s", rec.Code, rec.Body.String())
+	}
+	f, err := e.in.db.FoodByID(t.Context(), e.owner.user.ID, e.owner.bread.ID)
+	if err != nil || f.Name != e.owner.bread.Name {
+		t.Errorf("the owner's food = %+v, %v; want it as it was", f, err)
+	}
+}
+
+// A rename onto the name and brand another food has, archived or not, is
+// refused naming that food.
+func TestUpsertFoodNameInTheWay(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	stew := food.Food{ID: uuid.NewV7(), Name: "Goulash", Brand: "Canteen", Basis: food.PerPortion, Source: food.Estimate, Nutrients: food.Nutrients{Kcal: 650, Protein: 40, Carbs: 50, Fat: 30}}
+	soup := food.Food{ID: uuid.NewV7(), Name: "Soup", Brand: "Canteen", Basis: food.PerPortion, Source: food.Estimate, Nutrients: food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}}
+	for _, f := range []food.Food{stew, soup} {
+		if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, f, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := in.db.SetFoodArchived(t.Context(), in.user.ID, isolationActor, stew.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"id": %q, "name": "goulash", "brand": "CANTEEN", "basis": "portion", "source": "estimate", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, soup.ID)
+	rec := in.do(t, http.MethodPost, "/api/v1/foods", body, []*http.Cookie{sessionOf(t, in)}, nil)
+	want := fmt.Sprintf(`the name and brand are taken by food %s (\"Goulash\", archived)`, stew.ID)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("a rename onto an archived food's name: %d %s, want 409 with %s", rec.Code, rec.Body.String(), want)
+	}
+}
+
+// get_food gives a food by its id, archived too: what a correction of the
+// food in the way of a save starts from.
+func TestGetFood(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	if err := in.db.SetFoodArchived(t.Context(), in.user.ID, isolationActor, bread.ID, true, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/foods/"+bread.ID.String(), "", session, nil)
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
+		"id": %q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": true,
+		"nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
+		"servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"]
+	}`, bread.ID))
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods/"+uuid.NewV7().String(), "", session, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("an id no food has: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+}
+
+// archived archives a food in use: it leaves the search.
+func TestUpsertFoodArchives(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	body := fmt.Sprintf(`{"id": %q, "archived": true, "name": %q, "basis": "100g", "source": "user", "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3}}`, bread.ID, bread.Name)
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods", body, session, nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"archived":true`) {
+		t.Errorf("archiving: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", session, nil); !strings.Contains(rec.Body.String(), `{"foods":[]}`) {
+		t.Errorf("a search after: %s, want nothing", rec.Body.String())
+	}
 }

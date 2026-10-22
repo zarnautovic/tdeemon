@@ -134,7 +134,10 @@ func operations(t *testing.T) []operation {
 func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 	t.Parallel()
 
-	open := map[string]bool{"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true, "get-me": true, "get-day": true}
+	open := map[string]bool{
+		"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true, "get-me": true, "get-day": true,
+		"find-foods": true, "get-food": true, "upsert-food": true,
+	}
 	in, session := signedIn(t)
 	tok, _ := in.createToken(t, session, `{"name":"Claude","scopes":["tools","read","ingest"]}`)
 	for _, op := range operations(t) {

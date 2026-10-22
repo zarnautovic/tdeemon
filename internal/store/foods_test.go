@@ -487,3 +487,63 @@ func countRows(t *testing.T, db *store.DB, table string) int {
 	}
 	return n
 }
+
+// A save another food is in the way of names that food, archived or
+// not, so a client can deal with it: a search does not find an archived
+// food.
+func TestSaveFoodNamesTheFoodInTheWay(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	old := saveFood(t, db, ana, bar())
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, old.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	// Its alias, on a new food.
+	other := bar()
+	other.Name, other.Aliases = "Protein bar Cookies", []string{"caramel bar"}
+	_, err := db.SaveFood(t.Context(), ana, testActor, other, t0)
+	var conflict *store.FoodConflictError
+	if !errors.As(err, &conflict) || !errors.Is(err, store.ErrAliasTaken) || conflict.Food.ID != old.ID || conflict.Food.Name != old.Name ||
+		!conflict.Food.Archived || conflict.Alias != "caramel bar" {
+		t.Errorf("a taken alias = %#v, want the archived food in the way", err)
+	}
+	// Its name, on a food renamed.
+	other.Aliases = nil
+	saved := saveFood(t, db, ana, other)
+	saved.Name, saved.Brand = old.Name, old.Brand
+	_, err = db.SaveFood(t.Context(), ana, testActor, saved, t0)
+	if !errors.As(err, &conflict) || !errors.Is(err, store.ErrNameTaken) || conflict.Food.ID != old.ID || conflict.Alias != "" {
+		t.Errorf("a taken name = %#v, want the archived food in the way", err)
+	}
+}
+
+// CorrectFood saves a food the user has, by its id, in the save's own
+// transaction: an id they have no food of is ErrNotFound, and saves
+// nothing, rather than a new food or the food of the same name.
+func TestCorrectFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	f := saveFood(t, db, ana, bar())
+	f.Nutrients.Kcal = 360
+	if got, err := db.CorrectFood(t.Context(), ana, testActor, f, t0); err != nil || got.ID != f.ID || got.Nutrients.Kcal != 360 {
+		t.Errorf("a correction = %+v, %v", got, err)
+	}
+	// An id no food of ana's has, under the name of hers: nothing.
+	stray := f
+	stray.ID = uuid.NewV7()
+	if _, err := db.CorrectFood(t.Context(), ana, testActor, stray, t0); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("an unknown id = %v, want ErrNotFound", err)
+	}
+	// Her id is no food of ivo's.
+	if _, err := db.CorrectFood(t.Context(), ivo, testActor, f, t0); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("another user's id = %v, want ErrNotFound", err)
+	}
+	if got, err := db.FoodByID(t.Context(), ana, f.ID); err != nil || got.Nutrients.Kcal != 360 {
+		t.Errorf("her food = %+v, %v; want her correction", got, err)
+	}
+	if foods, err := db.FindFoods(t.Context(), ivo, "caramel", 10); err != nil || len(foods) != 0 {
+		t.Errorf("ivo's foods = %v, %v; want none", foods, err)
+	}
+}

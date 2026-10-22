@@ -39,6 +39,8 @@ type party struct {
 	session *http.Cookie
 	token   createdToken
 	spare   createdToken
+	// bread is their food with a serving and an alias.
+	bread food.Food
 }
 
 // tokenName is the name of the party's token, which only they may see.
@@ -89,8 +91,8 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		if rec := in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
-		bread := saveIsolationFoods(t, in.db, p.user, now)
-		saveIsolationMeals(t, in.db, p.user, bread, now)
+		p.bread = saveIsolationFoods(t, in.db, p.user, now)
+		saveIsolationMeals(t, in.db, p.user, p.bread, now)
 		saveIsolationMetrics(t, in.db, p.user, now)
 		saveIsolationPlan(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
@@ -499,6 +501,34 @@ func ingestCase(path string, body func(today string) string) isolationCase {
 	}
 }
 
+// isolateGetFood is get-food's case: the owner's food answers the other
+// as one that does not exist; their own they get.
+func isolateGetFood(t *testing.T, e isolationEnv) {
+	t.Helper()
+	theirs := e.in.do(t, http.MethodGet, "/api/v1/foods/"+e.owner.bread.ID.String(), "", nil, bearer(e.other.token.Token))
+	none := e.in.do(t, http.MethodGet, "/api/v1/foods/"+uuid.NewV7().String(), "", nil, bearer(e.other.token.Token))
+	if theirs.Code != http.StatusNotFound || theirs.Body.String() != none.Body.String() {
+		t.Errorf("the owner's food: %d %s; one that does not exist: %d %s; want the same 404", theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
+	}
+	if own := e.in.do(t, http.MethodGet, "/api/v1/foods/"+e.other.bread.ID.String(), "", []*http.Cookie{e.other.session}, nil); own.Code != http.StatusOK {
+		t.Errorf("their own food: %d %s", own.Code, own.Body.String())
+	}
+}
+
+// isolateUpsertFood is upsert-food's case: the other saves a food of
+// their own, with a token, and the owner's foods stay as they were.
+// (TestUpsertFoodIDsArePerUser saves the owner's name, brand and alias,
+// which this case cannot: its answer would show them.)
+func isolateUpsertFood(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := fmt.Sprintf(`{"name": "%s's crackers", "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`,
+		e.other.user.Name)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/foods", body, nil, bearer(e.other.token.Token))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), e.other.user.Name+"'s crackers") {
+		t.Errorf("the other's food: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // isolationCases has one case for every operation in the OpenAPI
 // document. TestIsolation checks after each that no answer showed the
 // owner's values, that the case got a 2xx from its operation, that the
@@ -557,6 +587,11 @@ func isolationCases() map[string]isolationCase {
 		"get-day": read("/api/v1/days/today", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s toast"}
 		}),
+		"find-foods": read("/api/v1/foods?query=rye", true, func(e isolationEnv) []string {
+			return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
+		}),
+		"upsert-food": isolateUpsertFood,
+		"get-food":    isolateGetFood,
 		"get-me": read("/api/v1/me", true, func(e isolationEnv) []string {
 			return []string{"Notes of " + e.other.user.Name, fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),
