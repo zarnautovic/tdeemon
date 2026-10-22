@@ -159,9 +159,37 @@ func toolFailCases() []failCase {
 		{"get-day", "/api/v1/days/today", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
 		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 		{"get-day", "/api/v1/days/today", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN mood TO gone", "mood"},
 	} {
 		cases = append(cases, failCase{
 			name: b.op + ", " + b.secret, op: b.op, method: http.MethodGet, path: b.path, signedIn: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, b.stmt)
+				return ""
+			}, inside: b.secret,
+		})
+	}
+	return append(cases, dayFailCases()...)
+}
+
+// dayFailCases are the 500s of the tools that change a day: each write
+// that fails, and each read of the day they answer.
+func dayFailCases() []failCase {
+	var cases []failCase
+	for _, b := range []struct{ op, method, path, body, stmt, secret string }{
+		{"log-metric", http.MethodPut, "/api/v1/days/today/metrics/weight", `{"value": 80}`, "ALTER TABLE metrics RENAME TO gone", "metrics"},
+		{"log-metric", http.MethodPut, "/api/v1/days/today/metrics/weight", `{"value": 80}`, "ALTER TABLE meals RENAME TO gone", "meals"},
+		{"log-metric", http.MethodPut, "/api/v1/days/today/metrics/weight", `{"value": 80}`, "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+		{"delete-metric", http.MethodDelete, "/api/v1/days/today/metrics/weight", "", "ALTER TABLE metrics RENAME TO gone", "metrics"},
+		{"delete-metric", http.MethodDelete, "/api/v1/days/today/metrics/weight", "", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+		{"check-in", http.MethodPatch, "/api/v1/days/today", `{"mood": 3}`, "ALTER TABLE days RENAME COLUMN mood TO gone", "mood"},
+		{"check-in", http.MethodPatch, "/api/v1/days/today", `{"mood": 3}`, "ALTER TABLE events RENAME TO gone", "events"},
+		{"check-in", http.MethodPatch, "/api/v1/days/today", `{"mood": 3}`, "ALTER TABLE meals RENAME TO gone", "meals"},
+		{"check-in", http.MethodPatch, "/api/v1/days/today", `{"mood": 3}`, "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+	} {
+		cases = append(cases, failCase{
+			name: b.op + ", " + b.secret, op: b.op, method: b.method, path: b.path, body: b.body, signedIn: true,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
 				t.Helper()
 				in.exec(t, b.stmt)

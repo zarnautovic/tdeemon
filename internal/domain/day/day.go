@@ -180,6 +180,39 @@ func ValidateExclusion(e Exclusion) error {
 	return text.Check("the reason", e.Reason, MaxReasonLen, true)
 }
 
+// MaxNoteLen bounds a check-in's note, in characters.
+const MaxNoteLen = 2000
+
+// The scale of a check-in's mood and hunger: from MinScale, low, to
+// MaxScale, high.
+const (
+	MinScale = 1
+	MaxScale = 5
+)
+
+// CheckIn is what the user says of a day: their mood and their hunger,
+// from MinScale to MaxScale (0 when not said), and a note.
+type CheckIn struct {
+	Mood, Hunger int
+	Note         string
+}
+
+// Validate checks c: a mood and a hunger not said or on the scale, and
+// the note's text.
+func (c CheckIn) Validate() error {
+	var errs []error
+	for _, s := range []struct {
+		name  string
+		value int
+	}{{"mood", c.Mood}, {"hunger", c.Hunger}} {
+		if s.value != 0 && (s.value < MinScale || s.value > MaxScale) {
+			errs = append(errs, fmt.Errorf("%s %d: want %d (low) to %d (high)", s.name, s.value, MinScale, MaxScale))
+		}
+	}
+	errs = append(errs, text.CheckLines("the note", c.Note, MaxNoteLen, false))
+	return errors.Join(errs...)
+}
+
 // StatusOf returns the status of day d at instant now: excluded when the
 // user excluded it, complete once its end has passed, open before. Only
 // an exclusion is stored; the rest follows from the clock, so no day has

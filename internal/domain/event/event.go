@@ -68,6 +68,9 @@ const (
 	MetricsMerge Action = "metrics.merge"
 	MetricSet    Action = "metric.set"
 	MetricDelete Action = "metric.delete"
+	// DayCheckIn changed what the user says of a day at once: the mood,
+	// hunger and note, the toggle of its type and its exclusion.
+	DayCheckIn Action = "day.checkin"
 	// WorkoutsSet replaced the days a source recorded a workout on; undo
 	// passes over it, as the source's next export replaces them.
 	WorkoutsSet Action = "workouts.set"
