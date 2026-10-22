@@ -68,6 +68,19 @@ const (
 	MetricsMerge Action = "metrics.merge"
 	MetricSet    Action = "metric.set"
 	MetricDelete Action = "metric.delete"
+	// The changes of the plan, which undo leaves: the profile and the
+	// limits only a web session changes, and the phases, the targets and
+	// the training weekdays go back as a revert that limits.Validate
+	// checks.
+	ProfileSet   Action = "profile.set"
+	LimitsSet    Action = "limits.set"
+	PhaseSet     Action = "phase.set"
+	PhaseDelete  Action = "phase.delete"
+	TargetSet    Action = "target.set"
+	TargetDelete Action = "target.delete"
+	TrainingDay  Action = "day.training"
+	WeekdaysSet  Action = "plan.weekdays"
+	NotesSet     Action = "notes.set"
 	// Undo took another event back; its Entity is that event's id.
 	Undo Action = "undo"
 )
@@ -79,8 +92,10 @@ type Event struct {
 	Actor  Actor
 	Action Action
 	// Entity names what changed: a food's or a meal's id, a day
-	// (YYYY-MM-DD), a day and a metric ("2026-10-21/weight"), or for an
-	// undo the event undone.
+	// (YYYY-MM-DD), a day and a metric ("2026-10-21/weight"), a phase by
+	// its start or a target by its first day (YYYY-MM-DD), "profile",
+	// "limits", "plan" (the training weekdays) or "notes", or for an undo
+	// the event undone.
 	Entity string
 	// Before and After are the state of the entity, as JSON; nil where
 	// there was none (before a create, after a delete).

@@ -26,11 +26,11 @@ CREATE TABLE days (
     day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
     -- Why the day is out of calibration; NULL when it is not.
     excluded_reason TEXT CHECK (excluded_reason <> ''),
-    updated_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL, training_day INTEGER CHECK (training_day IN (0, 1)),
     PRIMARY KEY (user_id, day)
 ) STRICT;
 
-CREATE TABLE events (
+CREATE TABLE "events" (
     -- A UUIDv7 the store makes: the order of the ids is the order of
     -- the writes.
     id TEXT NOT NULL CHECK (length(id) = 36),
@@ -42,18 +42,21 @@ CREATE TABLE events (
     model TEXT NOT NULL DEFAULT '',
     operation TEXT NOT NULL CHECK (operation IN (
         'food.save', 'food.archive', 'meal.create', 'meal.replace', 'meal.delete',
-        'day.exclude', 'day.include', 'metrics.merge', 'metric.set', 'metric.delete', 'undo'
+        'day.exclude', 'day.include', 'metrics.merge', 'metric.set', 'metric.delete', 'undo',
+        'profile.set', 'phase.set', 'phase.delete', 'target.set', 'target.delete',
+        'day.training', 'plan.weekdays', 'limits.set', 'notes.set'
     )),
     -- What changed: a food's or a meal's id, a day, a day and a metric,
-    -- or for an undo the event it took back.
+    -- a phase's start, a target's first day, "profile", "plan",
+    -- "limits" or "notes", or for an undo the event it took back.
     entity TEXT NOT NULL CHECK (entity <> ''),
     -- The entity's state as JSON; NULL where there was none.
     before_state TEXT CHECK (before_state IS NULL OR json_valid(before_state)),
     after_state TEXT CHECK (after_state IS NULL OR json_valid(after_state)),
     -- The undo that took the event back.
     undone_by TEXT CHECK (undone_by IS NULL OR length(undone_by) = 36),
-    -- 1 when the entity changed since (an import wrote it): undo cannot
-    -- take the event back without losing that, and passes over it.
+    -- 1 when undo passed over the event: the entity changed since, or
+    -- the change could not be read or put back.
     stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
     PRIMARY KEY (user_id, id)
 ) STRICT;
@@ -238,6 +241,39 @@ CREATE TABLE metrics (
     PRIMARY KEY (user_id, day, metric)
 ) STRICT;
 
+CREATE TABLE phases (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    -- The phase's first day, YYYY-MM-DD.
+    start TEXT NOT NULL CHECK (start GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
+    type TEXT NOT NULL CHECK (type IN ('cut', 'maintain', 'bulk', 'recomp')),
+    -- Its planned last day; NULL for a phase open until the next starts.
+    end_day TEXT CHECK (
+        end_day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]' AND end_day >= start
+    ),
+    -- The target rate in % of the trend weight a week, a minus a loss.
+    rate_pct_week REAL NOT NULL,
+    goal_weight REAL CHECK (goal_weight BETWEEN 20 AND 400),
+    milestone_weight REAL CHECK (milestone_weight BETWEEN 20 AND 400),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, start)
+) STRICT;
+
+CREATE TABLE plan_settings (
+    user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    -- The training weekdays, bit i for time.Weekday(i), Sunday 0.
+    training_weekdays INTEGER NOT NULL DEFAULT 0 CHECK (training_weekdays BETWEEN 0 AND 127),
+    -- The user's limits as a JSON object of their names and values; a
+    -- limit it does not name, or NULL for all, is at its default.
+    limits TEXT CHECK (json_valid(limits) AND json_type(limits) = 'object'),
+    updated_at TEXT NOT NULL
+) STRICT;
+
+CREATE TABLE profile_notes (
+    user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    notes TEXT NOT NULL CHECK (notes <> ''),
+    updated_at TEXT NOT NULL
+) STRICT;
+
 CREATE TABLE schema_migrations (
 	version    INTEGER PRIMARY KEY,
 	name       TEXT    NOT NULL,
@@ -260,6 +296,23 @@ CREATE TABLE sessions (
 CREATE INDEX sessions_expires_at ON sessions (expires_at);
 
 CREATE INDEX sessions_user_id ON sessions (user_id);
+
+CREATE TABLE targets (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    effective_from TEXT NOT NULL
+    CHECK (effective_from GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
+    training_kcal REAL NOT NULL CHECK (training_kcal > 0),
+    training_protein REAL NOT NULL CHECK (training_protein >= 0),
+    training_fat REAL NOT NULL CHECK (training_fat >= 0),
+    rest_kcal REAL NOT NULL CHECK (rest_kcal > 0),
+    rest_protein REAL NOT NULL CHECK (rest_protein >= 0),
+    rest_fat REAL NOT NULL CHECK (rest_fat >= 0),
+    -- The proposal that set the target, once proposals exist; NULL for
+    -- one set otherwise.
+    proposal_id TEXT CHECK (length(proposal_id) = 36),
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, effective_from)
+) STRICT;
 
 CREATE TABLE user_identities (
     issuer TEXT NOT NULL CHECK (issuer <> ''),
@@ -288,6 +341,7 @@ CREATE TABLE users (
     day_start_hour INTEGER NOT NULL CHECK (day_start_hour BETWEEN 0 AND 23),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
-) STRICT;
+, sex TEXT CHECK (sex IN ('male', 'female')), birth_date TEXT
+CHECK (birth_date GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'), height_cm REAL CHECK (height_cm BETWEEN 50 AND 275)) STRICT;
 
 CREATE UNIQUE INDEX users_email ON users (email);

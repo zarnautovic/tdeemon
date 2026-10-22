@@ -198,3 +198,18 @@ func TestProteinReferenceMass(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateNotes(t *testing.T) {
+	t.Parallel()
+
+	for _, ok := range []string{"", "No fish.\nTrains at 6.", strings.Repeat("a", 4000)} {
+		if err := ValidateNotes(ok); err != nil {
+			t.Errorf("ValidateNotes(%.20q) = %v", ok, err)
+		}
+	}
+	for _, bad := range []string{strings.Repeat("a", 4001), " ", "a\u200bb"} {
+		if err := ValidateNotes(bad); err == nil {
+			t.Errorf("ValidateNotes(%.20q) passed", bad)
+		}
+	}
+}
