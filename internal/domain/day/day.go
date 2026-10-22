@@ -55,6 +55,19 @@ func (d Date) Weekday() time.Weekday { return d.at(time.UTC).Weekday() }
 // Before reports whether d comes before e.
 func (d Date) Before(e Date) bool { return d.at(time.UTC).Before(e.at(time.UTC)) }
 
+// DaysSince returns how many days d comes after e: below 0 when it comes
+// before, 0 on the same date. It counts in seconds of the Unix epoch, so
+// dates centuries apart do not overflow a time.Duration.
+func (d Date) DaysSince(e Date) int {
+	return int((d.at(time.UTC).Unix() - e.at(time.UTC).Unix()) / secondsPerDay)
+}
+
+const secondsPerDay = 24 * 60 * 60
+
+// Compare returns -1 when d comes before e, 1 when after, 0 on the same
+// date: the order slices.SortFunc takes, and Before's.
+func (d Date) Compare(e Date) int { return d.at(time.UTC).Compare(e.at(time.UTC)) }
+
 func (d Date) at(loc *time.Location) time.Time {
 	return time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, loc)
 }
