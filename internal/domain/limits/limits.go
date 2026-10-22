@@ -174,7 +174,7 @@ func Fields() []Field {
 // share outside 0 to 100 %, a count of days that is not whole or more
 // than 7 (the data of a week), a minimum above its maximum, and the
 // floor in the code (kcal more than CodeKcalFloor, protein at least
-// CodeProteinFloor).
+// CodeProteinFloor, rates within CodeLossRate and CodeGainRate).
 func (l Limits) Validate() error {
 	var errs []error
 	for _, f := range Fields() {

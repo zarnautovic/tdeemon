@@ -648,8 +648,8 @@ type bound struct {
 	// floor is true for a least value, false for a most.
 	floor          bool
 	user, instance float64
-	// code is the floor in the code, when hasCode; codeExclusive when the
-	// floor itself breaks it (800 kcal).
+	// code is the floor or the ceiling in the code, when hasCode;
+	// codeExclusive when the floor itself breaks it (800 kcal).
 	code          float64
 	hasCode       bool
 	codeExclusive bool

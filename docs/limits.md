@@ -268,7 +268,9 @@ The rules: `profile_missing`, `weight_missing`, `min_age`,
 `autopilot_weigh_ins`, `autopilot_drift`, `tdee_missing` (a step with no
 TDEE to measure its drift against) and `autopilot_shape` (a step is a
 shift of the weekly average of the target before, and nothing else). A
-change that breaks a rule of its shape is `invalid_change`. What starts
+change that breaks a rule of its shape, or a state or limits that break
+theirs (a stored value written past its rules, a number that is no
+number), is `invalid_change`. What starts
 the autopilot's waits again, and what counts as a logged day, are the
 autopilot's to decide; `Validate` holds the numbers it is given to the
 limits.
