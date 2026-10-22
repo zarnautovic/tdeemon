@@ -21,6 +21,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
 
 // TestAPITyposDoNotReachACatchAll adds the kind of catch-all route the web
@@ -144,5 +145,74 @@ func TestDocumentRequestErrorsWithoutErrors(t *testing.T) {
 	responses := a.OpenAPI().Paths["/quiet"].Post.Responses
 	if _, ok := responses["default"]; !ok || len(responses) != 2 {
 		t.Errorf("responses %v, want the success and the default", slices.Collect(maps.Keys(responses)))
+	}
+}
+
+// A handler passes on the error it cannot handle whole (internalError),
+// so a client that leaves while the handler runs, waiting for the
+// database's write lock, is logged at debug level and a failure at error
+// level. The handlers run directly, with the client gone after the
+// session's lookup.
+func TestHandlersPassOnTheirErrors(t *testing.T) {
+	t.Parallel()
+
+	s := newTestSessions(storetest.Open(t), time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC))
+	female, born, height := "female", "1990-06-15", 168.5
+	limitsIn := &setLimitsInput{}
+	limitsIn.Body.Limits = map[string]float64{"cut_rate": -0.5}
+	tokenIn := &createTokenInput{}
+	tokenIn.Body.Name, tokenIn.Body.Scopes = "phone", []string{"read"}
+	for op, run := range map[string]func(context.Context) error{
+		"get-profile": func(ctx context.Context) error { _, err := s.getProfile(ctx, nil); return err },
+		"set-profile": func(ctx context.Context) error {
+			_, err := s.setProfile(ctx, &setProfileInput{Body: ProfileFields{Sex: &female, BirthDate: &born, HeightCm: &height}})
+			return err
+		},
+		"get-limits":   func(ctx context.Context) error { _, err := s.getLimits(ctx, nil); return err },
+		"set-limits":   func(ctx context.Context) error { _, err := s.setLimits(ctx, limitsIn); return err },
+		"list-tokens":  func(ctx context.Context) error { _, err := s.listTokens(ctx, nil); return err },
+		"create-token": func(ctx context.Context) error { _, err := s.createToken(ctx, tokenIn); return err },
+		"revoke-token": func(ctx context.Context) error {
+			_, err := s.revokeToken(ctx, &revokeTokenInput{ID: uuid.NewV7().String()})
+			return err
+		},
+		"logout": func(ctx context.Context) error { _, err := s.logout(ctx, nil); return err },
+	} {
+		t.Run(op, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			u := user.User{ID: uuid.NewV7(), TimeZone: "Europe/Zagreb", DayStartHour: 4}
+			ctx = auth.WithPrincipal(ctx, auth.Principal{User: u, Via: auth.ViaSession, SessionID: "a session"})
+			var e *huma.ErrorModel
+			if err := run(ctx); !errors.As(err, &e) || e.Status != http.StatusInternalServerError || len(e.Errors) != 1 {
+				t.Fatalf("error %v, want a 500 with one detail", err)
+			}
+			err, ok := e.Errors[0].Value.(error)
+			if !ok || !errors.Is(err, context.Canceled) || logLevel(err) != slog.LevelDebug {
+				t.Errorf("the detail carries %#v, want the error, a cancellation", e.Errors[0].Value)
+			}
+		})
+	}
+}
+
+// A response an operation describes itself (its own headers, its own
+// words) stays: documentRequestErrors adds only those it lacks.
+func TestDocumentRequestErrorsKeepsAnOperationsOwn(t *testing.T) {
+	t.Parallel()
+
+	a := newAPI(http.NewServeMux(), slog.New(slog.DiscardHandler))
+	own := &huma.Response{Description: "Too many tries; wait as Retry-After says."}
+	huma.Register(a, huma.Operation{
+		OperationID: "patient", Method: http.MethodGet, Path: "/patient", Metadata: openToAnyToken(),
+		Errors:    []int{http.StatusNotFound},
+		Responses: map[string]*huma.Response{"429": own},
+	}, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil }) //nolint:nilnil // no output
+	responses := a.OpenAPI().Paths["/patient"].Get.Responses
+	if responses["429"] != own {
+		t.Errorf("429 = %+v, want the operation's own", responses["429"])
+	}
+	if responses["401"] == nil {
+		t.Error("no 401 added")
 	}
 }

@@ -280,7 +280,11 @@ func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
 			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
 	}
 	for _, code := range codes {
-		op.Responses[strconv.Itoa(code)] = &huma.Response{Description: http.StatusText(code), Content: problem.Content}
+		// A response the operation describes itself (its own headers or
+		// words) stays.
+		if _, ok := op.Responses[strconv.Itoa(code)]; !ok {
+			op.Responses[strconv.Itoa(code)] = &huma.Response{Description: http.StatusText(code), Content: problem.Content}
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -348,6 +349,20 @@ func nullable(f reflect.StructField) string {
 	return ""
 }
 
+// bodyType returns the Go type of an answer's body. A body is a struct,
+// which the document refers to: one that is not (a bare slice, whose
+// document huma lets be null) is an error.
+func bodyType(registry huma.Registry, media *huma.MediaType) (reflect.Type, error) {
+	if media.Schema == nil || media.Schema.Ref == "" {
+		return nil, errors.New("a body that is no struct: make it one, with its fields")
+	}
+	typ := registry.TypeFromRef(media.Schema.Ref)
+	if typ == nil {
+		return nil, fmt.Errorf("no Go type for %s", media.Schema.Ref)
+	}
+	return typ, nil
+}
+
 // No answer of the API can hold a null the document does not allow,
 // whatever the data: the rule is in the types of the answers.
 func TestAnswersHoldNoNull(t *testing.T) {
@@ -358,12 +373,9 @@ func TestAnswersHoldNoNull(t *testing.T) {
 	for _, op := range document().ops {
 		for _, resp := range op.Responses {
 			for _, media := range resp.Content {
-				if media.Schema == nil || media.Schema.Ref == "" {
-					continue
-				}
-				typ := document().registry.TypeFromRef(media.Schema.Ref)
-				if typ == nil {
-					t.Errorf("%s: no Go type for %s", op.OperationID, media.Schema.Ref)
+				typ, err := bodyType(document().registry, media)
+				if err != nil {
+					t.Errorf("%s: %v", op.OperationID, err)
 					continue
 				}
 				bad = append(bad, nullableFields(typ, seen)...)
@@ -507,7 +519,12 @@ func TestCheckBodyTakesTheDefault(t *testing.T) {
 
 	var problem *huma.Response
 	for _, op := range document().ops {
-		problem = op.Responses[strconv.Itoa(http.StatusInternalServerError)]
+		if problem = op.Responses[strconv.Itoa(http.StatusInternalServerError)]; problem != nil {
+			break
+		}
+	}
+	if problem == nil {
+		t.Fatal("no operation lists a 500")
 	}
 	op := &huma.Operation{OperationID: "quiet", Responses: map[string]*huma.Response{"default": problem}}
 	rec := httptest.NewRecorder()
@@ -518,5 +535,28 @@ func TestCheckBodyTakesTheDefault(t *testing.T) {
 	checkBody(e, op, rec)
 	if len(e.errs) > 0 {
 		t.Errorf("reported %q, want nothing", e.errs)
+	}
+}
+
+// bodyType refuses a body that is no struct, and finds a struct's type.
+func TestBodyType(t *testing.T) {
+	t.Parallel()
+
+	r := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
+	type list struct {
+		Items []string `json:"items" nullable:"false"`
+	}
+	ref := r.Schema(reflect.TypeFor[list](), true, "")
+	if typ, err := bodyType(r, &huma.MediaType{Schema: ref}); err != nil || typ != reflect.TypeFor[list]() {
+		t.Errorf("a struct: %v, %v", typ, err)
+	}
+	for name, schema := range map[string]*huma.Schema{
+		"a bare slice":    r.Schema(reflect.TypeFor[[]list](), true, ""),
+		"no schema":       nil,
+		"an unknown $ref": {Ref: "#/components/schemas/Nothing"},
+	} {
+		if _, err := bodyType(r, &huma.MediaType{Schema: schema}); err == nil {
+			t.Errorf("%s: no error", name)
+		}
 	}
 }

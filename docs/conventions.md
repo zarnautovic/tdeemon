@@ -72,6 +72,8 @@ for the author and the reviewer.
   many), are listed for every operation (`documentRequestErrors`).
   What an answer's type may hold, so the document and the TypeScript
   types say what comes:
+  - its body is a struct, never a bare slice, whose top level no tag
+    could keep from being null;
   - a struct it embeds is exported: huma describes no field of an
     unexported embedded struct;
   - a pointer has `omitempty`: nil is then left out, never `null`;
@@ -83,7 +85,7 @@ for the author and the reviewer.
   - a map is never nil without `omitempty`.
 
   `TestAnswersHoldNoNull` holds the types of every operation's answers
-  to the rules for pointers and slices, whatever the data;
+  to the rules for bodies, pointers and slices, whatever the data;
   `checkAnswer` catches a nil slice or map in the answers the tests get.
 - **Imports:** payloads of the shapes a source sends, with made-up
   values, in `internal/ingest/testdata/` (Health Auto Export's in
