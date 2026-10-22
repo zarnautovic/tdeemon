@@ -207,7 +207,7 @@ type logMealInput struct {
 
 // logMealBody is a meal as log_meal takes it.
 type logMealBody struct {
-	ID          string      `json:"id" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry."`
+	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out by a client that cannot make one, the server makes one, and the meal sent again is another."`
 	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When the meal was eaten; the time of the id when left out, so a retry has the same."`
 	Description string      `json:"description,omitempty" maxLength:"200" doc:"What the meal was, in the user's words."`
 	Items       []itemInput `json:"items" minItems:"1" maxItems:"50"`
@@ -270,9 +270,14 @@ func (s *sessions) logMeal(ctx context.Context, in *logMealInput) (*mealOutput, 
 // newMeal is the meal b logs, without its items, and the user's calendar.
 // The meal was eaten at the id's time unless b says when.
 func (s *sessions) newMeal(p auth.Principal, b *logMealBody, now time.Time) (meal.Meal, day.Calendar, error) {
-	id, err := uuid.Parse(b.ID)
-	if err != nil {
-		return meal.Meal{}, day.Calendar{}, huma.Error422UnprocessableEntity("the meal's id: " + err.Error())
+	// A client that cannot make an id (a model without a clock) leaves it
+	// out: the server makes one now.
+	id := meal.NewIDAt(now)
+	if b.ID != "" {
+		var err error
+		if id, err = uuid.Parse(b.ID); err != nil {
+			return meal.Meal{}, day.Calendar{}, huma.Error422UnprocessableEntity("the meal's id: " + err.Error())
+		}
 	}
 	cal, _, err := userDay(p, now)
 	if err != nil {

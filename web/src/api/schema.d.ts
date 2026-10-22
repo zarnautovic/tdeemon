@@ -882,9 +882,9 @@ export interface components {
             eaten_at?: string;
             /**
              * Format: uuid
-             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry.
+             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out by a client that cannot make one, the server makes one, and the meal sent again is another.
              */
-            id: string;
+            id?: string;
             items: components["schemas"]["ItemInput"][] | null;
             note?: string;
         };
@@ -911,6 +911,11 @@ export interface components {
             name: string;
             /** @description What the user wants a coach to keep in mind. */
             notes: string;
+            /**
+             * Format: date-time
+             * @description The time now, on the user's clock: for when a meal was eaten, and for the time of an id a client makes.
+             */
+            now: string;
             /** @description The phase today is in; absent when there is none. */
             phase?: components["schemas"]["PhaseBody"];
             profile: components["schemas"]["MeProfile"];

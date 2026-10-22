@@ -299,6 +299,7 @@ type meBody struct {
 	TimeZone         string      `json:"time_zone" example:"Europe/Zagreb"`
 	DayStartHour     int         `json:"day_start_hour" minimum:"0" maximum:"23" doc:"The hour the user's day starts: what comes before it belongs to the day before."`
 	Today            string      `json:"today" format:"date" doc:"The user's day now."`
+	Now              time.Time   `json:"now" doc:"The time now, on the user's clock: for when a meal was eaten, and for the time of an id a client makes."`
 	TodayType        string      `json:"today_type" enum:"training,rest" doc:"Today's type, which picks its target."`
 	TrainingWeekdays []string    `json:"training_weekdays" nullable:"false" enum:"sunday,monday,tuesday,wednesday,thursday,friday,saturday" doc:"The days of the week the plan makes training days."`
 	Profile          MeProfile   `json:"profile"`
@@ -318,7 +319,8 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, today, err := userDay(p, s.now())
+	now := s.now()
+	cal, today, err := userDay(p, now)
 	if err != nil {
 		return nil, internalError("reading the profile failed", err)
 	}
@@ -345,7 +347,7 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	}
 	b := meBody{
 		Name: p.User.Name, Locale: p.User.Locale, TimeZone: p.User.TimeZone, DayStartHour: p.User.DayStartHour,
-		Today: today.String(), TodayType: string(dt), TrainingWeekdays: []string{},
+		Today: today.String(), Now: now.In(cal.Location).Truncate(time.Second), TodayType: string(dt), TrainingWeekdays: []string{},
 		Profile: MeProfile{ProfileBody: newProfileBody(pr)}, Notes: notes,
 		Units: unitsBody{Energy: "kcal", Nutrients: "g", Weight: "kg", Height: "cm"},
 	}

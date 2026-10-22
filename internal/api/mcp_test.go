@@ -125,7 +125,7 @@ func TestMCPToolSchemas(t *testing.T) {
 	}
 	for name, want := range map[string][]string{
 		"get_day": nil, "checkin": nil, "log_metric": {"kind", "value"}, "get_food": {"id"},
-		"log_meal": {"id", "items"}, "find_foods": {"query"},
+		"log_meal": {"items"}, "find_foods": {"query"},
 	} {
 		schema, _ := byName[name].InputSchema.(map[string]any)
 		var got []string

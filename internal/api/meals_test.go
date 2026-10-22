@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -823,5 +824,39 @@ func TestUpdateMealOpsOnOneItemAgain(t *testing.T) {
 	}
 	if got := e.mealOf(t, id).Items; len(got) != 2 || got[0].Name != "Stew" || got[1].Name != "Tea" {
 		t.Errorf("the meal's items = %+v, want the stew and the tea", got)
+	}
+}
+
+// A meal sent without an id, by a client that cannot make one, is logged
+// under one the server makes, eaten now; it is no retry when sent again,
+// which the warning of a duplicate tells.
+func TestLogMealWithoutAnID(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	body := `{"items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`
+	var ids []string
+	for i, warned := range []bool{false, true} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+		var a struct {
+			Meal struct {
+				ID      string    `json:"id"`
+				EatenAt time.Time `json:"eaten_at"`
+			} `json:"meal"`
+		}
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &a) != nil {
+			t.Fatalf("send %d: %d %s", i+1, rec.Code, rec.Body.String())
+		}
+		id, err := uuid.Parse(a.Meal.ID)
+		if at, ok := meal.IDTime(id); err != nil || !ok || !at.Equal(e.now) || !a.Meal.EatenAt.Equal(e.now) {
+			t.Errorf("send %d: the meal %s eaten at %s, want an id made now and eaten now", i+1, a.Meal.ID, a.Meal.EatenAt)
+		}
+		if got := strings.Contains(rec.Body.String(), `"duplicate_meal"`); got != warned {
+			t.Errorf("send %d: a warning of a duplicate %v, want %v: %s", i+1, got, warned, rec.Body.String())
+		}
+		ids = append(ids, a.Meal.ID)
+	}
+	if ids[0] == ids[1] {
+		t.Errorf("both sends under %s, want two meals", ids[0])
 	}
 }

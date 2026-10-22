@@ -177,9 +177,9 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 
 | tool | purpose |
 | --- | --- |
-| `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units |
+| `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units, and the time now on the user's clock (a model has none) |
 | `find_foods(query, limit)` | the foods whose name, brand or an alias has words starting with the query's, without case or diacritics, the name's first; with the last use (the amount as given and in the food's unit) |
-| `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
+| `log_meal(id?, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9), or one the server makes for a client that cannot (a model without a clock: that meal sent again is another); returns breakdown + day status |
 | `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, change the time and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
 | `delete_meal(id)` / `undo_last(id)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
@@ -725,7 +725,10 @@ the first spec.
     food it is stored as, so a retry is the same however that food is
     renamed or corrected since, or whichever of two requests sent at once
     saved it. A retry is known before anything of it is worked out: it
-    reads no food and saves none. A client gives the meal's `id`; when
+    reads no food and saves none. A client gives the meal's `id` (one
+    that cannot make one, a model without a clock or a tool to run code,
+    leaves it out, and the server makes one: that meal sent again is
+    another, which the warning of a duplicate tells); when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
     the clock, so a retry has the same one. A new meal's ID must be a
     version 7 ID whose time is near the clock (from a day before to five
