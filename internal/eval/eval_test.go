@@ -20,10 +20,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"image"
-	"image/color"
-	"image/draw"
-	"image/png"
+	"io"
 	"log/slog"
 	"math"
 	"net/http/httptest"
@@ -36,10 +33,6 @@ import (
 	"testing"
 	"time"
 	"uuid"
-
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/basicfont"
-	"golang.org/x/image/math/fixed"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
@@ -63,27 +56,16 @@ type evalCase struct {
 	// en or hr.
 	Lang string   `json:"lang"`
 	Say  []string `json:"say"`
-	// Label, when set, is a food's label, drawn and sent as a photo with
-	// the first message.
-	Label *label `json:"label,omitempty"`
+	// Image, when set, is a photo sent with the first message: a PNG or
+	// a JPEG, its path relative to internal/eval.
+	Image string `json:"image,omitempty"`
 	// SeedMeal logs a meal before the case.
 	SeedMeal bool   `json:"seed_meal,omitempty"`
 	Expect   expect `json:"expect"`
 }
 
-type label struct {
-	Name    string  `json:"name"`
-	Brand   string  `json:"brand"`
-	Kcal    float64 `json:"kcal"`
-	Protein float64 `json:"protein"`
-	Carbs   float64 `json:"carbs"`
-	Fat     float64 `json:"fat"`
-	// Portion is a bar's grams.
-	Portion float64 `json:"portion"`
-}
-
 type expect struct {
-	// Meals and Items are what the day holds after the case.
+	// Meals are the user's after the case, of any day; Items, today's.
 	Meals *int `json:"meals,omitempty"`
 	Items *int `json:"items,omitempty"`
 	// Kcal is the range the day's total falls in.
@@ -98,6 +80,11 @@ type expect struct {
 	// MaxRounds bounds the rounds of tool calls of each message; 2 when
 	// not set (DESIGN.md §5: a log is 1-2 calls).
 	MaxRounds int `json:"max_rounds,omitempty"`
+	// Writes are the changes the client makes, from the event log: 0
+	// for a case that must change nothing.
+	Writes *int `json:"writes,omitempty"`
+	// Tools are tools the client must call.
+	Tools []string `json:"tools,omitempty"`
 }
 
 // systemPrompt is all the client says of itself: the policy comes from
@@ -121,7 +108,9 @@ func TestEval(t *testing.T) {
 	}
 	base := baseline(t, model)
 	t.Logf("model %s; the client alone, a message without tools: %d input tokens", model, base)
-	t.Logf("the tools and instructions, first sent: %d input tokens not from the cache", warmUp(t, model))
+	warm := warmUp(t, model)
+	// What every request of a log carries, cached or not (DESIGN.md §6).
+	t.Logf("the tools and instructions: ~%d input tokens a request; first sent, %d not from the cache", warm.tokens-base, warm.fresh)
 	var rows []string
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
@@ -140,6 +129,12 @@ func readCases(t *testing.T, path string) []evalCase {
 	var cs []evalCase
 	if err := json.Unmarshal(b, &cs); err != nil {
 		t.Fatalf("%s: %v", path, err)
+	}
+	pair := func(n int) bool { return n == 0 || n == 2 }
+	for i := range cs {
+		if e := cs[i].Expect; !pair(len(e.Kcal)) || !pair(len(e.Mood)) || !pair(len(e.Hunger)) {
+			t.Fatalf("%s, %q: a range of kcal, mood or hunger is two numbers", path, cs[i].Name)
+		}
 	}
 	return cs
 }
@@ -247,6 +242,9 @@ type turn struct {
 	calls, rounds int
 	tokens, fresh int
 	tools         []string
+	// message is the id of the model's message whose tool calls were
+	// counted last.
+	message string
 }
 
 // run sends messages to Claude Code, connected to mcpConfig's server
@@ -261,23 +259,7 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 	if mcpConfig != "" {
 		args = append(args, "--mcp-config", mcpConfig, "--allowedTools", "mcp__tdeemon")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // G204: the arguments are the eval's own, the model the developer's
-	cmd.Dir = t.TempDir()
-	var errOut bytes.Buffer
-	cmd.Stderr = &errOut
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
+	cmd, stdin, out, errOut := start(t, args)
 	send := func(i int) {
 		line, err := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": messages[i]["content"]}})
 		if err != nil {
@@ -295,6 +277,10 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 	for sc.Scan() {
 		var ev streamLine
 		if json.Unmarshal(sc.Bytes(), &ev) != nil {
+			continue
+		}
+		if ev.Type == "system" && ev.Subtype == "init" {
+			checkInit(t, &ev, mcpConfig != "")
 			continue
 		}
 		if ev.Type != "result" {
@@ -321,10 +307,44 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 	return turns
 }
 
+// start starts Claude Code with args, and returns its input, its output
+// and what it says on stderr. A test that ends before the process does
+// kills it.
+func start(t *testing.T, args []string) (*exec.Cmd, io.WriteCloser, io.Reader, *bytes.Buffer) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	cmd := exec.CommandContext(ctx, "claude", args...) //nolint:gosec // G204: the arguments are the eval's own, the model the developer's
+	cmd.Dir = t.TempDir()
+	cmd.WaitDelay = 10 * time.Second
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cmd.ProcessState == nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+		}
+		cancel()
+	})
+	return cmd, stdin, out, &errOut
+}
+
 // streamLine is a line of Claude Code's stream-json output.
 type streamLine struct {
 	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
 	Message struct {
+		ID      string `json:"id"`
 		Content []struct {
 			Type    string          `json:"type"`
 			Name    string          `json:"name"`
@@ -340,10 +360,40 @@ type streamLine struct {
 	} `json:"usage"`
 	IsError bool   `json:"is_error"`
 	Result  string `json:"result"`
+	// Of the line that starts a session: what the client has.
+	Model      string   `json:"model"`
+	Tools      []string `json:"tools"`
+	MCPServers []struct {
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	} `json:"mcp_servers"`
+}
+
+// checkInit holds the client to tdeemon's tools alone, none of its own
+// nor of the developer's settings, and tdeemon connected when withMCP.
+func checkInit(t *testing.T, ev *streamLine, withMCP bool) {
+	t.Helper()
+	for _, name := range ev.Tools {
+		if !strings.HasPrefix(name, "mcp__tdeemon__") {
+			t.Fatalf("the client has the tool %s, want tdeemon's alone", name)
+		}
+	}
+	connected := false
+	for _, s := range ev.MCPServers {
+		if s.Name != "tdeemon" {
+			t.Fatalf("the client has the MCP server %s, want tdeemon alone", s.Name)
+		}
+		connected = s.Status == "connected"
+	}
+	if withMCP && !connected {
+		t.Fatalf("tdeemon is not connected: %+v", ev.MCPServers)
+	}
+	t.Logf("the client: %s, %d tools", ev.Model, len(ev.Tools))
 }
 
 // add counts the tool calls of an assistant's message, a round when it
-// has any, and logs them and the errors the tools answer.
+// has any, and logs them and the errors the tools answer. Claude Code
+// streams each block of a message as a line of its own, under its id.
 func (cur *turn) add(t *testing.T, ev *streamLine) {
 	t.Helper()
 	calls := 0
@@ -360,7 +410,10 @@ func (cur *turn) add(t *testing.T, ev *streamLine) {
 	}
 	if calls > 0 {
 		cur.calls += calls
-		cur.rounds++
+		if ev.Message.ID != cur.message {
+			cur.message = ev.Message.ID
+			cur.rounds++
+		}
 	}
 }
 
@@ -385,14 +438,14 @@ func baseline(t *testing.T, model string) int {
 
 // warmUp sends a message with the tools before the cases, so the first
 // case does not pay for putting them in the cache, which the cases after
-// it read; it returns what it paid.
-func warmUp(t *testing.T, model string) int {
+// it read; it returns its turn.
+func warmUp(t *testing.T, model string) turn {
 	t.Helper()
 	turns := run(t, model, mcpConfig(t, newInstance(t, false, "en")), []map[string]any{{"content": []map[string]any{{"type": "text", "text": "Hi"}}}})
 	if len(turns) != 1 {
 		t.Fatalf("the warm-up: %d turns", len(turns))
 	}
-	return turns[0].fresh
+	return turns[0]
 }
 
 // mcpConfig writes Claude Code's configuration of in's MCP server, and
@@ -420,10 +473,8 @@ func runCase(t *testing.T, c evalCase, model string) string {
 	var messages []map[string]any
 	for i, say := range c.Say {
 		content := []map[string]any{{"type": "text", "text": say}}
-		if i == 0 && c.Label != nil {
-			content = append([]map[string]any{{"type": "image", "source": map[string]any{
-				"type": "base64", "media_type": "image/png", "data": base64.StdEncoding.EncodeToString(drawLabel(t, c.Label)),
-			}}}, content...)
+		if i == 0 && c.Image != "" {
+			content = append([]map[string]any{photo(t, c.Image)}, content...)
 		}
 		messages = append(messages, map[string]any{"content": content})
 	}
@@ -431,39 +482,35 @@ func runCase(t *testing.T, c evalCase, model string) string {
 	if len(turns) != len(c.Say) {
 		t.Fatalf("%d answers to %d messages", len(turns), len(c.Say))
 	}
-	ok := check(t, in, c.Expect, foodsBefore)
+	check(t, in, c.Expect, foodsBefore, turns)
 	maxRounds := c.Expect.MaxRounds
 	if maxRounds == 0 {
 		maxRounds = 2
 	}
-	var rows []string
 	for i, tr := range turns {
 		if tr.rounds > maxRounds {
 			t.Errorf("message %d: %d rounds of tool calls (%s), want at most %d", i+1, tr.rounds, strings.Join(tr.tools, ", "), maxRounds)
-			ok = false
 		}
-		// The cost target (DESIGN.md §6) is of what a log pays in full: a
-		// client sends the same prefix with each round, read from the cache.
+		// The cost target (DESIGN.md §6) is of what a log pays in full,
+		// the cache warm: a client sends the same prefix with each
+		// request, read from the cache. The whole input is in the table.
 		if tr.fresh > 10000 {
 			t.Errorf("message %d: %d input tokens not from the cache, want under 10000", i+1, tr.fresh)
-			ok = false
 		}
+	}
+	// A row each message, the case's verdict on each.
+	var rows []string
+	for i, tr := range turns {
 		rows = append(rows, fmt.Sprintf("%-32s %6d %6d %8d %8d  %v  %s", fmt.Sprintf("%s (%d)", c.Name, i+1), tr.calls, tr.rounds, tr.tokens, tr.fresh,
-			map[bool]string{true: "ok", false: "FAIL"}[ok], strings.Join(tr.tools, " ")))
+			map[bool]string{true: "FAIL", false: "ok"}[t.Failed()], strings.Join(tr.tools, " ")))
 	}
 	return strings.Join(rows, "\n")
 }
 
-// check holds the day to e, and says whether it holds.
-func check(t *testing.T, in instance, e expect, foodsBefore []string) bool {
+// check holds what the case left to e.
+func check(t *testing.T, in instance, e expect, foodsBefore []string, turns []turn) {
 	t.Helper()
 	ctx := t.Context()
-	ok := true
-	fail := func(format string, args ...any) {
-		t.Helper()
-		t.Errorf(format, args...)
-		ok = false
-	}
 	today := in.cal.DayOf(time.Now())
 	meals, err := in.db.MealsOfDay(ctx, in.user.ID, today)
 	if err != nil {
@@ -473,23 +520,50 @@ func check(t *testing.T, in instance, e expect, foodsBefore []string) bool {
 	for i := range meals {
 		items += len(meals[i].Items)
 	}
-	kcal := meal.DayTotal(meals).Kcal
-	if e.Meals != nil && len(meals) != *e.Meals {
-		fail("%d meals, want %d", len(meals), *e.Meals)
+	if n := count(t, in, "SELECT count(*) FROM meals WHERE user_id = ?"); e.Meals != nil && n != *e.Meals {
+		t.Errorf("%d meals, want %d", n, *e.Meals)
 	}
 	if e.Items != nil && items != *e.Items {
-		fail("%d items, want %d", items, *e.Items)
+		t.Errorf("%d items today, want %d", items, *e.Items)
 	}
-	if len(e.Kcal) == 2 && (kcal < e.Kcal[0] || kcal > e.Kcal[1]) {
-		fail("%.0f kcal, want %v", kcal, e.Kcal)
+	if kcal := meal.DayTotal(meals).Kcal; len(e.Kcal) == 2 && (kcal < e.Kcal[0] || kcal > e.Kcal[1]) {
+		t.Errorf("%.0f kcal, want %v", kcal, e.Kcal)
 	}
-	return checkFoods(t, in, e, foodsBefore) && checkDay(t, in, e, today) && ok
+	checkCalls(t, in, e, turns)
+	checkFoods(t, in, e, foodsBefore)
+	checkDay(t, in, e, today)
+}
+
+// checkCalls holds the client's changes and the tools it called to e.
+func checkCalls(t *testing.T, in instance, e expect, turns []turn) {
+	t.Helper()
+	if n := count(t, in, "SELECT count(*) FROM events WHERE user_id = ? AND client = 'mcp'"); e.Writes != nil && n != *e.Writes {
+		t.Errorf("%d changes, want %d", n, *e.Writes)
+	}
+	var called []string
+	for _, tr := range turns {
+		called = append(called, tr.tools...)
+	}
+	for _, name := range e.Tools {
+		if !slices.Contains(called, name) {
+			t.Errorf("no call of %s among %v", name, called)
+		}
+	}
+}
+
+// count runs a query of a count of the user's rows.
+func count(t *testing.T, in instance, query string) int {
+	t.Helper()
+	var n int
+	if err := in.db.Read().QueryRowContext(t.Context(), query, in.user.ID.String()).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 // checkFoods holds the foods made in the case to e.
-func checkFoods(t *testing.T, in instance, e expect, foodsBefore []string) bool {
+func checkFoods(t *testing.T, in instance, e expect, foodsBefore []string) {
 	t.Helper()
-	ok := true
 	var made []string
 	for _, n := range foodNames(t, in) {
 		if !slices.Contains(foodsBefore, n) {
@@ -498,27 +572,18 @@ func checkFoods(t *testing.T, in instance, e expect, foodsBefore []string) bool 
 	}
 	if e.NoNewFoods && len(made) > 0 {
 		t.Errorf("new foods %v, want none", made)
-		ok = false
 	}
 	for _, w := range e.NewFoods {
-		if !slices.ContainsFunc(made, func(n string) bool { return strings.Contains(strings.ToLower(n), w) }) {
+		if !slices.ContainsFunc(made, func(n string) bool { return strings.Contains(strings.ToLower(n), strings.ToLower(w)) }) {
 			t.Errorf("no new food of %q among %v", w, made)
-			ok = false
 		}
 	}
-	return ok
 }
 
 // checkDay holds today's weight, mood and hunger to e.
-func checkDay(t *testing.T, in instance, e expect, today day.Date) bool {
+func checkDay(t *testing.T, in instance, e expect, today day.Date) {
 	t.Helper()
 	ctx := t.Context()
-	ok := true
-	fail := func(format string, args ...any) {
-		t.Helper()
-		t.Errorf(format, args...)
-		ok = false
-	}
 	if e.Weight != 0 {
 		values, err := in.db.Metrics(ctx, in.user.ID, today, today)
 		if err != nil {
@@ -527,7 +592,7 @@ func checkDay(t *testing.T, in instance, e expect, today day.Date) bool {
 		if !slices.ContainsFunc(values[today], func(v metric.Value) bool {
 			return v.Kind == metric.Weight && math.Abs(v.Value-e.Weight) < 0.05
 		}) {
-			fail("weights %v, want %v", values[today], e.Weight)
+			t.Errorf("weights %v, want %v", values[today], e.Weight)
 		}
 	}
 	if e.Mood != nil || e.Hunger != nil {
@@ -536,13 +601,12 @@ func checkDay(t *testing.T, in instance, e expect, today day.Date) bool {
 			t.Fatal(err)
 		}
 		if !within(c.Mood, e.Mood) {
-			fail("mood %d, want %v", c.Mood, e.Mood)
+			t.Errorf("mood %d, want %v", c.Mood, e.Mood)
 		}
 		if !within(c.Hunger, e.Hunger) {
-			fail("hunger %d, want %v", c.Hunger, e.Hunger)
+			t.Errorf("hunger %d, want %v", c.Hunger, e.Hunger)
 		}
 	}
-	return ok
 }
 
 // within says whether v is in the range r of two, or r is not set.
@@ -568,37 +632,44 @@ func foodNames(t *testing.T, in instance) []string {
 	return names
 }
 
-// drawLabel draws l as a nutrition label, black on white, as a photo of
-// a package would show it.
-func drawLabel(t *testing.T, l *label) []byte {
+// photo is the image at path as a message's block.
+func photo(t *testing.T, path string) map[string]any {
 	t.Helper()
-	lines := []string{
-		l.Brand + " " + l.Name,
-		"",
-		"Nutrition facts",
-		"per 100 g        per bar (" + fmt.Sprint(l.Portion) + " g)",
-		fmt.Sprintf("Energy  %4.0f kcal   %4.0f kcal", l.Kcal, l.Kcal*l.Portion/100),
-		fmt.Sprintf("Fat     %4.1f g      %4.1f g", l.Fat, l.Fat*l.Portion/100),
-		fmt.Sprintf("Carbs   %4.1f g      %4.1f g", l.Carbs, l.Carbs*l.Portion/100),
-		fmt.Sprintf("Protein %4.1f g      %4.1f g", l.Protein, l.Protein*l.Portion/100),
-	}
-	const w, h, scale = 320, 130, 3
-	small := image.NewRGBA(image.Rect(0, 0, w, h))
-	draw.Draw(small, small.Bounds(), &image.Uniform{C: color.White}, image.Point{}, draw.Src)
-	d := font.Drawer{Dst: small, Src: image.NewUniform(color.Black), Face: basicfont.Face7x13}
-	for i, line := range lines {
-		d.Dot = fixed.P(10, 18+i*14)
-		d.DrawString(line)
-	}
-	big := image.NewRGBA(image.Rect(0, 0, w*scale, h*scale))
-	for y := range h * scale {
-		for x := range w * scale {
-			big.Set(x, y, small.At(x/scale, y/scale))
-		}
-	}
-	var buf bytes.Buffer
-	if err := png.Encode(&buf, big); err != nil {
+	b, err := os.ReadFile(path)
+	if err != nil {
 		t.Fatal(err)
 	}
-	return buf.Bytes()
+	media := map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}[strings.ToLower(filepath.Ext(path))]
+	if media == "" {
+		t.Fatalf("%s: want a PNG or a JPEG", path)
+	}
+	return map[string]any{"type": "image", "source": map[string]any{
+		"type": "base64", "media_type": media, "data": base64.StdEncoding.EncodeToString(b),
+	}}
+}
+
+// TestTurnCountsRounds holds a turn's count to what the model asked at
+// once: Claude Code streams each block of a message as a line of its
+// own, under the message's id.
+func TestTurnCountsRounds(t *testing.T) {
+	t.Parallel()
+
+	var cur turn
+	for _, line := range []string{
+		`{"type":"assistant","message":{"id":"m1","content":[{"type":"text","text":"Looking."}]}}`,
+		`{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","name":"mcp__tdeemon__find_foods","input":{}}]}}`,
+		`{"type":"assistant","message":{"id":"m1","content":[{"type":"tool_use","name":"mcp__tdeemon__get_profile","input":{}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","is_error":true,"content":"no"}]}}`,
+		`{"type":"assistant","message":{"id":"m2","content":[{"type":"tool_use","name":"mcp__tdeemon__log_meal","input":{}}]}}`,
+		`{"type":"assistant","message":{"id":"m3","content":[{"type":"text","text":"Logged."}]}}`,
+	} {
+		var ev streamLine
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatal(err)
+		}
+		cur.add(t, &ev)
+	}
+	if cur.rounds != 2 || cur.calls != 3 || !slices.Equal(cur.tools, []string{"find_foods", "get_profile", "log_meal"}) {
+		t.Errorf("rounds %d, calls %d, tools %v; want 2, 3, find_foods get_profile log_meal", cur.rounds, cur.calls, cur.tools)
+	}
 }

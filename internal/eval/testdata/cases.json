@@ -72,7 +72,9 @@
       "Estimate the calories of a croissant, I haven't eaten it."
     ],
     "expect": {
-      "meals": 0
+      "meals": 0,
+      "writes": 0,
+      "no_new_foods": true
     }
   },
   {
@@ -130,7 +132,11 @@
     "seed_meal": true,
     "expect": {
       "meals": 1,
-      "max_rounds": 1
+      "max_rounds": 1,
+      "writes": 0,
+      "tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -139,15 +145,7 @@
     "say": [
       "I ate one of these bars."
     ],
-    "label": {
-      "name": "Crunchy Protein Bar",
-      "brand": "Fitbite",
-      "kcal": 380,
-      "protein": 30,
-      "carbs": 35,
-      "fat": 13,
-      "portion": 55
-    },
+    "image": "testdata/protein-bar-label.png",
     "expect": {
       "meals": 1,
       "items": 1,
@@ -233,7 +231,9 @@
       "Procijeni koliko kalorija ima kroasan, nisam ga pojeo."
     ],
     "expect": {
-      "meals": 0
+      "meals": 0,
+      "writes": 0,
+      "no_new_foods": true
     }
   },
   {
@@ -291,7 +291,11 @@
     "seed_meal": true,
     "expect": {
       "meals": 1,
-      "max_rounds": 1
+      "max_rounds": 1,
+      "writes": 0,
+      "tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -300,15 +304,7 @@
     "say": [
       "Pojeo sam jednu ovakvu pločicu."
     ],
-    "label": {
-      "name": "Crunchy Protein Bar",
-      "brand": "Fitbite",
-      "kcal": 380,
-      "protein": 30,
-      "carbs": 35,
-      "fat": 13,
-      "portion": 55
-    },
+    "image": "testdata/protein-bar-label.png",
     "expect": {
       "meals": 1,
       "items": 1,

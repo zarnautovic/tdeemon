@@ -12,7 +12,6 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.6
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	golang.org/x/crypto v0.58.0
-	golang.org/x/image v0.47.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/text v0.43.0
 	modernc.org/sqlite v1.60.1
