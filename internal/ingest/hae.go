@@ -55,9 +55,11 @@ type haePayload struct {
 }
 
 type haeMetric struct {
-	Name  string     `json:"name"`
-	Units string     `json:"units"`
-	Data  []haePoint `json:"data"`
+	Name  string `json:"name"`
+	Units string `json:"units"`
+	// Data is read for the metrics tdeemon knows, a point at a time, so a
+	// metric it skips or a point that does not read costs nothing else.
+	Data json.RawMessage `json:"data"`
 }
 
 // haePoint is one sample: a quantity, or for sleep a session with its
@@ -70,6 +72,9 @@ type haePoint struct {
 	Core       *float64 `json:"core"`
 	Deep       *float64 `json:"deep"`
 	Rem        *float64 `json:"rem"`
+	// Value names the stage of a sleep segment, in an export HAE does not
+	// summarize; a segment is no night.
+	Value *string `json:"value"`
 }
 
 // sample is a value at an instant; at is zero when the point gives a date
@@ -104,38 +109,84 @@ func ParseHAE(body []byte) (Result, error) {
 	if p.Data == nil || p.Data.Metrics == nil {
 		return Result{}, ErrNotHAE
 	}
-	samples := map[day.Date]map[metric.Kind][]sample{}
-	ignored := map[string]bool{}
-	var bad []Rejected
+	c := collector{samples: map[day.Date]map[metric.Kind][]sample{}, ignored: map[string]bool{}}
 	for _, m := range *p.Data.Metrics {
-		k, ok := haeKinds[m.Name]
-		if !ok {
-			ignored[m.Name] = true
-			continue
-		}
-		for _, pt := range m.Data {
-			v, ok := pt.value(k)
-			if !ok {
-				continue
-			}
-			d, at, err := pointDate(pt.Date)
-			if err != nil {
-				bad = append(bad, Rejected{Kind: k, Value: v, Reason: err.Error()})
-				continue
-			}
-			if samples[d] == nil {
-				samples[d] = map[metric.Kind][]sample{}
-			}
-			samples[d][k] = append(samples[d][k], sample{at, convert(k, m.Units, v)})
-		}
+		c.metric(m)
 	}
 	byDay := map[day.Date]map[metric.Kind]float64{}
-	for d, kinds := range samples {
+	for d, kinds := range c.samples {
 		byDay[d] = pick(kinds)
 	}
-	r := build(byDay, ignored)
-	r.Rejected = append(bad, r.Rejected...)
+	r := build(byDay, c.ignored)
+	r.Rejected = append(c.bad, r.Rejected...)
 	return r, nil
+}
+
+// collector gathers a payload's samples by day and kind, and what it
+// leaves out.
+type collector struct {
+	samples map[day.Date]map[metric.Kind][]sample
+	ignored map[string]bool
+	bad     []Rejected
+}
+
+// metric reads the points of m, each checked on its own before a day's
+// value is picked among them.
+func (c *collector) metric(m haeMetric) {
+	if m.Name == "" {
+		return
+	}
+	k, ok := haeKinds[m.Name]
+	if !ok {
+		c.ignored[m.Name] = true
+		return
+	}
+	conv, err := units(k, m.Units)
+	if err != nil {
+		c.bad = append(c.bad, Rejected{Kind: k, Reason: err.Error()})
+		return
+	}
+	var points []json.RawMessage
+	if err := json.Unmarshal(m.Data, &points); err != nil {
+		c.bad = append(c.bad, Rejected{Kind: k, Reason: "the data is no list of points"})
+		return
+	}
+	for _, raw := range points {
+		c.point(k, conv, raw)
+	}
+}
+
+func (c *collector) point(k metric.Kind, conv func(float64) float64, raw json.RawMessage) {
+	var pt haePoint
+	if err := json.Unmarshal(raw, &pt); err != nil {
+		c.bad = append(c.bad, Rejected{Kind: k, Reason: "a point does not read: " + err.Error()})
+		return
+	}
+	if k == metric.Sleep && pt.Value != nil {
+		c.bad = append(c.bad, Rejected{
+			Kind: k, RawDate: pt.Date,
+			Reason: "a sleep stage (" + *pt.Value + "), not a night: turn on Summarize Data in Health Auto Export",
+		})
+		return
+	}
+	v, ok := pt.value(k)
+	if !ok {
+		return
+	}
+	v = conv(v)
+	d, at, err := pointDate(pt.Date)
+	if err != nil {
+		c.bad = append(c.bad, Rejected{Kind: k, Value: v, RawDate: pt.Date, Reason: err.Error()})
+		return
+	}
+	if err := (metric.Value{Kind: k, Value: v, Source: metric.Import}).Validate(); err != nil {
+		c.bad = append(c.bad, Rejected{Date: d, Kind: k, Value: v, Reason: err.Error()})
+		return
+	}
+	if c.samples[d] == nil {
+		c.samples[d] = map[metric.Kind][]sample{}
+	}
+	c.samples[d][k] = append(c.samples[d][k], sample{at, v})
 }
 
 // value returns the point's value for kind k: for sleep, the hours slept
@@ -172,42 +223,62 @@ func deref(p *float64) (float64, bool) {
 }
 
 // pointDate returns the calendar date of a point's date, as written, and
-// its instant, zero when it gives a date alone.
+// its instant, zero when it gives no time that reads: HAE writes
+// 2006-01-02 15:04:05 -0700, and a date that starts so is that date.
 func pointDate(s string) (day.Date, time.Time, error) {
-	if t, err := time.Parse(haeTime, s); err == nil {
-		d, err := day.ParseDate(s[:10])
-		return d, t, err
+	if len(s) < 10 {
+		return day.Date{}, time.Time{}, fmt.Errorf("date %q: want 2006-01-02 15:04:05 -0700", s)
 	}
-	d, err := day.ParseDate(s)
+	d, err := day.ParseDate(s[:10])
 	if err != nil {
-		return day.Date{}, time.Time{}, fmt.Errorf("date %q: want 2006-01-02 15:04:05 -0700, or a date alone", s)
+		return day.Date{}, time.Time{}, fmt.Errorf("date %q: want 2006-01-02 15:04:05 -0700", s)
+	}
+	for _, layout := range []string{haeTime, time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return d, t, nil
+		}
 	}
 	return d, time.Time{}, nil
 }
 
-// convert turns v, in units, into k's unit.
-func convert(k metric.Kind, units string, v float64) float64 {
-	u := strings.ToLower(strings.TrimSpace(units))
-	switch k {
-	case metric.ActiveKcal, metric.BasalKcal:
-		if u == "kj" || u == "kilojoules" {
-			return v / 4.184
-		}
-	case metric.Weight, metric.LeanMass:
-		if u == "lb" || u == "lbs" {
-			return v * 0.45359237
-		}
-	case metric.Sleep:
-		if u == "min" {
-			return v / 60
-		}
-	case metric.ExerciseMin:
-		if u == "hr" || u == "h" {
-			return v * 60
-		}
-	case metric.BodyFat, metric.Steps, metric.RestingHR, metric.HRV, metric.VO2Max:
+// unitsOf lists the units each kind takes, with the conversion to its
+// own; "" is the kind's own unit, for a source that names none.
+var unitsOf = map[metric.Kind]map[string]float64{
+	metric.Steps:       {"": 1, "count": 1},
+	metric.ActiveKcal:  {"": 1, "kcal": 1, "kj": 1 / 4.184, "kilojoules": 1 / 4.184},
+	metric.BasalKcal:   {"": 1, "kcal": 1, "kj": 1 / 4.184, "kilojoules": 1 / 4.184},
+	metric.ExerciseMin: {"": 1, "min": 1, "hr": 60, "h": 60},
+	metric.Sleep:       {"": 1, "hr": 1, "h": 1, "min": 1.0 / 60},
+	metric.Weight:      {"": 1, "kg": 1, "lb": 0.45359237, "lbs": 0.45359237},
+	metric.LeanMass:    {"": 1, "kg": 1, "lb": 0.45359237, "lbs": 0.45359237},
+	metric.BodyFat:     {"": 1, "%": 1},
+	metric.RestingHR:   {"": 1, "count/min": 1, "bpm": 1},
+	metric.HRV:         {"": 1, "ms": 1},
+}
+
+// units returns the conversion of units into k's unit, or an error for a
+// unit k does not take: a value in it would pass for another (25 st for
+// 25 kg). VO2 max takes any unit in ml (HAE writes it several ways).
+func units(k metric.Kind, name string) (func(float64) float64, error) {
+	u := strings.ToLower(strings.TrimSpace(name))
+	if k == metric.VO2Max && (u == "" || strings.HasPrefix(u, "ml")) {
+		return func(v float64) float64 { return v }, nil
 	}
-	return v
+	f, ok := unitsOf[k][u]
+	if !ok {
+		var want []string
+		for w := range unitsOf[k] {
+			if w != "" {
+				want = append(want, w)
+			}
+		}
+		if k == metric.VO2Max {
+			want = []string{"ml/(kg·min)"}
+		}
+		slices.Sort(want)
+		return nil, fmt.Errorf("units %q: want %s", name, strings.Join(want, " or "))
+	}
+	return func(v float64) float64 { return v * f }, nil
 }
 
 // pick returns the value a day keeps of each kind, from its samples.

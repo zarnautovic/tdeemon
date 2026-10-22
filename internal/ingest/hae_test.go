@@ -303,14 +303,15 @@ func TestParseHAERefusesAValueAlone(t *testing.T) {
 		t.Error("a point without a quantity gave a weight")
 	}
 	if len(r.Rejected) != 2 {
-		t.Fatalf("Rejected = %+v, want the bad date and the sleep", r.Rejected)
+		t.Fatalf("Rejected = %+v, want the sleep and the bad date", r.Rejected)
 	}
-	if bad := r.Rejected[0]; bad.Kind != metric.Steps || !bad.Date.IsZero() || !strings.Contains(bad.Reason, `date "late on the 21st"`) {
-		t.Errorf("the bad date = %+v", bad)
-	}
-	if sleep := r.Rejected[1]; sleep.Kind != metric.Sleep || sleep.Date.String() != "2026-10-21" || sleep.Value != 30 ||
+	if sleep := r.Rejected[0]; sleep.Kind != metric.Sleep || sleep.Date.String() != "2026-10-21" || sleep.Value != 30 ||
 		!strings.Contains(sleep.Reason, "want 0 to 24 h") {
 		t.Errorf("the sleep = %+v", sleep)
+	}
+	if bad := r.Rejected[1]; bad.Kind != metric.Steps || !bad.Date.IsZero() || bad.RawDate != "late on the 21st" || bad.Value != 100 ||
+		!strings.Contains(bad.Reason, `date "late on the 21st"`) {
+		t.Errorf("the bad date = %+v", bad)
 	}
 }
 
@@ -345,9 +346,7 @@ func TestParseHAERefusesWhatIsNoPayload(t *testing.T) {
 	if _, err := ParseHAE([]byte(`[]`)); err == nil || errors.Is(err, ErrNotHAE) {
 		t.Errorf("ParseHAE of a list = %v, want an error that it does not read", err)
 	}
-	if _, err := ParseHAE([]byte(`{"data": {"metrics": [{"name": "step_count", "data": [{"qty": "many"}]}]}}`)); err == nil {
-		t.Error("a quantity that is no number passed")
-	}
+
 	if r, err := ParseHAE([]byte(`{"data": {"metrics": []}}`)); err != nil || r.Days != nil {
 		t.Errorf("an empty sync = %+v, %v", r, err)
 	}
@@ -400,5 +399,157 @@ func TestFromDays(t *testing.T) {
 	}
 	if r, err := FromDays(nil); err != nil || r.Days != nil || r.Ignored != nil {
 		t.Errorf("FromDays(nil) = %+v, %v", r, err)
+	}
+}
+
+// A point or a metric that does not read is left out alone, and a metric
+// tdeemon skips is not read at all.
+func TestParseHAELeavesOutWhatDoesNotRead(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "some_new_metric", "units": "x", "data": [{"date": 1729468800, "qty": "5"}]},
+		{"name": "step_count", "units": "count", "data": [
+			{"date": "2026-10-21 00:00:00 +0200", "qty": 4000},
+			{"date": "2026-10-21 00:00:00 +0200", "qty": "many"}
+		]},
+		{"name": "active_energy", "units": "kcal", "data": {}},
+		{"name": "", "units": "count", "data": []}
+	]}}`)
+	if got, ok := valueOf(t, r, "2026-10-21", metric.Steps); !ok || got != 4000 {
+		t.Errorf("steps = %v, %v; want 4000", got, ok)
+	}
+	if !slices.Equal(r.Ignored, []string{"some_new_metric"}) {
+		t.Errorf("Ignored = %v, want the new metric and no empty name", r.Ignored)
+	}
+	if len(r.Rejected) != 2 || r.Rejected[0].Kind != metric.Steps || !strings.Contains(r.Rejected[0].Reason, "a point does not read") ||
+		r.Rejected[1].Kind != metric.ActiveKcal || r.Rejected[1].Reason != "the data is no list of points" {
+		t.Errorf("Rejected = %+v", r.Rejected)
+	}
+}
+
+// A unit a kind does not take refuses the metric: 25 st would pass for
+// 25 kg.
+func TestParseHAEUnits(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "weight_body_mass", "units": "st", "data": [{"date": "2026-10-21 07:00:00 +0200", "qty": 25}]},
+		{"name": "apple_exercise_time", "units": "s", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 600}]},
+		{"name": "vo2_max", "units": "l/min", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 3}]},
+		{"name": "active_energy", "units": " KJ ", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 418.4}]},
+		{"name": "basal_energy_burned", "units": "kilojoules", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 6276}]},
+		{"name": "apple_exercise_time", "units": "h", "data": [{"date": "2026-10-22 00:00:00 +0200", "qty": 1.5}]},
+		{"name": "resting_heart_rate", "units": "bpm", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 50}]},
+		{"name": "heart_rate_variability", "units": "", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 70}]},
+		{"name": "cardio_fitness", "units": "mL/min·kg", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 41}]}
+	]}}`)
+	for _, tc := range []struct {
+		date string
+		kind metric.Kind
+		want float64
+	}{
+		{"2026-10-21", metric.ActiveKcal, 100},
+		{"2026-10-21", metric.BasalKcal, 1500},
+		{"2026-10-22", metric.ExerciseMin, 90},
+		{"2026-10-21", metric.RestingHR, 50},
+		{"2026-10-21", metric.HRV, 70},
+		{"2026-10-21", metric.VO2Max, 41},
+	} {
+		if got, ok := valueOf(t, r, tc.date, tc.kind); !ok || !near(got, tc.want) {
+			t.Errorf("%s %s = %v, %v; want %v", tc.date, tc.kind, got, ok, tc.want)
+		}
+	}
+	for _, k := range []metric.Kind{metric.Weight} {
+		if _, ok := valueOf(t, r, "2026-10-21", k); ok {
+			t.Errorf("%s in a unit it does not take was kept", k)
+		}
+	}
+	var reasons []string
+	for _, x := range r.Rejected {
+		reasons = append(reasons, string(x.Kind)+": "+x.Reason)
+	}
+	want := []string{
+		`weight: units "st": want kg or lb or lbs`,
+		`exercise_min: units "s": want h or hr or min`,
+		`vo2max: units "l/min": want ml/(kg·min)`,
+	}
+	if !slices.Equal(reasons, want) {
+		t.Errorf("Rejected = %q, want %q", reasons, want)
+	}
+	if got, ok := valueOf(t, r, "2026-10-21", metric.ExerciseMin); ok {
+		t.Errorf("exercise in seconds = %v, kept", got)
+	}
+}
+
+// Each point is checked before a day's value is picked among them: a bad
+// earliest weighing or a bad longest sleep does not cost the day its good
+// one.
+func TestParseHAEPicksAmongGoodPoints(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "weight_body_mass", "units": "kg", "data": [
+			{"date": "2026-10-21 06:00:00 +0200", "qty": 0},
+			{"date": "2026-10-21 07:00:00 +0200", "qty": 80}
+		]},
+		{"name": "sleep_analysis", "units": "hr", "data": [
+			{"date": "2026-10-21 07:00:00 +0200", "totalSleep": 7},
+			{"date": "2026-10-21 08:00:00 +0200", "totalSleep": 40}
+		]}
+	]}}`)
+	if got, _ := valueOf(t, r, "2026-10-21", metric.Weight); got != 80 {
+		t.Errorf("weight = %v, want 80", got)
+	}
+	if got, _ := valueOf(t, r, "2026-10-21", metric.Sleep); got != 7 {
+		t.Errorf("sleep = %v, want 7", got)
+	}
+	if len(r.Rejected) != 2 {
+		t.Errorf("Rejected = %+v, want the two bad points", r.Rejected)
+	}
+}
+
+// A sleep segment of an export HAE does not summarize is no night.
+func TestParseHAESleepSegment(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [{"name": "sleep_analysis", "units": "hr", "data": [
+		{"date": "2026-10-21 02:00:00 +0200", "startDate": "2026-10-21 00:30:00 +0200", "endDate": "2026-10-21 03:00:00 +0200", "qty": 2.5, "value": "In Bed"}
+	]}]}}`)
+	if _, ok := valueOf(t, r, "2026-10-21", metric.Sleep); ok {
+		t.Error("a segment gave the night")
+	}
+	if len(r.Rejected) != 1 || !strings.Contains(r.Rejected[0].Reason, "turn on Summarize Data") || r.Rejected[0].RawDate != "2026-10-21 02:00:00 +0200" {
+		t.Errorf("Rejected = %+v", r.Rejected)
+	}
+}
+
+// A date that starts as a date is that date, whatever follows; its time
+// counts when it reads.
+func TestParseHAEDates(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "step_count", "units": "count", "data": [
+			{"date": "2026-10-21T00:00:00+02:00", "qty": 100},
+			{"date": "2026-10-22 7:00:00 PM +0200", "qty": 200},
+			{"date": "2026-10-23 07:00 +0200", "qty": 300},
+			{"date": "2026", "qty": 400}
+		]},
+		{"name": "weight_body_mass", "units": "kg", "data": [
+			{"date": "2026-10-24T08:00:00+02:00", "qty": 82},
+			{"date": "2026-10-24T07:00:00+02:00", "qty": 81}
+		]}
+	]}}`)
+	for d, want := range map[string]float64{"2026-10-21": 100, "2026-10-22": 200, "2026-10-23": 300} {
+		if got, ok := valueOf(t, r, d, metric.Steps); !ok || got != want {
+			t.Errorf("steps on %s = %v, %v; want %v", d, got, ok, want)
+		}
+	}
+	if got, _ := valueOf(t, r, "2026-10-24", metric.Weight); got != 81 {
+		t.Errorf("weight = %v, want the earlier by its RFC 3339 time, 81", got)
+	}
+	if len(r.Rejected) != 1 || r.Rejected[0].RawDate != "2026" {
+		t.Errorf("Rejected = %+v, want the date too short", r.Rejected)
 	}
 }
