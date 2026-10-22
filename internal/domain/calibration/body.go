@@ -13,9 +13,10 @@ type Body struct {
 	StepsRecent, StepsBefore float64
 	// LeanMeasured is true when the lean mass was measured enough for a
 	// slope, as the weight is: six times, from the first to the last at
-	// least a week apart. A day without a lean mass but with a weigh-in
-	// and a body fat has the weight's share that is not fat. The slope is
-	// LeanKgPerWeek, and LeanHalfWidth half its 80 % interval.
+	// least a week apart, and the last in the window's last 14 days. A day
+	// without a lean mass but with a weigh-in and a body fat has the
+	// weight's share that is not fat. The slope is LeanKgPerWeek, and
+	// LeanHalfWidth half its 80 % interval.
 	LeanMeasured                 bool
 	LeanKgPerWeek, LeanHalfWidth float64
 	// BodyFatMeasured, BodyFatPerWeek and BodyFatHalfWidth are the same
@@ -70,14 +71,23 @@ func bodyOf(days map[day.Date]Day, from, to day.Date) Body {
 	if len(recent) >= minRecentSteps && len(before) >= minBeforeSteps {
 		b.StepsRecent, b.StepsBefore = mean(recent), mean(before)
 	}
-	if b.LeanMeasured = spread(leanX); b.LeanMeasured {
+	if b.LeanMeasured = spread(leanX) && fresh(leanX, n); b.LeanMeasured {
 		b.LeanKgPerWeek, b.LeanHalfWidth = slopeOf(leanX, leanY)
 	}
-	if b.BodyFatMeasured = spread(fatX); b.BodyFatMeasured {
+	if b.BodyFatMeasured = spread(fatX) && fresh(fatX, n); b.BodyFatMeasured {
 		b.BodyFatPerWeek, b.BodyFatHalfWidth = slopeOf(fatX, fatY)
 	}
 	return b
 }
+
+// bodyRecent is how many of a window's last days its last measurement of
+// the body must lie in: a slope that ended weeks ago says little of the
+// body now.
+const bodyRecent = 14
+
+// fresh reports whether the last of the days xs, in order, of a window
+// of n days lies in its last bodyRecent.
+func fresh(xs []float64, n int) bool { return xs[len(xs)-1] >= float64(n-bodyRecent) }
 
 // slopeOf returns the slope a week of the values ys on the days xs, and
 // half its 80 % interval, by the regression the weight's slope has.

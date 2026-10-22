@@ -26,15 +26,18 @@ var (
 
 // trusted returns a trusted estimate of the phase's own days at 80 kg,
 // moving rate % a week, with steps that did not change and the lean mass
-// level. Its TDEE is the one with which the target gives that rate, as
-// for someone who eats the target.
+// and body fat level. Its TDEE is the one with which the target gives
+// that rate, as for someone who eats the target.
 func trusted(rate float64) Estimate { return trustedAt(rate, 80) }
 
 func trustedAt(rate, kg float64) Estimate {
 	return Estimate{
 		Measured: true, Trusted: true, TrendKg: kg, KgPerWeek: plan.KgPerWeek(rate, kg),
-		TDEE: target.WeeklyAverage(training.Count()).Kcal - kcalOf(rate, kg),
-		Body: Body{StepsRecent: 7000, StepsBefore: 7000, LeanMeasured: true, LeanHalfWidth: 0.1},
+		TDEE: target.WeeklyAverage(training.Count()).Kcal - plan.KcalPerDay(rate, kg),
+		Body: Body{
+			StepsRecent: 7000, StepsBefore: 7000,
+			LeanMeasured: true, LeanHalfWidth: 0.1, BodyFatMeasured: true, BodyFatHalfWidth: 0.1,
+		},
 	}
 }
 
@@ -86,7 +89,7 @@ func TestJudgeTheTargetNotTheIntake(t *testing.T) {
 
 	// Someone who eats beside the target: the action moves the target to
 	// the weekly average that gives the target rate with the measured
-	// TDEE, and the flag says the intake missed it.
+	// TDEE, and the verdict gives what was eaten and the target.
 	avg := target.WeeklyAverage(training.Count()).Kcal
 	for _, tc := range []struct {
 		name       string
@@ -94,28 +97,30 @@ func TestJudgeTheTargetNotTheIntake(t *testing.T) {
 		wantRate   string
 		wantAction string
 		wantGap    float64
-		wantFlags  []string
 	}{
 		// Losing 0.8 % a week on a cut of 0.5, but the target, with a TDEE
 		// of avg + 440, gives 0.5: the intake was under it.
-		{"under the right target", -0.8, avg + 440, RateBelow, ActionHold, 0, []string{FlagAdherence}},
+		{"under the right target", -0.8, avg + 440, RateBelow, ActionHold, 0},
 		// Losing too fast, but the target is 200 kcal over what gives the
 		// target rate: it comes down, though the user should eat more of
 		// it.
-		{"under a target too high", -0.8, avg + 240, RateBelow, ActionLowerKcal, -200, []string{FlagAdherence}},
-		{"over the right target", -0.2, avg + 440, RateAbove, ActionHold, 0, []string{FlagAdherence}},
+		{"under a target too high", -0.8, avg + 240, RateBelow, ActionLowerKcal, -200},
+		{"over the right target", -0.2, avg + 440, RateAbove, ActionHold, 0},
 		// On target with a target 300 kcal under what gives the rate: the
 		// target catches up with the intake.
-		{"on target, over a target too low", -0.5, avg + 740, RateOnTarget, ActionRaiseKcal, 300, nil},
+		{"on target, over a target too low", -0.5, avg + 740, RateOnTarget, ActionRaiseKcal, 300},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			e := trusted(tc.rate)
-			e.TDEE = tc.tdee
+			e.TDEE, e.IntakeKcal = tc.tdee, tc.tdee+plan.KcalPerDay(tc.rate, 80)
 			v := Judge(e, phase(plan.Cut, -0.5), target, training, person, limits.UserDefaults(), DefaultParams())
-			if v.Rate != tc.wantRate || v.Action != tc.wantAction || !near(v.GapKcal, tc.wantGap, 1e-6) || !slices.Equal(v.Flags, tc.wantFlags) {
-				t.Errorf("rate %s, action %s, gap %v, flags %v; want %s, %s, %v, %v",
-					v.Rate, v.Action, v.GapKcal, v.Flags, tc.wantRate, tc.wantAction, tc.wantGap, tc.wantFlags)
+			if v.Rate != tc.wantRate || v.Action != tc.wantAction || !near(v.GapKcal, tc.wantGap, 1e-6) || len(v.Flags) != 0 {
+				t.Errorf("rate %s, action %s, gap %v, flags %v; want %s, %s, %v",
+					v.Rate, v.Action, v.GapKcal, v.Flags, tc.wantRate, tc.wantAction, tc.wantGap)
+			}
+			if v.IntakeKcal != e.IntakeKcal || v.TargetKcal != avg {
+				t.Errorf("intake %v and target %v, want %v and %v", v.IntakeKcal, v.TargetKcal, e.IntakeKcal, avg)
 			}
 		})
 	}
@@ -234,8 +239,22 @@ func TestJudgeGuards(t *testing.T) {
 		// activity's, and so is a faster one with 36 % more.
 		{"fewer steps, a slower loss", with(trusted(-0.2), steps(4500)), phase(plan.Cut, -0.5), person, ActionHold, []string{GuardActivity}, 0, 0},
 		{"more steps, a faster loss", with(trusted(-0.8), steps(9500)), phase(plan.Cut, -0.5), person, ActionHold, []string{GuardActivity}, 0, 0},
-		// More steps do not explain a slower loss.
+		// More steps do not explain a slower loss, nor fewer a target that
+		// catches up with an intake over it.
 		{"more steps, a slower loss", with(trusted(-0.2), steps(9800)), phase(plan.Cut, -0.5), person, ActionLowerKcal, nil, -264, -100},
+		// No surplus to shrink: the rate's own raise. A small one shrinks
+		// to the TDEE, no further.
+		{"fat gained with no surplus", with(trusted(0), fatGain), phase(plan.Bulk, 0.25), person, ActionRaiseKcal, nil, 220, 100},
+		{
+			"fat gained with a small surplus", with(trusted(0.25), fatGain, func(e *Estimate) { e.TDEE = target.WeeklyAverage(training.Count()).Kcal - 50 }),
+			phase(plan.Bulk, 0.25), person, ActionShrinkSurplus,
+			[]string{GuardFatGain},
+			-50, -50,
+		},
+		{
+			"fewer steps, a target too low", with(trusted(-0.2), steps(4500), func(e *Estimate) { e.TDEE += 564 }),
+			phase(plan.Cut, -0.5), person, ActionRaiseKcal, nil, 300, 100,
+		},
 		{"steps 25 % fewer", with(trusted(-0.2), steps(5250)), phase(plan.Cut, -0.5), person, ActionLowerKcal, nil, -264, -100},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -266,6 +285,14 @@ func TestJudgeFlags(t *testing.T) {
 		{"steps and lean mass", trusted(0), func(*Estimate) {}, phase(plan.Cut, -0.5), nil, nil},
 		{"no steps", trusted(0), func(e *Estimate) { e.Body.StepsBefore = 0 }, phase(plan.Cut, -0.5), nil, []string{FlagNoSteps}},
 		{"no lean mass", trusted(0), func(e *Estimate) { e.Body.LeanMeasured = false }, phase(plan.Cut, -0.5), nil, []string{FlagNoLeanMass}},
+		{"no lean mass on a bulk", trusted(0.25), func(e *Estimate) { e.Body.LeanMeasured = false }, phase(plan.Bulk, 0.25), nil, []string{FlagNoLeanMass}},
+		{"no body fat on a bulk", trusted(0.25), func(e *Estimate) { e.Body.BodyFatMeasured = false }, phase(plan.Bulk, 0.25), nil, []string{FlagNoBodyFat}},
+		// Maintenance has no guard of the body.
+		{
+			"no lean mass nor body fat on maintenance", trusted(0), func(e *Estimate) { e.Body.LeanMeasured, e.Body.BodyFatMeasured = false, false },
+			phase(plan.Maintain, 0), nil, nil,
+		},
+		{"no body fat on a cut", trusted(0), func(e *Estimate) { e.Body.BodyFatMeasured = false }, phase(plan.Cut, -0.5), nil, nil},
 		// The window's data say nothing without a verdict.
 		{"no data, no verdict", trusted(0), func(e *Estimate) { e.Trusted, e.Body = false, Body{} }, phase(plan.Cut, -0.5), nil, nil},
 		// The plan's flags hold without a verdict too.
@@ -409,6 +436,50 @@ func TestCalibrateKnowsThePhasesStart(t *testing.T) {
 	}
 	if e := Calibrate(days, nil, last, DefaultParams()); e.PhaseStartTrendKg != 0 {
 		t.Errorf("trend at the start of no phase %v, want 0", e.PhaseStartTrendKg)
+	}
+}
+
+func TestCalibrateKnowsThePhasesStartWithoutAWeighInBefore(t *testing.T) {
+	t.Parallel()
+
+	start := last.AddDays(-30)
+	phases := []plan.Phase{{Type: plan.Maintain, Start: start}}
+	for _, tc := range []struct {
+		name   string
+		before float64 // the weight of a weigh-in long before the phase, 0 for none
+	}{
+		// The first weigh-in is the phase's first day's.
+		{"the first weigh-in in the phase", 0},
+		// Weighed 60 days before at another weight, then not until the
+		// phase: its first weigh-in, not that one.
+		{"a weigh-in long before", 90},
+	} {
+		days := map[day.Date]Day{}
+		line(days, last, 31, 80, 0, 2000)
+		if tc.before > 0 {
+			days[start.AddDays(-60)] = Day{Status: day.Complete, WeightKg: tc.before}
+		}
+		// After 60 days, the trend takes nearly all of the next weigh-in.
+		if e := Calibrate(days, phases, last, DefaultParams()); !near(e.PhaseStartTrendKg, 80, 0.05) {
+			t.Errorf("%s: the trend at the phase's start %v, want about 80", tc.name, e.PhaseStartTrendKg)
+		}
+	}
+}
+
+func TestCalibrateNeedsFreshBodyData(t *testing.T) {
+	t.Parallel()
+
+	// A scale of the body used in the window's first 10 days, then not:
+	// its slope says nothing of the body now.
+	days := map[day.Date]Day{}
+	line(days, last, 42, 80, -0.05, 2000)
+	for i := 32; i < 42; i++ {
+		d := days[last.AddDays(-i)]
+		d.LeanMassKg, d.BodyFatPct = 60+0.1*float64(i), 25
+		days[last.AddDays(-i)] = d
+	}
+	if b := Calibrate(days, nil, last, DefaultParams()).Body; b.LeanMeasured || b.BodyFatMeasured {
+		t.Errorf("lean measured %v, body fat %v; want neither, as of a month ago", b.LeanMeasured, b.BodyFatMeasured)
 	}
 }
 

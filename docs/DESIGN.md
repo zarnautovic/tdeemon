@@ -367,8 +367,9 @@ The replacement:
   kcal step of the target toward the weekly average that gives the
   target rate with the measured TDEE, so the proposal is about the
   target, not about what was eaten: a user who eats beside a target that
-  is right gets `hold` and the flag `adherence`, and a change applied
-  is not proposed again.
+  holds is told to hold, and the verdict gives what was eaten and the
+  target, so the summary can say the intake missed it; and a change of
+  the target applied is not proposed again.
   - Too slow on a cut → lower the target.
   - Gaining too fast on a bulk → shrink the surplus.
   - Drifting during maintenance → nudge back.
@@ -408,22 +409,30 @@ The replacement:
     mass's slope over the window, beyond its error (80 %), turns a cut
     into "raise protein/calories", a step up at least. The lean mass needs
     measuring as the weight does: six times, from the first to the last
-    at least a week apart. A day with a body fat and a weigh-in but no
-    lean mass has the weight's share that is not fat.
+    at least a week apart, and the last in the window's last 14 days. A
+    day with a body fat and a weigh-in but no lean mass has the weight's
+    share that is not fat.
   - Fat-gain guard (bulk): body fat % rising beyond its error (80 %,
     Student's t of its regression), with the lean mass rising less than
-    0.1 kg a week → shrink the surplus, a step down at least. A guard
-    keeps a larger gap of the rate's that points its way.
+    0.1 kg a week → shrink the surplus over the TDEE, by a step at most
+    and never below the TDEE. A guard keeps a larger gap of the rate's
+    that points its way. A guard's action, from the window's body data,
+    comes again while they stay as they are; the autopilot's interval
+    spaces its steps.
   - NEAT guard: the last 7 days' steps ±30 % from the up to 21 days
     before them in the window hold the kcal when the change explains the
-    miss: fewer steps a slower loss or a faster gain, more steps the
-    other way. The change is then the activity's, not the metabolism's.
-    It needs 4 days with steps in the last 7 and 7 before; without them
-    it is off, and the summary says so (`no_steps`), as it does when the
-    lean mass is not measured enough for its guards (`no_lean_mass`).
+    miss the action would correct: fewer steps a slower loss or a faster
+    gain, more steps the other way. The change is then the activity's,
+    not the metabolism's; a target that catches up with the intake is
+    no such miss. It needs 4 days with steps in the last 7 and 7 before;
+    without them it is off, and the summary says so (`no_steps`), as it
+    does when the body is not measured enough for a guard the phase has
+    (`no_lean_mass`, `no_body_fat`).
   - Strength veto (cut/maintain), with training in P3.
 - **What the limits read** (`calibration.StateOf`): the trend weight now
-  and when the phase started, the measured TDEE and whether it is
+  and when the phase started (the day before it, from a weigh-in at most
+  14 days older, else the first in the phase), the measured TDEE and
+  whether it is
   trusted (a TDEE from before the phase may be: it is a TDEE all the
   same), and of the last 7 days the fat-free mass, the active energy and
   the days logged and weighed. The autopilot's own history is the

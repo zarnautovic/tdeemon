@@ -805,3 +805,24 @@ func TestLossUnderWay(t *testing.T) {
 		}
 	}
 }
+
+func TestUnderweightLoss(t *testing.T) {
+	t.Parallel()
+
+	cut := plan.Phase{Type: plan.Cut, Start: day.Date{Year: 2026, Month: time.March, Day: 1}, RatePctWeek: -0.5}
+	pr := profile.Profile{Sex: profile.Male, BirthDate: day.Date{Year: 1990, Month: time.May, Day: 1}, HeightCm: 180}
+	for _, tc := range []struct {
+		name string
+		s    State
+		want bool
+	}{
+		// 58 kg at 180 cm is a BMI of 17.9; 60 kg is 18.5.
+		{"a cut at a BMI of 17.9", State{Profile: pr, Phase: &cut, TrendKg: 58}, true},
+		{"a cut at 18.5", State{Profile: pr, Phase: &cut, TrendKg: 60}, false},
+		{"no loss at 17.9", State{Profile: pr, TrendKg: 58}, false},
+	} {
+		if got := UnderweightLoss(tc.s); got != tc.want {
+			t.Errorf("%s: UnderweightLoss = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

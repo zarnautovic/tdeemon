@@ -66,8 +66,9 @@ only the warning on energy availability.
   a bulk's a gain); a recomp has its own range, and maintenance is 0.
 - **The rate a kcal target implies** is the weekly average less the
   measured TDEE, times 7, over 7700 kcal per kg, as a share of the trend
-  weight. It counts once calibration trusts the measured TDEE enough for
-  a verdict (DESIGN.md §7); until then a target's kcal meet the kcal
+  weight. It counts once calibration trusts the measured TDEE (DESIGN.md
+  §7), one from before the current phase included; until then a
+  target's kcal meet the kcal
   floor, and below a BMI of 18.5 a target may not lower the weekly
   average, which the floor in the code takes for a deeper loss. A first
   target, with none before it, cannot be judged so: no rate can be told
