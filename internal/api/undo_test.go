@@ -159,3 +159,20 @@ func TestUndoLastLogsWhy(t *testing.T) {
 		t.Errorf("the log has no cause: %s", logs)
 	}
 }
+
+// An undo that answered there is nothing to undo, sent again after a
+// change since, answers so again: it takes back no change made after it.
+func TestUndoLastOfNothingSentAgain(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	e := mealsEnv{in: in, session: []*http.Cookie{sessionOf(t, in)}, now: in.clock.Now()}
+	request := clientid.NewAt(e.now)
+	if code, _, body := undo(t, e, request); code != http.StatusNotFound {
+		t.Fatalf("an undo of nothing: %d %s", code, body)
+	}
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, meal.NewIDAt(e.now)))
+	if code, _, body := undo(t, e, request); code != http.StatusNotFound || !strings.Contains(body, "nothing to undo") {
+		t.Errorf("the undo of nothing again: %d %s, want 404", code, body)
+	}
+}

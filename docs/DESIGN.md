@@ -743,9 +743,9 @@ the first spec.
     is as sent already is a retry too. A server-made ID fills in for an
     item logged without one.
   - An undo carries an ID the client makes too, under the same rules: the
-    change it settled (taken back, or passed over) keeps it, so the same
-    undo sent again answers as before rather than taking back the change
-    before it.
+    change it settled (taken back, or passed over) keeps it, and an undo
+    that found nothing is recorded with it, so the same undo sent again
+    answers as before rather than taking back another change.
   - A deleted meal's ID stays a tombstone in the event log: a late retry
     of its create (or of a create that was undone) is refused as
     deleted (409) rather than bringing the meal back.

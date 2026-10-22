@@ -238,7 +238,7 @@ func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 		return event.Event{}, false, fmt.Errorf("invalid actor: %w", err)
 	}
 	var undone event.Event
-	var again bool
+	var again, nothing bool
 	var conflict *UndoConflictError
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var settled bool
@@ -248,6 +248,12 @@ func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 			return err
 		}
 		undone, conflict, err = undoInTx(ctx, tx, userID, a, now)
+		if errors.Is(err, ErrNothingToUndo) && request != nil {
+			// The same undo sent again finds nothing again, rather than a
+			// change made since.
+			nothing = true
+			return recordNothing(ctx, tx, userID, a, *request, now)
+		}
 		if err != nil || request == nil {
 			return err
 		}
@@ -262,6 +268,9 @@ func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 	})
 	if errors.Is(err, ErrNothingToUndo) || errors.Is(err, ErrUndoID) {
 		return event.Event{}, false, err
+	}
+	if nothing {
+		return event.Event{}, false, ErrNothingToUndo
 	}
 	if err != nil {
 		return event.Event{}, false, fmt.Errorf("undo: %w", err)
@@ -307,10 +316,28 @@ func settledBy(ctx context.Context, tx *sql.Tx, userID uuid.UUID, request *uuid.
 		return event.Event{}, false, nil, nil
 	case err != nil:
 		return event.Event{}, false, nil, err
+	case e.Action == event.Undo:
+		return event.Event{}, true, nil, ErrNothingToUndo
 	case e.UndoneBy == uuid.Nil():
 		return event.Event{}, true, &UndoConflictError{Event: e, Reason: UndoPassedOver}, nil
 	}
 	return e, true, nil, nil
+}
+
+// nothingUndone is the entity of the undo of a request that found nothing
+// to take back.
+const nothingUndone = "nothing"
+
+// recordNothing records a's undo under request that found nothing to
+// take back, so the same undo sent again finds nothing again.
+func recordNothing(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, request uuid.UUID, now time.Time) error {
+	id, err := record(ctx, tx, userID, a, event.Undo, nothingUndone, nil, nil, now)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "UPDATE events SET undo_request = ? WHERE user_id = ? AND id = ?",
+		request.String(), userID.String(), id.String())
+	return err
 }
 
 // undoInTx takes back userID's latest change in tx, as UndoLast does, and

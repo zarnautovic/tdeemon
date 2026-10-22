@@ -1,7 +1,8 @@
 -- The id a client made for an undo, on the change that undo settled:
--- taken back, or passed over as one that cannot be. The same undo sent
--- again finds it and answers as before, rather than taking back the
--- change before it.
+-- taken back, or passed over as one that cannot be; or, when it found
+-- nothing to undo, on the undo's own event. The same undo sent again
+-- finds it and answers as before, rather than taking back another
+-- change.
 ALTER TABLE events ADD COLUMN undo_request TEXT CHECK (
     undo_request IS NULL OR length(undo_request) = 36
 );

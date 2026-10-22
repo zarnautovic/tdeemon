@@ -124,3 +124,36 @@ func TestUndoSentAtOnce(t *testing.T) {
 		t.Errorf("%d undos, want 1", undos)
 	}
 }
+
+// An undo that found nothing, sent again after a change since, finds
+// nothing again: it takes back no change made after it.
+func TestUndoOfNothingSentAgain(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	request := clientid.NewAt(t0)
+	if _, _, err := db.Undo(t.Context(), ana, testActor, request, t0); !errors.Is(err, store.ErrNothingToUndo) {
+		t.Fatalf("an undo of nothing = %v, want ErrNothingToUndo", err)
+	}
+	m := createMeal(t, db, ana, breakfast(t, saveFood(t, db, ana, bar()), t0))
+	if _, _, err := db.Undo(t.Context(), ana, testActor, request, t0); !errors.Is(err, store.ErrNothingToUndo) {
+		t.Errorf("the undo of nothing again = %v, want ErrNothingToUndo", err)
+	}
+	if _, err := db.MealByID(t.Context(), ana, m.ID); err != nil {
+		t.Errorf("the meal after the undo of nothing again: %v, want it kept", err)
+	}
+	// UndoLast, under no id, records nothing of an undo of nothing.
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := db.Events(t.Context(), ana, store.MaxEvents)
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.Is(err, store.ErrNothingToUndo) {
+		t.Fatalf("UndoLast of nothing = %v", err)
+	}
+	if after, _ := db.Events(t.Context(), ana, store.MaxEvents); len(after) != len(before) {
+		t.Errorf("UndoLast of nothing recorded %d events", len(after)-len(before))
+	}
+}
