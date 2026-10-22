@@ -114,9 +114,12 @@ for the author and the reviewer.
   anonymised one is written from the real one, by the anonymisation only
   the real one holds, with
   `go test ./internal/domain/calibration -run TestWriteAnonymisedHistory -anonymise`,
-  and read before it is committed. The test writes it only when it gives
-  each revision the verdict the real one does and passes `checkHistory`;
-  otherwise the anonymisation needs other parameters.
+  and read before it is committed. The test writes it only when every
+  kind of value moved from the real one, it gives each revision the
+  verdict the real one does, and it passes `checkHistory`; otherwise the
+  anonymisation needs other parameters. Until then it tells the
+  anonymised history as it tells the real one, without values or
+  dates.
 - **Tools** (`tools()` in `internal/api/tools.go`) are operations like
   any other, with their cases in `isolationCases` and `answerCases`;
   `TestToolsAreNamed` lists the tools that exist, by their MCP name
