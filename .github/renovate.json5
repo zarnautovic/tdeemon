@@ -1,8 +1,8 @@
 // Renovate keeps every pinned version current: Go modules and the Go
 // version, npm packages, the tools in mise.toml and mise.lock, the Docker
-// base images (by digest), the GitHub Actions (by commit SHA), and mise
-// and BuildKit in the workflows. It runs once the Renovate GitHub App is
-// installed on the repository.
+// base images (by digest), the GitHub Actions (by commit SHA), and mise,
+// BuildKit and the SBOM scanner in the workflows. It runs once the
+// Renovate GitHub App is installed on the repository.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [

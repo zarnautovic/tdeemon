@@ -212,7 +212,8 @@ A change is done when:
     (`scripts/image-tags.sh`), with its SBOM and provenance; it builds
     without a cache, in a job of the same workflow, as a release the
     workflow's token makes starts no other. If that job fails, use
-    *Re-run failed jobs* within 30 days: *Re-run all jobs* finds the
+    *Re-run failed jobs* within 30 days, and only while no newer release
+    has run, or its `X.Y` tag would go back: *Re-run all jobs* finds the
     commit released and releases nothing, image included;
   - once, after the first release with an image: set the package
     `tdeemon` on ghcr.io to public, and check that it is linked to the
@@ -232,7 +233,7 @@ A change is done when:
   installed) keeps every pinned version current: Go modules and the Go
   version, npm packages, the tools in `mise.toml` and `mise.lock`, the
   Docker base images by digest, the GitHub Actions by commit SHA, and
-  mise and BuildKit in the workflows.
+  mise, BuildKit and the SBOM scanner in the workflows.
   - One batch a week; a new npm release waits a few days first (only
     npm: the other sources are taken the day they appear).
   - Minor, patch and digest updates merge themselves once CI is green;
