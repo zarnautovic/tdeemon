@@ -10,8 +10,10 @@ same rules; the full versions are in
 tdeemon is a self-hosted nutrition tracker with an adaptive TDEE: one Go
 binary with SQLite and a React web app inside, an MCP server and a REST
 API. It is early: the skeleton, the database layer, users, sign-in
-(password, sessions, OpenID Connect), API tokens with scopes, the API
-contract and an empty web app exist.
+(password, sessions, OpenID Connect), API tokens with scopes, foods,
+meals, metrics and the plan (profile, phases, targets, limits) in the
+domain and the database with an event log and undo, the API for the
+profile and the limits, the API contract and an empty web app exist.
 
 | Path | What |
 | --- | --- |

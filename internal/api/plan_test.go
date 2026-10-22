@@ -273,6 +273,17 @@ func TestSetLimitsAPIWithTheInstancesLimits(t *testing.T) {
 			if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "with the instance's limits") || !strings.Contains(rec.Body.String(), tc.want) {
 				t.Errorf("PUT %s = %d %s, want 422 with %q", tc.body, rec.Code, rec.Body.String(), tc.want)
 			}
+			// Nothing is stored, and no event recorded.
+			want := limits.UserDefaults()
+			if tc.stored != nil {
+				tc.stored(&want)
+			}
+			if got, _ := in.db.UserLimits(t.Context(), in.user.ID); got != want {
+				t.Errorf("the stored limits = %+v, want %+v", got, want)
+			}
+			if es, _ := in.db.Events(t.Context(), in.user.ID, 10); (tc.stored == nil) != (len(es) == 0) || len(es) > 1 {
+				t.Errorf("%d events after the refusal", len(es))
+			}
 		})
 	}
 }
