@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -387,6 +388,53 @@ func TestMealsOfDayAndBetween(t *testing.T) {
 	}
 	if got, _ := db.MealsOfDay(t.Context(), ivo, day.DateOf(t0)); len(got) != 1 {
 		t.Errorf("ivo's day = %d meals, want his one", len(got))
+	}
+}
+
+func TestIntakeOfDays(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	bar := saveFood(t, db, ana, bar())
+	early := createMeal(t, db, ana, breakfast(t, bar, t0))
+	// Of the day before by its day, though eaten on t0's: as a day that
+	// starts later than midnight has it.
+	late := breakfast(t, bar, t0.Add(-7*time.Hour))
+	late.Day = day.DateOf(t0).AddDays(-1)
+	late = createMeal(t, db, ana, late)
+	createMeal(t, db, ana, breakfast(t, bar, t0.Add(-6*time.Hour)))
+	createMeal(t, db, ana, breakfast(t, bar, t0.Add(48*time.Hour)))
+	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar), t0.Add(time.Hour)))
+	got, err := db.IntakeOfDays(t.Context(), ana, late.Day, day.DateOf(t0).AddDays(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	near := func(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+	n := early.Total()
+	if in := got[day.DateOf(t0)]; len(got) != 2 || in.Meals != 2 || !near(in.Kcal, 2*n.Kcal) || !near(in.Protein, 2*n.Protein) {
+		t.Errorf("IntakeOfDays = %+v; want ana's two meals of t0's day, at %v kcal each, and the one of the day before", got, n.Kcal)
+	}
+	if in := got[late.Day]; in.Meals != 1 || !near(in.Kcal, late.Total().Kcal) {
+		t.Errorf("the day before = %+v, want the meal of its day", in)
+	}
+	if got, err := db.IntakeOfDays(t.Context(), ivo, late.Day, late.Day); err != nil || len(got) != 0 {
+		t.Errorf("ivo's day before = %v, %v; want none", got, err)
+	}
+}
+
+func TestFirstMealDay(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	if _, ok, err := db.FirstMealDay(t.Context(), ana); ok || err != nil {
+		t.Errorf("no meal: %v, %v; want none", ok, err)
+	}
+	bar := saveFood(t, db, ana, bar())
+	createMeal(t, db, ana, breakfast(t, bar, t0))
+	createMeal(t, db, ana, breakfast(t, bar, t0.Add(-48*time.Hour)))
+	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar), t0.Add(-96*time.Hour)))
+	if got, ok, err := db.FirstMealDay(t.Context(), ana); !ok || err != nil || got != day.DateOf(t0).AddDays(-2) {
+		t.Errorf("FirstMealDay = %s, %v, %v; want ana's of two days before t0", got, ok, err)
 	}
 }
 

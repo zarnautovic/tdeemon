@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -77,6 +78,9 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 	return map[string]mcpIsolationCase{
 		"get_profile": mcpWorks("get_profile", nil, name),
 		"get_day":     mcpWorks("get_day", nil, func(e isolationEnv) []string { return []string{e.other.user.Name + "'s lunch"} }),
+		"get_summary": mcpWorks("get_summary", nil, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user)), fmt.Sprintf(`"kcal":%v`, isolationKcal(e.other.user))}
+		}),
 		"find_foods": mcpWorks("find_foods", func(isolationEnv) map[string]any { return map[string]any{"query": "rye"} },
 			func(e isolationEnv) []string { return []string{e.other.user.Name + "'s rye bread"} }),
 		"get_food": mcpOnTheirs("get_food", ownersBread, ownBread, nil),

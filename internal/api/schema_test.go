@@ -158,6 +158,13 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodPost, "/api/v1/ingest/strong",
 				"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift,1,120,3,0\n", nil, tok)
 		},
+		"get-summary": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			// Nothing, then a history with a verdict.
+			in.do(t, http.MethodGet, "/api/v1/summary", "", []*http.Cookie{session}, nil)
+			saveSummaryHistory(t, in.db, in.user, in.clock.Now())
+			in.do(t, http.MethodGet, "/api/v1/summary?weeks=2", "", []*http.Cookie{session}, nil)
+		},
 		"get-day": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			now := in.clock.Now()

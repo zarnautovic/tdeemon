@@ -96,6 +96,16 @@ func (s *sessions) tools() []tool {
 				"what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).",
 			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.getDay),
+		newTool("get_summary", readScopes, huma.Operation{
+			OperationID: "get-summary",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/summary",
+			Summary:     "Get the summary",
+			Description: "Calibration's summary of the days up to yesterday: the weekly averages, the trend weight, the measured TDEE with its interval " +
+				"and doubts, the verdict on the phase with its guards and flags, the recovery, and the days possibly not all logged. " +
+				"The server computes it: explain it, do not compute it again.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.getSummary),
 		newTool("log_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "log-metric",
 			Method:      http.MethodPut,
@@ -377,6 +387,15 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	return &meOutput{CacheControl: "no-store", Body: b}, nil
 }
 
+// toggleOn returns the check-in's toggle of day d's type, of toggles,
+// nil for none.
+func toggleOn(toggles map[day.Date]bool, d day.Date) *bool {
+	if v, ok := toggles[d]; ok {
+		return &v
+	}
+	return nil
+}
+
 // dayType returns the type of the user's day d, the plan's training
 // weekdays and the check-in's toggle of the day's type, if there is one.
 // A workout a source recorded on d (Strong's export) makes it a training
@@ -390,10 +409,7 @@ func (s *sessions) dayType(ctx context.Context, userID uuid.UUID, d day.Date) (p
 	if err != nil {
 		return "", 0, nil, err
 	}
-	var toggle *bool
-	if v, ok := toggles[d]; ok {
-		toggle = &v
-	}
+	toggle := toggleOn(toggles, d)
 	workouts, err := s.db.WorkoutDays(ctx, userID, d, d)
 	if err != nil {
 		return "", 0, nil, err

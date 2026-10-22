@@ -91,7 +91,7 @@ func TestMCPListsTheTools(t *testing.T) {
 			if strings.Contains(string(schema), "$ref") || !strings.Contains(string(schema), `"type":"object"`) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
-			readOnly := slices.Contains([]string{"get_profile", "get_day", "find_foods", "get_food"}, tl.Name)
+			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "find_foods", "get_food"}, tl.Name)
 			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last"}, tl.Name)
 			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive || tl.Description == "" {
 				t.Errorf("%s: annotations %+v, description %q", tl.Name, tl.Annotations, tl.Description)
@@ -101,12 +101,12 @@ func TestMCPListsTheTools(t *testing.T) {
 		return out
 	}
 	all := names(`"tools"`)
-	for _, want := range []string{"checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_profile", "log_meal", "upsert_food"} {
+	for _, want := range []string{"checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_profile", "get_summary", "log_meal", "upsert_food"} {
 		if !slices.Contains(all, want) {
 			t.Errorf("the tools %v lack %s", all, want)
 		}
 	}
-	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_profile"}) {
+	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_profile", "get_summary"}) {
 		t.Errorf("a read token's tools = %v", read)
 	}
 }
@@ -127,7 +127,7 @@ func TestMCPToolSchemas(t *testing.T) {
 		byName[tl.Name] = tl
 	}
 	for name, want := range map[string][]string{
-		"get_day": nil, "checkin": nil, "log_metric": {"kind", "value"}, "get_food": {"id"},
+		"get_day": nil, "get_summary": nil, "checkin": nil, "log_metric": {"kind", "value"}, "get_food": {"id"},
 		"log_meal": {"items"}, "find_foods": {"query"},
 	} {
 		schema, _ := byName[name].InputSchema.(map[string]any)

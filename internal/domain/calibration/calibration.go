@@ -213,10 +213,11 @@ type Estimate struct {
 // days holds the days by date; a date it lacks is a day with nothing
 // logged, though no window starts before the first day with a meal: the
 // intake before it is unknown, as the user had not begun to log, even
-// with weigh-ins imported from before. It should
-// hold the user's history up to last: the trend weight starts at the
-// first weigh-in it has, and an estimate from before a phase reads the
-// Params.WindowDays before the phase started.
+// with weigh-ins imported from before. Of the user's history up to last,
+// Calibrate reads the FullDays days up to last in full, and of the days
+// before them only the weigh-ins (whether the day is excluded included),
+// for the trend weight, which starts at the first weigh-in, and the
+// first day with a meal: a caller may load just those.
 //
 // phases is the user's timeline, in the order they start
 // (plan.ValidateTimeline). The intake changes when a phase starts, and on
@@ -253,7 +254,7 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 		}
 	}
 	trend := Trend(days, p.TrendAlpha)
-	e.TrendKg, e.TrendDate = trendAt(trend, last)
+	e.TrendKg, e.TrendDate = TrendAt(trend, last)
 	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
 		e.PhaseStartTrendKg = startTrend(days, trend, ph.Start, last)
 	}
@@ -261,6 +262,11 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	e.Now = nowOf(days, last)
 	return e
 }
+
+// FullDays returns how many days up to last Calibrate reads in full with
+// p: its window, and the one before a phase it may fall back to, which
+// ends less than Params.WindowDays before last.
+func FullDays(p Params) int { return 2 * p.WindowDays }
 
 // firstData returns the first day of days with a meal, the zero Date for
 // none.
@@ -288,11 +294,11 @@ func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) floa
 	// The phase on today starts on today at the latest, so the day before
 	// it is last at the latest.
 	before := start.AddDays(-1)
-	if kg, on := trendAt(trend, before); kg > 0 && before.DaysSince(on) <= startGap {
+	if kg, on := TrendAt(trend, before); kg > 0 && before.DaysSince(on) <= startGap {
 		return kg
 	}
 	for d := start; !last.Before(d); d = d.AddDays(1) {
-		if v := days[d]; weighed(v) {
+		if v := days[d]; v.Weighed() {
 			return v.WeightKg
 		}
 	}
@@ -375,7 +381,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 		d := days[from.AddDays(i)]
 		recent, inWeeks := i >= e.Days-week, i >= e.Days-dt.weekDays
 		kcal[i] = math.NaN()
-		if weighed(d) {
+		if d.Weighed() {
 			xs, kgs = append(xs, float64(i)), append(kgs, d.WeightKg)
 			e.RecentWeighIns += btoi(recent)
 			dt.weighIns += btoi(inWeeks)
@@ -383,7 +389,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 				weighedWeeks[(e.Days-1-i)/week] = true
 			}
 		}
-		if loggedDay(d) {
+		if d.Logged() {
 			kcal[i] = d.Kcal
 			e.LoggedDays++
 			e.RecentLoggedDays += btoi(recent)
@@ -437,15 +443,19 @@ func spread(xs []float64) bool {
 	return len(xs) >= minWeighIns && xs[len(xs)-1]-xs[0] >= minWeighInsSpan
 }
 
-// loggedDay reports whether d's intake counts: a complete day with a meal
+// Logged reports whether d's intake counts: a complete day with a meal
 // and kcal that are a number.
-func loggedDay(d Day) bool {
+func (d Day) Logged() bool {
 	return d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0
 }
 
-// weighed reports whether d has a weigh-in that counts: a number, on a
+// Weighed reports whether d has a weigh-in that counts: a number, on a
 // day not excluded.
-func weighed(d Day) bool { return d.Status != day.Excluded && d.WeightKg > 0 && finite(d.WeightKg) }
+func (d Day) Weighed() bool { return d.Status != day.Excluded && d.WeightKg > 0 && finite(d.WeightKg) }
+
+// Stepped reports whether d has steps that count: a number over 0, on a
+// day not excluded.
+func (d Day) Stepped() bool { return d.Status != day.Excluded && measured(d.Steps) }
 
 // doubts lists why e is missing or not trusted, with the data dt of its
 // window. A window too short has only that doubt: its counts say nothing

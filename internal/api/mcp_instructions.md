@@ -64,5 +64,8 @@ rather than log.
 
 - "How am I doing" is `get_day` for today: report its total, what
   remains and the day's status as it gives them.
+- How the weeks went, the TDEE, whether the phase is on track, and
+  recovery are `get_summary`: the server computes them, so explain what
+  it answers, its doubts and flags, and do not work them out again.
 - To suggest a meal, start from what `get_day` says remains, and prefer
   foods the user has: `find_foods` of what they name or like.

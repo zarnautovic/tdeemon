@@ -189,7 +189,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
 | `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
-| `get_summary(window?)` | weekly averages, weight trend, measured TDEE, calibration verdict, recovery flags |
+| `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`, twice its window) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
 | `get_history(window, granularity)` | coaching: compact day/week table across all metrics (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits, pending proposals |
 | `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/profile/notes + preview; applies nothing |
@@ -234,7 +234,8 @@ check and the answers are REST's. A tool that reads takes a token with
 the `read` or the `tools` scope; one that writes, only `tools`. So far:
 `get_profile` is `GET /api/v1/me`; `get_day` is
 `GET /api/v1/days/{date}`, a date or `today`, the user's day now (MCP
-takes its `date` as optional, `today` when left out); `find_foods` is
+takes its `date` as optional, `today` when left out); `get_summary` is
+`GET /api/v1/summary?weeks=`, of the days up to yesterday; `find_foods` is
 `GET /api/v1/foods?query=…`; `get_food` is `GET /api/v1/foods/{id}`,
 archived too; and `upsert_food` is `POST /api/v1/foods`, which corrects
 a food by an id it has (404 for another) or by its name and brand, and

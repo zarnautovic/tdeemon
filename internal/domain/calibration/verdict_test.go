@@ -451,7 +451,7 @@ func TestCalibrateKnowsThePhasesStart(t *testing.T) {
 	line(days, last.AddDays(1), 100, 80, -0.05, 2000)
 	trend := Trend(days, DefaultParams().TrendAlpha)
 	for _, start := range []day.Date{last.AddDays(-50), last.AddDays(1)} {
-		want, _ := trendAt(trend, start.AddDays(-1))
+		want, _ := TrendAt(trend, start.AddDays(-1))
 		phases := []plan.Phase{{Type: plan.Cut, Start: start, RatePctWeek: -0.5}}
 		if e := Calibrate(days, phases, last, DefaultParams()); e.PhaseStartTrendKg != want || want == 0 {
 			t.Errorf("a phase from %s: the trend at its start %v, want %v", start, e.PhaseStartTrendKg, want)

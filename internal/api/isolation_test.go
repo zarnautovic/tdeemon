@@ -212,11 +212,27 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 	if err := db.ExcludeDay(t.Context(), u.ID, isolationActor, day.DateOf(now).AddDays(-1), day.Exclusion{Reason: u.Name + "'s birthday dinner"}, now); err != nil {
 		t.Fatalf("exclude %s's day: %v", u.Name, err)
 	}
+	// A meal of their own two days before, which the summary of the
+	// days up to yesterday shows.
+	stew, err := meal.Estimate(u.Name+"'s stew", food.Nutrients{Kcal: isolationKcal(u), Protein: 40, Carbs: 100, Fat: 30}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := now.AddDate(0, 0, -2)
+	before := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: day.DateOf(at), Description: u.Name + "'s dinner", Client: meal.ClientMCP, Items: []meal.Item{stew}}
+	if _, _, err := db.CreateMeal(t.Context(), u.ID, isolationActor, before, now); err != nil {
+		t.Fatalf("log %s's meal two days before: %v", u.Name, err)
+	}
 	return m.ID
 }
 
+// isolationKcal is the kcal of u's own meal two days before: the first
+// letter of the name (A, I) sets them apart.
+func isolationKcal(u user.User) float64 { return 1000 + float64(u.Name[0]%20) }
+
 // saveIsolationMetrics gives u a day of metrics, a manual weight and
-// imported steps.
+// imported steps, and a weigh-in of their own two days before, which
+// the summary of the days up to yesterday shows.
 func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
 	if _, err := db.MergeMetrics(t.Context(), u.ID, isolationActor, day.DateOf(now), []metric.Value{
@@ -225,7 +241,16 @@ func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time
 	}, now); err != nil {
 		t.Fatalf("save %s's metrics: %v", u.Name, err)
 	}
+	if _, err := db.MergeMetrics(t.Context(), u.ID, isolationActor, day.DateOf(now).AddDays(-2), []metric.Value{
+		{Kind: metric.Weight, Value: isolationWeight(u), Source: metric.Import},
+	}, now); err != nil {
+		t.Fatalf("save %s's weigh-in: %v", u.Name, err)
+	}
 }
+
+// isolationWeight is u's own weigh-in two days before: the first letter
+// of the name (A, I) sets it apart.
+func isolationWeight(u user.User) float64 { return 80 + float64(u.Name[0]%20)/10 }
 
 // saveIsolationPlan gives u a profile, a phase, a target, training
 // weekdays, limits of their own, a toggle of a day's type, a day of a
@@ -647,6 +672,11 @@ func isolationCases() map[string]isolationCase {
 		},
 		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
+		}),
+		// The summary holds no text of the user's: the store's queries by
+		// the user keep it theirs.
+		"get-summary": read("/api/v1/summary", true, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user)), fmt.Sprintf(`"kcal":%v`, isolationKcal(e.other.user))}
 		}),
 		"get-day": read("/api/v1/days/today", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s toast"}
