@@ -3,13 +3,16 @@ package calibration
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,10 +75,12 @@ type anonymisation struct {
 	Seed         uint64  `json:"seed"`
 }
 
-// An anonymisation's scales are at least minScaleChange from 1, and its
-// shifts at least minShift, in kg or points of body fat, so that no
-// value stays nearly what it was.
+// An anonymisation moves the days by at least minWeeks, its scales are at
+// least minScaleChange from 1, and its shifts at least minShift, in kg
+// or points of body fat (the lean mass takes half the weight's), so that
+// no value stays nearly what it was.
 const (
+	minWeeks       = 52
 	minScaleChange = 0.05
 	minShift       = 1
 )
@@ -89,7 +94,7 @@ const targetNoise = 50
 // nearly as they are. It names the parameters, never their values.
 func (a *anonymisation) validate() []string {
 	var bad []string
-	if a.Weeks <= 0 {
+	if a.Weeks < minWeeks {
 		bad = append(bad, "weeks")
 	}
 	for name, v := range map[string]float64{
@@ -100,10 +105,11 @@ func (a *anonymisation) validate() []string {
 			bad = append(bad, name)
 		}
 	}
-	for name, v := range map[string]float64{"weight_shift": a.WeightShift, "body_fat_shift": a.BodyFatShift} {
-		if !(math.Abs(v) >= minShift) {
-			bad = append(bad, name)
-		}
+	if !(math.Abs(a.WeightShift)/2 >= minShift) {
+		bad = append(bad, "weight_shift")
+	}
+	if !(math.Abs(a.BodyFatShift) >= minShift) {
+		bad = append(bad, "body_fat_shift")
 	}
 	slices.Sort(bad)
 	return bad
@@ -113,8 +119,10 @@ func (a *anonymisation) validate() []string {
 // the TDEE it was made on (when the fixture keeps it), the action it
 // took, and why a verdict is not to be expected, when it is not. A
 // verdict within a week of it, against the target it replaced, takes the
-// same action, or NoVerdict says why there is none. Note is the
-// revision in words, which only the real history keeps.
+// same action, or NoVerdict says why there is none. The action is named
+// as a verdict names it, against what was eaten: a target lowered but
+// still over the intake raises the kcal. Note is the revision in words,
+// which only the real history keeps.
 type revision struct {
 	Date      string  `json:"date"`
 	TDEELow   float64 `json:"tdee_low,omitempty"`
@@ -123,6 +131,9 @@ type revision struct {
 	NoVerdict string  `json:"no_verdict,omitempty"`
 	Note      string  `json:"note,omitempty"`
 }
+
+// actions are the actions a revision may take, a verdict's.
+var actions = []string{ActionHold, ActionRaiseKcal, ActionLowerKcal, ActionRaiseProteinOrKcal, ActionShrinkSurplus, ActionMaintain}
 
 type historyDay struct {
 	Date       string  `json:"date"`
@@ -140,9 +151,11 @@ type historyDay struct {
 // next, in kcal: the predecessor's moved by thousands from week to week.
 const maxDailyChange = 150
 
-// readHistory reads a history, and fails for a key of no field: the real
-// history is written by hand, and a typo would leave a value out.
-func readHistory(tb testing.TB, path string) history {
+// readHistory reads a history, and fails for a key of no field or
+// something after the history: the real history is written by hand, and
+// a typo would leave a value out. A private history's failure tells
+// none of its values.
+func readHistory(tb testing.TB, path string, private bool) history {
 	tb.Helper()
 	b, err := os.ReadFile(path) //nolint:gosec // G703: the directory is the one the test's runner names
 	if err != nil {
@@ -152,9 +165,30 @@ func readHistory(tb testing.TB, path string) history {
 	dec.DisallowUnknownFields()
 	var h history
 	if err := dec.Decode(&h); err != nil {
-		tb.Fatalf("%s: %v", path, err)
+		tb.Fatalf("%s: %s", path, tell(private, decodeError(err), err.Error()))
+	}
+	var more json.RawMessage
+	if err := dec.Decode(&more); !errors.Is(err, io.EOF) {
+		tb.Fatalf("%s: something after the history", path)
 	}
 	return h
+}
+
+// decodeError tells what is wrong with a private history's JSON without
+// the value: the field and the type it wants, the key of no field, or
+// where the JSON breaks.
+func decodeError(err error) string {
+	var te *json.UnmarshalTypeError
+	var se *json.SyntaxError
+	switch {
+	case errors.As(err, &te):
+		return fmt.Sprintf("%s: want a value of type %s", te.Field, te.Type)
+	case errors.As(err, &se):
+		return fmt.Sprintf("no JSON at byte %d", se.Offset)
+	case strings.HasPrefix(err.Error(), "json: unknown field "):
+		return err.Error()
+	}
+	return "not a history"
 }
 
 // reader fails a test over a history, and for a private one tells
@@ -202,22 +236,13 @@ type built struct {
 }
 
 // build returns the history as calibration takes it, and fails for one
-// that would not hold calibration to anything: no phase, phases or
-// targets out of order, a day's status or the profile of no kind, or a
-// revision of no target.
+// that would not hold calibration to anything, or to less than it
+// says: a day with no date or another day's, no phase, phases or targets
+// out of order, a day's status or the profile of no kind, or no
+// training weekdays; no revision, or one of no target.
 func (h *history) build(r reader) built {
 	r.tb.Helper()
-	b := built{today: r.date(h.Today), days: map[day.Date]Day{}}
-	statuses := []day.Status{day.Open, day.Complete, day.Excluded}
-	for i, d := range h.Days {
-		if !slices.Contains(statuses, day.Status(d.Status)) {
-			r.fail(fmt.Sprintf("day %d: a status of no kind", i+1), fmt.Sprintf("%s: status %q, want one of %v", d.Date, d.Status, statuses))
-		}
-		b.days[r.date(d.Date)] = Day{
-			Status: day.Status(d.Status), Meals: d.Meals, Kcal: d.Kcal, WeightKg: d.WeightKg,
-			BodyFatPct: d.BodyFatPct, LeanMassKg: d.LeanMassKg, Steps: d.Steps, ActiveKcal: d.ActiveKcal,
-		}
-	}
+	b := built{today: r.date(h.Today), days: h.days(r)}
 	for _, p := range h.Phases {
 		b.phases = append(b.phases, plan.Phase{Type: plan.PhaseType(p.Type), Start: r.date(p.Start), End: r.date(p.End), RatePctWeek: p.RatePctWeek})
 	}
@@ -231,29 +256,59 @@ func (h *history) build(r reader) built {
 			Training:      plan.DayTarget{Kcal: t.TrainingKcal}, Rest: plan.DayTarget{Kcal: t.RestKcal},
 		})
 	}
-	if err := plan.ValidateHistory(b.targets); err != nil {
-		r.fail("the targets are not a history", fmt.Sprintf("the targets: %v", err))
+	if err := plan.ValidateHistory(b.targets); err != nil || len(b.targets) == 0 {
+		r.fail("the targets: none, or not a history", fmt.Sprintf("the targets: %v, %d of them", err, len(b.targets)))
 	}
 	var err error
-	if b.training, err = plan.WeekdaysOf(h.TrainingWeekdays...); err != nil {
-		r.fail("the training weekdays are of no kind", err.Error())
+	if b.training, err = plan.WeekdaysOf(h.TrainingWeekdays...); err != nil || len(h.TrainingWeekdays) == 0 {
+		r.fail("the training weekdays: none, or of no kind", fmt.Sprintf("the training weekdays %v: %v", h.TrainingWeekdays, err))
 	}
+	// Validate checks only what a profile gives; calibration needs all of
+	// it, the height for the BMI.
 	b.pr = profile.Profile{Sex: profile.Sex(h.Profile.Sex), BirthDate: r.date(h.Profile.BirthDate), HeightCm: h.Profile.HeightCm}
-	if err := b.pr.Validate(b.today); err != nil {
-		r.fail("the profile is of no kind", fmt.Sprintf("the profile: %v", err))
+	if err := b.pr.Validate(b.today); err != nil || b.pr.Sex == "" || b.pr.BirthDate.IsZero() || b.pr.HeightCm == 0 {
+		r.fail("the profile: not all of it, or of no kind", fmt.Sprintf("the profile %+v: %v", b.pr, err))
 	}
 	b.checkRevisions(r, h.Revisions)
 	return b
 }
 
-// checkRevisions fails for a revision that would hold calibration to
-// nothing: one on a day no target took effect after another, revisions
-// out of order, a TDEE with one bound or bounds out of order, and
-// neither an action nor the reason there is no verdict.
+// days returns the history's days by date, and fails for a day with no
+// date or another day's, or a status of no kind.
+func (h *history) days(r reader) map[day.Date]Day {
+	r.tb.Helper()
+	days := map[day.Date]Day{}
+	statuses := []day.Status{day.Open, day.Complete, day.Excluded}
+	for i, d := range h.Days {
+		on := r.date(d.Date)
+		_, dup := days[on]
+		switch {
+		case d.Date == "" || dup:
+			r.fail(fmt.Sprintf("day %d: no date, or another day's", i+1), fmt.Sprintf("day %d: date %q, no date or another day's", i+1, d.Date))
+		case !slices.Contains(statuses, day.Status(d.Status)):
+			r.fail(fmt.Sprintf("day %d: a status of no kind", i+1), fmt.Sprintf("%s: status %q, want one of %v", d.Date, d.Status, statuses))
+		}
+		days[on] = Day{
+			Status: day.Status(d.Status), Meals: d.Meals, Kcal: d.Kcal, WeightKg: d.WeightKg,
+			BodyFatPct: d.BodyFatPct, LeanMassKg: d.LeanMassKg, Steps: d.Steps, ActiveKcal: d.ActiveKcal,
+		}
+	}
+	return days
+}
+
+// checkRevisions fails for no revision, and for one that would hold
+// calibration to less than it says: one on a day no target took effect
+// after another, revisions out of order, a week after it that does not
+// end before today, a TDEE with one bound or bounds out of order, an
+// action of no kind, and neither an action nor the reason there is no
+// verdict.
 func (b built) checkRevisions(r reader, revisions []revision) {
 	r.tb.Helper()
+	if len(revisions) == 0 {
+		r.fail("no revision", "no revision")
+	}
 	revised := map[day.Date]bool{}
-	for _, t := range b.targets[min(1, len(b.targets)):] {
+	for _, t := range b.targets[1:] {
 		revised[t.EffectiveFrom] = true
 	}
 	var prev day.Date
@@ -265,8 +320,12 @@ func (b built) checkRevisions(r reader, revisions []revision) {
 			why = "no target took effect that day after another"
 		case i > 0 && !prev.Before(on):
 			why = "not after the revision before it"
+		case !on.AddDays(weekAfter).Before(b.today):
+			why = "the week after it does not end before today"
 		case (rv.TDEELow > 0) != (rv.TDEEHigh > 0) || rv.TDEELow > rv.TDEEHigh:
 			why = "a TDEE with one bound, or the bounds out of order"
+		case rv.Action != "" && !slices.Contains(actions, rv.Action):
+			why = fmt.Sprintf("action %q, want one of %v", rv.Action, actions)
 		case rv.Action == "" && rv.NoVerdict == "":
 			why = "neither an action nor the reason there is no verdict"
 		}
@@ -276,6 +335,11 @@ func (b built) checkRevisions(r reader, revisions []revision) {
 		prev = on
 	}
 }
+
+// weekAfter is the last day after a revision whose verdict counts as
+// within its week: the verdicts for the day it took effect and the six
+// after it.
+const weekAfter = 6
 
 // judge returns the verdict of the history on the day after last,
 // against the target in force on targetOn.
@@ -300,7 +364,7 @@ func (b built) judge(last, targetOn day.Date) Verdict {
 // get_summary's does.
 func (b built) firstVerdict(on day.Date) (Verdict, day.Date, bool) {
 	replaced := on.AddDays(-1)
-	for last := replaced; last.Before(on.AddDays(6)) && last.Before(b.today); last = last.AddDays(1) {
+	for last := replaced; last.Before(on.AddDays(weekAfter)) && last.Before(b.today); last = last.AddDays(1) {
 		if v := b.judge(last, replaced); v.Rate != RateNone {
 			return v, last.AddDays(1), true
 		}
@@ -311,13 +375,48 @@ func (b built) firstVerdict(on day.Date) (Verdict, day.Date, bool) {
 // checkHistory holds calibration to a history: an estimate that moves
 // little from day to day, an interval that holds the TDEE each revision
 // was made on, and a verdict that takes each revision's action within a
-// week of it, or none for the reason the history gives. A private
-// history is told without its values or dates, as the test's output may
-// be shared.
-func checkHistory(t *testing.T, h history, private bool) {
+// week of it, or none for the reason the history gives. It returns each
+// revision's first verdict's action, or "none". A private history is
+// told without its values or dates, as the test's output may be shared.
+func checkHistory(t *testing.T, h history, private bool) []string {
 	t.Helper()
 	r := reader{t, private}
 	b := h.build(r)
+	b.checkSteady(t, private)
+	p := DefaultParams()
+	var got []string
+	for i, rv := range h.Revisions {
+		on := r.date(rv.Date)
+		name := tell(private, fmt.Sprintf("revision %d", i+1), rv.Date)
+		e := Calibrate(b.days, b.phases, on.AddDays(-1), p)
+		t.Logf("%s: the estimate the day before%s, trusted %v, doubts %v", name, tell(private, "", fmt.Sprintf(" was %.0f ± %.0f", e.TDEE, e.HalfWidth)), e.Trusted, e.Doubts)
+		if rv.TDEEHigh > 0 && !(e.TDEE-e.HalfWidth <= rv.TDEELow && e.TDEE+e.HalfWidth >= rv.TDEEHigh) {
+			t.Errorf("%s: the interval does not hold the revision's TDEE", name)
+		}
+		v, d, ok := b.firstVerdict(on)
+		switch {
+		case ok:
+			t.Logf("%s: the first verdict%s: %s, %s, guards %v", name, tell(private, "", ", for "+d.String()), v.Rate, v.Action, v.Guards)
+			if v.Action != rv.Action {
+				t.Errorf("%s: the first verdict is to %s, the revision's was to %s", name, v.Action, rv.Action)
+			}
+			got = append(got, v.Action)
+		case rv.NoVerdict == "":
+			t.Errorf("%s: no verdict within a week, and the history gives no reason for none", name)
+		default:
+			t.Logf("%s: no verdict within a week: %s", name, tell(private, "the reason is in the history", rv.NoVerdict))
+		}
+		if !ok {
+			got = append(got, ActionNone)
+		}
+	}
+	return got
+}
+
+// checkSteady holds calibration to an estimate that moves little from
+// one measured day to the next, and is trusted on some day.
+func (b built) checkSteady(t *testing.T, private bool) {
+	t.Helper()
 	p := DefaultParams()
 	var prev *Estimate
 	var measured, trusted int
@@ -341,26 +440,6 @@ func checkHistory(t *testing.T, h history, private bool) {
 	if trusted == 0 {
 		t.Error("no estimate was trusted")
 	}
-	for i, rv := range h.Revisions {
-		on := r.date(rv.Date)
-		name := tell(private, fmt.Sprintf("revision %d", i+1), rv.Date)
-		e := Calibrate(b.days, b.phases, on.AddDays(-1), p)
-		t.Logf("%s: the estimate the day before%s, trusted %v, doubts %v", name, tell(private, "", fmt.Sprintf(" was %.0f ± %.0f", e.TDEE, e.HalfWidth)), e.Trusted, e.Doubts)
-		if rv.TDEEHigh > 0 && !(e.TDEE-e.HalfWidth <= rv.TDEELow && e.TDEE+e.HalfWidth >= rv.TDEEHigh) {
-			t.Errorf("%s: the interval does not hold the revision's TDEE", name)
-		}
-		switch v, d, ok := b.firstVerdict(on); {
-		case ok:
-			t.Logf("%s: the first verdict%s: %s, %s, guards %v", name, tell(private, "", ", for "+d.String()), v.Rate, v.Action, v.Guards)
-			if v.Action != rv.Action {
-				t.Errorf("%s: the first verdict is to %s, the revision's was to %s", name, v.Action, rv.Action)
-			}
-		case rv.NoVerdict == "":
-			t.Errorf("%s: no verdict within a week, and the history gives no reason for none", name)
-		default:
-			t.Logf("%s: no verdict within a week: %s", name, tell(private, "the reason is in the history", rv.NoVerdict))
-		}
-	}
 }
 
 // TestCalibrateHistory holds calibration to the anonymised history. It
@@ -369,7 +448,7 @@ func checkHistory(t *testing.T, h history, private bool) {
 func TestCalibrateHistory(t *testing.T) {
 	t.Parallel()
 
-	checkHistory(t, readHistory(t, filepath.Join("testdata", "history.json")), false)
+	checkHistory(t, readHistory(t, filepath.Join("testdata", "history.json"), false), false)
 }
 
 // TestCalibrateRealHistory holds calibration to a real history, outside
@@ -382,15 +461,15 @@ func TestCalibrateRealHistory(t *testing.T) {
 	if dir == "" {
 		t.Skip("TDEEMON_PRIVATE_FIXTURES is not set")
 	}
-	checkHistory(t, readHistory(t, filepath.Join(dir, "calibration.json")), true)
+	checkHistory(t, readHistory(t, filepath.Join(dir, "calibration.json"), true), true)
 }
 
 // TestWriteAnonymisedHistory writes testdata/history.json from the real
 // history, with -anonymise, by the history's own anonymisation. The
 // profile is another, and the revisions keep no TDEE and no note. It
-// writes nothing unless the anonymised history gives each revision the
-// verdict the real one does, or none where the real one gives none, and
-// passes checkHistory.
+// writes nothing unless both histories pass checkHistory, and the
+// anonymised one gives each revision the verdict the real one does, or
+// none where the real one gives none.
 func TestWriteAnonymisedHistory(t *testing.T) {
 	if !*anonymise {
 		t.Skip("-anonymise is not set")
@@ -399,7 +478,7 @@ func TestWriteAnonymisedHistory(t *testing.T) {
 	if dir == "" {
 		t.Fatal("TDEEMON_PRIVATE_FIXTURES is not set")
 	}
-	h := readHistory(t, filepath.Join(dir, "calibration.json"))
+	h := readHistory(t, filepath.Join(dir, "calibration.json"), true)
 	a := h.Anonymise
 	if a == nil {
 		t.Fatal("the real history has no anonymisation")
@@ -408,8 +487,8 @@ func TestWriteAnonymisedHistory(t *testing.T) {
 		t.Fatalf("the anonymisation leaves values nearly as they are: %v", bad)
 	}
 	h.Anonymise = nil
+	verdicts := checkHistory(t, h, true)
 	secret := reader{t, true}
-	verdicts := outcomes(secret, h)
 	r := rand.New(rand.NewPCG(a.Seed, a.Seed+1)) //nolint:gosec // G404: noise for a fixture, no secret
 	move := func(s string) string {
 		if s == "" {
@@ -438,12 +517,11 @@ func TestWriteAnonymisedHistory(t *testing.T) {
 			rv.NoVerdict = "none within a week, as in the real history"
 		}
 	}
-	if got := outcomes(reader{t, false}, h); !slices.Equal(got, verdicts) {
+	if got := checkHistory(t, h, false); !slices.Equal(got, verdicts) {
 		t.Fatalf("the anonymised history's verdicts are %q, the real one's %q: choose other parameters", got, verdicts)
 	}
-	checkHistory(t, h, false)
 	if t.Failed() {
-		t.Fatal("the anonymised history fails checkHistory: choose other parameters")
+		t.Fatal("a history fails checkHistory: the anonymised one needs other parameters")
 	}
 	out, err := json.MarshalIndent(h, "", "  ")
 	if err != nil {
@@ -454,27 +532,16 @@ func TestWriteAnonymisedHistory(t *testing.T) {
 	}
 }
 
-// outcomes returns each revision's first verdict's action, or "none".
-func outcomes(r reader, h history) []string {
-	r.tb.Helper()
-	b := h.build(r)
-	var got []string
-	for _, rv := range h.Revisions {
-		action := "none"
-		if v, _, ok := b.firstVerdict(r.date(rv.Date)); ok {
-			action = v.Action
-		}
-		got = append(got, action)
-	}
-	return got
-}
-
 // anonymiseDay takes a day of the real history to the anonymised one, and
 // fails for a value the anonymisation takes to 0 or less, which would
-// read as no value.
+// read as no value. A day's meals move by one at most, and stay one or
+// more.
 func anonymiseDay(secret reader, d *historyDay, a *anonymisation, move func(string) string, r *rand.Rand) {
 	secret.tb.Helper()
 	d.Date = move(d.Date)
+	if d.Meals > 0 {
+		d.Meals = max(1, d.Meals+r.IntN(3)-1)
+	}
 	for _, f := range []struct {
 		name string
 		v    *float64
