@@ -228,6 +228,9 @@ const (
 	ClientWeb      Client = "web"
 	ClientTelegram Client = "telegram"
 	ClientImport   Client = "import"
+	// ClientAPI is the API with a token: a script's, or an agent's
+	// before MCP names itself.
+	ClientAPI Client = "api"
 )
 
 // Meal is a meal as stored.
@@ -262,9 +265,9 @@ func (m Meal) Validate() error {
 		errs = append(errs, fmt.Errorf("day %s: want a year from %d to %d", m.Day, MinYear, MaxYear))
 	}
 	switch m.Client {
-	case ClientMCP, ClientChat, ClientWeb, ClientTelegram, ClientImport:
+	case ClientMCP, ClientChat, ClientWeb, ClientTelegram, ClientImport, ClientAPI:
 	default:
-		errs = append(errs, fmt.Errorf("client %q: want mcp, chat, web, telegram or import", m.Client))
+		errs = append(errs, fmt.Errorf("client %q: want mcp, chat, web, telegram, import or api", m.Client))
 	}
 	errs = append(errs, text.Check("description", m.Description, MaxNameLen, false), validateNote(m.Note))
 	switch {
