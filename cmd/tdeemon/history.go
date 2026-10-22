@@ -17,8 +17,8 @@ import (
 )
 
 type importHistoryFlags struct {
-	email, healthDB, foods string
-	dryRun                 bool
+	email, healthDB, foods, plan string
+	dryRun                       bool
 }
 
 func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
@@ -28,6 +28,7 @@ func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
 	set.StringVar(&f.email, "email", "", "")
 	set.StringVar(&f.healthDB, "health-db", "", "")
 	set.StringVar(&f.foods, "foods", "", "")
+	set.StringVar(&f.plan, "plan", "", "")
 	set.BoolVar(&f.dryRun, "dry-run", false, "")
 	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return f, err
@@ -40,8 +41,8 @@ func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
 	if f.email == "" {
 		return f, fmt.Errorf("%w: import-history: --email is required", errUsage)
 	}
-	if f.healthDB == "" && f.foods == "" {
-		return f, fmt.Errorf("%w: import-history: name what to import: --health-db, --foods or both", errUsage)
+	if f.healthDB == "" && f.foods == "" && f.plan == "" {
+		return f, fmt.Errorf("%w: import-history: name what to import: --health-db, --foods, --plan or more", errUsage)
 	}
 	return f, nil
 }
@@ -51,6 +52,7 @@ type sources struct {
 	days         []history.Day
 	foods        []history.FoodRow
 	foodsSkipped []string
+	plan         history.PlanFile
 }
 
 func readSources(ctx context.Context, f importHistoryFlags) (sources, error) {
@@ -69,6 +71,16 @@ func readSources(ctx context.Context, f importHistoryFlags) (sources, error) {
 		}
 		defer func() { _ = file.Close() }()
 		if s.foods, s.foodsSkipped, err = history.ReadFoods(file); err != nil {
+			return s, err
+		}
+	}
+	if f.plan != "" {
+		file, err := os.Open(f.plan)
+		if err != nil {
+			return s, fmt.Errorf("the plan file: %w", err)
+		}
+		defer func() { _ = file.Close() }()
+		if s.plan, err = history.ReadPlan(file); err != nil {
 			return s, err
 		}
 	}
@@ -112,12 +124,22 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 				return err
 			}
 		}
+		var days history.Report
 		if f.healthDB != "" {
-			r, err := history.Import(ctx, db, u, src.days, now, f.dryRun)
+			if days, err = history.Import(ctx, db, u, src.days, now, f.dryRun); err != nil {
+				return err
+			}
+			writeReport(&b, u, days, f.dryRun)
+		}
+		// The plan last: its limits hold it to the weigh-ins the days
+		// bring, which a dry run has not written.
+		if f.plan != "" {
+			lim := history.PlanLimits{Instance: cfg.Limits, Weighed: days.Weighed}
+			r, err := history.ImportPlan(ctx, db, u, src.plan, lim, now, f.dryRun)
 			if err != nil {
 				return err
 			}
-			writeReport(&b, u, r, f.dryRun)
+			writePlanReport(&b, u, r, f.dryRun)
 		}
 		return nil
 	})
@@ -154,6 +176,23 @@ func writeFoodReport(b *strings.Builder, u user.User, r history.FoodReport, dryR
 	list(b, "Foods renamed", r.Renamed)
 	list(b, "Foods per portion though given by weight or volume, as per 100 they would be no food", r.PerPortion)
 	list(b, "Rows skipped", r.Skipped)
+}
+
+// writePlanReport writes what an import of a plan into u did, or would
+// do, what u had already, and what the limits warn of.
+func writePlanReport(b *strings.Builder, u user.User, r history.PlanReport, dryRun bool) {
+	fmt.Fprintf(b, "%s the plan for %s: %d parts.\n", verb(dryRun), u.Email, len(r.Written))
+	list(b, "Written", r.Written)
+	list(b, "Kept, as the user has them", r.Kept)
+	warnings := make([]string, len(r.Warnings))
+	for i, w := range r.Warnings {
+		of := ""
+		if w.DayType != "" {
+			of = " (" + string(w.DayType) + " day)"
+		}
+		warnings[i] = fmt.Sprintf("%s%s: %s, the threshold %s", w.Rule, of, history.Number(w.Value), history.Number(w.Threshold))
+	}
+	list(b, "Warnings of the limits", warnings)
 }
 
 // writeReport writes what an import into u did, or would do, by u's

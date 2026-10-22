@@ -4,13 +4,20 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/domain/plan"
+	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/history"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -114,7 +121,7 @@ func TestImportHistoryRefuses(t *testing.T) {
 		want  string
 	}{
 		{"no flags", nil, true, "--email is required"},
-		{"nothing to import", []string{"--email", "ana@example.com"}, true, "--health-db, --foods or both"},
+		{"nothing to import", []string{"--email", "ana@example.com"}, true, "--health-db, --foods, --plan or more"},
 		{"no food table", []string{"--email", "ana@example.com", "--foods", filepath.Join(t.TempDir(), "none.md")}, false, "the food table"},
 		{"an argument", []string{"--email", "ana@example.com", "--health-db", old, "now"}, true, `unexpected argument "now"`},
 		{"an unknown flag", []string{"--vault", "x"}, true, "flag provided but not defined"},
@@ -221,5 +228,151 @@ func TestImportHistoryReportsFoodsBeforeAFailure(t *testing.T) {
 	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods}, env, noInput(), &out, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "refused by the test") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 2 new") {
 		t.Errorf("err = %v, said:\n%s", err, out.String())
+	}
+}
+
+// The plan file imports with the limits held to the user's weigh-ins of
+// the last week, which this test writes by the real clock; without any,
+// the limits refuse it.
+func TestImportHistoryPlan(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	for _, email := range []string{"ana@example.com", "ivo@example.com"} {
+		if err := run(t.Context(), []string{"user", "create", "--email", email, "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db, err := store.Open(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ana, err := db.UserByEmail(t.Context(), "ana@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := day.DateOf(time.Now())
+	for i := range 7 {
+		v := []metric.Value{{Kind: metric.Weight, Value: 72, Source: metric.Import}}
+		if _, err := db.MergeMetrics(t.Context(), ana.ID, history.Actor, today.AddDays(-i), v, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = db.Close()
+
+	planFile := filepath.Join("..", "..", "internal", "history", "testdata", "plan.json")
+	var out bytes.Buffer
+	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--plan", planFile}, env, noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Imported the plan for ana@example.com: 6 parts.\nWritten (6):\n  profile") {
+		t.Errorf("the import said:\n%s", out.String())
+	}
+	out.Reset()
+	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--plan", planFile, "--dry-run"}, env, noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "the plan for ana@example.com: 0 parts.\n") {
+		t.Errorf("the run again said:\n%s", out.String())
+	}
+	err = run(t.Context(), []string{"import-history", "--email", "ivo@example.com", "--plan", planFile}, env, noInput(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), limits.RuleWeightMissing) {
+		t.Errorf("a plan without weigh-ins: %v", err)
+	}
+	err = run(t.Context(), []string{"import-history", "--email", "ivo@example.com", "--plan", filepath.Join(t.TempDir(), "none.json")}, env, noInput(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "the plan file") {
+		t.Errorf("no plan file: %v", err)
+	}
+}
+
+// The instance's limits from TDEEMON_LIMIT_* hold a plan, and a dry run of
+// the days and the plan holds it to the days' weigh-ins, which it does not
+// write.
+func TestImportHistoryPlanLimits(t *testing.T) {
+	t.Parallel()
+
+	env, _ := instance(t, map[string]string{"TDEEMON_LIMIT_CUT_RATE": "-0.4"})
+	loose, _ := instance(t, nil)
+	for _, e := range []func(string) (string, bool){env, loose} {
+		if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, e, noInput(), io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := weighedDays(t, 72, 72, 72, 72, 72, 72, 72)
+	planFile := filepath.Join("..", "..", "internal", "history", "testdata", "plan.json")
+	args := []string{"import-history", "--email", "ana@example.com", "--health-db", old, "--plan", planFile, "--dry-run"}
+	var out bytes.Buffer
+	if err := run(t.Context(), args, loose, noInput(), &out, io.Discard); err != nil || !strings.Contains(out.String(), "the plan for ana@example.com: 6 parts.") {
+		t.Errorf("the dry run: %v\n%s", err, out.String())
+	}
+	if err := run(t.Context(), args, env, noInput(), io.Discard, io.Discard); err == nil || !strings.Contains(err.Error(), "cut_rate") || !strings.Contains(err.Error(), "(instance)") {
+		t.Errorf("past the instance's limit: %v", err)
+	}
+}
+
+// weighedDays returns a predecessor's database whose days before today
+// have the weigh-ins kg, the latest first.
+func weighedDays(t *testing.T, kg ...float64) string {
+	t.Helper()
+	schema, err := os.ReadFile(filepath.Join("..", "..", "internal", "history", "testdata", "predecessor.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(t.TempDir(), "health.db")
+	db, err := sql.Open("sqlite", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	rows := string(schema)
+	today := day.DateOf(time.Now())
+	for i, w := range kg {
+		rows += fmt.Sprintf("INSERT INTO days (date, kalorije, kilaza) VALUES ('%s', 1800, %v);\n", today.AddDays(-1-i), w)
+	}
+	if _, err := db.ExecContext(t.Context(), rows); err != nil {
+		t.Fatal(err)
+	}
+	return old
+}
+
+// A weigh-in the days leave out, out of its bounds, does not hold the
+// plan, in a dry run or not: with it the trend would not be underweight,
+// where no cut is allowed.
+func TestImportHistoryPlanLeftOutWeighIn(t *testing.T) {
+	t.Parallel()
+
+	env, _ := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	old := weighedDays(t, 450, 45, 45, 45, 45, 45, 45)
+	planFile := filepath.Join("..", "..", "internal", "history", "testdata", "plan.json")
+	for _, dry := range []bool{true, false} {
+		args := []string{"import-history", "--email", "ana@example.com", "--health-db", old, "--plan", planFile}
+		if dry {
+			args = append(args, "--dry-run")
+		}
+		var out bytes.Buffer
+		err := run(t.Context(), args, env, noInput(), &out, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), limits.RuleUnderweightLoss) || !strings.Contains(out.String(), "weight 450") {
+			t.Errorf("a dry run %v: %v\n%s", dry, err, out.String())
+		}
+	}
+}
+
+// A warning names its rule, its day type if any, and its values to two
+// decimals at most.
+func TestWritePlanReportWarnings(t *testing.T) {
+	t.Parallel()
+
+	var b strings.Builder
+	writePlanReport(&b, user.User{Email: "ana@example.com"}, history.PlanReport{Warnings: []limits.Warning{
+		{Rule: "below_bmr", DayType: plan.Rest, Value: 1400, Threshold: 1441.4999},
+		{Rule: "protein_low", Value: 1.4583333, Threshold: 1.6},
+	}}, false)
+	for _, want := range []string{"  below_bmr (rest day): 1400, the threshold 1441.5\n", "  protein_low: 1.46, the threshold 1.6\n"} {
+		if !strings.Contains(b.String(), want) {
+			t.Errorf("no %q in\n%s", want, b.String())
+		}
 	}
 }
