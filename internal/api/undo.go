@@ -29,7 +29,8 @@ type undoInput struct {
 
 type undoOutput struct {
 	Body struct {
-		Undone undoneBody `json:"undone"`
+		Undone   undoneBody `json:"undone"`
+		Repeated bool       `json:"repeated,omitempty" doc:"The undo was sent before under its id, and this is its answer again: no other change was taken back. To go further back, undo under a new id."`
 	}
 }
 
@@ -42,7 +43,7 @@ func (s *sessions) undoLast(ctx context.Context, in *undoInput) (*undoOutput, er
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity("the undo's id: " + err.Error())
 	}
-	e, _, err := s.db.Undo(ctx, p.User.ID, actorOf(p), request, s.now())
+	e, again, err := s.db.Undo(ctx, p.User.ID, actorOf(p), request, s.now())
 	var conflict *store.UndoConflictError
 	switch {
 	case errors.Is(err, store.ErrUndoID):
@@ -50,11 +51,15 @@ func (s *sessions) undoLast(ctx context.Context, in *undoInput) (*undoOutput, er
 	case errors.Is(err, store.ErrNothingToUndo):
 		return nil, huma.Error404NotFound("nothing to undo: every change of the user's is undone already, or one undo leaves (the plan, an import's)")
 	case errors.As(err, &conflict):
-		return nil, huma.Error409Conflict(conflict.Error() + "; it is passed over, so undo again takes back the change before it")
+		if conflict.Err != nil {
+			s.logger.DebugContext(ctx, "a change could not be undone", "event", conflict.Event.ID.String(), "error", conflict.Err)
+		}
+		return nil, huma.Error409Conflict(conflict.Error() + "; it is passed over, so an undo under a new id takes back the change before it, and this id sent again answers the same")
 	case err != nil:
 		return nil, internalError("undoing failed", err)
 	}
 	out := &undoOutput{}
+	out.Body.Repeated = again
 	out.Body.Undone = undoneBody{Action: string(e.Action), Entity: e.Entity, At: e.At.UTC(), Client: e.Actor.Client, Model: e.Actor.Model}
 	return out, nil
 }

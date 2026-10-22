@@ -76,6 +76,7 @@ func TestUndoID(t *testing.T) {
 		"version 4":       uuid.NewV4(),
 		"two days old":    clientid.NewAt(t0.Add(-48 * time.Hour)),
 		"ahead the clock": clientid.NewAt(t0.Add(time.Hour)),
+		"nil":             uuid.Nil(),
 	} {
 		if _, _, err := db.Undo(t.Context(), ana, testActor, id, t0); !errors.Is(err, store.ErrUndoID) {
 			t.Errorf("%s: %v, want ErrUndoID", name, err)

@@ -22,12 +22,17 @@ func undo(t *testing.T, e mealsEnv, id uuid.UUID) (int, string, string) {
 		Undone struct {
 			Action, Entity, Client string
 		} `json:"undone"`
+		Repeated bool `json:"repeated"`
 	}
 	if rec.Code == http.StatusOK {
 		if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
 			t.Fatal(err)
 		}
-		return rec.Code, a.Undone.Action + " " + a.Undone.Entity + " " + a.Undone.Client, rec.Body.String()
+		got := a.Undone.Action + " " + a.Undone.Entity + " " + a.Undone.Client
+		if a.Repeated {
+			got += " (repeated)"
+		}
+		return rec.Code, got, rec.Body.String()
 	}
 	return rec.Code, "", rec.Body.String()
 }
@@ -44,8 +49,8 @@ func TestUndoLast(t *testing.T) {
 		e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
 	}
 	request := clientid.NewAt(e.now)
-	for _, name := range []string{"an undo", "the undo again"} {
-		if code, got, body := undo(t, e, request); code != http.StatusOK || got != "meal.create "+second+" web" {
+	for name, want := range map[string]string{"an undo": "", "the undo again": " (repeated)"} {
+		if code, got, body := undo(t, e, request); code != http.StatusOK || got != "meal.create "+second+" web"+want {
 			t.Errorf("%s: %d %s", name, code, body)
 		}
 	}
@@ -92,7 +97,8 @@ func TestUndoLastConflict(t *testing.T) {
 	}
 	request := clientid.NewAt(e.now)
 	for _, want := range []string{"it changed since", "this undo passed over it before"} {
-		if code, _, body := undo(t, e, request); code != http.StatusConflict || !strings.Contains(body, "food.save of "+kefir.ID.String()+" cannot be undone: "+want) {
+		if code, _, body := undo(t, e, request); code != http.StatusConflict || !strings.Contains(body, "food.save of "+kefir.ID.String()+" cannot be undone: "+want) ||
+			!strings.Contains(body, "an undo under a new id") {
 			t.Errorf("an undo of the food: %d %s, want 409 saying %q", code, body, want)
 		}
 	}
@@ -110,6 +116,7 @@ func TestUndoLastRefusesItsID(t *testing.T) {
 		"version 4":    {"f47ac10b-58cc-4372-a567-0e02b2c3d479", "not a version 7"},
 		"two days old": {clientid.NewAt(e.now.Add(-48 * time.Hour)).String(), "more than a day before"},
 		"no UUID":      {"undo-1", "id"},
+		"nil":          {"00000000-0000-0000-0000-000000000000", "not a version 7"},
 	} {
 		rec := e.in.do(t, http.MethodPost, "/api/v1/undo", fmt.Sprintf(`{"id": %q}`, tc.id), e.session, nil)
 		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), tc.want) {
@@ -134,5 +141,21 @@ func TestUndoLastSaysTheClient(t *testing.T) {
 	}
 	if code, got, body := undo(t, e, clientid.NewAt(e.now)); code != http.StatusOK || got != "meal.create "+id+" api" {
 		t.Errorf("an undo of it: %d %s, want the client api", code, body)
+	}
+}
+
+// What kept a change from being taken back is in the log, not the answer.
+func TestUndoLastLogsWhy(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, meal.NewIDAt(e.now)))
+	e.in.exec(t, "UPDATE events SET entity = 'not-an-id' WHERE operation = 'meal.create'")
+	code, _, body := undo(t, e, clientid.NewAt(e.now))
+	if code != http.StatusConflict || strings.Contains(body, "invalid") {
+		t.Errorf("an undo of a change that does not read: %d %s", code, body)
+	}
+	if logs := e.in.logs.String(); !strings.Contains(logs, `entity \"not-an-id\"`) {
+		t.Errorf("the log has no cause: %s", logs)
 	}
 }

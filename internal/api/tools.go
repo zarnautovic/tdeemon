@@ -122,7 +122,8 @@ func (s *sessions) tools() []tool {
 			Path:        Prefix + "/undo",
 			Summary:     "Undo the latest change",
 			Description: "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. " +
-				"Undo again to go further back; nothing is redone. Changes of the plan and an import's writes are left. " +
+				"Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; " +
+				"undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. " +
 				"A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, " +
 				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},

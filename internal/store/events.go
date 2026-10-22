@@ -218,17 +218,22 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 // tries the same change again. With nothing left it returns
 // ErrNothingToUndo.
 func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, error) {
-	e, _, err := db.Undo(ctx, userID, a, uuid.Nil(), now)
+	e, _, err := db.undo(ctx, userID, a, nil, now)
 	return e, err
 }
 
-// Undo is UndoLast of an undo under request, the id a client made for it
-// (uuid.Nil: none), so the same undo sent again is known: the change it
-// settled keeps the id, and the undo sent again returns that change, and
-// true, when it was taken back, or an *UndoConflictError when it was
-// passed over, rather than taking back the change before. A request no
-// undo had must be a new id near now (clientid.Check), or ErrUndoID.
+// Undo is UndoLast of an undo under request, the id a client made for
+// it, so the same undo sent again is known: the change it settled keeps
+// the id, and the undo sent again returns that change, and true, when it
+// was taken back, or an *UndoConflictError when it was passed over,
+// rather than taking back the change before. A request no undo had must
+// be a new id near now (clientid.Check), or ErrUndoID.
 func (db *DB) Undo(ctx context.Context, userID uuid.UUID, a event.Actor, request uuid.UUID, now time.Time) (event.Event, bool, error) {
+	return db.undo(ctx, userID, a, &request, now)
+}
+
+// undo is Undo under request, or UndoLast when request is nil.
+func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request *uuid.UUID, now time.Time) (event.Event, bool, error) {
 	if err := a.Validate(); err != nil {
 		return event.Event{}, false, fmt.Errorf("invalid actor: %w", err)
 	}
@@ -243,7 +248,7 @@ func (db *DB) Undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 			return err
 		}
 		undone, conflict, err = undoInTx(ctx, tx, userID, a, now)
-		if err != nil || request == uuid.Nil() {
+		if err != nil || request == nil {
 			return err
 		}
 		// The change the undo settled, taken back or passed over.
@@ -286,17 +291,17 @@ func lastToUndo(ctx context.Context, tx *sql.Tx, userID uuid.UUID) (event.Event,
 
 // settledBy returns userID's change the undo under request settled, and
 // whether there is one: with the conflict of one it passed over. A
-// request no undo had must be a new id near now, or ErrUndoID; uuid.Nil
-// is none.
-func settledBy(ctx context.Context, tx *sql.Tx, userID, request uuid.UUID, now time.Time) (event.Event, bool, *UndoConflictError, error) {
-	if request == uuid.Nil() {
+// request no undo had must be a new id near now, or ErrUndoID; nil is
+// none.
+func settledBy(ctx context.Context, tx *sql.Tx, userID uuid.UUID, request *uuid.UUID, now time.Time) (event.Event, bool, *UndoConflictError, error) {
+	if request == nil {
 		return event.Event{}, false, nil, nil
 	}
 	e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+" FROM events WHERE user_id = ? AND undo_request = ?",
 		userID.String(), request.String()))
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		if err := clientid.Check("undo", request, now); err != nil {
+		if err := clientid.Check("undo", *request, now); err != nil {
 			return event.Event{}, false, nil, fmt.Errorf("%w: %w", ErrUndoID, err)
 		}
 		return event.Event{}, false, nil, nil

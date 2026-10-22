@@ -245,8 +245,10 @@ itself. `log_metric` is `PUT /api/v1/days/{date}/metrics/{kind}`,
 `delete_metric` is `DELETE` on the same route (404 for a kind the day
 has none of), and `checkin` is `PATCH /api/v1/days/{date}`; each takes a
 date or `today`, and answers the day as `get_day` does. `undo_last` is
-`POST /api/v1/undo`: it answers the change it took back, a 409 that says
-why for one it passed over, or a 404 with nothing left.
+`POST /api/v1/undo`: it answers the change it took back (marked
+`repeated` for an undo sent again under its id: each undo takes a new
+one), a 409 that says why for one it passed over, or a 404 with nothing
+left.
 
 ## 6. AI layer
 
