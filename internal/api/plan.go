@@ -32,7 +32,7 @@ type ProfileFields struct {
 // profileBody is ProfileFields with what a plan still needs.
 type profileBody struct {
 	ProfileFields
-	Missing []string `json:"missing" nullable:"false" doc:"What a plan still needs: sex, birth_date, height. A plan needs the whole profile; logging needs none of it."`
+	Missing []string `json:"missing" nullable:"false" enum:"sex,birth_date,height_cm" doc:"What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it."`
 }
 
 type profileOutput struct {
@@ -224,36 +224,61 @@ func (s *sessions) setLimits(ctx context.Context, in *setLimitsInput) (*limitsOu
 	if err != nil {
 		return nil, err
 	}
-	current, err := s.db.UserLimits(ctx, p.User.ID)
-	if err != nil {
-		s.logger.ErrorContext(ctx, "reading the limits failed", "error", err)
+	// The check runs on the limits as they are when the change is stored:
+	// a loosening another tab stored meanwhile needs no confirmation of
+	// this one, and this one cannot loosen what the other tightened.
+	var refusal error
+	var loosened []string
+	next, err := s.db.UpdateUserLimits(ctx, p.User.ID, webActor, s.instance, func(current limits.Limits) (limits.Limits, error) {
+		next, err := s.changeLimits(current, in.Body.Limits, in.Body.Confirm)
+		if err != nil {
+			refusal = err
+			return current, err
+		}
+		loosened = limits.Loosened(current, next)
+		return next, nil
+	}, s.now())
+	switch {
+	case refusal != nil:
+		return nil, refusal
+	case err != nil:
+		s.logger.ErrorContext(ctx, "changing the limits failed", "error", err)
 		return nil, huma.Error500InternalServerError("changing the limits failed")
 	}
+	s.logger.InfoContext(ctx, "changed the limits", "user_id", p.User.ID.String(), "loosened", loosened)
+	return &limitsOutput{CacheControl: "no-store", Body: s.newLimitsBody(next)}, nil
+}
+
+// changeLimits returns current with the limits named in values set, or
+// the refusal of the change (422 or 409). A value equal to the current one
+// is not a change of it, so a client may send back what it read.
+func (s *sessions) changeLimits(current limits.Limits, values map[string]float64, confirm bool) (limits.Limits, error) {
 	fields := map[string]limits.Field{}
 	for _, f := range limits.Fields() {
 		fields[f.Name] = f
 	}
 	next := current
 	var unknown, named []string
-	for name, v := range in.Body.Limits {
+	for name, v := range values {
 		f, ok := fields[name]
-		if !ok {
+		switch {
+		case !ok:
 			unknown = append(unknown, name)
-			continue
+		case v != f.Get(current):
+			f.Set(&next, v)
+			named = append(named, name)
 		}
-		f.Set(&next, v)
-		named = append(named, name)
 	}
 	if unknown != nil {
 		sort.Strings(unknown)
-		return nil, huma.Error422UnprocessableEntity("no such limit: " + strings.Join(unknown, ", "))
+		return current, huma.Error422UnprocessableEntity("no such limit: " + strings.Join(unknown, ", "))
 	}
 	if err := next.Validate(); err != nil {
-		return nil, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
+		return current, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
 	}
-	// A limit the request names goes no further than the instance's; one
-	// it leaves, which the instance may have tightened since, is brought
-	// to the instance's.
+	// A limit the request changes goes no further than the instance's;
+	// one it leaves, which the instance may have tightened since, is
+	// brought to the instance's.
 	var beyond []string
 	for _, name := range limits.Beyond(next, s.instance) {
 		if slices.Contains(named, name) {
@@ -261,16 +286,16 @@ func (s *sessions) setLimits(ctx context.Context, in *setLimitsInput) (*limitsOu
 		}
 	}
 	if beyond != nil {
-		return nil, huma.Error422UnprocessableEntity("past the instance's limit: " + strings.Join(beyond, ", "))
+		sort.Strings(beyond)
+		return current, huma.Error422UnprocessableEntity("past the instance's limit: " + strings.Join(beyond, ", "))
 	}
 	next = limits.Effective(next, s.instance)
-	if loosened := limits.Loosened(current, next); loosened != nil && !in.Body.Confirm {
-		return nil, huma.Error409Conflict("loosening " + strings.Join(loosened, ", ") + " needs confirm: true")
+	if err := next.Validate(); err != nil {
+		return current, huma.Error422UnprocessableEntity("with the instance's limits, which hold over yours: " +
+			strings.ReplaceAll(err.Error(), "\n", "; "))
 	}
-	if err := s.db.SetUserLimits(ctx, p.User.ID, webActor, next, s.instance, s.now()); err != nil {
-		s.logger.ErrorContext(ctx, "changing the limits failed", "error", err)
-		return nil, huma.Error500InternalServerError("changing the limits failed")
+	if loosened := limits.Loosened(current, next); loosened != nil && !confirm {
+		return current, huma.Error409Conflict("loosening " + strings.Join(loosened, ", ") + " needs confirm: true")
 	}
-	s.logger.InfoContext(ctx, "changed the limits", "user_id", p.User.ID.String(), "loosened", limits.Loosened(current, next))
-	return &limitsOutput{CacheControl: "no-store", Body: s.newLimitsBody(next)}, nil
+	return next, nil
 }

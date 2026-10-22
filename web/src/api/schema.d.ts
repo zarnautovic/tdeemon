@@ -347,8 +347,8 @@ export interface components {
              * @description The height in centimetres.
              */
             height_cm?: number;
-            /** @description What a plan still needs: sex, birth_date, height. A plan needs the whole profile; logging needs none of it. */
-            missing: string[];
+            /** @description What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it. */
+            missing: ("sex" | "birth_date" | "height_cm")[];
             /**
              * @description The sex the energy equations take.
              * @enum {string}

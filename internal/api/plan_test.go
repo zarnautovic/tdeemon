@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
@@ -51,7 +52,7 @@ func TestProfileAPI(t *testing.T) {
 	session := []*http.Cookie{sessionOf(t, in)}
 	rec := in.do(t, http.MethodGet, "/api/v1/profile", "", session, nil)
 	if got := decodeJSON[profileResponse](t, rec.Body.Bytes()); rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" ||
-		got.Sex != nil || strings.Join(got.Missing, ",") != "sex,birth_date,height" {
+		got.Sex != nil || strings.Join(got.Missing, ",") != "sex,birth_date,height_cm" {
 		t.Fatalf("GET of no profile = %d %s", rec.Code, rec.Body.String())
 	}
 	rec = in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"female","birth_date":"1990-06-15","height_cm":168.5}`, session, nil)
@@ -80,7 +81,7 @@ func TestProfileAPIClears(t *testing.T) {
 	session := []*http.Cookie{sessionOf(t, in)}
 	in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"female","birth_date":"1990-06-15","height_cm":168.5}`, session, nil)
 	rec := in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"female"}`, session, nil)
-	if got := decodeJSON[profileResponse](t, rec.Body.Bytes()); rec.Code != http.StatusOK || strings.Join(got.Missing, ",") != "birth_date,height" {
+	if got := decodeJSON[profileResponse](t, rec.Body.Bytes()); rec.Code != http.StatusOK || strings.Join(got.Missing, ",") != "birth_date,height_cm" {
 		t.Errorf("PUT of the sex alone = %d %s", rec.Code, rec.Body.String())
 	}
 	if p, _ := in.db.Profile(t.Context(), in.user.ID); p != (profile.Profile{Sex: profile.Female}) {
@@ -112,6 +113,24 @@ func TestProfileAPIRefuses(t *testing.T) {
 	}
 	if n, _ := in.db.Events(t.Context(), in.user.ID, 10); len(n) != 0 {
 		t.Errorf("a refused profile recorded %d events", len(n))
+	}
+}
+
+// Today is the user's day, by their zone and the hour their day starts:
+// at 01:00 UTC on 22 October it is 03:00 in Zagreb, before the user's
+// day starts at 04:00, so still the 21st, and a birth on the 22nd is in
+// the future.
+func TestProfileAPITodayIsTheUsers(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	in.clock.Set(time.Date(2026, 10, 22, 1, 0, 0, 0, time.UTC))
+	if rec := in.do(t, http.MethodPut, "/api/v1/profile", `{"birth_date":"2026-10-22"}`, session, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a birth on the user's tomorrow = %d %s, want 422", rec.Code, rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodPut, "/api/v1/profile", `{"birth_date":"2026-10-21"}`, session, nil); rec.Code != http.StatusOK {
+		t.Errorf("a birth on the user's today = %d %s, want 200", rec.Code, rec.Body.String())
 	}
 }
 
@@ -201,6 +220,63 @@ func TestSetLimitsAPI(t *testing.T) {
 	}
 }
 
+// withInstanceLimits gives in a handler with the instance's limits l.
+func withInstanceLimits(t *testing.T, in *instance, l limits.Limits) {
+	t.Helper()
+	base, _ := url.Parse("http://localhost")
+	h, err := api.NewHandler(api.Config{Info: testInfo, DB: in.db, BaseURL: base, Logger: slog.New(slog.DiscardHandler), Now: in.clock.Now, Limits: l})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.h = h
+}
+
+// The instance's limits hold over the user's, and a change that leaves
+// the limits that hold at odds with each other is refused, not stored.
+func TestSetLimitsAPIWithTheInstancesLimits(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name     string
+		instance func(*limits.Limits)
+		stored   func(*limits.Limits)
+		body     string
+		want     string
+	}{
+		{
+			"a protein floor over the instance's ceiling", func(l *limits.Limits) { l.ProteinCeiling = 2.0 }, nil,
+			`{"limits":{"protein_floor":2.1}}`, "protein_floor 2.1: want at most protein_ceiling 2",
+		},
+		{
+			"a recomp's least over the instance's most", func(l *limits.Limits) { l.RecompMax = 0 }, nil,
+			`{"limits":{"recomp_min":0.1}}`, "recomp_min 0.1: want at most recomp_max 0",
+		},
+		{
+			"a floor stored before the instance's ceiling fell", func(l *limits.Limits) { l.ProteinCeiling = 2.0 }, func(l *limits.Limits) { l.ProteinFloor = 2.2 },
+			`{"limits":{"drift_pct":10}}`, "protein_floor 2.2: want at most protein_ceiling 2",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			in := newInstance(t, "http://localhost", "")
+			if tc.stored != nil {
+				l := limits.UserDefaults()
+				tc.stored(&l)
+				if err := in.db.SetUserLimits(t.Context(), in.user.ID, event.Actor{Kind: event.User, Client: "web"}, l, limits.Instance(), in.clock.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			inst := limits.Instance()
+			tc.instance(&inst)
+			withInstanceLimits(t, in, inst)
+			rec := in.do(t, http.MethodPut, "/api/v1/limits", tc.body, []*http.Cookie{sessionOf(t, in)}, nil)
+			if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "with the instance's limits") || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("PUT %s = %d %s, want 422 with %q", tc.body, rec.Code, rec.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
 // A limit the admin tightened since is brought to the instance's when the
 // user changes another, rather than refusing every change.
 func TestLimitsAPIAfterTheInstanceTightened(t *testing.T) {
@@ -214,16 +290,20 @@ func TestLimitsAPIAfterTheInstanceTightened(t *testing.T) {
 	}
 	tight := limits.Instance()
 	tight.KcalFloorFemale = 1300
-	base, _ := url.Parse("http://localhost")
-	h, err := api.NewHandler(api.Config{Info: testInfo, DB: in.db, BaseURL: base, Logger: slog.New(slog.DiscardHandler), Now: in.clock.Now, Limits: tight})
-	if err != nil {
-		t.Fatal(err)
-	}
-	in.h = h
+	withInstanceLimits(t, in, tight)
 	session := []*http.Cookie{sessionOf(t, in)}
 	rec := in.do(t, http.MethodGet, "/api/v1/limits", "", session, nil)
-	if got := decodeJSON[limitsResponse](t, rec.Body.Bytes()); got.Effective["kcal_floor_female"] != 1300 || got.Instance["kcal_floor_female"] != 1300 {
+	got := decodeJSON[limitsResponse](t, rec.Body.Bytes())
+	if got.Effective["kcal_floor_female"] != 1300 || got.Instance["kcal_floor_female"] != 1300 {
 		t.Errorf("GET = %s", rec.Body.String())
+	}
+	// A client may send back every limit it read, with one changed: the
+	// ones it did not change are no changes, the 1200 the instance
+	// tightened since included.
+	got.Limits["fat_floor_pct"] = 25
+	body, _ := json.Marshal(map[string]any{"limits": got.Limits})
+	if rec := in.do(t, http.MethodPut, "/api/v1/limits", string(body), session, nil); rec.Code != http.StatusOK {
+		t.Errorf("PUT of the limits read, with one changed = %d %s", rec.Code, rec.Body.String())
 	}
 	rec = in.do(t, http.MethodPut, "/api/v1/limits", `{"limits":{"drift_pct":10}}`, session, nil)
 	if rec.Code != http.StatusOK {

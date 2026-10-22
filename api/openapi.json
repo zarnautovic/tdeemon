@@ -294,8 +294,13 @@
             "type": "number"
           },
           "missing": {
-            "description": "What a plan still needs: sex, birth_date, height. A plan needs the whole profile; logging needs none of it.",
+            "description": "What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it.",
             "items": {
+              "enum": [
+                "sex",
+                "birth_date",
+                "height_cm"
+              ],
               "type": "string"
             },
             "type": "array"

@@ -228,7 +228,10 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
 	today := day.DateOf(now)
 	ctx := t.Context()
-	p := profile.Profile{Sex: profile.Female, BirthDate: today.AddDays(-12000), HeightCm: 170}
+	// Values of each user's own: the first letter of the name (A, I)
+	// sets them apart, so a case can tell whose it shows.
+	n := int(u.Name[0] % 20)
+	p := profile.Profile{Sex: profile.Female, BirthDate: today.AddDays(-12000 - n), HeightCm: 160 + float64(n)}
 	if err := db.SetProfile(ctx, u.ID, isolationActor, p, today, now); err != nil {
 		t.Fatalf("save %s's profile: %v", u.Name, err)
 	}
@@ -243,7 +246,7 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 		t.Fatalf("save %s's training weekdays: %v", u.Name, err)
 	}
 	l := limits.UserDefaults()
-	l.ProteinFloorGrams = 120
+	l.ProteinFloorGrams = 100 + float64(n)
 	if err := db.SetUserLimits(ctx, u.ID, isolationActor, l, limits.Instance(), now); err != nil {
 		t.Fatalf("save %s's limits: %v", u.Name, err)
 	}
@@ -535,8 +538,12 @@ func isolationCases() map[string]isolationCase {
 				t.Errorf("the other's new token acts for %s, want them", who.Body.String())
 			}
 		},
-		"get-profile": read("/api/v1/profile", false, nil),
-		"get-limits":  read("/api/v1/limits", false, nil),
+		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
+		}),
+		"get-limits": read("/api/v1/limits", false, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20))}
+		}),
 		"set-profile": func(t *testing.T, e isolationEnv) {
 			rec := e.in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"male","birth_date":"1985-01-20","height_cm":181}`, []*http.Cookie{e.other.session}, nil)
 			if rec.Code != http.StatusOK {
@@ -545,7 +552,7 @@ func isolationCases() map[string]isolationCase {
 		},
 		"set-limits": func(t *testing.T, e isolationEnv) {
 			rec := e.in.do(t, http.MethodPut, "/api/v1/limits", `{"limits":{"cut_rate":-0.4}}`, []*http.Cookie{e.other.session}, nil)
-			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"protein_floor_grams":120`) {
+			if want := fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20)); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
 				t.Errorf("the other's limits: %d %s", rec.Code, rec.Body.String())
 			}
 		},
