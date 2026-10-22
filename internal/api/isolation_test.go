@@ -749,8 +749,8 @@ func (e isolationEnv) isolated(t *testing.T, run isolationCase, reached func()) 
 
 // Every operation in the OpenAPI document has an isolation case, and
 // every case an operation. Routes outside the document (the OpenID
-// Connect browser flow, MCP to come) are not listed here: see
-// docs/conventions.md.
+// Connect browser flow, and MCP, whose cases are mcpIsolationCases) are
+// not listed here: see docs/conventions.md.
 func TestIsolationCoversEveryOperation(t *testing.T) {
 	t.Parallel()
 

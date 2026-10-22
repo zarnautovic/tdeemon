@@ -1,6 +1,7 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -33,5 +34,18 @@ func TestMCPToolOfABadDocument(t *testing.T) {
 	}
 	if _, err := newMCPServer([]tool{tl}, []byte(`not json`), nil, ServerInfo{}, nil); err == nil {
 		t.Error("a document that is no JSON was taken")
+	}
+}
+
+// A tool whose operation panics is an error of the tool: the panic does
+// not take the server down with it, as the SDK runs a call on a goroutine
+// of its own.
+func TestMCPCallThatPanics(t *testing.T) {
+	t.Parallel()
+
+	m := &mcpServer{routes: http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }), logger: slog.New(slog.DiscardHandler)}
+	tl := &mcpTool{tool: tool{name: "a_tool", op: huma.Operation{Method: http.MethodGet, Path: "/x"}}}
+	if res := m.call(t.Context(), auth.Principal{}, tl, nil); !res.IsError {
+		t.Errorf("a call that panics = %+v, want an error of the tool", res)
 	}
 }

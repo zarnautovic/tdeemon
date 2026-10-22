@@ -71,7 +71,14 @@ func (m *mcpServer) handler() http.Handler {
 	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		p, _ := auth.PrincipalFrom(r.Context())
 		return m.serverFor(p)
-	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, Logger: m.logger})
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true, JSONResponse: true, Logger: m.logger,
+		// The SDK refuses a request to a loopback address whose Host is
+		// not localhost, against DNS rebinding: that is every request
+		// through a reverse proxy on the same host. A page that rebinds
+		// a name cannot send the user's token, the only way in.
+		DisableLocalhostProtection: true,
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p, ok := auth.PrincipalFrom(r.Context())
 		if !ok || p.Via != auth.ViaToken {
@@ -109,7 +116,15 @@ func (m *mcpServer) serverFor(p auth.Principal) *mcp.Server {
 
 // call runs t's operation for p with args, and answers what it answered:
 // its body, or the problem as an error of the tool, which the model reads.
-func (m *mcpServer) call(ctx context.Context, p auth.Principal, t *mcpTool, args json.RawMessage) *mcp.CallToolResult {
+func (m *mcpServer) call(ctx context.Context, p auth.Principal, t *mcpTool, args json.RawMessage) (res *mcp.CallToolResult) {
+	// The SDK runs a call on a goroutine of its own, where net/http
+	// recovers no panic: one would take the server down.
+	defer func() {
+		if v := recover(); v != nil {
+			m.logger.ErrorContext(ctx, "a tool panicked", "tool", t.tool.name, "panic", v)
+			res = toolError("the tool failed")
+		}
+	}()
 	r, err := t.request(auth.WithPrincipal(ctx, p), args)
 	if err != nil {
 		return toolError(err.Error())
@@ -155,27 +170,9 @@ func (t *mcpTool) request(ctx context.Context, args json.RawMessage) (*http.Requ
 			return nil, errors.New("the arguments are not an object")
 		}
 	}
-	path, query := t.tool.op.Path, url.Values{}
-	body := map[string]json.RawMessage{}
-	for _, name := range slices.Sorted(maps.Keys(in)) {
-		raw := in[name]
-		where, isParam := t.params[name]
-		if !isParam {
-			if !t.body {
-				return nil, fmt.Errorf("no argument %q: %s takes %s", name, t.tool.name, strings.Join(slices.Sorted(maps.Keys(t.params)), ", "))
-			}
-			body[name] = raw
-			continue
-		}
-		v, err := paramValue(raw)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		if where == "path" {
-			path = strings.Replace(path, "{"+name+"}", url.PathEscape(v), 1)
-		} else {
-			query.Set(name, v)
-		}
+	path, query, body, err := t.place(in)
+	if err != nil {
+		return nil, err
 	}
 	// A day left out is today (DESIGN.md §5).
 	path = strings.Replace(path, "{date}", "today", 1)
@@ -188,7 +185,6 @@ func (t *mcpTool) request(ctx context.Context, args json.RawMessage) (*http.Requ
 	}
 	var b []byte
 	if t.body {
-		var err error
 		if b, err = json.Marshal(body); err != nil {
 			return nil, err
 		}
@@ -201,6 +197,38 @@ func (t *mcpTool) request(ctx context.Context, args json.RawMessage) (*http.Requ
 		r.Header.Set("Content-Type", "application/json")
 	}
 	return r, nil
+}
+
+// place puts each argument of in where t's operation takes it: in its
+// path, its query or its body. An argument of null is one left out, as a
+// model may send it.
+func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[string]json.RawMessage, error) {
+	path, query := t.tool.op.Path, url.Values{}
+	body := map[string]json.RawMessage{}
+	for _, name := range slices.Sorted(maps.Keys(in)) {
+		raw := in[name]
+		if string(raw) == "null" {
+			continue
+		}
+		where, isParam := t.params[name]
+		if !isParam {
+			if !t.body {
+				return "", nil, nil, fmt.Errorf("no argument %q: %s takes %s", name, t.tool.name, strings.Join(slices.Sorted(maps.Keys(t.params)), ", "))
+			}
+			body[name] = raw
+			continue
+		}
+		v, err := paramValue(raw)
+		if err != nil {
+			return "", nil, nil, fmt.Errorf("%s: %w", name, err)
+		}
+		if where == "path" {
+			path = strings.Replace(path, "{"+name+"}", url.PathEscape(v), 1)
+		} else {
+			query.Set(name, v)
+		}
+	}
+	return path, query, body, nil
 }
 
 // paramValue is the text of a parameter's value: a string as it is, a
@@ -284,16 +312,16 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 	if len(required) > 0 {
 		schema["required"] = required
 	}
-	// A tool that reads changes nothing; one that changes or deletes what
-	// is there (PATCH, DELETE) is destructive; one that adds is not.
+	// A tool that reads changes nothing. Every tool is safe to send again:
+	// a create is under the client's id, any other write replaces what it
+	// names. One that replaces or deletes what is there says so
+	// (tool.destroys).
 	readOnly := t.op.Method == http.MethodGet
-	destructive := t.op.Method == http.MethodPatch || t.op.Method == http.MethodDelete
 	mt.def = &mcp.Tool{
 		Name: t.name, Title: t.op.Summary, Description: t.op.Description, InputSchema: schema,
 		Annotations: &mcp.ToolAnnotations{
-			Title: t.op.Summary, ReadOnlyHint: readOnly, DestructiveHint: new(destructive),
-			IdempotentHint: t.op.Method == http.MethodPut || t.op.Method == http.MethodDelete || t.retryOK,
-			OpenWorldHint:  new(false),
+			Title: t.op.Summary, ReadOnlyHint: readOnly, DestructiveHint: new(t.destructive),
+			IdempotentHint: true, OpenWorldHint: new(false),
 		},
 	}
 	return mt, nil

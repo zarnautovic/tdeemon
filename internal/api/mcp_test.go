@@ -89,7 +89,7 @@ func TestMCPListsTheTools(t *testing.T) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
 			readOnly := slices.Contains([]string{"get_profile", "get_day", "find_foods", "get_food"}, tl.Name)
-			destructive := slices.Contains([]string{"update_meal", "delete_meal", "delete_metric", "checkin"}, tl.Name)
+			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin"}, tl.Name)
 			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive || tl.Description == "" {
 				t.Errorf("%s: annotations %+v, description %q", tl.Name, tl.Annotations, tl.Description)
 			}
@@ -138,7 +138,8 @@ func TestMCPToolSchemas(t *testing.T) {
 			t.Errorf("%s requires %v, want %v", name, got, want)
 		}
 	}
-	for name, want := range map[string]bool{"log_metric": true, "delete_meal": true, "log_meal": true, "update_meal": false, "upsert_food": false} {
+	// Every write of the API is safe to send again; a read is too.
+	for name, want := range map[string]bool{"log_metric": true, "delete_meal": true, "log_meal": true, "update_meal": true, "upsert_food": true, "get_day": true} {
 		if got := byName[name].Annotations.IdempotentHint; got != want {
 			t.Errorf("%s idempotent = %v, want %v", name, got, want)
 		}
@@ -169,6 +170,13 @@ func TestMCPCallsATool(t *testing.T) {
 	}
 	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": 5}); isErr {
 		t.Errorf("find_foods with a number in the query: %s", text)
+	}
+	// An argument of null is one left out, as a model may send it.
+	if text, isErr := callTool(t, cs, "get_day", map[string]any{"date": nil}); isErr || !strings.Contains(text, id) {
+		t.Errorf("get_day of a null date: %v %s", isErr, text)
+	}
+	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": nil}); isErr {
+		t.Errorf("find_foods of a null limit: %s", text)
 	}
 }
 
@@ -239,5 +247,32 @@ func TestMCPAuth(t *testing.T) {
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"read"`))
 	if _, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "log_meal", Arguments: map[string]any{}}); err == nil {
 		t.Error("a read token called log_meal")
+	}
+}
+
+// Behind a reverse proxy on the same host, which keeps the public Host,
+// MCP answers as the API does.
+func TestMCPBehindALocalProxy(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	srv := httptest.NewServer(in.h)
+	t.Cleanup(srv.Close)
+	initialize := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}`
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/mcp", strings.NewReader(initialize))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = "tdeemon.example.com"
+	req.Header.Set("Authorization", "Bearer "+mcpToken(t, in, session, `"tools"`))
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		t.Errorf("initialize through a local proxy: %d", res.StatusCode)
 	}
 }

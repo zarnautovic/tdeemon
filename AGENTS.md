@@ -16,7 +16,8 @@ domain and the database with an event log and undo, the API for the
 profile and the limits, the tool registry with `get_profile`,
 `get_day`, `find_foods`, `get_food`, `upsert_food`, `log_meal`,
 `update_meal`, `delete_meal`, `log_metric`, `delete_metric` and
-`checkin`, the API contract and an empty web app
+`checkin`, the MCP server that serves them at `/mcp`, the API contract
+and an empty web app
 exist.
 
 | Path | What |
