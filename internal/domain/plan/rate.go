@@ -22,3 +22,11 @@ func RatePctWeek(kgPerWeek, trendKg float64) float64 { return kgPerWeek / trendK
 func ImpliedRate(weeklyAvgKcal, tdee, trendKg float64) float64 {
 	return RatePctWeek((weeklyAvgKcal-tdee)*7/KcalPerKg, trendKg)
 }
+
+// KcalPerDay returns the kcal a day a rate of ratePctWeek % of the trend
+// weight trendKg a week stands for: its kg a week, KcalPerKg a kg, over
+// 7 days. A gap between two rates in kcal is the KcalPerDay of their
+// difference; the sign stays.
+func KcalPerDay(ratePctWeek, trendKg float64) float64 {
+	return KgPerWeek(ratePctWeek, trendKg) * KcalPerKg / 7
+}

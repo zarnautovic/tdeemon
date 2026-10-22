@@ -751,8 +751,8 @@ func TestTrend(t *testing.T) {
 		want     float64
 		wantDate day.Date
 	}{{d.AddDays(-1), 0, day.Date{}}, {d, 80, d}, {d.AddDays(2), 81, d.AddDays(1)}, {last, 78.75, d.AddDays(3)}} {
-		if got, date := trendOn(days, tc.on, 0.5); got != tc.want || date != tc.wantDate {
-			t.Errorf("trendOn(%s) = %v on %s, want %v on %s", tc.on, got, date, tc.want, tc.wantDate)
+		if got, date := trendAt(Trend(days, 0.5), tc.on); got != tc.want || date != tc.wantDate {
+			t.Errorf("trendAt(%s) = %v on %s, want %v on %s", tc.on, got, date, tc.want, tc.wantDate)
 		}
 	}
 	// An excluded day's weigh-in is not the trend's.

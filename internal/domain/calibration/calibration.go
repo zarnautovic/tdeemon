@@ -66,7 +66,9 @@ const maxAutocorrelation = 0.9
 
 // Params are calibration's settings. They are the same for every user
 // until the autopilot comes (P1), which makes them a user's within the
-// limits.
+// limits, and checks them. Until then a Params is DefaultParams, or one
+// changed from it: a field left at 0 is no setting but a bound of 0 (no
+// tolerance, no change of steps, no drift allowed).
 type Params struct {
 	// WindowDays is how many days, up to the last, an estimate reads.
 	WindowDays int
@@ -89,6 +91,20 @@ type Params struct {
 	// a user may tighten: a caller takes them from the user's limits.
 	LoggedDays float64
 	WeighIns   float64
+	// TolerancePctWeek is how far, in % of the trend weight a week, the
+	// measured rate may lie from the phase's target and be on it.
+	TolerancePctWeek float64
+	// StepsChange is the share by which the last 7 days' steps may differ
+	// from the days before them before the verdict holds the kcal: the
+	// change is the activity's, not the metabolism's.
+	StepsChange float64
+	// LeanLossKgWeek is the loss of lean mass, in kg a week, at which a
+	// cut or a recomp raises protein or calories instead of cutting.
+	LeanLossKgWeek float64
+	// DriftShare is how far the trend weight may stray from the one a
+	// maintenance phase started with, as a share of it, before the
+	// summary flags the phase drifting.
+	DriftShare float64
 }
 
 // The settings are checked when they become a user's (P1); until then
@@ -97,7 +113,10 @@ type Params struct {
 // DefaultParams returns the settings of DESIGN.md §7: a window of 42
 // days with at least 14 left after a phase's first 14, a trend that takes
 // a tenth a day, and trust at an interval of ±200 kcal or narrower with
-// the data an autopilot step needs (docs/limits.md). A window of 28 days
+// the data an autopilot step needs (docs/limits.md); a verdict that
+// tolerates ±0.1 % a week around the target, holds at steps 30 % off,
+// and turns at a lean loss of 0.5 kg a week; and a maintenance phase
+// that drifts at 3 %. A window of 28 days
 // swung with water the weight held for weeks, as after a change of
 // training.
 func DefaultParams() Params {
@@ -105,6 +124,7 @@ func DefaultParams() Params {
 	return Params{
 		WindowDays: 42, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
 		TrustedKcal: 200, LoggedDays: l.LoggedDays, WeighIns: l.WeighIns,
+		TolerancePctWeek: 0.1, StepsChange: 0.3, LeanLossKgWeek: 0.5, DriftShare: 0.03,
 	}
 }
 
@@ -122,6 +142,10 @@ type Day struct {
 	// WeightKg is the day's weigh-in, 0 for none. A value that is no
 	// number, or an infinite one, counts as none, as does such a Kcal.
 	WeightKg float64
+	// Steps, BodyFatPct, LeanMassKg and ActiveKcal are the day's other
+	// measurements the verdict's guards and the limits read, 0 for none,
+	// with the same rules.
+	Steps, BodyFatPct, LeanMassKg, ActiveKcal float64
 }
 
 // Estimate is the TDEE measured over a span of days, the window.
@@ -148,6 +172,16 @@ type Estimate struct {
 	// last weigh-in it took, which says how old it is.
 	TrendKg   float64
 	TrendDate day.Date
+	// PhaseStartTrendKg is the trend weight the current phase started
+	// with: on the day before it, from a weigh-in at most 14 days older,
+	// else the phase's first weigh-in, up to the last day asked for, as a
+	// trend starts at it; 0 without a phase or a weigh-in of either.
+	PhaseStartTrendKg float64
+	// Body is what the window says of the body besides the weight, for
+	// the verdict's guards, and Now what the 7 days up to the last day
+	// asked for say, whatever the window, for the limits.
+	Body Body
+	Now  Now
 	// Measured is false when the window holds too little for an estimate:
 	// only the fields above are set, and Doubts say what is missing.
 	Measured bool
@@ -218,7 +252,13 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 			break
 		}
 	}
-	e.TrendKg, e.TrendDate = trendOn(days, last, p.TrendAlpha)
+	trend := Trend(days, p.TrendAlpha)
+	e.TrendKg, e.TrendDate = trendAt(trend, last)
+	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
+		e.PhaseStartTrendKg = startTrend(days, trend, ph.Start, last)
+	}
+	e.Body = bodyOf(days, e.From, e.To)
+	e.Now = nowOf(days, last)
 	return e
 }
 
@@ -232,6 +272,31 @@ func firstData(days map[day.Date]Day) day.Date {
 		}
 	}
 	return first
+}
+
+// startGap is how old, in days, the last weigh-in before a phase may be
+// for the trend on its day before to be the one it started with.
+const startGap = 14
+
+// startTrend returns the trend weight a phase that starts on start
+// started with, of the trend of days, in the order of its dates, up to
+// last: the one on the day before it, when a weigh-in at most startGap
+// days older made it, else the phase's first weigh-in, as a trend started
+// there, without what an older weigh-in leaves in the trend; 0 for
+// neither.
+func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) float64 {
+	// The phase on today starts on today at the latest, so the day before
+	// it is last at the latest.
+	before := start.AddDays(-1)
+	if kg, on := trendAt(trend, before); kg > 0 && before.DaysSince(on) <= startGap {
+		return kg
+	}
+	for d := start; !last.Before(d); d = d.AddDays(1) {
+		if v := days[d]; weighed(v) {
+			return v.WeightKg
+		}
+	}
+	return 0
 }
 
 // intakeChanges returns the days the intake changes on, in order: each
@@ -318,7 +383,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 				weighedWeeks[(e.Days-1-i)/week] = true
 			}
 		}
-		if d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0 {
+		if loggedDay(d) {
 			kcal[i] = d.Kcal
 			e.LoggedDays++
 			e.RecentLoggedDays += btoi(recent)
@@ -333,7 +398,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	dt.spanLogged = e.LoggedDays
 	var span []float64
 	if dt.spread {
-		span = logged(kcal[int(xs[0]) : int(xs[len(xs)-1])+1])
+		span = loggedKcal(kcal[int(xs[0]) : int(xs[len(xs)-1])+1])
 		dt.spanLogged = len(span)
 	}
 	e.Measured = e.Days >= p.MinDays && dt.spread && dt.spanLogged >= minLoggedDays
@@ -354,9 +419,9 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	return e
 }
 
-// logged returns the kcal of the logged days of kcal, leaving out the NaN
-// of a day not logged.
-func logged(kcal []float64) []float64 {
+// loggedKcal returns the kcal of the logged days of kcal, leaving out the
+// NaN of a day not logged.
+func loggedKcal(kcal []float64) []float64 {
 	var out []float64
 	for _, k := range kcal {
 		if !math.IsNaN(k) {
@@ -370,6 +435,12 @@ func logged(kcal []float64) []float64 {
 // enough for a slope: minWeighIns of them, minWeighInsSpan days apart.
 func spread(xs []float64) bool {
 	return len(xs) >= minWeighIns && xs[len(xs)-1]-xs[0] >= minWeighInsSpan
+}
+
+// loggedDay reports whether d's intake counts: a complete day with a meal
+// and kcal that are a number.
+func loggedDay(d Day) bool {
+	return d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0
 }
 
 // weighed reports whether d has a weigh-in that counts: a number, on a

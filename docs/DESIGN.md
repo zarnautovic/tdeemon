@@ -353,20 +353,38 @@ The replacement:
   today counts: on a phase's first day, the estimate is the one from
   before it. The summary says the date of the last weigh-in the trend
   weight took, as a trend weeks old is not the weight now.
-- **Verdict:** a recommendation appears only when the interval is narrow
-  enough. Otherwise the summary shows the estimate with its uncertainty,
-  not just "calibrating".
+- **Verdict** (`calibration.Judge`): a recommendation appears only when
+  the estimate is trusted, and of the phase's own days, not from before
+  it, with a TDEE above 0, and the phase has a target. Otherwise the
+  summary shows the estimate with its uncertainty, not just
+  "calibrating", and the verdict's reasons (`no_phase`, `no_target`,
+  `no_estimate`, `before_phase`, `not_trusted`, `no_tdee`).
 - **Goal-agnostic rules.** Each phase has a target rate in % body weight
-  per week, and the verdict a tolerance around it. The verdict compares
-  the measured rate with that and proposes a kcal step toward it:
+  per week, and the verdict a tolerance around it, ±0.1 % a week for
+  every phase. The verdict compares the measured rate, the slope as a
+  share of the trend weight, with that: `on_target`, `below` (the weight
+  falls faster or rises slower than planned) or `above`. It proposes a
+  kcal step of the target toward the weekly average that gives the
+  target rate with the measured TDEE, so the proposal is about the
+  target, not about what was eaten: a user who eats beside a target that
+  holds is told to hold, and the verdict gives what was eaten and the
+  target, so the summary can say the intake missed it; and a change of
+  the target applied is not proposed again.
   - Too slow on a cut → lower the target.
   - Gaining too fast on a bulk → shrink the surplus.
-  - Drifting during maintenance → nudge back.
+  - Drifting during maintenance → nudge back, past the tolerance; a
+    slower drift within it shows as a flag once the trend strays 3 %.
+  - The step comes twice: the gap in kcal a day the action asks for,
+    which a coach works with, as a coach's proposal meets no limit of a
+    step, and which holds within the tolerance's kcal; and the step the
+    autopilot's limits allow, the lesser of the user's `step_kcal` and
+    `step_pct` of the weekly average (`limits.Limits.Step`, the one
+    `Validate` holds a step to), which the autopilot (P1) takes. In P0
+    nothing applies itself.
   - Each phase type's default target rate, and the rates a user may
     set without a confirmation, are in [limits.md](limits.md), from the
-    literature; the verdict's tolerance around the target comes with
-    calibration (for maintenance, ±0.1 % a week, and a flag in the
-    summary when the trend strays 3 % from the phase's start).
+    literature; the summary flags a maintenance phase whose trend
+    strays 3 % from the one it started with.
 - **Guards, by phase type:**
   - Water/glycogen window: the first 14 days of *every* phase (glycogen
     refills on a bulk start too), and of the days after a phase's
@@ -377,12 +395,53 @@ The replacement:
     give one, as a diet break, but not past one with days enough and too
     little data in them, nor to a window that ends 42 days or more
     before: an estimate from before those would be too old.
-  - NEAT guard: steps ±30 % from baseline, in either direction.
-  - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss turns a cut
-    into "raise protein/calories".
-  - Fat-gain guard (bulk): body fat % rising with lean mass flat →
-    shrink the surplus.
-  - Strength veto (cut/maintain).
+  - The guards below come in order, and the first that trips takes the
+    verdict's action.
+  - Underweight: a loss under way below a BMI of 18.5, by the trend
+    weight now, proposes maintenance, with the gap to the TDEE, never a
+    cut, and no autopilot step ([limits.md](limits.md)); a phase that
+    does not lose, whose target does, stays and raises its kcal to the
+    TDEE at least, more if its rate asks. The loss is the plan's,
+    as the limits read it (`limits.LossUnderWay`): the phase's rate, or
+    a target that implies a loss with a trusted TDEE, past the error of
+    float arithmetic. So a cut whose weight stalled gets no deeper cut.
+    The summary flags such a loss with a verdict or without, and says
+    when the profile has no height to tell.
+  - Lean-mass guard (cut/recomp): the lean mass's slope over the window
+    at a loss of 0.5 kg a week or more, and a loss beyond its error (its
+    80 % interval under 0), turns a cut into "raise protein/calories", a
+    step up at least. The lean mass needs measuring as the weight does:
+    six times, from the first to the last at least a week apart, and the
+    last in the window's last 14 days. A window without a lean mass
+    measured takes the weight's share that is not fat, on the days with
+    a body fat and a weigh-in; one with both keeps to the measured, as a
+    slope of the switch between them would be no loss.
+  - Fat-gain guard (bulk): body fat % rising beyond its error (80 %,
+    Student's t of its regression), with the lean mass rising less than
+    0.1 kg a week → shrink the surplus over the TDEE, by a step at most
+    and never below the TDEE. A guard keeps a larger gap of the rate's
+    that points its way. A guard's action, from the window's body data,
+    comes again while they stay as they are; the autopilot's interval
+    spaces its steps.
+  - NEAT guard: the last 7 days' steps ±30 % from the up to 21 days
+    before them in the window hold the kcal when the change explains the
+    miss the action would correct: fewer steps a slower loss or a faster
+    gain, more steps the other way. The change is then the activity's,
+    not the metabolism's; a target that catches up with the intake is
+    no such miss. It needs 4 days with steps in the last 7 and 5 before;
+    without them it is off, and the summary says so (`no_steps`), as it
+    does when the body is not measured enough for a guard the phase has
+    (`no_lean_mass`, `no_body_fat`).
+  - Strength veto (cut/maintain), with training in P3.
+- **What the limits read** (`calibration.StateOf`): the trend weight now
+  and when the phase started (the day before it, from a weigh-in at most
+  14 days older, else the phase's first weigh-in), the measured TDEE and
+  whether it is
+  trusted (a TDEE from before the phase may be: it is a TDEE all the
+  same), and of the last 7 days the fat-free mass, the active energy and
+  the days logged and weighed. The autopilot's own history is the
+  autopilot's, the days since the phase last changed with it: until it
+  counts them, they are 0, and its wait for a first step holds.
 - **Split targets:** a change moves the weekly average and keeps the
   difference between training and rest days as it is; the split itself
   is the plan's, which the coach changes (§8).
