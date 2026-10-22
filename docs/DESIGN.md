@@ -234,7 +234,8 @@ check and the answers are REST's. A tool that reads takes a token with
 the `read` or the `tools` scope; one that writes, only `tools`. So far:
 `get_profile` is `GET /api/v1/me`; `get_day` is
 `GET /api/v1/days/{date}`, a date or `today`, the user's day now (MCP
-takes its `date` as optional, `today` when left out); `find_foods` is
+takes its `date` as optional, `today` when left out); `get_summary` is
+`GET /api/v1/summary?weeks=`, of the days up to yesterday; `find_foods` is
 `GET /api/v1/foods?query=…`; `get_food` is `GET /api/v1/foods/{id}`,
 archived too; and `upsert_food` is `POST /api/v1/foods`, which corrects
 a food by an id it has (404 for another) or by its name and brand, and
