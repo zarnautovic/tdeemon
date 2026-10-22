@@ -1,0 +1,12 @@
+{
+  "profile": {"sex": "female", "birth_date": "1990-05-01", "height_cm": 170},
+  "training_weekdays": [1, 3, 5],
+  "phases": [
+    {"start": "2026-07-01", "type": "cut", "rate_pct_week": -0.5, "goal_weight": 64, "milestone_weight": 68}
+  ],
+  "targets": [
+    {"effective_from": "2026-07-01", "training": {"kcal": 2000, "protein": 130, "fat": 65}, "rest": {"kcal": 2000, "protein": 130, "fat": 65}},
+    {"effective_from": "2026-10-01", "training": {"kcal": 1950, "protein": 130, "fat": 60}, "rest": {"kcal": 1750, "protein": 130, "fat": 60}}
+  ],
+  "notes": "No fish. Trains at dawn."
+}

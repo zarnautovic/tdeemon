@@ -416,6 +416,15 @@ note names a declaration is a label's, the rest estimates. A name the
 table has twice takes each row's portion, and a food you have already,
 by its name, stays yours.
 
+With `--plan`, it takes a plan file you write from the goals note, which
+is prose: the profile, the training weekdays, the phases and the targets
+with their history, and notes for a coach, in the shape of
+[internal/history/testdata/plan.json](internal/history/testdata/plan.json).
+It runs after the days, as the limits hold the current phase and target
+to your weigh-ins of the last week; a violation refuses the plan whole,
+and nothing of it is written. A plan you have already in tdeemon, your
+profile and your notes stay yours.
+
 It says which time zone and day start it imports by: create the user
 with your `--timezone` first. Without `--dry-run` it writes, and says
 what it left out: a value out of its bounds, a day whose meals pass its

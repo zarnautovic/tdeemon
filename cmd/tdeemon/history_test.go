@@ -9,8 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/history"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -114,7 +118,7 @@ func TestImportHistoryRefuses(t *testing.T) {
 		want  string
 	}{
 		{"no flags", nil, true, "--email is required"},
-		{"nothing to import", []string{"--email", "ana@example.com"}, true, "--health-db, --foods or both"},
+		{"nothing to import", []string{"--email", "ana@example.com"}, true, "--health-db, --foods, --plan or more"},
 		{"no food table", []string{"--email", "ana@example.com", "--foods", filepath.Join(t.TempDir(), "none.md")}, false, "the food table"},
 		{"an argument", []string{"--email", "ana@example.com", "--health-db", old, "now"}, true, `unexpected argument "now"`},
 		{"an unknown flag", []string{"--vault", "x"}, true, "flag provided but not defined"},
@@ -221,5 +225,59 @@ func TestImportHistoryReportsFoodsBeforeAFailure(t *testing.T) {
 	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods}, env, noInput(), &out, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "refused by the test") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 2 new") {
 		t.Errorf("err = %v, said:\n%s", err, out.String())
+	}
+}
+
+// The plan file imports with the limits held to the user's weigh-ins of
+// the last week, which this test writes by the real clock; without any,
+// the limits refuse it.
+func TestImportHistoryPlan(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	for _, email := range []string{"ana@example.com", "ivo@example.com"} {
+		if err := run(t.Context(), []string{"user", "create", "--email", email, "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+	}
+	db, err := store.Open(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ana, err := db.UserByEmail(t.Context(), "ana@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := day.DateOf(time.Now())
+	for i := range 7 {
+		v := []metric.Value{{Kind: metric.Weight, Value: 72, Source: metric.Import}}
+		if _, err := db.MergeMetrics(t.Context(), ana.ID, history.Actor, today.AddDays(-i), v, time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = db.Close()
+
+	planFile := filepath.Join("..", "..", "internal", "history", "testdata", "plan.json")
+	var out bytes.Buffer
+	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--plan", planFile}, env, noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Imported the plan for ana@example.com: 6 parts.\nWritten (6):\n  profile") {
+		t.Errorf("the import said:\n%s", out.String())
+	}
+	out.Reset()
+	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--plan", planFile, "--dry-run"}, env, noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "the plan for ana@example.com: 0 parts.\nKept, as the user has them (3):\n  plan") {
+		t.Errorf("the run again said:\n%s", out.String())
+	}
+	err = run(t.Context(), []string{"import-history", "--email", "ivo@example.com", "--plan", planFile}, env, noInput(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), limits.RuleWeightMissing) {
+		t.Errorf("a plan without weigh-ins: %v", err)
+	}
+	err = run(t.Context(), []string{"import-history", "--email", "ivo@example.com", "--plan", filepath.Join(t.TempDir(), "none.json")}, env, noInput(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "the plan file") {
+		t.Errorf("no plan file: %v", err)
 	}
 }
