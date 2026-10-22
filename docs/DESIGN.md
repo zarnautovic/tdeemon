@@ -219,8 +219,8 @@ grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol, with fiber
 and polyols by any of the conventions labels use), saturated fat is
 above total fat, a duplicate of a meal logged minutes ago. A new food is
 saved in the meal's transaction, so a meal refused saves none, and a
-meal sent again saves none: it takes the food stored under the name and
-brand, or the one its item named, renamed since.
+meal sent again saves none: it is told by what was sent (§9) before
+anything of it is read or saved.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
 scripts. A tool is one operation of the API, in the registry
@@ -571,7 +571,12 @@ the first spec.
   - "The same" is what the client said (a meal's `Fingerprint`: the time
     to the second, text, foods and quantities in order, an estimate's
     values), not what the server worked out, so a retry after a food was
-    corrected is still a retry. A client gives the meal's `id`; when
+    corrected is still a retry. A new food sent with an item is told by
+    the food as sent (`meal.SentFood`, kept with the item), not by the
+    food it is stored as, so a retry is the same however that food is
+    renamed or corrected since, or whichever of two requests sent at once
+    saved it. A retry is known before anything of it is worked out: it
+    reads no food and saves none. A client gives the meal's `id`; when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
     the clock, so a retry has the same one. A new meal's ID must be a
     version 7 ID whose time is near the clock (from a day before to five
@@ -583,9 +588,11 @@ the first spec.
     of the create (an offline queue that lost the answer) returns the
     meal as it is now.
   - An item keeps its ID across edits; a new item may carry the
-    client's, and an "add" of an item the meal already has under that ID
-    is a retry: the same content changes nothing, other content is a
-    conflict (409). A server-made ID fills in for an item without one.
+    client's, and an "add" (which must carry one) of an item the meal
+    already has under that ID is a retry: the same content changes
+    nothing, other content is a conflict (409). A "replace" whose item
+    is as sent already is a retry too. A server-made ID fills in for an
+    item logged without one.
   - A deleted meal's ID stays a tombstone in the event log: a late retry
     of its create (or of a create that was undone) is refused as
     deleted (409) rather than bringing the meal back.

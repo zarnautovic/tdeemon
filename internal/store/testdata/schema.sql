@@ -189,7 +189,9 @@ CREATE TABLE meal_items (
     alcohol REAL CHECK (alcohol >= 0),
     -- As foods.source, the planned recipe and off included.
     source TEXT NOT NULL CHECK (source IN ('label', 'estimate', 'user', 'dish', 'recipe', 'off')),
-    note TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '', sent_food TEXT CHECK (
+    sent_food IS NULL OR (length(sent_food) = 64 AND food_id IS NOT NULL)
+),
     PRIMARY KEY (user_id, id),
     FOREIGN KEY (user_id, meal_id) REFERENCES meals (user_id, id) ON DELETE CASCADE,
     -- Foods are archived, never deleted, while an item uses them.

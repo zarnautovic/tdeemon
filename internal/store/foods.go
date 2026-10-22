@@ -12,6 +12,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
 // Why a food cannot be saved as asked.
@@ -201,12 +202,21 @@ func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 	return stored, err
 }
 
-// saveNewFoods saves foods in tx, each as SaveFood does, and returns the
-// id each is stored under by the id it came with: a food of the same name
-// and brand as one the user has is that food.
-func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, now time.Time) (map[uuid.UUID]uuid.UUID, error) {
+// saveNewFoods saves the foods of foods that items name in tx, each as
+// SaveFood does, and returns the id each is stored under by the id it came
+// with: a food of the same name and brand as one the user has is that
+// food. A food no item names (one of an op found done already) is not
+// saved.
+func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item, now time.Time) (map[uuid.UUID]uuid.UUID, error) {
+	named := make(map[uuid.UUID]bool, len(items))
+	for i := range items {
+		named[items[i].FoodID] = true
+	}
 	ids := make(map[uuid.UUID]uuid.UUID, len(foods))
 	for i := range foods {
+		if !named[foods[i].ID] {
+			continue
+		}
 		stored, err := saveFoodInTx(ctx, tx, userID, a, foods[i], false, now)
 		if err != nil {
 			return nil, err
@@ -358,37 +368,6 @@ func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, er
 	}
 	if err != nil {
 		return food.Food{}, fmt.Errorf("food: %w", err)
-	}
-	return f, nil
-}
-
-// FoodByKey returns userID's food of name and brand, compared as SaveFood
-// compares them (food.Key), archived too, or ErrNotFound: the food a save
-// of that name and brand would correct, read without saving.
-func (db *DB) FoodByKey(ctx context.Context, userID uuid.UUID, name, brand string) (food.Food, error) {
-	var f food.Food
-	err := db.readTx(ctx, func(tx *sql.Tx) error {
-		var id string
-		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ?",
-			userID.String(), food.Key(name), food.Key(brand)).Scan(&id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		fid, err := uuid.Parse(id)
-		if err != nil {
-			return fmt.Errorf("food id %q: %w", id, err)
-		}
-		f, err = foodInTx(ctx, tx, userID, fid)
-		return err
-	})
-	if errors.Is(err, ErrNotFound) {
-		return food.Food{}, err
-	}
-	if err != nil {
-		return food.Food{}, fmt.Errorf("food by key: %w", err)
 	}
 	return f, nil
 }

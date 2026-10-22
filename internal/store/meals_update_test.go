@@ -13,56 +13,82 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
-// An id is used by a meal there is, or by one that was deleted (or whose
-// create was undone): a retry of either is no new meal. Ids are per user.
-func TestMealIDUsed(t *testing.T) {
+// RetryMeal returns the meal of a create sent again, by its fingerprint,
+// as it is now; another meal under the id is a conflict, a deleted one is
+// deleted, and an id no meal of the user's had is none. Ids are per user.
+func TestRetryMeal(t *testing.T) {
 	t.Parallel()
 
 	db, ana, ivo := withTwoUsers(t)
 	bar := saveFood(t, db, ana, bar())
-	kept := createMeal(t, db, ana, breakfast(t, bar, t0))
+	sent := breakfast(t, bar, t0)
+	kept := createMeal(t, db, ana, sent)
 	gone := createMeal(t, db, ana, breakfast(t, bar, t0))
 	if err := db.DeleteMeal(t.Context(), ana, testActor, gone.ID, t0); err != nil {
 		t.Fatal(err)
 	}
+	if got, err := db.RetryMeal(t.Context(), ana, kept.ID, sent.Fingerprint()); err != nil || !reflect.DeepEqual(got, kept) {
+		t.Errorf("RetryMeal = %+v, %v; want the meal", got, err)
+	}
+	other := sent
+	other.Note = "another"
 	for _, tc := range []struct {
 		name string
 		user uuid.UUID
 		id   uuid.UUID
-		want bool
+		fp   string
+		want error
 	}{
-		{"a meal", ana, kept.ID, true},
-		{"a deleted meal", ana, gone.ID, true},
-		{"no meal", ana, uuid.NewV7(), false},
-		{"another user's meal", ivo, kept.ID, false},
+		{"another meal", ana, kept.ID, other.Fingerprint(), store.ErrMealConflict},
+		{"a deleted meal", ana, gone.ID, sent.Fingerprint(), store.ErrMealDeleted},
+		{"no meal", ana, uuid.NewV7(), sent.Fingerprint(), store.ErrNotFound},
+		{"another user's meal", ivo, kept.ID, sent.Fingerprint(), store.ErrNotFound},
 	} {
-		if got, err := db.MealIDUsed(t.Context(), tc.user, tc.id); err != nil || got != tc.want {
-			t.Errorf("%s: MealIDUsed = %v, %v; want %v", tc.name, got, err, tc.want)
+		if _, err := db.RetryMeal(t.Context(), tc.user, tc.id, tc.fp); !errors.Is(err, tc.want) {
+			t.Errorf("%s: RetryMeal = %v, want %v", tc.name, err, tc.want)
 		}
 	}
 }
 
-// FoodByKey finds the food of a name and brand as SaveFood does, in any
-// case, archived too; another user's is none.
-func TestFoodByKey(t *testing.T) {
+// An item of a new food keeps the food as sent; a meal of new foods sent
+// twice at once, each time with the foods under ids of its own, is one
+// meal, a retry, though its foods were stored under the first's ids.
+func TestMealOfSentFoods(t *testing.T) {
 	t.Parallel()
 
-	db, ana, ivo := withTwoUsers(t)
-	f := saveFood(t, db, ana, bar())
-	if err := db.SetFoodArchived(t.Context(), ana, testActor, f.ID, true, t0); err != nil {
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	kefir := func() (food.Food, meal.Item) {
+		f := food.Food{ID: uuid.NewV7(), Name: "Kefir", Basis: food.Per100ml, Source: food.Label, Nutrients: food.Nutrients{Kcal: 50, Protein: 3.4, Carbs: 4.7, Fat: 1.5}}
+		it, err := meal.FromFood(f, meal.Quantity{Amount: 250, Unit: "ml"}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		it.SentFood = meal.SentFood(f)
+		return f, it
+	}
+	f1, it1 := kefir()
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{it1}
+	got, created, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{f1}, t0)
+	if err != nil || !created || got.Items[0].SentFood != it1.SentFood {
+		t.Fatalf("CreateMealWithFoods = %+v, %v, %v; want the food as sent kept", got.Items, created, err)
+	}
+	f2, it2 := kefir()
+	m.Items = []meal.Item{it2}
+	if _, created, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{f2}, t0); err != nil || created {
+		t.Errorf("the meal again, its food under another id = %v, %v; want a retry", created, err)
+	}
+	if _, err := db.FoodByID(t.Context(), ana, f2.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the second kefir: %v, want none", err)
+	}
+	// A change that names no food of those it brings saves none of them.
+	jam := food.Food{ID: uuid.NewV7(), Name: "Jam", Basis: food.Per100g, Source: food.Label, Nutrients: food.Nutrients{Kcal: 250, Protein: 0.5, Carbs: 60, Fat: 0.1}}
+	if _, err := db.UpdateMeal(t.Context(), ana, testActor, m.ID, []food.Food{jam}, func(m meal.Meal) (meal.Meal, error) { return m, nil }, t0); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := db.FoodByKey(t.Context(), ana, "PROTEIN BAR caramel", "barebells"); err != nil || got.ID != f.ID {
-		t.Errorf("FoodByKey = %+v, %v; want the bar", got, err)
-	}
-	for name, user := range map[string]uuid.UUID{"another user's": ivo, "no such": ana} {
-		brand := "Barebells"
-		if name == "no such" {
-			brand = "Other"
-		}
-		if _, err := db.FoodByKey(t.Context(), user, "Protein bar Caramel", brand); !errors.Is(err, store.ErrNotFound) {
-			t.Errorf("%s food: %v, want ErrNotFound", name, err)
-		}
+	if _, err := foodNamed(t, db, ana, "Jam"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a food no item names: %v, want none", err)
 	}
 }
 
@@ -144,7 +170,7 @@ func TestCreateMealWithFoods(t *testing.T) {
 	if err != nil || !created {
 		t.Fatalf("CreateMealWithFoods = %v, %v", created, err)
 	}
-	stored, err := db.FoodByKey(t.Context(), ana, "Kefir", "")
+	stored, err := foodNamed(t, db, ana, "Kefir")
 	if err != nil || got.Items[0].FoodID != stored.ID || got.Items[1].FoodID != b.ID {
 		t.Errorf("the items name %v and %v, want the kefir %v and the bar %v (%v)", got.Items[0].FoodID, got.Items[1].FoodID, stored.ID, b.ID, err)
 	}
@@ -159,7 +185,7 @@ func TestCreateMealWithFoods(t *testing.T) {
 	if _, created, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{kefir, again}, t0); err != nil || created {
 		t.Errorf("the meal again = %v, %v; want a retry", created, err)
 	}
-	if f, _ := db.FoodByKey(t.Context(), ana, "Kefir", ""); f.Nutrients.Kcal != 55 {
+	if f, _ := foodNamed(t, db, ana, "Kefir"); f.Nutrients.Kcal != 55 {
 		t.Errorf("the kefir after the retry = %v kcal, want the correction kept", f.Nutrients.Kcal)
 	}
 }
@@ -180,7 +206,7 @@ func TestCreateMealWithFoodsRefused(t *testing.T) {
 	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, refused, []food.Food{milk, taken}, t0); !errors.Is(err, store.ErrAliasTaken) {
 		t.Fatalf("a meal of a taken alias = %v, want ErrAliasTaken", err)
 	}
-	if _, err := db.FoodByKey(t.Context(), ana, "Milk", ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, db, ana, "Milk"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the milk of a meal refused: %v, want none", err)
 	}
 	if _, err := db.MealByID(t.Context(), ana, refused.ID); !errors.Is(err, store.ErrNotFound) {
@@ -235,13 +261,29 @@ func TestUpdateMealUndoes(t *testing.T) {
 	if _, err := db.UpdateMeal(t.Context(), ana, testActor, m.ID, []food.Food{jam}, func(meal.Meal) (meal.Meal, error) { return meal.Meal{}, refused }, t0); !errors.Is(err, refused) {
 		t.Fatalf("a change that fails: %v", err)
 	}
-	if _, err := db.FoodByKey(t.Context(), ana, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, db, ana, "Jam"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the jam of a change that failed: %v, want none", err)
 	}
 	if _, err := db.UpdateMeal(t.Context(), ana, testActor, m.ID, []food.Food{tooRich(jam)}, func(m meal.Meal) (meal.Meal, error) { return m, nil }, t0); err == nil {
 		t.Error("a change bringing an invalid food was made")
 	}
-	if _, err := db.FoodByKey(t.Context(), ana, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, db, ana, "Jam"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the invalid jam: %v, want none", err)
 	}
+}
+
+// foodNamed is user's food of name and no brand, found by search, or
+// store.ErrNotFound.
+func foodNamed(t *testing.T, db *store.DB, user uuid.UUID, name string) (food.Food, error) {
+	t.Helper()
+	found, err := db.FindFoods(t.Context(), user, name, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range found {
+		if found[i].Name == name && found[i].Brand == "" {
+			return found[i], nil
+		}
+	}
+	return food.Food{}, store.ErrNotFound
 }

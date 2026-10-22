@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -142,6 +144,16 @@ func TestLogMealWarns(t *testing.T) {
 		"nutrients": {"kcal": 400, "protein": 5, "carbs": 50, "fat": 20, "saturated_fat": 25}}, "amount": 100, "unit": "g"}]}`, meal.NewIDAt(e.now.Add(-time.Hour)))
 	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", cake, e.session, nil); rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"code":"saturated_fat"`) {
 		t.Errorf("a new food's values: %d %s", rec.Code, rec.Body.String())
+	}
+	// An item an edit brings, with values that do not add up; and the
+	// same edit again, a retry, says so again.
+	id := meal.NewIDAt(e.now.Add(-2 * time.Hour)).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "name": "Burger", "nutrients": {"kcal": 300, "protein": 30, "carbs": 50, "fat": 30}}}]}`, meal.NewIDAt(e.now))
+	for _, name := range []string{"an add", "the add again"} {
+		if rec := e.patch(t, id, add); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"code":"atwater"`) {
+			t.Errorf("%s of values that do not add up: %d %s", name, rec.Code, rec.Body.String())
+		}
 	}
 }
 
@@ -399,7 +411,7 @@ func TestLogMealSavesFoodsOnce(t *testing.T) {
 	e := newMealsEnv(t)
 	id := meal.NewIDAt(e.now).String()
 	e.logged(t, e.lunch(id))
-	yoghurt, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat")
+	yoghurt, err := foodNamed(t, e.in.db, e.in.user.ID, "Greek yoghurt", "Dukat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +422,7 @@ func TestLogMealSavesFoodsOnce(t *testing.T) {
 	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil); rec.Code != http.StatusOK {
 		t.Fatalf("the retry: %d %s", rec.Code, rec.Body.String())
 	}
-	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat"); err != nil || got.Nutrients.Kcal != 80 {
+	if got, err := foodNamed(t, e.in.db, e.in.user.ID, "Greek yoghurt", "Dukat"); err != nil || got.Nutrients.Kcal != 80 {
 		t.Errorf("the yoghurt after the retry = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
 	}
 	// Refused for its second item, after a new food in its first.
@@ -421,7 +433,7 @@ func TestLogMealSavesFoodsOnce(t *testing.T) {
 	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("a meal refused: %d %s", rec.Code, rec.Body.String())
 	}
-	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Kefir", ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, e.in.db, e.in.user.ID, "Kefir", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the kefir of a meal refused: %v, want none", err)
 	}
 }
@@ -442,7 +454,7 @@ func TestUpdateMealSavesFoodsOnce(t *testing.T) {
 	if rec := e.patch(t, id, refused); rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("an edit refused: %d %s", rec.Code, rec.Body.String())
 	}
-	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, e.in.db, e.in.user.ID, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the jam of an edit refused: %v, want none", err)
 	}
 	// An add sent again saves its food no more either.
@@ -451,7 +463,7 @@ func TestUpdateMealSavesFoodsOnce(t *testing.T) {
 	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
 		t.Fatalf("an add: %d %s", rec.Code, rec.Body.String())
 	}
-	honey, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", "")
+	honey, err := foodNamed(t, e.in.db, e.in.user.ID, "Honey", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +474,7 @@ func TestUpdateMealSavesFoodsOnce(t *testing.T) {
 	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
 		t.Fatalf("the add again: %d %s", rec.Code, rec.Body.String())
 	}
-	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
+	if got, err := foodNamed(t, e.in.db, e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
 		t.Errorf("the honey after the add again = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
 	}
 }
@@ -484,7 +496,7 @@ func TestMealsRefusedSaveNoFood(t *testing.T) {
 		if rec.Code != http.StatusConflict {
 			t.Errorf("%s: %d %s, want 409", name, rec.Code, rec.Body.String())
 		}
-		if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Kefir", ""); !errors.Is(err, store.ErrNotFound) {
+		if _, err := foodNamed(t, e.in.db, e.in.user.ID, "Kefir", ""); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("%s: the kefir of a meal refused: %v, want none", name, err)
 		}
 	}
@@ -496,7 +508,7 @@ func TestMealsRefusedSaveNoFood(t *testing.T) {
 	if rec := e.patch(t, id, add); rec.Code != http.StatusConflict {
 		t.Errorf("an add under another meal's item's id: %d %s, want 409", rec.Code, rec.Body.String())
 	}
-	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, e.in.db, e.in.user.ID, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the jam of an edit refused: %v, want none", err)
 	}
 }
@@ -542,7 +554,7 @@ func TestRetriesFindTheirFoods(t *testing.T) {
 	e := newMealsEnv(t)
 	id := meal.NewIDAt(e.now).String()
 	e.logged(t, e.lunch(id))
-	yoghurt, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat")
+	yoghurt, err := foodNamed(t, e.in.db, e.in.user.ID, "Greek yoghurt", "Dukat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +565,7 @@ func TestRetriesFindTheirFoods(t *testing.T) {
 	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil); rec.Code != http.StatusOK {
 		t.Errorf("the meal again, its yoghurt renamed: %d %s, want 200", rec.Code, rec.Body.String())
 	}
-	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := foodNamed(t, e.in.db, e.in.user.ID, "Greek yoghurt", "Dukat"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("the yoghurt under its old name: %v, want none", err)
 	}
 	// A replace with a new food, sent again after the food was corrected.
@@ -570,7 +582,7 @@ func TestRetriesFindTheirFoods(t *testing.T) {
 	if rec := e.patch(t, id, replace); rec.Code != http.StatusOK {
 		t.Fatalf("a replace: %d %s", rec.Code, rec.Body.String())
 	}
-	honey, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", "")
+	honey, err := foodNamed(t, e.in.db, e.in.user.ID, "Honey", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,7 +593,7 @@ func TestRetriesFindTheirFoods(t *testing.T) {
 	if rec := e.patch(t, id, replace); rec.Code != http.StatusOK {
 		t.Fatalf("the replace again: %d %s", rec.Code, rec.Body.String())
 	}
-	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
+	if got, err := foodNamed(t, e.in.db, e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
 		t.Errorf("the honey after the replace again = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
 	}
 }
@@ -600,7 +612,7 @@ func TestUpdateMealAddsAFoodTheUserHas(t *testing.T) {
 	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
 		t.Fatalf("an add: %d %s", rec.Code, rec.Body.String())
 	}
-	yoghurt, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat")
+	yoghurt, err := foodNamed(t, e.in.db, e.in.user.ID, "Greek yoghurt", "Dukat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -611,5 +623,156 @@ func TestUpdateMealAddsAFoodTheUserHas(t *testing.T) {
 	m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid)
 	if err != nil || len(m.Items) != 4 || m.Items[3].ID != item || m.Items[3].FoodID != yoghurt.ID {
 		t.Errorf("the meal = %+v, %v; want a fourth item, %v, of the yoghurt %v", m.Items, err, item, yoghurt.ID)
+	}
+}
+
+// foodNamed is user's food of name and brand, found by search, or
+// store.ErrNotFound.
+func foodNamed(t *testing.T, db *store.DB, user uuid.UUID, name, brand string) (food.Food, error) {
+	t.Helper()
+	found, err := db.FindFoods(t.Context(), user, name, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range found {
+		if found[i].Name == name && found[i].Brand == brand {
+			return found[i], nil
+		}
+	}
+	return food.Food{}, store.ErrNotFound
+}
+
+// mealOf is the user's meal id as stored.
+func (e mealsEnv) mealOf(t *testing.T, id string) meal.Meal {
+	t.Helper()
+	mid, err := uuid.Parse(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// A replace of an item of a food of the user's by a new food puts the
+// new food in its place, whatever its unit: it is another item, though
+// the quantity is the same.
+func TestReplaceByANewFood(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 50, "unit": "g"}]}`, id, e.bread))
+	item := e.mealOf(t, id).Items[0].ID
+	for _, nf := range []struct{ name, food, quantity string }{
+		{"Spelt bread", `{"name": "Spelt bread", "brand": "Klara", "basis": "100g", "source": "label",
+			"nutrients": {"kcal": 250, "protein": 9, "carbs": 45, "fat": 3}}`, `"amount": 50, "unit": "g"`},
+		{"Kefir", `{"name": "Kefir", "basis": "100ml", "source": "label",
+			"nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}`, `"amount": 250, "unit": "ml"`},
+	} {
+		replace := fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": {"food": %s, %s}}]}`, item, nf.food, nf.quantity)
+		if rec := e.patch(t, id, replace); rec.Code != http.StatusOK {
+			t.Fatalf("a replace by %s: %d %s", nf.name, rec.Code, rec.Body.String())
+		}
+		got := e.mealOf(t, id).Items
+		if len(got) != 1 || got[0].ID != item || !strings.HasSuffix(got[0].Name, nf.name) {
+			t.Errorf("after a replace by %s: %+v", nf.name, got)
+		}
+		brand := ""
+		if nf.name == "Spelt bread" {
+			brand = "Klara"
+		}
+		if f, err := foodNamed(t, e.in.db, e.in.user.ID, nf.name, brand); err != nil || got[0].FoodID != f.ID {
+			t.Errorf("the item names %v, want the %s saved, %+v (%v)", got[0].FoodID, nf.name, f, err)
+		}
+	}
+}
+
+// Another meal under a meal's id is a conflict, though it differs only by
+// a new food in place of a food of the user's, of the same quantity.
+func TestLogMealOtherFoodUnderTheID(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 50, "unit": "g"}]}`, id, e.bread))
+	other := fmt.Sprintf(`{"id": %q, "items": [{"food": {"name": "Spelt bread", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 250, "protein": 9, "carbs": 45, "fat": 3}}, "amount": 50, "unit": "g"}]}`, id)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", other, e.session, nil); rec.Code != http.StatusConflict {
+		t.Errorf("another meal under the id: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	if _, err := foodNamed(t, e.in.db, e.in.user.ID, "Spelt bread", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the food of the meal refused: %v, want none", err)
+	}
+}
+
+// The same request sent many times at once, with a new food, is one meal
+// and one item: the first logs or adds it, the others are retries.
+func TestSentAtOnce(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	const n = 8
+	at := func(do func() int) []int {
+		codes := make([]int, n)
+		var wg sync.WaitGroup
+		for i := range n {
+			wg.Go(func() { codes[i] = do() })
+		}
+		wg.Wait()
+		slices.Sort(codes)
+		return codes
+	}
+	id := meal.NewIDAt(e.now).String()
+	want := append([]int{http.StatusOK}, make([]int, n-1)...)
+	for i := range want {
+		want[i] = http.StatusOK
+	}
+	want[n-1] = http.StatusCreated
+	if got := at(func() int { return e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil).Code }); !slices.Equal(got, want) {
+		t.Errorf("a meal sent at once: %v, want one 201 and the rest 200", got)
+	}
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food": {"name": "Honey", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 304, "protein": 0.3, "carbs": 82, "fat": 0}}, "amount": 20, "unit": "g"}}]}`, meal.NewIDAt(e.now))
+	if got := at(func() int { return e.patch(t, id, add).Code }); slices.ContainsFunc(got, func(c int) bool { return c != http.StatusOK }) {
+		t.Errorf("an add sent at once: %v, want each 200", got)
+	}
+	if got := e.mealOf(t, id).Items; len(got) != 4 {
+		t.Errorf("the meal has %d items, want 4", len(got))
+	}
+}
+
+// A request sent again is the same though its food no longer takes its
+// quantity: nothing of a retry is worked out again.
+func TestRetryAfterTheFoodChanged(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	muesli := `{"food": {"name": "Muesli", "basis": "100g", "source": "label", "servings": [{"name": "cup", "amount": 45}],
+		"nutrients": {"kcal": 370, "protein": 10, "carbs": 60, "fat": 7}}, "servings": 1, "serving": "cup"}`
+	logMuesli := fmt.Sprintf(`{"id": %q, "items": [%s]}`, id, muesli)
+	e.logged(t, logMuesli)
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "servings": 1, "serving": "slice"}}]}`, meal.NewIDAt(e.now), e.bread)
+	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+		t.Fatalf("an add: %d %s", rec.Code, rec.Body.String())
+	}
+	for _, name := range []string{"Muesli", "Ana's rye bread"} {
+		f, err := foodNamed(t, e.in.db, e.in.user.ID, name, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Servings = []food.Serving{{Name: "bowl", Amount: 60}}
+		if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, f, e.now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", logMuesli, e.session, nil); rec.Code != http.StatusOK {
+		t.Errorf("the meal again: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+		t.Errorf("the add again: %d %s, want 200", rec.Code, rec.Body.String())
 	}
 }
