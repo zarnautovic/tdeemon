@@ -377,6 +377,25 @@ is refused, so a wrong file cannot clear them. The export is archived
 with the other bodies, and the latest that read is kept past their 30
 days, as `TDEEMON_DATA_DIR/ingest/<user>/latest-strong.csv.gz`.
 
+### Import the history of the predecessor
+
+tdeemon replaces the maintainer's earlier service, health-api, and takes
+its history once: the days' metrics and meals from its database (its
+`health.db`, an index of the vault's daily notes). Each meal becomes an
+estimate on its note's day; a day whose total in the note is more than
+its meals gets the rest as one estimate, "Rest of the day (history
+import)", so the day's intake is the note's. The note's mood, hunger,
+status and remark are left out.
+
+```sh
+kubectl exec deploy/tdeemon -- /tdeemon import-history \
+  --email you@example.com --health-db /data/health.db --dry-run
+```
+
+Without `--dry-run` it writes, and says what it left out: a value out of
+its bounds, a day whose meals are more than its total, a meal renamed
+to fit. It may run again, and changes nothing it imported before.
+
 ## Data
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
