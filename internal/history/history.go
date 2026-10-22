@@ -15,6 +15,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -88,9 +89,14 @@ func Read(ctx context.Context, path string) ([]Day, error) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("no database at %s", path)
 	}
-	// A URI, so that a path with # or ? in it stays the path; read-only, so
-	// nothing of the predecessor's changes.
-	uri := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
+	// A URI, so that a path with # or ? in it stays the path, of the
+	// absolute path, as a relative one would read as the URI's authority;
+	// read-only, so nothing of the predecessor's changes.
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("the predecessor's database: %w", err)
+	}
+	uri := url.URL{Scheme: "file", Path: abs, RawQuery: "mode=ro"}
 	old, err := sql.Open("sqlite", uri.String())
 	if err != nil {
 		return nil, fmt.Errorf("the predecessor's database: %w", err)
@@ -236,7 +242,7 @@ func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time
 		if err := importMeals(ctx, db, u.ID, cal, date, d, now, dryRun, &r); err != nil {
 			return r, err
 		}
-		if err := exclude(ctx, db, u.ID, date, d.Remark, now, dryRun, &r); err != nil {
+		if err := exclude(ctx, db, u.ID, date, d, now, dryRun, &r); err != nil {
 			return r, err
 		}
 	}
@@ -244,11 +250,27 @@ func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time
 }
 
 // exclude excludes date for its remark, if it has one.
-func exclude(ctx context.Context, db *store.DB, userID uuid.UUID, date day.Date, remark string, now time.Time, dryRun bool, r *Report) error {
-	if remark == "" {
+func exclude(ctx context.Context, db *store.DB, userID uuid.UUID, date day.Date, d Day, now time.Time, dryRun bool, r *Report) error {
+	reason := exclusionReason(d, r)
+	if reason == "" {
 		return nil
 	}
-	reason, _ := fitName(remark, day.MaxReasonLen, "Remark of the predecessor's note")
+	// A day excluded or included before, by an import before or by the
+	// user, stays as it is.
+	decided, err := db.DayExclusionRecorded(ctx, userID, date)
+	if err != nil {
+		return err
+	}
+	if decided {
+		ex, err := db.Exclusions(ctx, userID, date, date)
+		if err != nil {
+			return err
+		}
+		if ex[date].Reason != reason {
+			r.Skipped = append(r.Skipped, fmt.Sprintf("%s: in or out of calibration as decided since an import before, which stays", date))
+		}
+		return nil
+	}
 	r.Excluded++
 	if dryRun {
 		return nil
@@ -257,6 +279,27 @@ func exclude(ctx context.Context, db *store.DB, userID uuid.UUID, date day.Date,
 		return fmt.Errorf("excluding %s: %w", date, err)
 	}
 	return nil
+}
+
+// NoIntakeReason excludes a day of the predecessor's without intake: no
+// total and no meal, as its calibration left such a day out too.
+const NoIntakeReason = "No intake logged in the predecessor"
+
+// exclusionReason returns why d is out of calibration, or "": its remark,
+// its spaces joined and cut to a reason's length (reported when it had to
+// be replaced), or no intake logged.
+func exclusionReason(d Day, r *Report) string {
+	if remark := strings.Join(strings.Fields(d.Remark), " "); remark != "" {
+		reason, changed := fitName(remark, day.MaxReasonLen, "Remark of the predecessor's note")
+		if changed && reason == "Remark of the predecessor's note" {
+			r.Renamed = append(r.Renamed, d.Date+": a remark that is no reason, replaced")
+		}
+		return reason
+	}
+	if (d.Total == nil || d.Total.Kcal <= 0) && len(d.Meals) == 0 {
+		return NoIntakeReason
+	}
+	return ""
 }
 
 // importMeals writes a day's meals, and the estimate of its rest when its
@@ -348,15 +391,14 @@ func add(a, b food.Nutrients) food.Nutrients {
 // day's end, as one between the user's day start and the rollover is, or
 // in an hour summer time skips, takes the day's first or last minute.
 func eatenAt(cal day.Calendar, date day.Date, clock string) time.Time {
-	t, err := time.Parse("15:04", clock)
-	if err != nil {
-		return time.Date(date.Year, date.Month, date.Day, 12, 0, 0, 0, cal.Location)
+	at := time.Date(date.Year, date.Month, date.Day, 12, 0, 0, 0, cal.Location)
+	if t, err := time.Parse("15:04", clock); err == nil {
+		d := date
+		if t.Hour() < rolloverHour {
+			d = date.AddDays(1)
+		}
+		at = time.Date(d.Year, d.Month, d.Day, t.Hour(), t.Minute(), 0, 0, cal.Location)
 	}
-	d := date
-	if t.Hour() < rolloverHour {
-		d = date.AddDays(1)
-	}
-	at := time.Date(d.Year, d.Month, d.Day, t.Hour(), t.Minute(), 0, 0, cal.Location)
 	switch start, end := cal.Start(date), cal.End(date); {
 	case at.Before(start):
 		return start

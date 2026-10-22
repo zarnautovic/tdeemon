@@ -387,8 +387,9 @@ the predecessor's rollover, past midnight); a day whose total in the
 note has more kcal than its meals gets the rest as one estimate, "Rest
 of the day (history import)", so the day's intake is the note's. A day
 with a remark (a restaurant, an illness, a trip) is excluded from
-calibration for it, as the predecessor's calibration left it out; mood,
-hunger and status are left out.
+calibration for it, and so is a day without intake logged ("No intake
+logged in the predecessor"), as the predecessor's calibration left both
+out; mood, hunger and status are left out.
 
 Copy `health.db` while health-api is stopped, or with `sqlite3 health.db
 ".backup copy.db"`: a copy without its `-wal` file misses the last
@@ -405,7 +406,8 @@ with your `--timezone` first. Without `--dry-run` it writes, and says
 what it left out: a value out of its bounds, a day whose meals pass its
 total, a meal renamed to fit. It may run again, and changes nothing it
 imported before: a meal that differs from the last run's (the note, the
-time zone or the day's start changed) stays as it was, and is reported.
+time zone or the day's start changed) stays as it was, and so does a
+day you have excluded or included since; both are reported.
 
 ## Data
 

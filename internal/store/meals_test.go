@@ -621,3 +621,35 @@ func TestMealsRejectCorruptRows(t *testing.T) {
 		t.Error("LastUses read a bad time")
 	}
 }
+
+// A day excluded or included, now in or out, was decided; another user's
+// day is not the user's, and a day never touched was not.
+func TestDayExclusionRecorded(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	d := day.DateOf(t0)
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d, day.Exclusion{Reason: "wedding"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.IncludeDay(t.Context(), ana, testActor, d, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ExcludeDay(t.Context(), ana, testActor, d.AddDays(2), day.Exclusion{Reason: "sick"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ExcludeDay(t.Context(), ivo, testActor, d.AddDays(1), day.Exclusion{Reason: "travel"}, t0); err != nil {
+		t.Fatal(err)
+	}
+	for dd, want := range map[day.Date]bool{d: true, d.AddDays(2): true, d.AddDays(1): false, d.AddDays(3): false} {
+		if got, err := db.DayExclusionRecorded(t.Context(), ana, dd); err != nil || got != want {
+			t.Errorf("DayExclusionRecorded(%s) = %v, %v; want %v", dd, got, err, want)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.DayExclusionRecorded(context.WithoutCancel(t.Context()), ana, d); err == nil {
+		t.Error("DayExclusionRecorded on a closed database succeeded")
+	}
+}

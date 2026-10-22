@@ -13,6 +13,7 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
@@ -106,6 +107,17 @@ func TestRead(t *testing.T) {
 	}
 }
 
+// A relative path reads as the path, not as a URI's authority.
+func TestReadRelative(t *testing.T) {
+	path := oldDB(t, oldRows)
+	t.Chdir(filepath.Dir(path))
+	for _, rel := range []string{"health.db", "./health.db"} {
+		if days, err := history.Read(t.Context(), rel); err != nil || len(days) != 5 {
+			t.Errorf("Read(%q) = %d days, %v", rel, len(days), err)
+		}
+	}
+}
+
 func TestReadRefuses(t *testing.T) {
 	t.Parallel()
 
@@ -155,7 +167,7 @@ func TestImportReport(t *testing.T) {
 	t.Parallel()
 
 	_, _, r := imported(t)
-	if r.Days != 4 || r.Metrics != 6 || r.Meals != 7 || r.Rests != 1 || r.Excluded != 1 || len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep ||
+	if r.Days != 4 || r.Metrics != 6 || r.Meals != 7 || r.Rests != 1 || r.Excluded != 2 || len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep ||
 		!slices.Equal(r.Over, []string{"2026-09-02"}) || len(r.Skipped) != 1 || !strings.Contains(r.Skipped[0], "1. 9. 2026.") {
 		t.Errorf("report = %+v", r)
 	}
@@ -254,6 +266,30 @@ func TestImportTimes(t *testing.T) {
 	ms, _ = db.MealsOfDay(t.Context(), u.ID, day.Date{Year: 2026, Month: 9, Day: 15})
 	if len(ms) != 1 || ms[0].EatenAt.In(zagreb).Format("01-02 15:04") != "09-15 06:00" {
 		t.Errorf("a meal before a 06:00 start = %+v, want the day's first minute", ms)
+	}
+
+	// Every meal stays in its note's day: one without a time for a user
+	// whose day starts at 14:00, and one in the hour summer time skips for
+	// a day that starts at 02:00 (2026-03-29 jumps from 02:00 to 03:00).
+	for _, c := range []struct {
+		start      int
+		date, time string
+		want       string
+	}{
+		{14, "2026-09-20", "", "09-20 14:00"},
+		{2, "2026-03-28", "02:30", "03-29 01:59"},
+	} {
+		v := u
+		v.DayStartHour = c.start
+		one := []history.Day{{Date: c.date, Metrics: map[string]float64{}, Meals: []history.Meal{{Time: c.time, Description: "Edge", Nutrients: kcal(100)}}}}
+		if _, err := history.Import(t.Context(), db, v, one, now, false); err != nil {
+			t.Fatal(err)
+		}
+		d, _ := day.ParseDate(c.date)
+		ms, _ := db.MealsOfDay(t.Context(), u.ID, d)
+		if len(ms) != 1 || ms[0].EatenAt.In(zagreb).Format("01-02 15:04") != c.want {
+			t.Errorf("start %d, %s %q = %+v, want %s", c.start, c.date, c.time, ms, c.want)
+		}
 	}
 }
 
@@ -394,34 +430,81 @@ func TestImportRefuses(t *testing.T) {
 	}
 }
 
-// A day with a remark is excluded for it, a long one cut; a run again
-// leaves the exclusion as it is.
-func TestImportRemarks(t *testing.T) {
+// A day with a remark is excluded for it, its spaces joined, a long one
+// cut, one that is no reason replaced; a day without intake is excluded
+// as one; a day with intake and no remark is not.
+func TestImportExclusions(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	days := []history.Day{
+		{Date: "2026-09-11", Metrics: map[string]float64{}, Remark: " Birthday\tdinner\n with  friends "},
+		{Date: "2026-09-12", Metrics: map[string]float64{}, Remark: strings.Repeat("a", 250)},
+		{Date: "2026-09-13", Metrics: map[string]float64{}},
+		{Date: "2026-09-14", Metrics: map[string]float64{}, Remark: "\u200b"},
+		{Date: "2026-09-15", Metrics: map[string]float64{}, Total: &food.Nutrients{Kcal: 0}},
+		{Date: "2026-09-16", Metrics: map[string]float64{}, Meals: []history.Meal{{Time: "12:00", Description: "Soup", Nutrients: kcal(300)}}},
+		{Date: "2026-09-17", Metrics: map[string]float64{}, Total: &food.Nutrients{Kcal: 1800}},
+	}
+	dry, err := history.Import(t.Context(), db, u, days, now, true)
+	if err != nil || dry.Excluded != 5 {
+		t.Fatalf("the dry run = %+v, %v", dry, err)
+	}
+	r, err := history.Import(t.Context(), db, u, days, now, false)
+	if err != nil || r.Excluded != 5 || len(r.Renamed) != 1 || !strings.Contains(r.Renamed[0], "2026-09-14") {
+		t.Fatalf("report = %+v, %v", r, err)
+	}
+	d := day.Date{Year: 2026, Month: 9, Day: 11}
+	ex, err := db.Exclusions(t.Context(), u.ID, d, d.AddDays(6))
+	want := map[day.Date]string{
+		d:            "Birthday dinner with friends",
+		d.AddDays(1): strings.Repeat("a", day.MaxReasonLen-1) + "…",
+		d.AddDays(2): history.NoIntakeReason,
+		d.AddDays(3): "Remark of the predecessor's note",
+		d.AddDays(4): history.NoIntakeReason,
+	}
+	if err != nil || len(ex) != len(want) {
+		t.Fatalf("exclusions = %+v, %v", ex, err)
+	}
+	for dd, reason := range want {
+		if ex[dd].Reason != reason {
+			t.Errorf("%s excluded for %q, want %q", dd, ex[dd].Reason, reason)
+		}
+	}
+}
+
+// A run again leaves a day as decided since: included by the user, or
+// excluded for a reason of theirs, and says so; a day as the import left
+// it adds nothing.
+func TestImportExclusionsAgain(t *testing.T) {
 	t.Parallel()
 
 	db, u := newUser(t)
 	days := []history.Day{
 		{Date: "2026-09-11", Metrics: map[string]float64{}, Remark: "Birthday dinner"},
-		{Date: "2026-09-12", Metrics: map[string]float64{}, Remark: strings.Repeat("a", 250)},
-		{Date: "2026-09-13", Metrics: map[string]float64{}},
+		{Date: "2026-09-12", Metrics: map[string]float64{}, Remark: "Travel"},
+		{Date: "2026-09-13", Metrics: map[string]float64{}, Remark: "Sick"},
 	}
-	dry, err := history.Import(t.Context(), db, u, days, now, true)
-	if err != nil || dry.Excluded != 2 {
-		t.Fatalf("the dry run = %+v, %v", dry, err)
-	}
-	for range 2 {
-		if r, err := history.Import(t.Context(), db, u, days, now, false); err != nil || r.Excluded != 2 {
-			t.Fatalf("report = %+v, %v", r, err)
-		}
-	}
-	es, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
-	if len(es) != 2 || es[0].Actor != history.Actor {
-		t.Errorf("events = %+v, want the two exclusions once", es)
+	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+		t.Fatal(err)
 	}
 	d := day.Date{Year: 2026, Month: 9, Day: 11}
-	ex, err := db.Exclusions(t.Context(), u.ID, d, d.AddDays(2))
-	if err != nil || len(ex) != 2 || ex[d].Reason != "Birthday dinner" || ex[d.AddDays(1)].Reason != strings.Repeat("a", day.MaxReasonLen-1)+"…" {
-		t.Errorf("exclusions = %+v, %v", ex, err)
+	mine := event.Actor{Kind: event.User, Client: "web"}
+	if err := db.IncludeDay(t.Context(), u.ID, mine, d, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ExcludeDay(t.Context(), u.ID, mine, d.AddDays(1), day.Exclusion{Reason: "A trip, but I logged it all"}, now); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
+	r, err := history.Import(t.Context(), db, u, days, now, false)
+	if err != nil || r.Excluded != 0 || len(r.Skipped) != 2 {
+		t.Fatalf("the run again = %+v, %v", r, err)
+	}
+	after, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
+	ex, _ := db.Exclusions(t.Context(), u.ID, d, d.AddDays(2))
+	if len(after) != len(before) || len(ex) != 2 || ex[d.AddDays(1)].Reason != "A trip, but I logged it all" || ex[d.AddDays(2)].Reason != "Sick" {
+		t.Errorf("after the run again: %d events (before %d), exclusions %+v", len(after), len(before), ex)
 	}
 }
 
