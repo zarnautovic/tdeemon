@@ -354,6 +354,36 @@ func replaceFoodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f fo
 	return err
 }
 
+// FoodByName returns userID's food with name and brand, compared by
+// food.Key as a save compares them, archived or not, or ErrNotFound.
+func (db *DB) FoodByName(ctx context.Context, userID uuid.UUID, name, brand string) (food.Food, error) {
+	var f food.Food
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		var id string
+		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ?",
+			userID.String(), food.Key(name), food.Key(brand)).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		fid, err := uuid.Parse(id)
+		if err != nil {
+			return err
+		}
+		f, err = foodInTx(ctx, tx, userID, fid)
+		return err
+	})
+	if errors.Is(err, ErrNotFound) {
+		return food.Food{}, err
+	}
+	if err != nil {
+		return food.Food{}, fmt.Errorf("food by name: %w", err)
+	}
+	return f, nil
+}
+
 // FoodByID returns userID's food with id, archived or not, or
 // ErrNotFound.
 func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, error) {

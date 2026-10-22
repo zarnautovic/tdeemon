@@ -448,6 +448,30 @@ func TestFindFoodsAfterACorrection(t *testing.T) {
 	}
 }
 
+// A food is found by its name and brand as a save compares them, whether
+// archived or not, and only the user's own.
+func TestFoodByName(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	f := saveFood(t, db, ana, bar())
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, f.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.FoodByName(t.Context(), ana, "  protein BAR   caramel ", "barebells")
+	if err != nil || got.ID != f.ID || !got.Archived {
+		t.Errorf("FoodByName = %+v, %v", got, err)
+	}
+	for name, brand := range map[string]string{"Protein bar Caramel": "", "Protein bar": "Barebells"} {
+		if _, err := db.FoodByName(t.Context(), ana, name, brand); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("FoodByName(%q, %q) = %v, want ErrNotFound", name, brand, err)
+		}
+	}
+	if _, err := db.FoodByName(t.Context(), ivo, f.Name, f.Brand); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Ivo's FoodByName = %v, want ErrNotFound", err)
+	}
+}
+
 func TestFoodStoreFailures(t *testing.T) {
 	t.Parallel()
 
@@ -465,6 +489,9 @@ func TestFoodStoreFailures(t *testing.T) {
 	}
 	if _, err := db.FindFoods(ctx, ana, "bar", 5); err == nil {
 		t.Error("FindFoods on a closed database succeeded")
+	}
+	if _, err := db.FoodByName(ctx, ana, f.Name, f.Brand); err == nil || errors.Is(err, store.ErrNotFound) {
+		t.Errorf("FoodByName on a closed database = %v", err)
 	}
 	if err := db.SetFoodArchived(ctx, ana, testActor, f.ID, true, t0); err == nil || errors.Is(err, store.ErrNotFound) {
 		t.Errorf("SetFoodArchived on a closed database = %v", err)

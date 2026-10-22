@@ -1,0 +1,140 @@
+package history_test
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"uuid"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/history"
+	"github.com/zarnautovic/tdeemon/internal/store"
+)
+
+func readFoods(t *testing.T) []history.FoodRow {
+	t.Helper()
+	f, err := os.Open(filepath.Join("testdata", "foods.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	rows, skipped, err := history.ReadFoods(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 3 || !strings.Contains(skipped[0], "Broken") || !strings.Contains(skipped[1], "3 cells") || !strings.Contains(skipped[2], "8 cells") {
+		t.Errorf("skipped = %q", skipped)
+	}
+	return rows
+}
+
+// The table's rows read past its header, a pipe too many, a value with
+// its unit, a dash and a bound.
+func TestReadFoods(t *testing.T) {
+	t.Parallel()
+
+	rows := readFoods(t)
+	var names []string
+	for _, r := range rows {
+		names = append(names, r.Name)
+	}
+	if !slices.Equal(names, []string{"Rye bread", "Skyr cup", "Orange juice", "Kefir", "Apple", "Stew", "Stew", "Cereal bar", "Black coffee", "Pickles", "Odd"}) {
+		t.Fatalf("names = %q", names)
+	}
+	if bar := rows[7]; bar.Portion != "25 g" || bar.Nutrients != (food.Nutrients{Kcal: 99, Protein: 2.5, Carbs: 16, Fat: 3}) || bar.Line != 14 {
+		t.Errorf("the cereal bar = %+v", bar)
+	}
+	if coffee, pickles := rows[8].Nutrients, rows[9].Nutrients; coffee != (food.Nutrients{Kcal: 4}) || pickles.Protein != 0.5 {
+		t.Errorf("a dash %+v, a bound %+v", coffee, pickles)
+	}
+}
+
+// Each row becomes a food: per 100 g or ml with its portion as a serving
+// when the portion is a weight or a volume, per portion otherwise; a name
+// rows share takes the portion; a run again keeps what is there.
+func TestImportFoods(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	rows := readFoods(t)
+	dry, err := history.ImportFoods(t.Context(), db, u, rows, now, true)
+	if err != nil || dry.Created != 11 {
+		t.Fatalf("the dry run = %+v, %v", dry, err)
+	}
+	if es, _ := db.Events(t.Context(), u.ID, 1); len(es) != 0 {
+		t.Fatal("the dry run wrote")
+	}
+	r, err := history.ImportFoods(t.Context(), db, u, rows, now, false)
+	if err != nil || r.Created != 11 || r.Kept != 0 || len(r.Renamed) != 2 || len(r.Skipped) != 0 {
+		t.Fatalf("report = %+v, %v", r, err)
+	}
+	checkFoods(t, db, u.ID)
+
+	again, err := history.ImportFoods(t.Context(), db, u, rows, now, false)
+	if err != nil || again.Created != 0 || again.Kept != 11 {
+		t.Errorf("the run again = %+v, %v", again, err)
+	}
+}
+
+// checkFoods checks the foods the table of testdata/foods.txt gave.
+func checkFoods(t *testing.T, db *store.DB, userID uuid.UUID) {
+	t.Helper()
+	for name, want := range map[string]struct {
+		basis    food.Basis
+		kcal     float64
+		serving  float64
+		source   food.Source
+		noteHead string
+	}{
+		"Rye bread":             {food.Per100g, 240, 0, food.Estimate, "standard"},
+		"Skyr cup":              {food.Per100g, 64, 150, food.Label, "prema"},
+		"Orange juice":          {food.Per100ml, 45, 0, food.Estimate, "estimate"},
+		"Kefir":                 {food.Per100ml, 50, 330, food.Estimate, "estimate"},
+		"Apple":                 {food.PerPortion, 95, 0, food.Estimate, "Portion: 1 medium. estimate"},
+		"Stew (1/4 of the pot)": {food.PerPortion, 520, 0, food.Estimate, "Portion: 1/4 of the pot."},
+		"Cereal bar":            {food.Per100g, 396, 25, food.Estimate, "a pipe"},
+		"Odd":                   {food.PerPortion, 300, 0, food.Estimate, "Portion: 5 g."},
+	} {
+		f, err := db.FoodByName(t.Context(), userID, name, "")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var serving float64
+		if s, ok := f.Serving(history.ServingName); ok {
+			serving = s.Amount
+		}
+		if f.Basis != want.basis || f.Nutrients.Kcal != want.kcal || serving != want.serving || f.Source != want.source || !strings.HasPrefix(f.Note, want.noteHead) {
+			t.Errorf("%s = %+v", name, f)
+		}
+	}
+}
+
+// A food the user has by the name stays theirs; a name that is no name,
+// or a row whose values no food allows, is skipped.
+func TestImportFoodsKeepsAndSkips(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	mine := food.Food{ID: uuid.NewV7(), Name: "Rye bread", Basis: food.Per100g, Source: food.User, Nutrients: food.Nutrients{Kcal: 250}}
+	if _, err := db.SaveFood(t.Context(), u.ID, history.Actor, mine, now); err != nil {
+		t.Fatal(err)
+	}
+	rows := []history.FoodRow{
+		{Line: 1, Name: "Rye bread", Portion: "100 g", Nutrients: food.Nutrients{Kcal: 240}},
+		{Line: 2, Name: "tab\there", Portion: "1 piece", Nutrients: food.Nutrients{Kcal: 10}},
+		{Line: 3, Name: "A feast", Portion: "1 pot", Nutrients: food.Nutrients{Kcal: 20000}},
+		{Line: 4, Name: strings.Repeat("ž", 250), Portion: "1 piece", Nutrients: food.Nutrients{Kcal: 10}},
+		{Line: 5, Name: "Twice", Portion: "1 piece", Nutrients: food.Nutrients{Kcal: 10}},
+		{Line: 6, Name: "Twice", Portion: "1 piece", Nutrients: food.Nutrients{Kcal: 12}},
+		{Line: 7, Name: "", Portion: "1 piece", Nutrients: food.Nutrients{Kcal: 12}},
+	}
+	r, err := history.ImportFoods(t.Context(), db, u, rows, now, false)
+	if err != nil || r.Kept != 1 || r.Created != 2 || len(r.Skipped) != 4 {
+		t.Fatalf("report = %+v, %v", r, err)
+	}
+	if f, _ := db.FoodByName(t.Context(), u.ID, "Rye bread", ""); f.Nutrients.Kcal != 250 || f.Source != food.User {
+		t.Errorf("the user's own = %+v", f)
+	}
+}
