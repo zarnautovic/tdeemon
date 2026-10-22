@@ -174,3 +174,54 @@ func TestImportFoodsEdges(t *testing.T) {
 		t.Errorf("the pot = %+v, %v", f, err)
 	}
 }
+
+// A macronutrient's name belongs to its column: protein's in another
+// column is no value.
+func TestReadFoodsLabels(t *testing.T) {
+	t.Parallel()
+
+	table := "| Food | Portion | kcal | P (g) | UH (g) | M (g) | Note |\n|---|---|---|---|---|---|---|\n" +
+		"| Right | 100 g | 120 | P 20 | UH 2 | M 4 | x |\n" +
+		"| Kcal as protein | 100 g | P 120 | 20 | 2 | 4 | x |\n" +
+		"| Fat as protein | 100 g | 120 | M 20 | 2 | 4 | x |\n"
+	rows, skipped, err := history.ReadFoods(strings.NewReader(table))
+	if err != nil || len(rows) != 1 || rows[0].Nutrients != (food.Nutrients{Kcal: 120, Protein: 20, Carbs: 2, Fat: 4}) || len(skipped) != 2 {
+		t.Errorf("rows %+v, skipped %q, %v", rows, skipped, err)
+	}
+}
+
+// A portion in kg, dl or l, in any case, is a weight or a volume too; one
+// that per 100 would be no food is per portion, and reported.
+func TestImportFoodsUnits(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	rows := []history.FoodRow{
+		{Line: 1, Name: "Rice bag", Portion: "0,5 kg", Nutrients: food.Nutrients{Kcal: 1750, Carbs: 380}},
+		{Line: 2, Name: "Milk glass", Portion: "2 dl", Nutrients: food.Nutrients{Kcal: 128, Protein: 6.6}},
+		{Line: 3, Name: "Water bottle", Portion: "1 L", Nutrients: food.Nutrients{}},
+		{Line: 4, Name: "Juice can", Portion: "250 ML", Nutrients: food.Nutrients{Kcal: 110}},
+		{Line: 5, Name: "Typo", Portion: "100 g", Nutrients: food.Nutrients{Kcal: 950}},
+	}
+	r, err := history.ImportFoods(t.Context(), db, u, rows, now, false)
+	if err != nil || r.Created != 5 || !slices.Equal(r.PerPortion, []string{"line 5, Typo (100 g)"}) {
+		t.Fatalf("report = %+v, %v", r, err)
+	}
+	for name, want := range map[string]struct {
+		basis   food.Basis
+		kcal    float64
+		serving float64
+	}{
+		"Rice bag": {food.Per100g, 350, 500}, "Milk glass": {food.Per100ml, 64, 200},
+		"Water bottle": {food.Per100ml, 0, 1000}, "Juice can": {food.Per100ml, 44, 250}, "Typo": {food.PerPortion, 950, 0},
+	} {
+		f, err := db.FoodByName(t.Context(), u.ID, name, "")
+		var serving float64
+		if s, ok := f.Serving(history.ServingName); ok {
+			serving = s.Amount
+		}
+		if err != nil || f.Basis != want.basis || f.Nutrients.Kcal != want.kcal || serving != want.serving {
+			t.Errorf("%s = %+v, %v", name, f, err)
+		}
+	}
+}

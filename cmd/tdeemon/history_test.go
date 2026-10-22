@@ -157,6 +157,7 @@ func TestImportHistoryFoods(t *testing.T) {
 	for _, want := range []string{
 		"Imported foods for ana@example.com: 15 new; 0 kept",
 		"Foods renamed (2):\n  Stew (1/4 of the pot)",
+		"Foods per portion though given by weight or volume, as per 100 they would be no food (1):\n  line 19, Odd (5 g)",
 		"Rows skipped (8):\n  line 18, Broken",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -194,6 +195,31 @@ func TestImportHistoryReportsBeforeAFailure(t *testing.T) {
 	var out bytes.Buffer
 	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t)}, env, noInput(), &out, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "calendar") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 15 new") {
+		t.Errorf("err = %v, said:\n%s", err, out.String())
+	}
+}
+
+// A failure among the foods leaves the report of those written before it.
+func TestImportHistoryReportsFoodsBeforeAFailure(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `CREATE TRIGGER refuse_the_third BEFORE INSERT ON foods
+		WHEN (SELECT count(*) FROM foods) >= 2 BEGIN SELECT RAISE(ABORT, 'refused by the test'); END`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
+	var out bytes.Buffer
+	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods}, env, noInput(), &out, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "refused by the test") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 2 new") {
 		t.Errorf("err = %v, said:\n%s", err, out.String())
 	}
 }

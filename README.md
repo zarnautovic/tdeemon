@@ -407,13 +407,14 @@ kubectl exec deploy/tdeemon -- /tdeemon import-history \
 
 With `--foods`, it takes the vault's food table, `Baza-hrane.md`, too
 (or alone): a food given for 100 g or 100 ml stays so; one given for a
-weight in grams or a volume in ml ("220 g", "~400 g", "330 ml") is
+weight or a volume ("220 g", "~400 g", "0,5 kg", "330 ml", "2 dl") is
 stored per 100 g or ml, with that amount as its serving "portion",
-unless its values per 100 would be no food; any other portion ("1
-medium", "0.5 kg", "400 g cooked") is a food per portion, the portion in
-its note. A food whose note names a declaration
-is a label's, the rest estimates. A name the table has twice takes each
-row's portion, and a food you have already, by its name, stays yours.
+unless its values per 100 would be no food, when it is a food per
+portion and the report lists it; any other portion ("1 medium", "400 g
+cooked") is a food per portion, the portion in its note. A food whose
+note names a declaration is a label's, the rest estimates. A name the
+table has twice takes each row's portion, and a food you have already,
+by its name, stays yours.
 
 It says which time zone and day start it imports by: create the user
 with your `--timezone` first. Without `--dry-run` it writes, and says

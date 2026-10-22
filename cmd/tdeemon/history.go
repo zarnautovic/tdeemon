@@ -106,11 +106,11 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 		now := time.Now()
 		if f.foods != "" {
 			fr, err := history.ImportFoods(ctx, db, u, src.foods, now, f.dryRun)
+			fr.Skipped = append(src.foodsSkipped, fr.Skipped...)
+			writeFoodReport(&b, u, fr, f.dryRun)
 			if err != nil {
 				return err
 			}
-			fr.Skipped = append(src.foodsSkipped, fr.Skipped...)
-			writeFoodReport(&b, u, fr, f.dryRun)
 		}
 		if f.healthDB != "" {
 			r, err := history.Import(ctx, db, u, src.days, now, f.dryRun)
@@ -152,6 +152,7 @@ func list(b *strings.Builder, title string, lines []string) {
 func writeFoodReport(b *strings.Builder, u user.User, r history.FoodReport, dryRun bool) {
 	fmt.Fprintf(b, "%s foods for %s: %d new; %d kept, as the user has foods of their names.\n", verb(dryRun), u.Email, r.Created, r.Kept)
 	list(b, "Foods renamed", r.Renamed)
+	list(b, "Foods per portion though given by weight or volume, as per 100 they would be no food", r.PerPortion)
 	list(b, "Rows skipped", r.Skipped)
 }
 

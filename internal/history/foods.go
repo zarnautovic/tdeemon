@@ -33,11 +33,14 @@ const foodColumns = 7
 
 // ReadFoods returns the rows of the food table in r, a Markdown table of
 // foodColumns cells, and the lines it skipped, each with why. A row
-// followed by a separator (|---|:---:|) is a header; every other row of a
-// table is a food, a blank line between rows notwithstanding. A row may
-// start or end with a pipe too many, as a note written by hand can; a
-// value may carry its unit ("99 kcal"), be a bound ("<0.5", read as the
-// bound) or a dash for none (0); kcal must be given.
+// followed by a separator (|-|, |---|, |:---:|) is a header; the rows
+// under a header that names kcal are foods, a blank line between them
+// notwithstanding, and the rows of another table are skipped. A row may
+// start or end with a pipe too many, as a note written by hand can,
+// told from an empty last cell. A value may carry its column's unit ("99
+// kcal", "2 g") or its macronutrient's name before it ("P 24"), be a
+// bound ("<0.5", read as the bound) or a dash for none (0); kcal must be
+// given, but for a food of no values at all.
 func ReadFoods(r io.Reader) ([]FoodRow, []string, error) {
 	var lines []string
 	sc := bufio.NewScanner(r)
@@ -113,20 +116,18 @@ func foodRow(s string) (FoodRow, error) {
 		return FoodRow{}, fmt.Errorf("%d cells, want %d", len(cells), foodColumns)
 	}
 	values := make([]float64, 4)
-	for i := range values {
-		unit := "g"
-		if i == 0 {
-			unit = "kcal"
-		}
-		v, err := number(cells[2+i], unit)
+	var noKcal bool
+	for i, col := range valueColumns {
+		v, none, err := cellValue(cells[2+i], col.unit, col.label)
 		if err != nil {
 			return FoodRow{}, fmt.Errorf("%s: %w", cells[0], err)
 		}
 		values[i] = v
+		noKcal = noKcal || i == 0 && none
 	}
 	// No kcal, a dash or nothing, is 0 only for what has nothing else
 	// either, water or black coffee; else it is missing.
-	if none(cells[2]) && (values[1] != 0 || values[2] != 0 || values[3] != 0) {
+	if noKcal && (values[1] != 0 || values[2] != 0 || values[3] != 0) {
 		return FoodRow{}, fmt.Errorf("%s: no kcal", cells[0])
 	}
 	return FoodRow{
@@ -135,81 +136,84 @@ func foodRow(s string) (FoodRow, error) {
 	}, nil
 }
 
-// none reports whether a value cell gives no value: a dash or nothing.
-func none(s string) bool {
-	switch valueText(s) {
-	case "", "—", "–", "-":
-		return true
+// valueColumns are the value columns, kcal, protein, carbs and fat: the
+// unit each may name, and the name a hand may write before a value, as
+// the table's header does ("P 25", "UH —").
+var valueColumns = []struct{ unit, label string }{{"kcal", ""}, {"g", "P"}, {"g", "UH"}, {"g", "M"}}
+
+// valueCell is a value: a macronutrient's name if any, then a dash for
+// none, or a number with a decimal comma or point after a bound or an
+// approximation sign, and a unit if any.
+var valueCell = regexp.MustCompile(`^(?:(P|UH|M)\s+)?(?:(—|–|-)|[<≤~≈]?\s*(\d+(?:[.,]\d+)?)\s*([a-z]*))$`)
+
+// cellValue reads a value cell of a column of unit and label, which it may
+// name; a dash or nothing is none, 0. Anything else after the number, a
+// range ("350-400"), another unit or another column's name, is no value.
+func cellValue(s, unit, label string) (float64, bool, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, true, nil
 	}
-	return false
-}
-
-// valueLabel is the name of a macronutrient a hand may write before its
-// value, as the table's header does: "P 25", "UH —".
-var valueLabel = regexp.MustCompile(`^(?:P|UH|M)\s+`)
-
-// valueText returns a value cell without its spaces and a label before.
-func valueText(s string) string {
-	return valueLabel.ReplaceAllString(strings.TrimSpace(s), "")
-}
-
-// valueCell is a value: a number with a decimal comma or point, after a
-// bound or an approximation sign, and a unit if any.
-var valueCell = regexp.MustCompile(`^[<≤~≈]?\s*(\d+(?:[.,]\d+)?)\s*([a-z]*)$`)
-
-// number reads a value cell in unit, which it may name; a dash or nothing
-// is 0. Anything else after the number, a range ("350-400") or another
-// unit, is no value.
-func number(s, unit string) (float64, error) {
-	if none(s) {
-		return 0, nil
+	m := valueCell.FindStringSubmatch(s)
+	if len(m) != 5 || m[1] != "" && m[1] != label || m[4] != "" && m[4] != unit {
+		return 0, false, fmt.Errorf("value %q: want a number of %s", s, unit)
 	}
-	m := valueCell.FindStringSubmatch(valueText(s))
-	if len(m) != 3 || m[2] != "" && m[2] != unit {
-		return 0, fmt.Errorf("value %q: want a number of %s", s, unit)
+	if m[2] != "" {
+		return 0, true, nil
 	}
-	return strconv.ParseFloat(strings.Replace(m[1], ",", ".", 1), 64)
+	v, err := strconv.ParseFloat(strings.Replace(m[3], ",", ".", 1), 64)
+	return v, false, err
 }
 
 // portionAmount reads a portion given by its weight or volume, "220 g",
-// "~400 g", "330 ml", as its amount and the food's basis.
-var portionAmount = regexp.MustCompile(`^~?\s*(\d+(?:[.,]\d+)?)\s*(g|ml)$`)
+// "~400 g", "0,5 kg", "330 ml", "2 dl", "1 L", as its amount and unit.
+var portionAmount = regexp.MustCompile(`(?i)^~?\s*(\d+(?:[.,]\d+)?)\s*(g|kg|ml|dl|l)$`)
+
+// portionUnits are the units of a portion's amount: the food's basis, and
+// how many grams or ml one is.
+var portionUnits = map[string]struct {
+	basis  food.Basis
+	factor float64
+}{
+	"g": {food.Per100g, 1}, "kg": {food.Per100g, 1000},
+	"ml": {food.Per100ml, 1}, "dl": {food.Per100ml, 100}, "l": {food.Per100ml, 1000},
+}
 
 // ServingName names the portion a row gave by weight or volume, on a food
 // stored per 100 g or ml.
 const ServingName = "portion"
 
 // toFood returns row as a food: per 100 g or 100 ml, with the row's portion
-// as a serving, when the portion is a weight or a volume and the values
-// per 100 make sense; else per portion, the portion in its note. Its
-// source is a label when its note names a declaration, else an estimate.
-func toFood(row FoodRow, name string) (food.Food, error) {
+// as a serving, when the portion is a weight or a volume and the food per
+// 100 makes sense; else per portion, the portion in its note, and whether
+// it fell back so from a weight or a volume. Its source is a label when
+// its note names a declaration, else an estimate.
+func toFood(row FoodRow, name string) (food.Food, bool, error) {
 	f := food.Food{ID: uuid.NewV7(), Name: name, Source: food.Estimate, Note: cutNote(row.Note)}
 	if note := strings.ToLower(row.Note); strings.Contains(note, "deklaracij") && !strings.Contains(note, "bez deklaracij") {
 		f.Source = food.Label
 	}
-	if m := portionAmount.FindStringSubmatch(row.Portion); m != nil {
+	m := portionAmount.FindStringSubmatch(row.Portion)
+	if m != nil {
 		amount, _ := strconv.ParseFloat(strings.Replace(m[1], ",", ".", 1), 64)
-		basis := food.Per100g
-		if m[2] == "ml" {
-			basis = food.Per100ml
-		}
+		u := portionUnits[strings.ToLower(m[2])]
+		amount *= u.factor
 		// Per 100 when the food per 100 makes sense, its values and its
 		// serving; else per portion.
 		if amount > 0 {
 			per100 := f
-			per100.Basis, per100.Nutrients = basis, row.Nutrients.Scale(100/amount)
+			per100.Basis, per100.Nutrients = u.basis, row.Nutrients.Scale(100/amount)
 			if amount != 100 {
 				per100.Servings = []food.Serving{{Name: ServingName, Amount: amount}}
 			}
 			if per100.Validate() == nil {
-				return per100, nil
+				return per100, false, nil
 			}
 		}
 	}
 	f.Basis, f.Nutrients = food.PerPortion, row.Nutrients
 	f.Note = cutNote(strings.TrimSpace("Portion: " + row.Portion + ". " + row.Note))
-	return f, f.Validate()
+	return f, m != nil, f.Validate()
 }
 
 // cutNote returns s cut to the longest note a food may have.
@@ -228,6 +232,10 @@ type FoodReport struct {
 	// Renamed are the foods created whose name was cut, or given its
 	// portion as another row has its name.
 	Renamed []string
+	// PerPortion are the foods created per portion though their portion
+	// was a weight or a volume, as per 100 they would be no food: a typo,
+	// or a portion past a serving's largest; worth a look.
+	PerPortion []string
 	// Skipped are the rows no food could be made of, each with why.
 	Skipped []string
 }
@@ -259,7 +267,7 @@ func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow,
 			continue
 		}
 		seen[food.Key(fitted)] = true
-		f, err := toFood(*row, fitted)
+		f, fellBack, err := toFood(*row, fitted)
 		if err != nil {
 			r.Skipped = append(r.Skipped, fmt.Sprintf("line %d, %s: %v", row.Line, fitted, err))
 			continue
@@ -272,15 +280,17 @@ func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow,
 		case !errors.Is(err, store.ErrNotFound):
 			return r, err
 		}
+		if !dryRun {
+			if _, err := db.SaveFood(ctx, u.ID, Actor, f, now); err != nil {
+				return r, fmt.Errorf("food %s: %w", f.Name, err)
+			}
+		}
 		r.Created++
 		if cut || fitted != row.Name {
 			r.Renamed = append(r.Renamed, fitted)
 		}
-		if dryRun {
-			continue
-		}
-		if _, err := db.SaveFood(ctx, u.ID, Actor, f, now); err != nil {
-			return r, fmt.Errorf("food %s: %w", f.Name, err)
+		if fellBack {
+			r.PerPortion = append(r.PerPortion, fmt.Sprintf("line %d, %s (%s)", row.Line, fitted, row.Portion))
 		}
 	}
 	return r, nil
