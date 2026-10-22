@@ -284,6 +284,8 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 		{"get-day", "/api/v1/days/today", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
+		{"get-me", "/api/v1/me", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE targets RENAME TO gone", "targets"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
 		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},

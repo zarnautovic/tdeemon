@@ -31,8 +31,9 @@ type Workouts struct {
 // holds the whole history. A workout is its start, to the second, which
 // Strong writes on the phone's wall clock; it belongs to the day of cal
 // that start falls in, as a meal does, so a workout after midnight and
-// before the day's start hour is the day before's. A start whose time
-// does not read gives its calendar date. A row of a rest timer is no set.
+// before the day's start hour is the day before's. A start without a
+// time gives its calendar date; one whose time does not read fails the
+// export. A row of a rest timer is no set.
 func ParseStrong(r io.Reader, cal day.Calendar) (Workouts, error) {
 	cr := csv.NewReader(r)
 	header, err := cr.Read()
@@ -89,7 +90,10 @@ func strongDay(s string, cal day.Calendar) (day.Date, error) {
 	if t, err := time.ParseInLocation(strongTime, s, cal.Location); err == nil {
 		return cal.DayOf(t), nil
 	}
-	if len(s) < 10 {
+	// A date alone is its calendar date; a time in another form is a
+	// change of Strong's format, which would put a workout past midnight
+	// on the wrong day.
+	if len(s) != 10 {
 		return day.Date{}, fmt.Errorf("date %q: want 2006-01-02 15:04:05", s)
 	}
 	d, err := day.ParseDate(s[:10])

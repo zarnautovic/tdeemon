@@ -22,8 +22,8 @@ func utc4(t *testing.T) day.Calendar {
 }
 
 // A workout belongs to the day of its start: one past midnight, before the
-// day starts, to the day before, in the user's zone; a start whose time
-// does not read, to its calendar date.
+// day starts, to the day before, in the user's zone; a date alone, to
+// itself.
 func TestParseStrongDays(t *testing.T) {
 	t.Parallel()
 
@@ -36,7 +36,7 @@ func TestParseStrongDays(t *testing.T) {
 		"2026-10-20 00:30:00": "2026-10-19",
 		"2026-10-20 03:00:00": "2026-10-19", // on the wall clock in Zagreb, not in UTC
 		"2026-10-20 04:00:00": "2026-10-20",
-		"2026-10-20 3:30 AM":  "2026-10-20",
+		"2026-10-20":          "2026-10-20",
 		"2026-10-25 02:30:00": "2026-10-24", // the night summer time ends
 	} {
 		w, err := ParseStrong(strings.NewReader(header+start+",Day A,1h,Squat,1,90,5,0\n"), zagreb)
@@ -91,12 +91,13 @@ func TestParseStrongRefuses(t *testing.T) {
 	t.Parallel()
 
 	for name, c := range map[string]struct{ csv, want string }{
-		"empty":             {"", "empty"},
-		"a column missing":  {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n", `no column "Seconds"`},
-		"a short date":      {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n21.10.,Day A,1h,Squat,1,90,5,0\n", "line 2"},
-		"a date that reads": {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-13-01 07:00:00,Day A,1h,Squat,1,90,5,0\n", `date "2026-13-01 07:00:00"`},
-		"a broken row":      {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 07:00:00,Day A\n", "wrong number of fields"},
-		"a broken header":   {"\"Date,Workout\n", "extraneous"},
+		"empty":                  {"", "empty"},
+		"a column missing":       {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps\n", `no column "Seconds"`},
+		"a short date":           {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n21.10.,Day A,1h,Squat,1,90,5,0\n", "line 2"},
+		"a time in another form": {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21T06:55:30Z,Day A,1h,Squat,1,90,5,0\n", `date "2026-10-21T06:55:30Z"`},
+		"a date that reads":      {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-13-01 07:00:00,Day A,1h,Squat,1,90,5,0\n", `date "2026-13-01 07:00:00"`},
+		"a broken row":           {"Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 07:00:00,Day A\n", "wrong number of fields"},
+		"a broken header":        {"\"Date,Workout\n", "extraneous"},
 	} {
 		if _, err := ParseStrong(strings.NewReader(c.csv), utc4(t)); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", name, err, c.want)
