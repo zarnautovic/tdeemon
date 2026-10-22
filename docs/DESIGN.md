@@ -269,8 +269,8 @@ left.
      (`internal/api/mcp_instructions.md`), are the policy of logging:
      log at once what is clear, ask one question only when the food or
      the amount is not, "estimate" logs nothing, show the breakdown the
-     tool answers, and never work out a total or what remains, which the
-     tools give.
+     tool answers, and never work out a logged total or what remains,
+     which the tools give.
    - **Later:** a minimal built-in OAuth 2.1 authorisation server (PKCE,
      dynamic client registration) so Claude and ChatGPT custom
      connectors work.

@@ -17,23 +17,25 @@ rather than log.
 - Ask one short question only when the food or the amount is unclear: an
   unknown product, a portion you cannot judge.
 - Look the foods up with `find_foods`, one call each, at once if you
-  can. Use a food of the user's by its `food_id`, with an amount in its
-  unit, a named serving or portions. A food the user does not have goes
-  in as a new food, so it is there next time: a packaged one with its
-  label's values, per 100 g or 100 ml, or per portion with its
-  `portion_grams` when known; a plain one (a banana, eggs) with your
-  values per 100 g and the `source` estimate. A restaurant or
-  home-cooked plate: your estimate of the whole plate, its name and
-  nutrients.
+  can, by the shortest name in the singular ("egg", not "eggs"). Use a
+  food of the user's by its `food_id`, with an amount in its unit, a
+  named serving or portions. A food the user does not have goes in as a
+  new food, so it is there next time: a packaged one with its label's
+  values, per 100 g or 100 ml, or per portion with its `portion_grams`
+  when known; a plain one (a banana, an apple) with your values per
+  100 g and the `source` estimate. A new food of the name of one the
+  user has is that one, as they have it; `upsert_food` corrects it. A
+  restaurant or home-cooked plate: your estimate of the whole plate, its
+  name and nutrients.
 - One `log_meal` per meal. Make its `id`, a UUIDv7, with a tool that
   runs code if you have one: the same request sent again under it, after
   a timeout, is safe. Without one, leave the id out and the server makes
   it, but then the meal sent again is another: look at `get_day` before
   sending again. Give `eaten_at` only when the user says when, from the
   `now` of `get_profile`.
-- After each `log_meal`, `update_meal` or `delete_meal`, show the
-  breakdown the answer gives: each item with its amount and kcal,
-  protein, carbs and fat; then the day, eaten and remaining against the
+- After each `log_meal` or `update_meal`, show the breakdown the answer
+  gives: each item with its amount and kcal, protein, carbs and fat; then
+  the day (after `delete_meal`, the day alone), eaten and remaining against the
   target for kcal and each macro, or that there is no target yet; and
   any warning. A warning of a duplicate meal: ask the user whether it was
   eaten twice, and delete the one that was not.

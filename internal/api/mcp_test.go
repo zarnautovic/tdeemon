@@ -321,16 +321,8 @@ func TestMCPInstructions(t *testing.T) {
 		known[tl.Name] = true
 		propertyNames(tl.InputSchema, known)
 	}
-	// The fields of the answers, which the instructions name too.
-	spec, err := api.Spec()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var doc any
-	if err := json.Unmarshal(spec, &doc); err != nil {
-		t.Fatal(err)
-	}
-	propertyNames(doc, known)
+	// The fields of the tools' answers, which the instructions name too.
+	toolAnswerNames(t, known)
 	// Every name of the kind tools and fields have, and every word in
 	// backticks.
 	for _, m := range regexp.MustCompile("[a-z]+_[a-z_]+|`([^`]+)`").FindAllStringSubmatch(got, -1) {
@@ -340,6 +332,63 @@ func TestMCPInstructions(t *testing.T) {
 		}
 		if !known[name] {
 			t.Errorf("the instructions name %q, which is no tool nor field of one", name)
+		}
+	}
+}
+
+// toolAnswerNames adds to names the name of every property of the answers
+// of the operations that are tools, following their $refs.
+func toolAnswerNames(t *testing.T, names map[string]bool) {
+	t.Helper()
+	spec, err := api.Spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Tags      []string       `json:"tags"`
+			Responses map[string]any `json:"responses"`
+		} `json:"paths"`
+		Components struct {
+			Schemas map[string]any `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(spec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]bool{}
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			if ref, ok := v["$ref"].(string); ok {
+				name := strings.TrimPrefix(ref, "#/components/schemas/")
+				if !seen[name] {
+					seen[name] = true
+					walk(doc.Components.Schemas[name])
+				}
+				return
+			}
+			if props, ok := v["properties"].(map[string]any); ok {
+				for name := range props {
+					names[name] = true
+				}
+			}
+			for _, e := range v {
+				walk(e)
+			}
+		case []any:
+			for _, e := range v {
+				walk(e)
+			}
+		}
+	}
+	for _, methods := range doc.Paths {
+		for _, op := range methods {
+			if slices.Contains(op.Tags, "tools") {
+				walk(op.Responses["200"])
+				walk(op.Responses["201"])
+			}
 		}
 	}
 }
