@@ -139,7 +139,7 @@ export interface paths {
         put?: never;
         /**
          * Save a food
-         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. Saving an archived food brings it back, unless archived says to keep it so. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
+         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
          */
         post: operations["upsert-food"];
         delete?: never;
@@ -955,7 +955,7 @@ export interface components {
         UpsertFoodInputBody: {
             /** @description Other names the user calls the food by; search finds them. */
             aliases?: string[];
-            /** @description Keeps the food archived: out of a search. Left out, a save brings an archived food back. */
+            /** @description Archives the food, or keeps it so: out of a search, keeping its name and aliases. Left out, a save brings an archived food back. */
             archived?: boolean;
             /**
              * @description What the nutrients are for: 100 g, 100 ml, or a portion.

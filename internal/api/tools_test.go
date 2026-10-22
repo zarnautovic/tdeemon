@@ -660,3 +660,19 @@ func TestGetFood(t *testing.T) {
 		t.Errorf("an id no food has: %d %s, want 404", rec.Code, rec.Body.String())
 	}
 }
+
+// archived archives a food in use: it leaves the search.
+func TestUpsertFoodArchives(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	body := fmt.Sprintf(`{"id": %q, "archived": true, "name": %q, "basis": "100g", "source": "user", "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3}}`, bread.ID, bread.Name)
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods", body, session, nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"archived":true`) {
+		t.Errorf("archiving: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", session, nil); !strings.Contains(rec.Body.String(), `{"foods":[]}`) {
+		t.Errorf("a search after: %s, want nothing", rec.Body.String())
+	}
+}

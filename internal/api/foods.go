@@ -183,7 +183,7 @@ type upsertFoodInput struct {
 	Body struct {
 		ID string `json:"id,omitempty" format:"uuid" doc:"The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one."`
 		FoodFields
-		Archived bool `json:"archived,omitempty" doc:"Keeps the food archived: out of a search. Left out, a save brings an archived food back."`
+		Archived bool `json:"archived,omitempty" doc:"Archives the food, or keeps it so: out of a search, keeping its name and aliases. Left out, a save brings an archived food back."`
 	}
 }
 
@@ -207,11 +207,6 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 		if f.ID, err = uuid.Parse(b.ID); err != nil {
 			return nil, huma.Error422UnprocessableEntity("the id: " + err.Error())
 		}
-		if _, err := s.db.FoodByID(ctx, p.User.ID, f.ID); errors.Is(err, store.ErrNotFound) {
-			return nil, huma.Error404NotFound("no such food: a new food comes without an id")
-		} else if err != nil {
-			return nil, internalError("saving the food failed", err)
-		}
 	}
 	for _, sv := range b.Servings {
 		f.Servings = append(f.Servings, food.Serving{Name: sv.Name, Amount: sv.Amount})
@@ -219,9 +214,15 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 	if err := f.Validate(); err != nil {
 		return nil, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
 	}
-	saved, err := s.db.SaveFood(ctx, p.User.ID, actorOf(p), f, s.now())
+	save := s.db.SaveFood
+	if b.ID != "" {
+		save = s.db.CorrectFood
+	}
+	saved, err := save(ctx, p.User.ID, actorOf(p), f, s.now())
 	var conflict *store.FoodConflictError
 	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return nil, huma.Error404NotFound("no such food: a new food comes without an id")
 	case errors.As(err, &conflict):
 		return nil, huma.Error409Conflict(conflictDetail(conflict))
 	case err != nil:

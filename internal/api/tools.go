@@ -92,7 +92,7 @@ func (s *sessions) tools() []tool {
 			Summary:     "Save a food",
 			Description: "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. " +
 				"A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, " +
-				"without its last_use. Saving an archived food brings it back, unless archived says to keep it so. " +
+				"without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. " +
 				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.upsertFood),
