@@ -46,9 +46,17 @@ func TestCalibrateExactLine(t *testing.T) {
 	if !near(e.TDEE, 2539, 1e-6) || !near(e.IntakeKcal, 2000, 1e-9) || !near(e.KgPerWeek, -0.49, 1e-9) {
 		t.Errorf("TDEE %v, intake %v, %v kg a week; want 2539, 2000 and -0.49", e.TDEE, e.IntakeKcal, e.KgPerWeek)
 	}
-	// A line without noise, every day logged: nothing is uncertain.
-	if !near(e.HalfWidth, 0, 1e-6) || !near(e.KgPerWeekSE, 0, 1e-9) {
-		t.Errorf("half the interval %v, the slope's error %v; want 0", e.HalfWidth, e.KgPerWeekSE)
+}
+
+func TestCalibrateExactLineIsNearlyCertain(t *testing.T) {
+	t.Parallel()
+
+	// A line without noise, every day logged: only the scale's step is
+	// uncertain, a few kcal.
+	days := map[day.Date]Day{}
+	line(days, last, 60, 80, -0.07, 2000)
+	if e := Calibrate(days, nil, last, DefaultParams()); e.HalfWidth <= 0 || e.HalfWidth > 5 || !near(e.KgPerWeekSE, 0, 0.005) {
+		t.Errorf("half the interval %v, the slope's error %v; want a few kcal", e.HalfWidth, e.KgPerWeekSE)
 	}
 }
 
@@ -317,19 +325,23 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 		weighed, carry  float64
 		least, most     float64
 		biasOf, biasPad float64
+		// phaseAgo is how many days ago a phase started, 0 for none: its
+		// first 14 days leave a shorter window.
+		phaseAgo int
 	}{
-		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25},
-		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25},
-		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25},
+		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0},
+		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0},
+		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25, 0},
+		{"a window of 17 days", 1, false, 1, 0.5, 0.75, 0.88, 0, 40, 30},
 		// Days missing at random: the intake's error takes them to differ
 		// together, so the interval covers more than 80 %.
-		{"most days", 0.85, false, 0.8, 0.5, 0.75, 0.95, 0, 25},
-		{"some days", 0.6, false, 0.5, 0.5, 0.75, 1, 0, 25},
+		{"most days", 0.85, false, 0.8, 0.5, 0.82, 0.92, 0, 25, 0},
+		{"some days", 0.6, false, 0.5, 0.5, 0.92, 1, 0, 25, 0},
 		// Weekends never logged, 400 kcal over the weekdays: the TDEE is
 		// 2 × 400 / 7 = 114 kcal low. No interval can know that; this one
 		// still covers the TDEE in about 61 % of the windows, where one
 		// that took the days not logged for a random sample covered 41 %.
-		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25},
+		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -338,7 +350,11 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 			var covered, measured int
 			var errSum float64
 			for range runs {
-				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), nil, last, DefaultParams())
+				var phases []plan.Phase
+				if tc.phaseAgo > 0 {
+					phases = []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-tc.phaseAgo), RatePctWeek: -0.5}}
+				}
+				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), phases, last, DefaultParams())
 				if !e.Measured {
 					continue
 				}
@@ -453,13 +469,131 @@ func TestCalibrateWidensWithTheDaysNotLogged(t *testing.T) {
 		e := Calibrate(days, nil, last, DefaultParams())
 		widths = append(widths, e.HalfWidth)
 	}
-	if widths[0] != 0 || !slices.IsSorted(widths) || widths[1] == widths[2] {
-		t.Errorf("half the interval with 7 to 4 days a week logged: %v; want 0, then wider", widths)
+	if widths[0] > 5 || !slices.IsSorted(widths) || widths[1] == widths[2] {
+		t.Errorf("half the interval with 7 to 4 days a week logged: %v; want the scale's few kcal, then wider", widths)
 	}
 	// With 4 of 7 logged, 3/7 of a day's spread of about 200 kcal, times
 	// the bound: about 110.
 	if !near(widths[3], 110, 10) {
 		t.Errorf("half the interval with 4 days a week logged: %v, want about 110", widths[3])
+	}
+}
+
+func TestCalibrateDoesNotGoBackPastAPhaseWithoutData(t *testing.T) {
+	t.Parallel()
+
+	// A cut, then 195 days of maintenance with meals but no weigh-in, then
+	// a cut 5 days ago: the estimate from before the maintenance would be
+	// half a year old and from another weight.
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: last.AddDays(-400), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: last.AddDays(-200)},
+		{Type: plan.Cut, Start: last.AddDays(-5), RatePctWeek: -0.5},
+	}
+	days := map[day.Date]Day{}
+	line(days, last.AddDays(-201), 100, 100, -0.05, 2000)
+	for i := 6; i <= 200; i++ {
+		days[last.AddDays(-i)] = Day{Status: day.Complete, Meals: 3, Kcal: 2500}
+	}
+	e := Calibrate(days, phases, last, DefaultParams())
+	if e.Measured || e.BeforePhase || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
+		t.Errorf("measured %v, before the phase %v, window %s to %s, doubts %v; want no estimate for few days",
+			e.Measured, e.BeforePhase, e.From, e.To, e.Doubts)
+	}
+}
+
+func TestCalibrateStartsAtTheFirstData(t *testing.T) {
+	t.Parallel()
+
+	// A new user who logged and weighed every day for 20 days: the days
+	// before were never theirs to log.
+	days := map[day.Date]Day{}
+	line(days, last, 20, 80, -0.05, 2000)
+	e := Calibrate(days, nil, last, DefaultParams())
+	if e.From != last.AddDays(-19) || e.Days != 20 || !e.Trusted || len(e.Doubts) != 0 {
+		t.Errorf("window %s to %s, %d days, trusted %v, doubts %v; want the 20 days, trusted", e.From, e.To, e.Days, e.Trusted, e.Doubts)
+	}
+	// 10 days are too few, and only the days to come settle that.
+	days = map[day.Date]Day{}
+	line(days, last, 10, 80, -0.05, 2000)
+	if e := Calibrate(days, nil, last, DefaultParams()); e.Measured || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
+		t.Errorf("10 days: measured %v, doubts %v; want no estimate for few days", e.Measured, e.Doubts)
+	}
+}
+
+func TestCalibrateCountsWholeWeeks(t *testing.T) {
+	t.Parallel()
+
+	// Weigh-ins on Monday, Wednesday and Friday and meals logged Monday to
+	// Thursday: 3 and 4 in any 7 days, which a trusted estimate needs,
+	// whatever length a phase that started 28 to 41 days ago leaves the
+	// window.
+	days := map[day.Date]Day{}
+	for i := range 100 {
+		d := last.AddDays(-i)
+		v := Day{Status: day.Complete}
+		switch d.Weekday() {
+		case time.Monday, time.Wednesday, time.Friday:
+			v.WeightKg = 80 + 0.05*float64(i)
+		default:
+		}
+		if wd := d.Weekday(); wd >= time.Monday && wd <= time.Thursday {
+			v.Meals, v.Kcal = 3, 2000
+		}
+		days[d] = v
+	}
+	for ago := 28; ago <= 41; ago++ {
+		phases := []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-ago), RatePctWeek: -0.5}}
+		if e := Calibrate(days, phases, last, DefaultParams()); !e.Trusted {
+			t.Errorf("a phase %d days ago, a window of %d days: trusted %v, doubts %v", ago, e.Days, e.Trusted, e.Doubts)
+		}
+	}
+}
+
+func TestCalibrateNeedsAWeekOfEach(t *testing.T) {
+	t.Parallel()
+
+	// Every day logged, but weigh-ins on only the last 6 days, on a line:
+	// a slope of a few days' water, no estimate.
+	days := map[day.Date]Day{}
+	line(days, last, 42, 80, -0.25, 2000)
+	for i := 6; i < 42; i++ {
+		d := days[last.AddDays(-i)]
+		d.WeightKg = 0
+		days[last.AddDays(-i)] = d
+	}
+	if e := Calibrate(days, nil, last, DefaultParams()); e.Measured || !slices.Contains(e.Doubts, DoubtFewWeighIns) {
+		t.Errorf("6 weigh-ins over 5 days: measured %v, doubts %v; want no estimate", e.Measured, e.Doubts)
+	}
+	// A seventh a day earlier on the same line spans a week and gives
+	// one, whose interval the scale's step keeps from 0.
+	days[last.AddDays(-7)] = Day{Status: day.Complete, Meals: 1, Kcal: 2000, WeightKg: 80 + 7*0.25}
+	if e := Calibrate(days, nil, last, DefaultParams()); !e.Measured || e.HalfWidth <= 0 {
+		t.Errorf("7 weigh-ins on a line: measured %v, ± %v; want an estimate with an interval", e.Measured, e.HalfWidth)
+	}
+}
+
+func TestCombinedDF(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name                string
+		v1                  float64
+		df1                 int
+		v2                  float64
+		df2                 int
+		wantLeast, wantMost int
+	}{
+		{"no intake variance", 100, 40, 0, 4, 40, 40},
+		// A nearly even intake over 4 degrees of freedom keeps the slope's.
+		{"a small intake variance", 100, 40, 1, 4, 39, 40},
+		// Equal parts: 4 / (1/40 + 1/6) ≈ 20.9.
+		{"equal parts", 100, 40, 100, 6, 20, 20},
+		{"the intake's only", 0, 40, 100, 6, 6, 6},
+	} {
+		if got := combinedDF(tc.v1, tc.df1, tc.v2, tc.df2); got < tc.wantLeast || got > tc.wantMost {
+			t.Errorf("%s: combinedDF = %d, want %d to %d", tc.name, got, tc.wantLeast, tc.wantMost)
+		}
 	}
 }
 

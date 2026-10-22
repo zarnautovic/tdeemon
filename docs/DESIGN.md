@@ -277,7 +277,8 @@ estimates to agree within ±200 kcal.
 The replacement:
 
 - **Window:** the 42 days up to yesterday, today not being over
-  (`internal/domain/calibration`). Over 28 days the estimate swung with
+  (`internal/domain/calibration`), and none before the user's first day
+  with a weigh-in or a meal. Over 28 days the estimate swung with
   water the weight held for weeks, as after a change of training; over
   42 it kept closer to the past manual revisions and still followed the
   TDEE as it fell.
@@ -308,6 +309,9 @@ The replacement:
     about 80 % of the windows, for water that carries over from not at
     all to strongly. One that takes the weigh-ins as independent covers
     39 to 77 %, the less the more water carries over.
+  - The residuals' variance has a floor, a scale step's square (0.1 kg)
+    over 12, so weigh-ins on a straight line do not make the slope
+    certain.
   - The intake average's, for the days not logged: they are taken to
     differ from the logged ones together, as the weekends of someone who
     logs only on weekdays would, so the error is a day's spread times
@@ -316,16 +320,20 @@ The replacement:
     interval still covers it in about 61 % of the simulated windows,
     where one that took the days not logged for a random sample covers
     41 %.
+  - The bound is Student's t, with the degrees of freedom of both
+    errors combined (Welch and Satterthwaite).
 - **Trust:** an estimate is trusted when half its interval is at most
   200 kcal, and the window has the data an autopilot step needs, 4
-  logged days and 3 weigh-ins a week ([limits.md](limits.md)), on
-  average and in its last 7 days: a slope that ends weeks before its
-  last day says little of the weight now. The 200 kcal are a first value, to be
-  checked against real data. With fewer than 3 weigh-ins, 2 logged
-  days, or 14 days, there is no estimate. Either way, the doubts say what
-  is missing: `few_days`, `few_weigh_ins`, `few_logged_days`,
-  `wide_interval`. Too few days is the only doubt of a window that has
-  them, as only the days to come settle it.
+  logged days and 3 weigh-ins a week ([limits.md](limits.md)), over its
+  whole weeks counted back from its last day, and in its last 7 days: a
+  slope that ends weeks before its last day says little of the weight
+  now. Whole weeks, so someone who weighs in thrice a week passes in a
+  window of any length. The 200 kcal are a first value, to be checked
+  against real data. With fewer than 6 weigh-ins at least a week apart,
+  7 logged days, or 14 days, there is no estimate. Either way, the
+  doubts say what is missing: `few_days`, `few_weigh_ins`,
+  `few_logged_days`, `wide_interval`. Too few days is the only doubt of
+  a window that has them, as only the days to come settle it.
 - **Verdict:** a recommendation appears only when the interval is narrow
   enough. Otherwise the summary shows the estimate with its uncertainty,
   not just "calibrating".
@@ -347,7 +355,8 @@ The replacement:
     days of the phase after them, so until the phase's 28th day the
     estimate is the latest one from before the phase, marked as such,
     with no verdict on the phase. It goes back past a phase too short to
-    give one, as a diet break.
+    give one, as a diet break, but not past one with days enough and too
+    little data in them: an estimate from before it would be too old.
   - NEAT guard: steps ±30 % from baseline, in either direction.
   - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss turns a cut
     into "raise protein/calories".

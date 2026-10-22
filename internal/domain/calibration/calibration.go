@@ -19,34 +19,44 @@ import (
 // a summary can say what would settle it.
 const (
 	// DoubtFewDays: the window holds fewer than Params.MinDays once the
-	// first days of the current phase are left out, and no window before
-	// the phase gave an estimate either. It is then the only doubt: the
-	// days to come settle it, not more weigh-ins.
+	// first days of the current phase, and the days before the user's
+	// first data, are left out, and no window before the phase gave an
+	// estimate either. It is then the only doubt: the days to come settle
+	// it, not more weigh-ins.
 	DoubtFewDays = "few_days"
-	// DoubtFewWeighIns: fewer than three weigh-ins, too few for a slope
-	// with an error, or fewer a week than Params.WeighIns, on average over
-	// the window or in its last 7 days.
+	// DoubtFewWeighIns: fewer than six weigh-ins over a week or more, too
+	// few for a slope to say anything, or fewer a week than
+	// Params.WeighIns, over the window's whole weeks or in its last 7
+	// days.
 	DoubtFewWeighIns = "few_weigh_ins"
-	// DoubtFewLoggedDays: fewer than two logged days, too few for an
-	// intake with an error, or fewer a week than Params.LoggedDays, on
-	// average over the window or in its last 7 days.
+	// DoubtFewLoggedDays: fewer than a week's logged days, too few for the
+	// intake's spread, or fewer a week than Params.LoggedDays, over the
+	// window's whole weeks or in its last 7 days.
 	DoubtFewLoggedDays = "few_logged_days"
 	// DoubtWideInterval: half the interval is wider than
 	// Params.TrustedKcal.
 	DoubtWideInterval = "wide_interval"
 )
 
-// The fewest weigh-ins and logged days an estimate needs at all: a slope
-// with a residual to measure its error by, and an intake with a spread.
+// What an estimate needs at all: six weigh-ins, two weeks of someone who
+// weighs in thrice a week, from first to last at least a week apart, and
+// a week of logged days. Three weigh-ins over two days would give a slope
+// of water, and two logged days a spread of nothing.
 const (
-	minWeighIns   = 3
-	minLoggedDays = 2
+	minWeighIns     = 6
+	minWeighInsSpan = 7
+	minLoggedDays   = 7
 )
 
-// recentDays is the end of a window whose data a trusted estimate needs
-// too, as an autopilot step does (docs/limits.md): a slope that ends
-// weeks before its last day says little of the weight now.
-const recentDays = 7
+// week is the end of a window whose data a trusted estimate needs too,
+// as an autopilot step does (docs/limits.md): a slope that ends weeks
+// before its last day says little of the weight now.
+const week = 7
+
+// scaleStep is the step, in kg, most scales show a weight in. Rounding to
+// it puts a floor under the residuals' variance, of a step's square over
+// 12, so weigh-ins on a straight line do not make the slope certain.
+const scaleStep = 0.1
 
 // maxAutocorrelation bounds the autocorrelation of the residuals that
 // widens the slope's error: at the bound, about one weigh-in in twenty
@@ -73,8 +83,8 @@ type Params struct {
 	// estimate that is trusted.
 	TrustedKcal float64
 	// LoggedDays and WeighIns are the fewest logged days and weigh-ins a
-	// week of an estimate that is trusted, on average over the window and
-	// in its last 7 days.
+	// week of an estimate that is trusted, over the window's whole weeks
+	// and in its last 7 days.
 	LoggedDays float64
 	WeighIns   float64
 }
@@ -117,7 +127,8 @@ type Estimate struct {
 	// changed, as the current phase started (or the last one ended): the
 	// days since are too few yet, their first Params.WaterDays and then
 	// Params.MinDays more. The estimate measures a phase before, so it
-	// says nothing of the current one's rate.
+	// says nothing of the current one's rate, and its doubts are of its
+	// own window.
 	BeforePhase bool
 	// Days is how many days the window has; LoggedDays how many of them
 	// are complete and have a meal, whose intake counts; WeighIns how many
@@ -144,7 +155,8 @@ type Estimate struct {
 	KgPerWeek   float64
 	KgPerWeekSE float64
 	// Trusted is true when the estimate is measured, its interval narrow
-	// enough and its data enough for a verdict; Doubts say why not.
+	// enough and its data enough; Doubts say why not. A verdict on the
+	// current phase needs it not to be BeforePhase too.
 	Trusted bool
 	Doubts  []string
 }
@@ -153,36 +165,56 @@ type Estimate struct {
 // day before today for a summary.
 //
 // days holds the days by date; a date it lacks is a day with nothing
-// logged. It should hold the user's history up to last: the trend weight
-// starts at the first weigh-in it has, and an estimate from before a
-// phase reads the Params.WindowDays before the phase started.
+// logged, though no window starts before the first day with a weigh-in
+// or a meal: a user's days before it were never theirs to log. It should
+// hold the user's history up to last: the trend weight starts at the
+// first weigh-in it has, and an estimate from before a phase reads the
+// Params.WindowDays before the phase started.
 //
 // phases is the user's timeline, in the order they start
 // (plan.ValidateTimeline). The intake changes when a phase starts, and on
 // the day after a phase's planned end when no phase starts then; the
 // first Params.WaterDays after the latest such change are left out. When
 // the days left are fewer than Params.MinDays, the estimate is the latest
-// one before that change (BeforePhase), going back past a change too
-// recent to give one, as a short diet break.
+// one before that change (BeforePhase). It goes back past a change too
+// recent to give one, as a short diet break, but not past days enough
+// that held too little: an estimate from before those would be too old.
 //
 // Days not logged and days excluded are taken to be like the logged ones,
 // give or take the spread of a day. Days left out for being unlike them,
 // as big days one does not log, bias the TDEE low by what they would have
 // added; logging an estimate of such a day keeps it whole.
 func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Params) Estimate {
+	first := firstData(days)
 	changes := intakeChanges(phases)
 	change := latestChange(changes, last)
-	e := measure(days, windowFrom(last, change, p), last, p)
+	e := measure(days, windowFrom(last, change, first, p), last, p)
 	for e.Days < p.MinDays && !change.IsZero() {
 		before := change.AddDays(-1)
 		change = latestChange(changes, before)
-		if b := measure(days, windowFrom(before, change, p), before, p); b.Measured {
+		b := measure(days, windowFrom(before, change, first, p), before, p)
+		if b.Measured {
 			b.BeforePhase = true
 			e = b
+		}
+		if b.Days >= p.MinDays {
+			break
 		}
 	}
 	e.TrendKg = trendOn(days, last, p.TrendAlpha)
 	return e
+}
+
+// firstData returns the first day of days with a weigh-in or a meal, the
+// zero Date for none.
+func firstData(days map[day.Date]Day) day.Date {
+	var first day.Date
+	for d, v := range days {
+		if (weighed(v) || v.Meals > 0) && (first.IsZero() || d.Before(first)) {
+			first = d
+		}
+	}
+	return first
 }
 
 // intakeChanges returns the days the intake changes on, in order: each
@@ -212,13 +244,17 @@ func latestChange(changes []day.Date, d day.Date) day.Date {
 
 // windowFrom returns the first day of the window that ends on last, whose
 // intake last changed on change (the zero Date for never): the window
-// leaves out the first Params.WaterDays from it.
-func windowFrom(last, change day.Date, p Params) day.Date {
+// leaves out the first Params.WaterDays from it, and the days before
+// first, the user's first day with data.
+func windowFrom(last, change, first day.Date, p Params) day.Date {
 	from := last.AddDays(1 - p.WindowDays)
 	if !change.IsZero() {
 		if w := change.AddDays(p.WaterDays); from.Before(w) {
 			from = w
 		}
+	}
+	if from.Before(first) {
+		from = first
 	}
 	if last.Before(from) {
 		from = last.AddDays(1)
@@ -226,28 +262,38 @@ func windowFrom(last, change day.Date, p Params) day.Date {
 	return from
 }
 
+// counts are the data of a window's whole weeks, counted back from its
+// last day, which the per-week limits are held to: a window of 15 days
+// would put an eighth day of someone who weighs in thrice a week on one
+// side of the limit or the other.
+type counts struct {
+	days, weighIns, logged int
+	// spread is whether the window's weigh-ins are enough for a slope.
+	spread bool
+}
+
 // measure estimates the TDEE over the days from to to.
 func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	e := Estimate{From: from, To: to, Days: to.DaysSince(from) + 1}
+	weeks := counts{days: week * (max(e.Days, 0) / week)}
 	var xs, kgs, kcal []float64
 	for i := range e.Days {
 		d := days[from.AddDays(i)]
-		recent := i >= e.Days-recentDays
+		recent, inWeeks := i >= e.Days-week, i >= e.Days-weeks.days
 		if weighed(d) {
 			xs, kgs = append(xs, float64(i)), append(kgs, d.WeightKg)
-			if recent {
-				e.RecentWeighIns++
-			}
+			e.RecentWeighIns += btoi(recent)
+			weeks.weighIns += btoi(inWeeks)
 		}
 		if d.Status == day.Complete && d.Meals > 0 && finite(d.Kcal) && d.Kcal >= 0 {
 			kcal = append(kcal, d.Kcal)
-			if recent {
-				e.RecentLoggedDays++
-			}
+			e.RecentLoggedDays += btoi(recent)
+			weeks.logged += btoi(inWeeks)
 		}
 	}
 	e.WeighIns, e.LoggedDays = len(xs), len(kcal)
-	e.Measured = e.Days >= p.MinDays && e.WeighIns >= minWeighIns && e.LoggedDays >= minLoggedDays
+	weeks.spread = spread(xs)
+	e.Measured = e.Days >= p.MinDays && e.LoggedDays >= minLoggedDays && weeks.spread
 	if e.Measured {
 		f := regress(xs, kgs)
 		e.IntakeKcal = mean(kcal)
@@ -255,30 +301,36 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 		// The weight's slope is the energy balance: what was eaten less
 		// what was spent, KcalPerKg a kg.
 		e.TDEE = e.IntakeKcal - f.slope*plan.KcalPerKg
-		// The bound of the less certain part: a few logged days give the
-		// intake's spread few degrees of freedom.
-		df := min(f.df, e.LoggedDays-1)
-		e.HalfWidth = tQuantile(df) * math.Sqrt(intakeVariance(kcal, e.Days)+square(f.se*plan.KcalPerKg))
+		slopeVar, intakeVar := square(f.se*plan.KcalPerKg), intakeVariance(kcal, e.Days)
+		df := combinedDF(slopeVar, f.df, intakeVar, e.LoggedDays-1)
+		e.HalfWidth = tQuantile(df) * math.Sqrt(slopeVar+intakeVar)
 	}
-	e.Doubts = doubts(&e, p)
+	e.Doubts = doubts(&e, weeks, p)
 	e.Trusted = e.Measured && len(e.Doubts) == 0
 	return e
+}
+
+// spread reports whether the weigh-ins on the days xs, in order, are
+// enough for a slope: minWeighIns of them, minWeighInsSpan days apart.
+func spread(xs []float64) bool {
+	return len(xs) >= minWeighIns && xs[len(xs)-1]-xs[0] >= minWeighInsSpan
 }
 
 // weighed reports whether d has a weigh-in that is a number.
 func weighed(d Day) bool { return d.WeightKg > 0 && finite(d.WeightKg) }
 
-// doubts lists why e is missing or not trusted. A window too short has
-// only that doubt: its counts say nothing of how often one weighs in.
-func doubts(e *Estimate, p Params) []string {
+// doubts lists why e is missing or not trusted, with the data of its
+// whole weeks. A window too short has only that doubt: its counts say
+// nothing of how often one weighs in.
+func doubts(e *Estimate, weeks counts, p Params) []string {
 	if e.Days < p.MinDays {
 		return []string{DoubtFewDays}
 	}
 	var out []string
-	if e.WeighIns < minWeighIns || perWeek(e.WeighIns, e.Days) < p.WeighIns || float64(e.RecentWeighIns) < p.WeighIns {
+	if !weeks.spread || perWeek(weeks.weighIns, weeks.days) < p.WeighIns || float64(e.RecentWeighIns) < p.WeighIns {
 		out = append(out, DoubtFewWeighIns)
 	}
-	if e.LoggedDays < minLoggedDays || perWeek(e.LoggedDays, e.Days) < p.LoggedDays || float64(e.RecentLoggedDays) < p.LoggedDays {
+	if e.LoggedDays < minLoggedDays || perWeek(weeks.logged, weeks.days) < p.LoggedDays || float64(e.RecentLoggedDays) < p.LoggedDays {
 		out = append(out, DoubtFewLoggedDays)
 	}
 	// Not "wider than": an interval that is no number is not narrow.
@@ -290,6 +342,13 @@ func doubts(e *Estimate, p Params) []string {
 
 // perWeek returns n of days days as a number a week.
 func perWeek(n, days int) float64 { return 7 * float64(n) / float64(days) }
+
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
 
 // fit is a regression line's slope, its standard error and the degrees
 // of freedom the error has.
@@ -322,6 +381,7 @@ func regress(xs, kgs []float64) fit {
 	}
 	rho := autocorrelation(residuals, sse)
 	inflation := (1 + rho) / (1 - rho)
+	sse = max(sse, (n-2)*square(scaleStep)/12)
 	return fit{
 		slope: slope,
 		se:    math.Sqrt(sse / (n - 2) / sxx * inflation),
@@ -367,6 +427,18 @@ func intakeVariance(kcal []float64, days int) float64 {
 		ss += square(k - avg)
 	}
 	return square(float64(days-m)/float64(days)) * ss / float64(m-1)
+}
+
+// combinedDF returns the degrees of freedom of the sum of two variances
+// with df1 and df2 of their own (Welch and Satterthwaite): near the larger
+// part's, so a few logged days of a nearly even intake do not widen the
+// slope's bound.
+func combinedDF(v1 float64, df1 int, v2 float64, df2 int) int {
+	if v2 == 0 {
+		return df1
+	}
+	df := square(v1+v2) / (square(v1)/float64(df1) + square(v2)/float64(df2))
+	return max(1, int(df))
 }
 
 // tQuantiles are Student's t at 0.9, the bound of an 80 % interval, for 1

@@ -675,9 +675,9 @@ func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (
 	return out, nil
 }
 
-// ExcludeDay takes userID's logical day d out of calibration, for e's
-// reason, or changes the reason of a day already out. It is recorded as
-// a's event.
+// ExcludeDay takes userID's logical day d's intake out of calibration
+// (its weigh-in still counts), for e's reason, or changes the reason of a
+// day already out. It is recorded as a's event.
 func (db *DB) ExcludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, e day.Exclusion, now time.Time) error {
 	if err := day.ValidateExclusion(e); err != nil {
 		return fmt.Errorf("invalid exclusion: %w", err)
