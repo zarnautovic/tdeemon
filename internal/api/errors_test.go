@@ -208,6 +208,11 @@ func TestHandlersPassOnTheirErrors(t *testing.T) {
 			_, err := s.ingestHAE(asToken(ctx), &ingestHAEInput{RawBody: []byte(body)})
 			return err
 		},
+		"ingest-strong": func(ctx context.Context) error {
+			body := "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift,1,120,3,0\n"
+			_, err := s.ingestStrong(asToken(ctx), &ingestStrongInput{RawBody: []byte(body)})
+			return err
+		},
 		"get-me": func(ctx context.Context) error { _, err := s.getMe(ctx, nil); return err },
 		"find-foods": func(ctx context.Context) error {
 			_, err := s.findFoods(ctx, &findFoodsInput{Query: "rye", Limit: 10})

@@ -301,8 +301,8 @@ The replacement:
   difference between training and rest days as it is; the split itself
   is the plan's, which the coach changes (§8).
 - **The day's type** comes from the plan's training weekdays, so a day's
-  target is known in the morning. A training session read from a source
-  (until P3, the old service's) or the check-in's toggle corrects it
+  target is known in the morning. A workout read from a source
+  (until P3, Strong's export) or the check-in's toggle corrects it
   afterwards, the toggle having the last word, and calibration uses the
   corrected type. The weekly average weighs the day types by the number
   of training weekdays.
@@ -477,8 +477,13 @@ the first spec.
 
 - **Ingest:**
   - `POST /api/v1/ingest/hae` is the Health Auto Export payload; `POST
-    /api/v1/ingest/metrics` takes `{date, metrics}` (`internal/ingest`).
-  - Both use a per-user `ingest` token, not a web session, and the
+    /api/v1/ingest/metrics` takes `{date, metrics}`; `POST
+    /api/v1/ingest/strong` takes Strong's CSV export, the whole history,
+    as the body or a form's part `file`, and keeps its days of workouts
+    (`workout_days`), each workout on the logical day it starts in, as a
+    meal; the latest export that read is kept past the 30 days, for P3 to
+    read the sets from (`internal/ingest`).
+  - All use a per-user `ingest` token, not a web session, and the
     bodies are archived in the data directory; a user's days older than
     30 go when their next body arrives.
   - A value belongs to the calendar date of its point, as HAE writes it;
@@ -579,33 +584,34 @@ the first spec.
 
 ## 10. Migration from the predecessor
 
-1. **Importer** (`tdeemon import-vault`), reusing the predecessor's
-   markdown parser:
-   - daily notes → `days`, `metrics`, `meals` (historic meals become one
-     estimate item each);
-   - the food table note → `foods`;
-   - the goals note → `phases`, the `targets` history (from its
-     revision log) and `profile_notes`;
-   - the Strong archive and the program/exercise notes wait for the
-     training module.
-2. **Parallel run = shadow mode, about two weeks.** The agent keeps
-   logging to the vault, tdeemon re-imports the vault nightly (the
-   importer is idempotent) and receives HAE directly. Daily totals and
-   metrics are compared; after a final import, logging switches to
-   tdeemon.
+1. **A one-off import of the history** (`tdeemon import-history`):
+   - the predecessor's database, an index of the vault's daily notes →
+     `days`, `metrics` and `meals` (historic meals become one estimate
+     item each); the daily notes' mood, hunger and status are left out;
+   - the vault's food table note → `foods`;
+   - the vault's goals note → `phases`, the `targets` history (from its
+     revision log) and `profile_notes`.
+
+   Nothing is read from the predecessor or the vault after it: there is
+   no shadow mode and no nightly re-import.
+2. **New inputs for what the predecessor took in:** Health Auto Export
+   directly (§9), the agent through `/mcp`, and Strong's CSV export
+   (§9), whose days of workouts make the training days until P3 reads
+   its sets from the latest export kept.
 3. **Cut-over:**
    - the agent switches to `/mcp`, and its health skill shrinks to a few
      lines;
-   - the HAE automation points at the new app;
+   - the HAE automation points at the new app; the Strong shortcut sends
+     the export to both until P3, as the old service keeps the training
+     side (5);
    - the agent's nightly rollover and morning-summary jobs are removed
      (tdeemon has no rollover and sends the summary itself).
 4. **Obsidian stays** for other uses. The health folder is archived and
    nothing health-related depends on vault sync anymore.
-5. **The old service keeps the training side until P3** (Strong import,
-   program prescription, training dashboard). tdeemon reads training
-   days from its workouts API for the split targets, and the strength
-   veto waits for P3. Its nutrition side is retired after the parallel
-   run.
+5. **The old service keeps the training side until P3** (program
+   prescription, training dashboard), but tdeemon reads nothing from it;
+   the strength veto waits for P3. Its nutrition side is retired at the
+   cut-over.
 6. **The repo is public from the first commit** (AGPL-3.0-only, and
    contributions come under the same licence, with no CLA). GitHub Free
    only enforces rulesets on public repos, and a protected `main` is a
@@ -617,14 +623,14 @@ the first spec.
 
 | phase | scope |
 | --- | --- |
-| **P0 — replace the predecessor** | schema + migrations, foods/meals/days/metrics/phases/targets, tool registry, MCP (token auth), REST, HAE ingest, calibration v2, **proposals + coaching tools + guardrails**, importer, minimal web UI (day view, food DB, pending proposals, login), sign-in with a password or OIDC (Authentik), **deterministic morning summary + watchdog via Telegram**; training days read from the old service; the agent on MCP; cut-over |
+| **P0 — replace the predecessor** | schema + migrations, foods/meals/days/metrics/phases/targets, tool registry, MCP (token auth), REST, HAE ingest, calibration v2, **proposals + coaching tools + guardrails**, a one-off import of the history, minimal web UI (day view, food DB, pending proposals, login), sign-in with a password or OIDC (Authentik), **deterministic morning summary + watchdog via Telegram**; training days from Strong's export; the agent on MCP; cut-over |
 | **P1 — v0.1 open source** | multi-user + invites, built-in chat with BYO key (`fast`/`smart` slots) and photos, **autopilot weekly check-in**, MCP coaching prompts, PWA, morning summary + watchdog, recipes, i18n (en/hr), docker compose, docs, CI |
 | **P2** | Telegram adapter, OAuth for Claude/ChatGPT connectors, shopping list, generic CSV history import, barcode → Open Food Facts lookup |
 | **P3 — training module** | generic workout data (exercise, sets, reps, weight, RPE, duration, distance) + import adapters (Strong, others); **programs as declarative specs** over a library of progression rules, created by the coach through proposals (§8); the RTS program is the first spec; `training_day` derived from any workout source |
 | **P4** | in-app workout logging (replaces Strong); native app with HealthKit (replaces HAE) |
 
 Until P3, a training day for split targets comes from the plan's
-training weekdays, corrected by a session from the old service or the
+training weekdays, corrected by a workout in Strong's export or the
 manual toggle (`checkin.training_day`).
 
 ## 12. Open questions

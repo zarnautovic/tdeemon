@@ -270,11 +270,11 @@ func TestGetDay(t *testing.T) {
 		checkJSON(t, rec.Body.Bytes(), todays)
 	}
 
-	// The day before: excluded, a rest day by the plan, before the first
-	// target, with nothing logged.
+	// The day before: excluded, a rest day by the plan but a training day
+	// by Strong's workout, before the first target, with nothing logged.
 	rec := in.do(t, http.MethodGet, "/api/v1/days/"+today.AddDays(-1).String(), "", session, nil)
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
-		"date": %q, "status": "excluded", "excluded_reason": "Ana's birthday dinner", "type": "rest",
+		"date": %q, "status": "excluded", "excluded_reason": "Ana's birthday dinner", "type": "training",
 		"meals": [], "total": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}, "metrics": []
 	}`, today.AddDays(-1)))
 	// Two days before: over, and not excluded.

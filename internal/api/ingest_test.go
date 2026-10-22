@@ -1,9 +1,13 @@
 package api_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"io"
 	"log/slog"
+	"maps"
 	"math"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -210,6 +214,8 @@ func TestIngestTakesNineMB(t *testing.T) {
 	for path, body := range map[string]string{
 		"/api/v1/ingest/hae":     haeBody + pad,
 		"/api/v1/ingest/metrics": `{"date": "2026-10-21", "metrics": {"steps": 1}}` + pad,
+		// Blank lines, which a CSV reader skips.
+		"/api/v1/ingest/strong": strongExport(t) + strings.Repeat("\n", 10<<20-1<<10),
 	} {
 		if rec := in.do(t, http.MethodPost, path, body, nil, tok); rec.Code != http.StatusOK {
 			t.Errorf("POST %s = %d %s", path, rec.Code, rec.Body.String())
@@ -233,11 +239,10 @@ func TestIngestHAETooLarge(t *testing.T) {
 	}
 }
 
-// The raw body goes to the user's archive, even one that does not read.
-func TestIngestArchives(t *testing.T) {
-	t.Parallel()
-
-	in := newInstance(t, "http://localhost", "")
+// withArchive gives in an archive of the bodies, and returns its
+// directory.
+func withArchive(t *testing.T, in *instance) string {
+	t.Helper()
 	dir := t.TempDir()
 	base, _ := url.Parse("http://localhost")
 	h, err := api.NewHandler(api.Config{
@@ -248,25 +253,61 @@ func TestIngestArchives(t *testing.T) {
 		t.Fatal(err)
 	}
 	in.h = h
+	return dir
+}
+
+// The latest Strong export that read is kept, the form's file rather than
+// the form; one that does not read is not.
+func TestIngestKeepsTheLatestExport(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	dir := withArchive(t, in)
+	tok := ingestToken(t, in, `"ingest"`)
+	in.do(t, http.MethodPost, "/api/v1/ingest/strong", "not, a, strong export", nil, tok)
+	latest := filepath.Join(dir, in.user.ID.String(), "latest-strong.csv.gz")
+	if _, err := os.Stat(latest); err == nil {
+		t.Error("an export that did not read was kept as the latest")
+	}
+	body, contentType := strongForm(t, strongExport(t))
+	postStrong(t, in, tok, body, contentType)
+	if got := gunzip(t, latest); got != strongExport(t) {
+		t.Errorf("the latest export = %q, want the form's file", got)
+	}
+	// The form itself is archived as one.
+	if forms, _ := filepath.Glob(filepath.Join(dir, in.user.ID.String(), "*", "*-strong.form.gz")); len(forms) != 1 {
+		t.Errorf("archived forms = %v, want the one", forms)
+	}
+}
+
+// The raw body goes to the user's archive, even one that does not read.
+func TestIngestArchives(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	dir := withArchive(t, in)
 	tok := ingestToken(t, in, `"ingest"`)
 	in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, tok)
 	in.do(t, http.MethodPost, "/api/v1/ingest/hae", `{"not": "hae"}`, nil, tok)
 	in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date": "2026-10-21", "metrics": {"steps": 1}}`, nil, tok)
-	files, err := filepath.Glob(filepath.Join(dir, in.user.ID.String(), in.clock.Now().UTC().Format("2006-01-02"), "*.json.gz"))
-	if err != nil || len(files) != 3 {
-		t.Fatalf("archived %v, %v; want 3 bodies", files, err)
+	in.do(t, http.MethodPost, "/api/v1/ingest/strong", "not, a, strong export", nil, tok)
+	files, err := filepath.Glob(filepath.Join(dir, in.user.ID.String(), in.clock.Now().UTC().Format("2006-01-02"), "*.gz"))
+	if err != nil || len(files) != 4 {
+		t.Fatalf("archived %v, %v; want 4 bodies", files, err)
 	}
-	var hae, metrics int
+	var hae, metrics, strong int
 	for _, f := range files {
 		switch {
 		case strings.HasSuffix(f, "-hae.json.gz"):
 			hae++
 		case strings.HasSuffix(f, "-metrics.json.gz"):
 			metrics++
+		case strings.HasSuffix(f, "-strong.csv.gz"):
+			strong++
 		}
 	}
-	if hae != 2 || metrics != 1 {
-		t.Errorf("archived %d of HAE and %d of the simple form", hae, metrics)
+	if hae != 2 || metrics != 1 || strong != 1 {
+		t.Errorf("archived %d of HAE, %d of the simple form and %d of Strong", hae, metrics, strong)
 	}
 	// An archive that cannot be written does not stop the import; the
 	// log says whose body it lost.
@@ -282,9 +323,9 @@ func TestIngestArchives(t *testing.T) {
 	in.checkLogged(t, logRecord{Level: "ERROR", Msg: "archiving an ingest failed", UserID: in.user.ID.String()})
 }
 
-// HAE's body may arrive past the server's own deadline, as a large export
-// does on a phone's slow upload.
-func TestIngestHAESlowBody(t *testing.T) {
+// HAE's body and Strong's export may arrive past the server's own
+// deadline, as a large export does on a phone's slow upload.
+func TestIngestSlowBody(t *testing.T) {
 	t.Parallel()
 
 	in := newInstance(t, "http://localhost", "")
@@ -294,30 +335,34 @@ func TestIngestHAESlowBody(t *testing.T) {
 	srv.Start()
 	t.Cleanup(srv.Close)
 
-	pr, pw := io.Pipe()
-	go func() {
-		half := len(haeBody) / 2
-		_, _ = pw.Write([]byte(haeBody[:half]))
-		time.Sleep(time.Second)
-		_, _ = pw.Write([]byte(haeBody[half:]))
-		_ = pw.Close()
-	}()
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/api/v1/ingest/hae", pr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	for k, v := range tok {
-		req.Header.Set(k, v)
-	}
-	resp, err := srv.Client().Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Errorf("POST = %d %s", resp.StatusCode, b)
+	for path, body := range map[string]string{"/api/v1/ingest/hae": haeBody, "/api/v1/ingest/strong": strongExport(t)} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			pr, pw := io.Pipe()
+			go func() {
+				half := len(body) / 2
+				_, _ = pw.Write([]byte(body[:half]))
+				time.Sleep(time.Second)
+				_, _ = pw.Write([]byte(body[half:]))
+				_ = pw.Close()
+			}()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+path, pr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for k, v := range tok {
+				req.Header.Set(k, v)
+			}
+			resp, err := srv.Client().Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			if resp.StatusCode != http.StatusOK {
+				b, _ := io.ReadAll(resp.Body)
+				t.Errorf("POST = %d %s", resp.StatusCode, b)
+			}
+		})
 	}
 }
 
@@ -437,5 +482,183 @@ func TestIngestHAEUnsummarizedSleep(t *testing.T) {
 	if len(got.Days) != 1 || got.Days[0].Date != "2026-10-22" || len(got.Days[0].Changed) != 1 ||
 		got.Days[0].Changed[0].Metric != "steps" || got.Days[0].Changed[0].Value != 310 {
 		t.Errorf("days = %+v, want 2026-10-22 with the steps added up", got.Days)
+	}
+}
+
+// strongExport returns internal/ingest's made-up Strong export: workouts
+// on 2026-10-19 and 2026-10-21.
+func strongExport(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "ingest", "testdata", "strong", "export.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+type strongResponse struct {
+	Workouts, Days int
+	Added          []string `json:"added"`
+	Removed        []string `json:"removed"`
+}
+
+// postStrong posts body to in's Strong import with tok and contentType,
+// and returns the answer, checked against the document.
+func postStrong(t *testing.T, in *instance, tok map[string]string, body, contentType string) strongResponse {
+	t.Helper()
+	h := maps.Clone(tok)
+	h["Content-Type"] = contentType
+	rec := in.do(t, http.MethodPost, "/api/v1/ingest/strong", body, nil, h)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d %s", rec.Code, rec.Body.String())
+	}
+	return decodeJSON[strongResponse](t, rec.Body.Bytes())
+}
+
+// An export gives its days of workouts, by the import's hand, and the
+// same again, as a Shortcut may send it, changes nothing.
+func TestIngestStrong(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	got := postStrong(t, in, tok, strongExport(t), "text/csv")
+	if got.Workouts != 3 || got.Days != 2 || !slices.Equal(got.Added, []string{"2026-10-19", "2026-10-21"}) || len(got.Removed) != 0 {
+		t.Errorf("the first export = %+v", got)
+	}
+	es, err := in.db.Events(t.Context(), in.user.ID, 1)
+	if err != nil || len(es) != 1 || es[0].Actor != (event.Actor{Kind: event.Import, Client: "strong"}) {
+		t.Errorf("events = %+v, %v; want the import's", es, err)
+	}
+	if again := postStrong(t, in, tok, strongExport(t), "application/octet-stream"); len(again.Added) != 0 || len(again.Removed) != 0 {
+		t.Errorf("the same export again = %+v", again)
+	}
+}
+
+// A newer export without a day takes it away, and the check-in's toggle
+// stays the user's.
+func TestIngestStrongReplaces(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	d := day.Date{Year: 2026, Month: 10, Day: 19}
+	if err := in.db.SetTrainingDay(t.Context(), in.user.ID, event.Actor{Kind: event.User, Client: "web"}, d, new(false), in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	tok := ingestToken(t, in, `"ingest"`)
+	postStrong(t, in, tok, strongExport(t), "text/csv")
+	newer := "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift (Barbell),1,120,3,0\n"
+	if got := postStrong(t, in, tok, newer, "text/csv"); got.Days != 1 || len(got.Added) != 0 || !slices.Equal(got.Removed, []string{"2026-10-19"}) {
+		t.Errorf("the newer export = %+v", got)
+	}
+	days, _ := in.db.WorkoutDays(t.Context(), in.user.ID, d, d.AddDays(7))
+	toggles, _ := in.db.TrainingDayToggles(t.Context(), in.user.ID, d, d.AddDays(7))
+	if len(days) != 1 || !days[d.AddDays(2)] || len(toggles) != 1 || toggles[d] {
+		t.Errorf("days = %v, toggles = %v; want 2026-10-21 and the toggle kept", days, toggles)
+	}
+}
+
+func TestIngestStrongRefuses(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	if rec := in.do(t, http.MethodPost, "/api/v1/ingest/strong", strongExport(t), nil, tok); rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d %s", rec.Code, rec.Body.String())
+	}
+	header := "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n"
+	for _, tc := range []struct {
+		name, body string
+		header     map[string]string
+		cookies    []*http.Cookie
+		code       int
+	}{
+		{"no export of Strong's", "date;steps\n2026-10-21;4000\n", tok, nil, http.StatusUnprocessableEntity},
+		{"an export without a workout", header, tok, nil, http.StatusUnprocessableEntity},
+		{"a token without the ingest scope", strongExport(t), ingestToken(t, in, `"read","tools"`), nil, http.StatusForbidden},
+		{"a web session", strongExport(t), nil, []*http.Cookie{sessionOf(t, in)}, http.StatusForbidden},
+		{"no one", strongExport(t), nil, nil, http.StatusUnauthorized},
+		{"10 MB", header + strings.Repeat("x", 10<<20), tok, nil, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if rec := in.do(t, http.MethodPost, "/api/v1/ingest/strong", tc.body, tc.cookies, tc.header); rec.Code != tc.code {
+				t.Errorf("POST = %d %s, want %d", rec.Code, rec.Body.String()[:min(200, rec.Body.Len())], tc.code)
+			}
+		})
+	}
+	d := day.Date{Year: 2026, Month: 10, Day: 19}
+	if days, _ := in.db.WorkoutDays(t.Context(), in.user.ID, d, d.AddDays(7)); len(days) != 2 {
+		t.Errorf("a refused export changed the days: %v", days)
+	}
+}
+
+// strongForm returns a form with csv as its part file, as the
+// predecessor's Shortcut sends, and its content type.
+func strongForm(t *testing.T, csv string) (string, string) {
+	t.Helper()
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	f, err := w.CreateFormFile("file", "strong.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte(csv)); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return b.String(), w.FormDataContentType()
+}
+
+// gunzip returns the file at path, gunzipped.
+func gunzip(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// The export may come as the part file of a form, as the predecessor's
+// Shortcut sends it; a form without it, or one that does not read, is
+// refused with what to send. A workout past midnight, before the user's
+// day starts, is the day before's.
+func TestIngestStrongForm(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	late := "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-20 00:30:00,Late,40m,Squat,1,90,5,0\n"
+	body, contentType := strongForm(t, late)
+	if got := postStrong(t, in, tok, body, contentType); !slices.Equal(got.Added, []string{"2026-10-19"}) {
+		t.Errorf("the form = %+v, want 2026-10-19", got)
+	}
+	var b bytes.Buffer
+	w := multipart.NewWriter(&b)
+	_ = w.WriteField("note", "no file")
+	_ = w.Close()
+	for name, c := range map[string]struct{ body, contentType, want string }{
+		"no part file":              {b.String(), w.FormDataContentType(), "part named file"},
+		"a form that does not read": {"--x\r\nno header\r\n\r\n--x--\r\n", "multipart/form-data; boundary=x", "the form does not read"},
+		"a form cut short":          {"--x\r\nContent-Disposition: form-data; name=\"file\"\r\n\r\nDate,Workout", "multipart/form-data; boundary=x", "the form does not read"},
+	} {
+		h := maps.Clone(tok)
+		h["Content-Type"] = c.contentType
+		rec := in.do(t, http.MethodPost, "/api/v1/ingest/strong", c.body, nil, h)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), c.want) {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
 	}
 }

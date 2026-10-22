@@ -199,6 +199,16 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			}, inside: "refused by the test",
 		},
 		{
+			op: "ingest-strong", method: http.MethodPost, path: "/api/v1/ingest/strong",
+			body:      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift,1,120,3,0\n",
+			withToken: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.failWrites(t, "INSERT", "workout_days")
+				return ""
+			}, inside: "refused by the test",
+		},
+		{
 			name: "find-foods, the foods", op: "find-foods", method: http.MethodGet, path: "/api/v1/foods?query=rye", signedIn: true,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
 				t.Helper()
@@ -235,6 +245,17 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			}, inside: "refused by the test",
 		},
 		{
+			name: "ingest-strong, the user's calendar",
+			op:   "ingest-strong", method: http.MethodPost, path: "/api/v1/ingest/strong",
+			body:      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift,1,120,3,0\n",
+			withToken: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "UPDATE users SET timezone = 'Nowhere/Bogus'")
+				return ""
+			}, inside: "Nowhere/Bogus",
+		},
+		{
 			op: "get-limits", method: http.MethodGet, path: "/api/v1/limits", signedIn: true,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
 				t.Helper()
@@ -263,6 +284,8 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 		{"get-day", "/api/v1/days/today", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
+		{"get-me", "/api/v1/me", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE targets RENAME TO gone", "targets"},
 		{"get-day", "/api/v1/days/today", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
 		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},

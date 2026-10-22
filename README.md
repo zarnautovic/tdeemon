@@ -351,6 +351,32 @@ backups: Health Auto Export's as they came, even one that does not
 read, and the simple form's as read. A user's days older than 30 go
 when their next body arrives.
 
+### Import from Strong
+
+The Strong app's CSV export (Settings, Export Strong Data) holds the
+whole history of workouts. tdeemon keeps the days they were on, each
+workout on the day it starts in, by your day start hour, as a meal is:
+a day with a workout counts as a training day, for the targets that
+differ by the type of day, unless you set the day's type in the
+check-in yourself. The sets themselves wait for the training module,
+which reads them from the latest export tdeemon keeps.
+
+Send the export as it comes, with a token with the `ingest` scope, from
+an iOS Shortcut for instance (Get Contents of URL, method POST, request
+body File, or Form with the file as `file`):
+
+```sh
+curl -H 'Authorization: Bearer tdm_…' -H 'Content-Type: text/csv' \
+  --data-binary @strong_workouts.csv \
+  https://tdeemon.example.com/api/v1/ingest/strong
+```
+
+Each export replaces the days of the one before: a workout you deleted
+in Strong is no longer a day of a workout. An export without a workout
+is refused, so a wrong file cannot clear them. The export is archived
+with the other bodies, and the latest that read is kept past their 30
+days, as `TDEEMON_DATA_DIR/ingest/<user>/latest-strong.csv.gz`.
+
 ## Data
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
