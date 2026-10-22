@@ -99,7 +99,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import), note, fingerprint | the fingerprint of the create, for idempotent retries (§9) |
 | `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
-| `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
+| `days` | user_id, day, excluded_reason?, training_day?, mood?, hunger?, note? | check-in (mood and hunger 1–5); open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
 | `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
 | `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
 | `plan_settings` | user_id, training_weekdays, limits?; later autonomy (propose/autopilot) and check-in weekday | the training weekdays give each day its type ahead of time (§7); the user's limits are a JSON object of their names ([limits.md](limits.md)) holding only those off their defaults, so a limit at its default follows a later release's default, and change only from a web session, never through tools (§8) |
@@ -185,8 +185,8 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name or alias another food has is refused naming that food |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
-| `log_metric(metric, value, date?)` | weight and other manual measurements |
-| `checkin(date?, mood?, hunger?, note?, training_day?)` | |
+| `log_metric(metric, value, date?)` / `delete_metric(metric, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
+| `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); one event, so one undo takes it back; answers the day |
 | `get_summary(window?)` | weekly averages, weight trend, measured TDEE, calibration verdict, recovery flags |
 | `get_history(window, granularity)` | coaching: compact day/week table across all metrics (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits, pending proposals |
@@ -241,7 +241,10 @@ which a search would not find but `get_food` gives. `log_meal` is
 no op touches keeps what it brought when logged), and `delete_meal` is
 `DELETE /api/v1/meals/{id}`; each answers where the meal's day stands.
 A meal logged with a token is the client `api`'s until MCP names
-itself.
+itself. `log_metric` is `PUT /api/v1/days/{date}/metrics/{kind}`,
+`delete_metric` is `DELETE` on the same route (404 for a kind the day
+has none of), and `checkin` is `PATCH /api/v1/days/{date}`; each takes a
+date or `today`, and answers the day as `get_day` does.
 
 ## 6. AI layer
 

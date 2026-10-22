@@ -342,3 +342,30 @@ func TestValidateExclusion(t *testing.T) {
 		})
 	}
 }
+
+// A check-in's mood and hunger are on the scale or not said, and its
+// note is text of its bounds.
+func TestCheckInValidate(t *testing.T) {
+	t.Parallel()
+
+	for _, ok := range []CheckIn{{}, {Mood: 1, Hunger: 5}, {Mood: 3, Note: "tired\nslept badly"}, {Note: strings.Repeat("a", MaxNoteLen)}} {
+		if err := ok.Validate(); err != nil {
+			t.Errorf("%+v: %v", ok, err)
+		}
+	}
+	for _, tc := range []struct {
+		c    CheckIn
+		want string
+	}{
+		{CheckIn{Mood: 6}, "mood 6"},
+		{CheckIn{Mood: -1}, "mood -1"},
+		{CheckIn{Hunger: 6}, "hunger 6"},
+		{CheckIn{Hunger: -2}, "hunger -2"},
+		{CheckIn{Note: strings.Repeat("a", MaxNoteLen+1)}, "the note"},
+		{CheckIn{Note: "a\x00b"}, "the note"},
+	} {
+		if err := tc.c.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%+v: %v, want %q", tc.c, err, tc.want)
+		}
+	}
+}

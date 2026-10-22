@@ -6,8 +6,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/danielgtaylor/huma/v2"
-
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
@@ -125,6 +123,9 @@ type dayBody struct {
 	DaySummary
 	Meals   []mealBody   `json:"meals" nullable:"false" doc:"In the order they were eaten."`
 	Metrics []metricBody `json:"metrics" nullable:"false"`
+	Mood    int          `json:"mood,omitempty" minimum:"1" maximum:"5" doc:"The check-in's mood, 1 (low) to 5 (high); absent when not said."`
+	Hunger  int          `json:"hunger,omitempty" minimum:"1" maximum:"5" doc:"The check-in's hunger, 1 (not at all) to 5 (very); absent when not said."`
+	Note    string       `json:"note,omitempty" doc:"What the user said of the day at its check-in."`
 }
 
 // remainingBody is what a day's target leaves after its total, each part
@@ -168,14 +169,9 @@ func (s *sessions) getDay(ctx context.Context, in *dayInput) (*dayOutput, error)
 		return nil, err
 	}
 	now := s.now()
-	_, d, err := userDay(p, now)
+	d, err := dayOf(p, in.Date, now)
 	if err != nil {
-		return nil, internalError("reading the day failed", err)
-	}
-	if in.Date != "today" {
-		if d, err = day.ParseDate(in.Date); err != nil {
-			return nil, huma.Error422UnprocessableEntity("the date: " + err.Error())
-		}
+		return nil, err
 	}
 	b, err := s.readDay(ctx, p, d, now)
 	if err != nil {
@@ -213,6 +209,11 @@ func (s *sessions) readDay(ctx context.Context, p auth.Principal, d day.Date, no
 		return b, err
 	}
 	b.ExcludedReason = exclusions[d].Reason
+	c, err := s.db.CheckInOf(ctx, userID, d)
+	if err != nil {
+		return b, err
+	}
+	b.Mood, b.Hunger, b.Note = c.Mood, c.Hunger, c.Note
 	dt, _, toggle, err := s.dayType(ctx, userID, d)
 	if err != nil {
 		return b, err

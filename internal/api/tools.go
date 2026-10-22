@@ -75,9 +75,37 @@ func (s *sessions) tools() []tool {
 			Path:        Prefix + "/days/{date}",
 			Summary:     "Get a day",
 			Description: "A day of yours: its meals with what each item brought, the total against the target of the day's type, " +
-				"what remains, its metrics, its type and where it stands (open, complete or excluded).",
+				"what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).",
 			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.getDay),
+		newTool("log_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "log-metric",
+			Method:      http.MethodPut,
+			Path:        Prefix + "/days/{date}/metrics/{kind}",
+			Summary:     "Log a measurement",
+			Description: "Stores a measurement of a day the user gave (a weighing, the night's sleep), of today or a day before, in the kind's unit: " +
+				"it counts over what an import brings, and replaces what the day held of the kind. The answer is the day, as get_day gives it.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.logMetric),
+		newTool("delete_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "delete-metric",
+			Method:      http.MethodDelete,
+			Path:        Prefix + "/days/{date}/metrics/{kind}",
+			Summary:     "Delete a measurement",
+			Description: "Deletes a day's measurement of a kind, a wrong one: imports apply to the day again. The answer is the day, as get_day gives it.",
+			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
+		}, s.deleteMetric),
+		newTool("checkin", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "check-in",
+			Method:      http.MethodPatch,
+			Path:        Prefix + "/days/{date}",
+			Summary:     "Check in a day",
+			Description: "Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, " +
+				"the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why " +
+				"(a restaurant meal they could not weigh, being sick, a day they forgot to log). One undo takes the whole check-in back. " +
+				"The answer is the day, as get_day gives it.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.checkIn),
 		newTool("find_foods", readScopes, huma.Operation{
 			OperationID: "find-foods",
 			Method:      http.MethodGet,
