@@ -85,6 +85,12 @@ func TestLogMeal(t *testing.T) {
 		t.Errorf("a retry: %d %s, want 200", rec.Code, rec.Body.String())
 	}
 	checkJSON(t, rec.Body.Bytes(), want)
+	// A late retry, days on: the id is stored, so its age does not matter.
+	e.in.clock.Set(e.now.Add(72 * time.Hour))
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil); rec.Code != http.StatusOK {
+		t.Errorf("a retry days later: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	e.in.clock.Set(e.now)
 	// Other content under the id is another meal.
 	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", strings.Replace(e.lunch(id), "Lunch", "Dinner", 1), e.session, nil)
 	if rec.Code != http.StatusConflict {
@@ -297,5 +303,27 @@ func TestLogMealIDsArePerUser(t *testing.T) {
 	m, err := e.in.db.MealByID(t.Context(), e.owner.user.ID, e.owner.meal)
 	if err != nil || m.Description != e.owner.user.Name+"'s lunch" || len(m.Items) != 2 {
 		t.Errorf("the owner's meal = %+v, %v; want it as it was", m, err)
+	}
+}
+
+// A meal's item cannot take the id of another meal's item, and a new food
+// cannot take an alias another food has: both are conflicts.
+func TestMealConflicts(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id, other, item := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	soup := `{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [%s]}`, id, fmt.Sprintf(soup, item)))
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}]}`, other))
+	rec := e.patch(t, other, fmt.Sprintf(`{"ops": [{"op": "add", "item": %s}]}`, fmt.Sprintf(soup, item)))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "another meal") {
+		t.Errorf("an item of another meal: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	body := fmt.Sprintf(`{"id": %q, "items": [{"food": {"name": "Loaf", "basis": "100g", "source": "label", "aliases": ["Ana's loaf"],
+		"nutrients": {"kcal": 250, "protein": 8, "carbs": 46, "fat": 3}}, "amount": 50, "unit": "g"}]}`, meal.NewIDAt(e.now))
+	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `the alias \"Ana's loaf\" is taken by food `+e.bread) {
+		t.Errorf("a new food of a taken alias: %d %s, want 409 naming the bread", rec.Code, rec.Body.String())
 	}
 }
