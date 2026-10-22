@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +21,13 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 )
+
+// mcpInstructions is the policy of logging the server gives every MCP
+// client (DESIGN.md §6): the same for each, rather than a skill of each
+// client's.
+//
+//go:embed mcp_instructions.md
+var mcpInstructions string
 
 // MCPPath is where MCP clients reach the tools (DESIGN.md §6): Streamable
 // HTTP, with an API token.
@@ -103,7 +111,8 @@ func opens(p auth.Principal, t tool) bool {
 
 // serverFor is the MCP server of the tools p's token opens.
 func (m *mcpServer) serverFor(p auth.Principal) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: m.info.Name, Version: m.info.Version}, &mcp.ServerOptions{Logger: m.logger})
+	s := mcp.NewServer(&mcp.Implementation{Name: m.info.Name, Version: m.info.Version},
+		&mcp.ServerOptions{Logger: m.logger, Instructions: mcpInstructions})
 	p.Client = auth.ClientMCP
 	for i := range m.tools {
 		t := &m.tools[i]
