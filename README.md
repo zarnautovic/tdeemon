@@ -407,9 +407,11 @@ kubectl exec deploy/tdeemon -- /tdeemon import-history \
 
 With `--foods`, it takes the vault's food table, `Baza-hrane.md`, too
 (or alone): a food given for 100 g or 100 ml stays so; one given for a
-weight or a volume ("220 g") is stored per 100 g or ml, with that amount
-as its serving "portion"; any other portion ("1 medium") is a food per
-portion, the portion in its note. A food whose note names a declaration
+weight in grams or a volume in ml ("220 g", "~400 g", "330 ml") is
+stored per 100 g or ml, with that amount as its serving "portion",
+unless its values per 100 would be no food; any other portion ("1
+medium", "0.5 kg", "400 g cooked") is a food per portion, the portion in
+its note. A food whose note names a declaration
 is a label's, the rest estimates. A name the table has twice takes each
 row's portion, and a food you have already, by its name, stays yours.
 

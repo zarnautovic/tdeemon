@@ -121,12 +121,11 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 		}
 		return nil
 	})
-	if err != nil {
-		// What failed did not change what ran before it: a run again goes
-		// on from there.
-		return err
+	// What ran before a failure stays, and its report with it: a run again
+	// goes on from there.
+	if _, werr := io.WriteString(out, b.String()); werr != nil {
+		return errors.Join(err, werr)
 	}
-	_, err = io.WriteString(out, b.String())
 	return err
 }
 

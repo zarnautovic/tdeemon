@@ -154,9 +154,9 @@ func TestImportHistoryFoods(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"Imported foods for ana@example.com: 11 new; 0 kept",
+		"Imported foods for ana@example.com: 12 new; 0 kept",
 		"Foods renamed (2):\n  Stew (1/4 of the pot)",
-		"Rows skipped (3):\n  line 17, Broken",
+		"Rows skipped (5):\n  line 18, Broken",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("the import said:\n%s\nwant %q in it", out.String(), want)
@@ -166,8 +166,33 @@ func TestImportHistoryFoods(t *testing.T) {
 	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t), "--dry-run"}, env, noInput(), &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "Would import (a dry run, nothing written) foods for ana@example.com: 0 new; 11 kept") ||
+	if !strings.Contains(out.String(), "Would import (a dry run, nothing written) foods for ana@example.com: 0 new; 12 kept") ||
 		!strings.Contains(out.String(), "whose days start at 04:00") {
 		t.Errorf("both, again, dry:\n%s", out.String())
+	}
+}
+
+// A failure after the foods leaves their report, as they stay: here the
+// days fail on a calendar that does not read.
+func TestImportHistoryReportsBeforeAFailure(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), "UPDATE users SET timezone = 'Nowhere/Bogus'"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
+	var out bytes.Buffer
+	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t)}, env, noInput(), &out, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "calendar") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 12 new") {
+		t.Errorf("err = %v, said:\n%s", err, out.String())
 	}
 }
