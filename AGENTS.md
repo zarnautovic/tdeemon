@@ -13,7 +13,8 @@ API. It is early: the skeleton, the database layer, users, sign-in
 (password, sessions, OpenID Connect), API tokens with scopes, foods,
 meals, metrics and the plan (profile, phases, targets, limits) in the
 domain and the database with an event log and undo, the API for the
-profile and the limits, the API contract and an empty web app exist.
+profile and the limits, the tool registry with `get_profile` and
+`get_day`, the API contract and an empty web app exist.
 
 | Path | What |
 | --- | --- |
@@ -24,7 +25,7 @@ profile and the limits, the API contract and an empty web app exist.
 | `internal/ingest` | what devices and apps send (Health Auto Export, a simple JSON form) turned into a day's metrics: which value a day keeps, units, a check of each value; the archive of the bodies |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan (web session only), and the imports (API token only) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan (web session only), the imports (API token only), and the tools (`tools.go`, the registry MCP will serve too) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |

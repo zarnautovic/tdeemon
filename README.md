@@ -273,7 +273,8 @@ provider's endpoints must use https, like its issuer.
 Devices and clients act for a user with an API token instead of a
 session: the phone (Health Auto Export) sends health data, an AI client
 logs meals through MCP. A token has scopes: `ingest` (health data from
-the phone), `tools` (log and change through the tools) and `read`.
+the phone), `tools` (the tools: read, log and change, through MCP) and
+`read` (the tools that only read).
 
 ```sh
 # Signed in (the session cookie in cookies.txt), create one; the token is
@@ -287,13 +288,15 @@ curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/
 
 `GET /api/v1/tokens` lists them (name, scopes, when last used) and
 `DELETE /api/v1/tokens/{id}` revokes one at once. A token reaches only
-the operations open to its scopes (`GET /api/v1/auth/whoami` and
-`GET /api/v1/info` with any scope, the imports below with `ingest`);
-every other operation is closed to
-tokens (403), so a token can never create, list or revoke tokens, read
-the session or change a setting. Only `Authorization: Bearer tdm_…`
-carries a token (an empty Bearer is a bad one): another header, such as
-a reverse proxy's Basic credentials or the ID token an authenticating
+the operations open to its scopes: `GET /api/v1/auth/whoami` and
+`GET /api/v1/info` with any scope, the imports below with `ingest`, and
+the tools that read with `read` or `tools` (`GET /api/v1/me`, the
+profile and the plan today, and `GET /api/v1/days/{date}`, a day,
+`today` or `YYYY-MM-DD`). Every other operation is closed to tokens
+(403), so a token can never create, list or revoke tokens, read the
+session or change a setting. Only `Authorization: Bearer tdm_…` carries
+a token (an empty Bearer is a bad one): another header, such as a
+reverse proxy's Basic credentials or the ID token an authenticating
 proxy passes on as a Bearer, leaves the request to its session cookie.
 The web app's settings page comes with the web UI.
 

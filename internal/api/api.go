@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -310,7 +311,7 @@ func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
 		return
 	}
 	codes := []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusUnprocessableEntity}
-	if scope, _ := op.Metadata[tokenScopeKey].(auth.Scope); scope != anyScope {
+	if scopes, _ := tokenScopes(op); !slices.Contains(scopes, anyScope) {
 		codes = append(codes, http.StatusForbidden)
 	}
 	if op.RequestBody != nil {
@@ -411,6 +412,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.registerTokens(a)
 	s.registerPlan(a)
 	s.registerIngest(a)
+	registerTools(a, s.tools())
 	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",

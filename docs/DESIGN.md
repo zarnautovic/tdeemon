@@ -145,7 +145,10 @@ A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
 present; nobody has to enter them. Values are stored as they are and
 rounded only for display (kcal to a whole number, grams to a tenth, salt
-to a hundredth).
+to a hundredth), which the nutrients and targets in the API's answers
+already are: a total is the sum of what was eaten, rounded, and what
+remains of a target is worked out before rounding. Amounts and metrics
+come as they are stored.
 
 **Metric merge rules** carry over from the predecessor
 (`internal/domain/metric`): a value the user gave (`manual`, from any
@@ -216,7 +219,14 @@ and polyols by any of the conventions labels use), saturated fat is
 above total fat, a duplicate of a meal logged minutes ago.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
-scripts.
+scripts. A tool is one operation of the API, in the registry
+(`internal/api/tools.go`): its MCP name, its REST route, its handler.
+MCP runs a tool through that operation, so the validation, the token
+check and the answers are REST's. A tool that reads takes a token with
+the `read` or the `tools` scope. So far: `get_profile` is
+`GET /api/v1/me`, and `get_day` is `GET /api/v1/days/{date}`, a date or
+`today`, the user's day now; MCP takes its `date` as optional, `today`
+when left out.
 
 ## 6. AI layer
 
@@ -380,8 +390,9 @@ it read while researching. So limits are enforced by the server.
   endpoint takes only a web session too, so not even a leaked MCP token
   can relax them. The API refuses tokens on every operation in its
   OpenAPI document that does not open itself to a scope, so a new
-  endpoint starts closed to them; routes outside it (`/mcp`, ingest)
-  check their scope themselves.
+  endpoint starts closed to them. The ingest is in the document, open to
+  the `ingest` scope, and MCP runs each tool through its operation, so
+  the same check holds there.
 - **The user can change them** within the instance's limits, with an
   explicit warning, e.g. for a faster rate of loss. A low-energy diet
   under medical supervision, under 1200 kcal, needs the admin to lower

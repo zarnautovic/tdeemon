@@ -128,13 +128,13 @@ func operations(t *testing.T) []operation {
 // A token reaches only the operations open to it; everything else, a new
 // endpoint included, is closed to tokens: managing tokens, reading the
 // session, signing in or out. The session cookie next to the token (a
-// browser that has both) does not change that. (An operation open to one
-// scope also answers 403 to a token without it; when the first comes,
-// the document check below covers every operation not open to any token.)
+// browser that has both) does not change that. (An operation open to
+// some scopes also answers 403 to a token with none of them, which
+// TestRequestProblemsAreDocumented holds to the document.)
 func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 	t.Parallel()
 
-	open := map[string]bool{"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true}
+	open := map[string]bool{"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true, "get-me": true, "get-day": true}
 	in, session := signedIn(t)
 	tok, _ := in.createToken(t, session, `{"name":"Claude","scopes":["tools","read","ingest"]}`)
 	for _, op := range operations(t) {

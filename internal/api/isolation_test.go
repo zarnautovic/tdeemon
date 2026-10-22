@@ -554,6 +554,12 @@ func isolationCases() map[string]isolationCase {
 		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),
+		"get-day": read("/api/v1/days/today", true, func(e isolationEnv) []string {
+			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s toast"}
+		}),
+		"get-me": read("/api/v1/me", true, func(e isolationEnv) []string {
+			return []string{"Notes of " + e.other.user.Name, fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
+		}),
 		"get-limits": read("/api/v1/limits", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20))}
 		}),
