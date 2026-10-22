@@ -64,6 +64,7 @@ test-web: $(WEB_DEPS) ## Vitest; coverage must meet the thresholds in web/vite.c
 
 test-scripts: ## the tests of the shell scripts (scripts/*-test.sh)
 	$(MISE) scripts/next-version-test.sh
+	scripts/image-tags-test.sh
 	scripts/check-disable-comments-test.sh
 
 api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json

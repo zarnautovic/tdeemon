@@ -1,7 +1,11 @@
 # Every merge to main that brings a feat, fix or perf commit, or a
 # breaking change, cuts a release: the next version from the
 # Conventional Commits since the last tag (scripts/next-version.sh,
-# cog.toml), a vX.Y.Z tag and a GitHub Release with the notes.
+# cog.toml), a vX.Y.Z tag, a GitHub Release with the notes, and the
+# image ghcr.io/zarnautovic/tdeemon:X.Y.Z (also :X.Y and :sha-<commit>).
+#
+# The image is a job here, not a workflow of its own on the release: a
+# release the workflow's token makes starts no other workflow.
 name: Release
 
 on:
@@ -68,7 +72,8 @@ jobs:
     if: needs.version.outputs.version != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # The only job that can write, and it runs no action: only gh.
+    # The only job that can write to the repository, and it runs no
+    # action: only gh.
     permissions:
       contents: write # create the version tag and the GitHub Release
     steps:
@@ -80,3 +85,54 @@ jobs:
           NOTES: ${{ needs.version.outputs.notes }}
         run: |
           gh release create "$VERSION" --target "$GITHUB_SHA" --title "$VERSION" --notes "$NOTES"
+
+  image:
+    name: Image
+    needs: [version, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # push the image to ghcr.io
+    env:
+      GOPROXY: https://proxy.golang.org|direct
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Tags
+        id: tags
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          {
+            echo "tags<<EOF"
+            scripts/image-tags.sh "$VERSION" "$GITHUB_SHA" "$GITHUB_REPOSITORY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          # BuildKit pinned like everything else, not buildx's moving tag.
+          # yamllint disable-line rule:line-length
+          driver-opts: image=moby/buildkit:v0.34.0@sha256:b059f8d7226d0b326bc871af489a5dddf65e36af4d20d14251b072974d9ee87c
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      # The Dockerfile cross-compiles, so both platforms build without
+      # emulation; the tests in it run once, on the build machine.
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ needs.version.outputs.version }}
+            GOPROXY=${{ env.GOPROXY }}
+          provenance: mode=max
+          # The SBOM's scanner pinned like BuildKit, not its moving default.
+          # yamllint disable-line rule:line-length
+          sbom: generator=docker.io/docker/buildkit-syft-scanner:1.12.0@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+          # No cache: a release builds from its sources alone.
