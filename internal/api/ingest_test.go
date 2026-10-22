@@ -3,6 +3,7 @@ package api_test
 import (
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -317,5 +318,86 @@ func TestIngestHAESlowBody(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
 		t.Errorf("POST = %d %s", resp.StatusCode, b)
+	}
+}
+
+// haePayload returns a payload of internal/ingest's testdata, of the shape
+// Health Auto Export sends.
+func haePayload(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("..", "ingest", "testdata", "hae", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// A day of syncs as a phone sends them: the morning's, the evening's with
+// the whole day and a second weighing, and the evening's again. The day
+// keeps the morning's weighing, the larger running totals and the latest
+// readings, and the night once.
+func TestIngestHAESyncs(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	post := func(name string) ingestResponse {
+		t.Helper()
+		rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haePayload(t, name), nil, tok)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("POST %s = %d %s", name, rec.Code, rec.Body.String())
+		}
+		return decodeJSON[ingestResponse](t, rec.Body.Bytes())
+	}
+	post("morning-sync.json")
+	evening := post("evening-sync.json")
+	var changed []string
+	for _, c := range evening.Days[0].Changed {
+		changed = append(changed, c.Metric)
+	}
+	slices.Sort(changed)
+	if want := []string{"active_kcal", "basal_kcal", "exercise_min", "hrv", "rhr", "steps"}; !slices.Equal(changed, want) {
+		t.Errorf("the evening changed %v, want %v", changed, want)
+	}
+	if again := post("evening-sync.json"); len(again.Days[0].Changed) != 0 {
+		t.Errorf("the evening's again changed %+v", again.Days[0].Changed)
+	}
+
+	d := day.Date{Year: 2026, Month: 10, Day: 21}
+	ms, err := in.db.Metrics(t.Context(), in.user.ID, d.AddDays(-1), d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[day.Date]map[metric.Kind]float64{
+		d.AddDays(-1): {metric.Steps: 8650, metric.ActiveKcal: 600},
+		d: {
+			metric.Steps: 11380, metric.ActiveKcal: 500, metric.BasalKcal: 1710, metric.ExerciseMin: 38, metric.Sleep: 6.8,
+			metric.Weight: 78.4, metric.BodyFat: 19.5, metric.LeanMass: 63.1, metric.RestingHR: 57, metric.HRV: 47.1, metric.VO2Max: 40.2,
+		},
+	}
+	for dd, kinds := range want {
+		if len(ms[dd]) != len(kinds) {
+			t.Errorf("%s = %+v, want %v", dd, ms[dd], kinds)
+		}
+		for _, v := range ms[dd] {
+			if w, ok := kinds[v.Kind]; !ok || math.Abs(v.Value-w) > 1e-9 || v.Source != metric.Import {
+				t.Errorf("%s %s = %v (%s), want %v (import)", dd, v.Kind, v.Value, v.Source, w)
+			}
+		}
+	}
+}
+
+// A night in stages is left out, once, with what to turn on in the app;
+// the payload's other values are stored.
+func TestIngestHAEUnsummarizedSleep(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haePayload(t, "unsummarized-sleep.json"), nil, tok)
+	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
+	if rec.Code != http.StatusOK || len(got.Rejected) != 1 || !strings.Contains(got.Rejected[0].Reason, "Summarize Data") ||
+		got.Rejected[0].RawDate == "" || len(got.Days) != 1 || len(got.Days[0].Changed) != 1 || got.Days[0].Changed[0].Metric != "steps" {
+		t.Errorf("POST = %d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -63,6 +63,13 @@ for the author and the reviewer.
   TypeScript types made from it, would leave them out.
   `TestAnswersMatchTheDocument` holds the answers of the operations it
   lists to the document, at the top level of the body (`checkBody`).
+- **Imports:** payloads of the shapes a source sends, with made-up
+  values, in `internal/ingest/testdata/` (Health Auto Export's in
+  `hae/`). Real ones stay outside git: `TestRealPayloads` reads the
+  directory `TDEEMON_HAE_PAYLOADS` names, such as an instance's archive
+  (`DATA_DIR/ingest/<user>`), `.json` and `.json.gz`, fails for what does
+  not read and logs what it left out, without the values; without the
+  variable it is skipped.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 
