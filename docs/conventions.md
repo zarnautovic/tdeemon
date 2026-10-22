@@ -98,6 +98,11 @@ for the author and the reviewer.
   (`go test ./internal/ingest -run TestRealPayloads -v`), it says what
   each day kept and what it left out, without the values. Without the
   variable it is skipped.
+- **Tools** (`tools()` in `internal/api/tools.go`) are operations like
+  any other, with their cases in `isolationCases` and `answerCases`;
+  `TestToolsAreNamed` lists the tools that exist, by their MCP name
+  (DESIGN.md §5), and `TestToolsTakeReadAndToolsTokens` holds a tool that
+  reads to the `read` and `tools` scopes.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 

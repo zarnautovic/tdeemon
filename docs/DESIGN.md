@@ -216,7 +216,13 @@ and polyols by any of the conventions labels use), saturated fat is
 above total fat, a duplicate of a meal logged minutes ago.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
-scripts.
+scripts. A tool is one operation of the API, in the registry
+(`internal/api/tools.go`): its MCP name, its REST route, its handler.
+MCP runs a tool through that operation, so the validation, the token
+check and the answers are REST's. A tool that reads takes a token with
+the `read` or the `tools` scope. So far: `get_profile` is
+`GET /api/v1/me`, and `get_day` is `GET /api/v1/days/{date}`, a date or
+`today`, the user's day now.
 
 ## 6. AI layer
 

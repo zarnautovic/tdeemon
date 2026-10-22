@@ -50,6 +50,37 @@ func TestGateTokensChecksTheScope(t *testing.T) {
 	}
 }
 
+// An operation open to several scopes takes a token with any of them.
+func TestGateTokensTakesAnyOfTheScopes(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	a := newAPI(mux, slog.New(slog.DiscardHandler))
+	huma.Register(a, huma.Operation{
+		OperationID: "read", Method: http.MethodGet, Path: "/read", DefaultStatus: http.StatusNoContent,
+		Metadata: openToTokens(auth.ScopeRead, auth.ScopeTools),
+	}, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil }) //nolint:nilnil // 204
+	for _, tc := range []struct {
+		scope auth.Scope
+		want  int
+	}{
+		{auth.ScopeRead, http.StatusNoContent},
+		{auth.ScopeTools, http.StatusNoContent},
+		{auth.ScopeIngest, http.StatusForbidden},
+	} {
+		t.Run(string(tc.scope), func(t *testing.T) {
+			t.Parallel()
+			r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/read", http.NoBody)
+			r = r.WithContext(auth.WithPrincipal(r.Context(), auth.Principal{Via: auth.ViaToken, Scopes: []auth.Scope{tc.scope}}))
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, r)
+			if rec.Code != tc.want || (tc.want == http.StatusForbidden && !strings.Contains(rec.Body.String(), "does not have the read or the tools scope")) {
+				t.Errorf("%d %s, want %d", rec.Code, rec.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
 // An empty scope, a variable that was never set, opens nothing.
 func TestGateTokensEmptyScopeOpensNothing(t *testing.T) {
 	t.Parallel()

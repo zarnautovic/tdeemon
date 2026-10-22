@@ -20,6 +20,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
@@ -205,6 +206,8 @@ func TestHandlersPassOnTheirErrors(t *testing.T) {
 			_, err := s.ingestHAE(asToken(ctx), &ingestHAEInput{RawBody: []byte(body)})
 			return err
 		},
+		"get-me":  func(ctx context.Context) error { _, err := s.getMe(ctx, nil); return err },
+		"get-day": func(ctx context.Context) error { _, err := s.getDay(ctx, &dayInput{Date: "today"}); return err },
 	} {
 		t.Run(op, func(t *testing.T) {
 			t.Parallel()
@@ -262,5 +265,19 @@ func TestDocumentRequestErrorsListTheTokensGate(t *testing.T) {
 		if _, got := a.OpenAPI().Paths[path].Get.Responses["403"]; got != want {
 			t.Errorf("%s lists 403: %v, want %v", path, got, want)
 		}
+	}
+}
+
+// A target with no carbs shows none, not the hair under 0 the arithmetic
+// of its grams leaves.
+func TestDayTargetBodyHasNoNegativeCarbs(t *testing.T) {
+	t.Parallel()
+
+	tg := plan.DayTarget{Kcal: 676.3, Protein: 100, Fat: 30.7}
+	if tg.Carbs() >= 0 {
+		t.Fatalf("Carbs() = %v: pick a target whose arithmetic leaves a hair under 0", tg.Carbs())
+	}
+	if b := newDayTargetBody(tg); b.Carbs != 0 {
+		t.Errorf("carbs = %v, want 0", b.Carbs)
 	}
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
 )
 
 // document is the API's description: the operations by the route they
@@ -146,6 +147,21 @@ func answerCases() map[string]answerCase {
 		"ingest-metrics": func(t *testing.T, in *instance, _ *http.Cookie) {
 			t.Helper()
 			in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date":"2026-10-21","metrics":{"weight":77.7,"sleep_h":30,"typo":1}}`, nil, ingestToken(t, in, `"ingest"`))
+		},
+		"get-day": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			now := in.clock.Now()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
+			saveIsolationMetrics(t, in.db, in.user, now)
+			saveIsolationPlan(t, in.db, in.user, now)
+			// Today, and the excluded day before.
+			in.do(t, http.MethodGet, "/api/v1/days/today", "", []*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/days/"+day.DateOf(now).AddDays(-1).String(), "", []*http.Cookie{session}, nil)
+		},
+		"get-me": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			saveIsolationPlan(t, in.db, in.user, in.clock.Now())
+			in.do(t, http.MethodGet, "/api/v1/me", "", []*http.Cookie{session}, nil)
 		},
 		"get-profile": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

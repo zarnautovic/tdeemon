@@ -88,6 +88,106 @@
         ],
         "type": "object"
       },
+      "DayBody": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "excluded_reason": {
+            "description": "Why the user excluded the day.",
+            "type": "string"
+          },
+          "meals": {
+            "description": "In the order they were eaten.",
+            "items": {
+              "$ref": "#/components/schemas/MealBody"
+            },
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricBody"
+            },
+            "type": "array"
+          },
+          "remaining": {
+            "$ref": "#/components/schemas/DayTargetBody",
+            "description": "What the target leaves after the total; below 0 past it."
+          },
+          "status": {
+            "description": "A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration.",
+            "enum": [
+              "open",
+              "complete",
+              "excluded"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DayTargetBody",
+            "description": "The target of the day's type; absent before the first target."
+          },
+          "total": {
+            "$ref": "#/components/schemas/NutrientsBody",
+            "description": "What the day's meals add up to."
+          },
+          "training_toggle": {
+            "description": "The check-in's choice of the day's type; absent when the plan's training weekdays decide.",
+            "type": "boolean"
+          },
+          "type": {
+            "description": "The day's type, which picks its target.",
+            "enum": [
+              "training",
+              "rest"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "status",
+          "type",
+          "meals",
+          "total",
+          "metrics"
+        ],
+        "type": "object"
+      },
+      "DayTargetBody": {
+        "additionalProperties": false,
+        "properties": {
+          "carbs": {
+            "description": "Grams of carbs: what the energy leaves after protein and fat.",
+            "format": "double",
+            "type": "number"
+          },
+          "fat": {
+            "description": "Grams of fat.",
+            "format": "double",
+            "type": "number"
+          },
+          "kcal": {
+            "description": "Energy, in kcal.",
+            "format": "double",
+            "type": "number"
+          },
+          "protein": {
+            "description": "Grams of protein.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "fat",
+          "carbs"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -290,6 +390,75 @@
         ],
         "type": "object"
       },
+      "ItemBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "How much, in unit.",
+            "format": "double",
+            "type": "number"
+          },
+          "food_id": {
+            "description": "The food it came from; absent for a one-off estimate.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "description": "The food's name when the item was logged, or the estimate's.",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "nutrients": {
+            "$ref": "#/components/schemas/NutrientsBody"
+          },
+          "portions": {
+            "description": "How many portions, when the quantity was given so.",
+            "format": "double",
+            "type": "number"
+          },
+          "serving": {
+            "description": "The named serving: a slice, a piece.",
+            "type": "string"
+          },
+          "servings": {
+            "description": "How many of serving were eaten, when the quantity was given so.",
+            "format": "double",
+            "type": "number"
+          },
+          "source": {
+            "enum": [
+              "label",
+              "estimate",
+              "user",
+              "dish"
+            ],
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "g",
+              "ml",
+              "portion"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "amount",
+          "unit",
+          "nutrients",
+          "source"
+        ],
+        "type": "object"
+      },
       "LimitsBody": {
         "additionalProperties": false,
         "properties": {
@@ -362,6 +531,187 @@
         ],
         "type": "object"
       },
+      "MeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "day_start_hour": {
+            "description": "The hour the user's day starts: what comes before it belongs to the day before.",
+            "format": "int64",
+            "maximum": 23,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "locale": {
+            "description": "The language of the app.",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "notes": {
+            "description": "What the user wants a coach to keep in mind.",
+            "type": "string"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/PhaseBody",
+            "description": "The phase today is in; absent when there is none."
+          },
+          "profile": {
+            "$ref": "#/components/schemas/MeProfile"
+          },
+          "target": {
+            "$ref": "#/components/schemas/TargetBody",
+            "description": "The targets in force today; absent before the first."
+          },
+          "time_zone": {
+            "examples": [
+              "Europe/Zagreb"
+            ],
+            "type": "string"
+          },
+          "today": {
+            "description": "The user's day now.",
+            "format": "date",
+            "type": "string"
+          },
+          "today_type": {
+            "description": "Today's type, which picks its target.",
+            "enum": [
+              "training",
+              "rest"
+            ],
+            "type": "string"
+          },
+          "training_weekdays": {
+            "description": "The days of the week the plan makes training days.",
+            "items": {
+              "enum": [
+                "sunday",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "units": {
+            "$ref": "#/components/schemas/UnitsBody"
+          }
+        },
+        "required": [
+          "name",
+          "locale",
+          "time_zone",
+          "day_start_hour",
+          "today",
+          "today_type",
+          "training_weekdays",
+          "profile",
+          "notes",
+          "units"
+        ],
+        "type": "object"
+      },
+      "MeProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "age": {
+            "description": "The age today, in years, when the birth date is known.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "birth_date": {
+            "examples": [
+              "1990-06-15"
+            ],
+            "format": "date",
+            "type": "string"
+          },
+          "height_cm": {
+            "description": "The height in centimetres.",
+            "format": "double",
+            "maximum": 275,
+            "minimum": 50,
+            "type": "number"
+          },
+          "missing": {
+            "description": "What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it.",
+            "items": {
+              "enum": [
+                "sex",
+                "birth_date",
+                "height_cm"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sex": {
+            "description": "The sex the energy equations take.",
+            "enum": [
+              "male",
+              "female"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "missing"
+        ],
+        "type": "object"
+      },
+      "MealBody": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "description": "What the meal was logged through.",
+            "enum": [
+              "mcp",
+              "chat",
+              "web",
+              "telegram",
+              "import"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "eaten_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemBody"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NutrientsBody"
+          }
+        },
+        "required": [
+          "id",
+          "eaten_at",
+          "description",
+          "client",
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
       "MethodsBody": {
         "additionalProperties": false,
         "properties": {
@@ -376,6 +726,102 @@
         },
         "required": [
           "password"
+        ],
+        "type": "object"
+      },
+      "MetricBody": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "weight",
+              "body_fat",
+              "lean_mass",
+              "steps",
+              "active_kcal",
+              "basal_kcal",
+              "sleep_h",
+              "rhr",
+              "hrv",
+              "vo2max",
+              "exercise_min"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "description": "manual is what the user gave, which counts over an import.",
+            "enum": [
+              "manual",
+              "import"
+            ],
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "unit",
+          "source"
+        ],
+        "type": "object"
+      },
+      "NutrientsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "alcohol": {
+            "format": "double",
+            "type": "number"
+          },
+          "carbs": {
+            "format": "double",
+            "type": "number"
+          },
+          "fat": {
+            "format": "double",
+            "type": "number"
+          },
+          "fiber": {
+            "format": "double",
+            "type": "number"
+          },
+          "kcal": {
+            "format": "double",
+            "type": "number"
+          },
+          "polyols": {
+            "description": "Sugar alcohols, part of the carbs.",
+            "format": "double",
+            "type": "number"
+          },
+          "protein": {
+            "format": "double",
+            "type": "number"
+          },
+          "salt": {
+            "format": "double",
+            "type": "number"
+          },
+          "saturated_fat": {
+            "format": "double",
+            "type": "number"
+          },
+          "sugars": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "carbs",
+          "fat"
         ],
         "type": "object"
       },
@@ -400,6 +846,51 @@
         "required": [
           "name",
           "login_url"
+        ],
+        "type": "object"
+      },
+      "PhaseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "description": "Its last day, when it has a planned one.",
+            "format": "date",
+            "type": "string"
+          },
+          "goal_weight": {
+            "description": "The goal weight, in kg.",
+            "format": "double",
+            "type": "number"
+          },
+          "milestone_weight": {
+            "description": "A milestone on the way, in kg.",
+            "format": "double",
+            "type": "number"
+          },
+          "rate_pct_week": {
+            "description": "The target rate, in % of the trend weight a week; a minus is a loss.",
+            "format": "double",
+            "type": "number"
+          },
+          "start": {
+            "description": "The phase's first day.",
+            "format": "date",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "cut",
+              "maintain",
+              "bulk",
+              "recomp"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "start",
+          "rate_pct_week"
         ],
         "type": "object"
       },
@@ -537,6 +1028,30 @@
         ],
         "type": "object"
       },
+      "TargetBody": {
+        "additionalProperties": false,
+        "properties": {
+          "effective_from": {
+            "description": "The first day the targets hold.",
+            "format": "date",
+            "type": "string"
+          },
+          "rest": {
+            "$ref": "#/components/schemas/DayTargetBody",
+            "description": "On a rest day."
+          },
+          "training": {
+            "$ref": "#/components/schemas/DayTargetBody",
+            "description": "On a training day."
+          }
+        },
+        "required": [
+          "effective_from",
+          "training",
+          "rest"
+        ],
+        "type": "object"
+      },
       "TokenBody": {
         "additionalProperties": false,
         "properties": {
@@ -591,6 +1106,44 @@
         },
         "required": [
           "tokens"
+        ],
+        "type": "object"
+      },
+      "UnitsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "energy": {
+            "enum": [
+              "kcal"
+            ],
+            "type": "string"
+          },
+          "height": {
+            "enum": [
+              "cm"
+            ],
+            "type": "string"
+          },
+          "nutrients": {
+            "description": "Of protein, carbs, fat and the rest.",
+            "enum": [
+              "g"
+            ],
+            "type": "string"
+          },
+          "weight": {
+            "description": "Of a person.",
+            "enum": [
+              "kg"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "energy",
+          "nutrients",
+          "weight",
+          "height"
         ],
         "type": "object"
       },
@@ -1137,6 +1690,101 @@
         "summary": "Get who the request acts for",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/days/{date}": {
+      "get": {
+        "description": "A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its type and where it stands (open, complete or excluded).",
+        "operationId": "get-day",
+        "parameters": [
+          {
+            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "examples": [
+                "today"
+              ],
+              "pattern": "^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a day",
+        "tags": [
+          "tools"
         ]
       }
     },
@@ -1691,6 +2339,85 @@
         "summary": "Change your limits",
         "tags": [
           "plan"
+        ]
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "description": "Who you are and what you aim for today: the profile, the phase today is in, the targets in force by type of day, today's type, the training weekdays, your notes for a coach, and the units every amount is in.",
+        "operationId": "get-me",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get your profile and plan today",
+        "tags": [
+          "tools"
         ]
       }
     },

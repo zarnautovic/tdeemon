@@ -22,7 +22,7 @@ import (
 var webActor = event.Actor{Kind: event.User, Client: "web"}
 
 // ProfileFields are the profile's fields, as a request sets them and an
-// answer shows them. It is exported so profileBody can embed it: huma
+// answer shows them. It is exported so ProfileBody can embed it: huma
 // describes no field of an unexported embedded struct.
 type ProfileFields struct {
 	Sex       *string  `json:"sex,omitempty" enum:"male,female" doc:"The sex the energy equations take."`
@@ -30,15 +30,16 @@ type ProfileFields struct {
 	HeightCm  *float64 `json:"height_cm,omitempty" minimum:"50" maximum:"275" doc:"The height in centimetres."`
 }
 
-// profileBody is ProfileFields with what a plan still needs.
-type profileBody struct {
+// ProfileBody is ProfileFields with what a plan still needs. It is
+// exported so MeProfile can embed it.
+type ProfileBody struct {
 	ProfileFields
 	Missing []string `json:"missing" nullable:"false" enum:"sex,birth_date,height_cm" doc:"What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it."`
 }
 
 type profileOutput struct {
 	CacheControl string `header:"Cache-Control"`
-	Body         profileBody
+	Body         ProfileBody
 }
 
 type setProfileInput struct {
@@ -107,8 +108,8 @@ func (s *sessions) registerPlan(a huma.API) {
 	}, s.setLimits)
 }
 
-func newProfileBody(p profile.Profile) profileBody {
-	var b profileBody
+func newProfileBody(p profile.Profile) ProfileBody {
+	var b ProfileBody
 	if p.Sex != "" {
 		b.Sex = new(string(p.Sex))
 	}

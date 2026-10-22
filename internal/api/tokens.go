@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -47,23 +48,33 @@ func requireToken(ctx context.Context) (auth.Principal, error) {
 }
 
 // tokenScopeKey, in an operation's Metadata (see openToTokens), lets API
-// tokens call the operation. An operation without it refuses every token
-// with 403, so a new endpoint is closed to tokens until it names the
-// scope they need (DESIGN.md §8: settings only through a web session).
-const tokenScopeKey = "tokenScope"
+// tokens call the operation: those with one of the scopes it holds. An
+// operation without it refuses every token with 403, so a new endpoint is
+// closed to tokens until it names the scopes they need (DESIGN.md §8:
+// settings only through a web session).
+const tokenScopeKey = "tokenScopes"
 
 // anyScope, in tokenScopeKey, opens an operation to a token with any
 // scope. It is no scope's name, and not the zero value: an empty scope
 // opens nothing.
 const anyScope auth.Scope = "*"
 
-// openToTokens is the Metadata of an operation API tokens with scope may
-// call.
-func openToTokens(scope auth.Scope) map[string]any { return map[string]any{tokenScopeKey: scope} }
+// openToTokens is the Metadata of an operation API tokens with any of
+// scopes may call.
+func openToTokens(scopes ...auth.Scope) map[string]any {
+	return map[string]any{tokenScopeKey: scopes}
+}
 
 // openToAnyToken is the Metadata of an operation every API token may
 // call.
 func openToAnyToken() map[string]any { return openToTokens(anyScope) }
+
+// tokenScopes returns the scopes op is open to, and whether it is open to
+// tokens at all.
+func tokenScopes(op *huma.Operation) ([]auth.Scope, bool) {
+	scopes, open := op.Metadata[tokenScopeKey].([]auth.Scope)
+	return scopes, open
+}
 
 // gateTokens is the API's middleware that keeps tokens to the operations
 // open to them (tokenScopeKey). Requests with a session, or with no one,
@@ -75,12 +86,16 @@ func gateTokens(a huma.API) func(huma.Context, func(huma.Context)) {
 			next(ctx)
 			return
 		}
-		scope, open := ctx.Operation().Metadata[tokenScopeKey].(auth.Scope)
+		scopes, open := tokenScopes(ctx.Operation())
 		switch {
 		case !open:
 			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "this operation is closed to API tokens")
-		case scope != anyScope && !p.Can(scope):
-			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "the API token does not have the "+string(scope)+" scope")
+		case !slices.Contains(scopes, anyScope) && !slices.ContainsFunc(scopes, p.Can):
+			names := make([]string, len(scopes))
+			for i, sc := range scopes {
+				names[i] = string(sc)
+			}
+			_ = huma.WriteErr(a, ctx, http.StatusForbidden, "the API token does not have the "+strings.Join(names, " or the ")+" scope")
 		default:
 			next(ctx)
 		}

@@ -104,6 +104,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/days/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a day
+         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its type and where it stands (open, complete or excluded).
+         */
+        get: operations["get-day"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/info": {
         parameters: {
             query?: never;
@@ -181,6 +201,26 @@ export interface paths {
          * @description Needs a web session, never an API token. A limit may be tightened freely; loosening one takes `confirm`, and goes no further than the instance's (422). A limit the instance has tightened since is brought to the instance's.
          */
         put: operations["set-limits"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your profile and plan today
+         * @description Who you are and what you aim for today: the profile, the phase today is in, the targets in force by type of day, today's type, the training weekdays, your notes for a coach, and the units every amount is in.
+         */
+        get: operations["get-me"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -292,6 +332,55 @@ export interface components {
              */
             token: string;
         };
+        DayBody: {
+            /** Format: date */
+            date: string;
+            /** @description Why the user excluded the day. */
+            excluded_reason?: string;
+            /** @description In the order they were eaten. */
+            meals: components["schemas"]["MealBody"][];
+            metrics: components["schemas"]["MetricBody"][];
+            /** @description What the target leaves after the total; below 0 past it. */
+            remaining?: components["schemas"]["DayTargetBody"];
+            /**
+             * @description A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration.
+             * @enum {string}
+             */
+            status: "open" | "complete" | "excluded";
+            /** @description The target of the day's type; absent before the first target. */
+            target?: components["schemas"]["DayTargetBody"];
+            /** @description What the day's meals add up to. */
+            total: components["schemas"]["NutrientsBody"];
+            /** @description The check-in's choice of the day's type; absent when the plan's training weekdays decide. */
+            training_toggle?: boolean;
+            /**
+             * @description The day's type, which picks its target.
+             * @enum {string}
+             */
+            type: "training" | "rest";
+        };
+        DayTargetBody: {
+            /**
+             * Format: double
+             * @description Grams of carbs: what the energy leaves after protein and fat.
+             */
+            carbs: number;
+            /**
+             * Format: double
+             * @description Grams of fat.
+             */
+            fat: number;
+            /**
+             * Format: double
+             * @description Energy, in kcal.
+             */
+            kcal: number;
+            /**
+             * Format: double
+             * @description Grams of protein.
+             */
+            protein: number;
+        };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
             location?: string;
@@ -381,6 +470,40 @@ export interface components {
             /** Format: double */
             value: number;
         };
+        ItemBody: {
+            /**
+             * Format: double
+             * @description How much, in unit.
+             */
+            amount: number;
+            /**
+             * Format: uuid
+             * @description The food it came from; absent for a one-off estimate.
+             */
+            food_id?: string;
+            /** Format: uuid */
+            id: string;
+            /** @description The food's name when the item was logged, or the estimate's. */
+            name: string;
+            note?: string;
+            nutrients: components["schemas"]["NutrientsBody"];
+            /**
+             * Format: double
+             * @description How many portions, when the quantity was given so.
+             */
+            portions?: number;
+            /** @description The named serving: a slice, a piece. */
+            serving?: string;
+            /**
+             * Format: double
+             * @description How many of serving were eaten, when the quantity was given so.
+             */
+            servings?: number;
+            /** @enum {string} */
+            source: "label" | "estimate" | "user" | "dish";
+            /** @enum {string} */
+            unit: "g" | "ml" | "portion";
+        };
         LimitsBody: {
             /** @description A user's limits at the start. */
             defaults: {
@@ -406,11 +529,119 @@ export interface components {
             email: string;
             password: string;
         };
+        MeBody: {
+            /**
+             * Format: int64
+             * @description The hour the user's day starts: what comes before it belongs to the day before.
+             */
+            day_start_hour: number;
+            /** @description The language of the app. */
+            locale: string;
+            name: string;
+            /** @description What the user wants a coach to keep in mind. */
+            notes: string;
+            /** @description The phase today is in; absent when there is none. */
+            phase?: components["schemas"]["PhaseBody"];
+            profile: components["schemas"]["MeProfile"];
+            /** @description The targets in force today; absent before the first. */
+            target?: components["schemas"]["TargetBody"];
+            /** @example Europe/Zagreb */
+            time_zone: string;
+            /**
+             * Format: date
+             * @description The user's day now.
+             */
+            today: string;
+            /**
+             * @description Today's type, which picks its target.
+             * @enum {string}
+             */
+            today_type: "training" | "rest";
+            /** @description The days of the week the plan makes training days. */
+            training_weekdays: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[];
+            units: components["schemas"]["UnitsBody"];
+        };
+        MeProfile: {
+            /**
+             * Format: int64
+             * @description The age today, in years, when the birth date is known.
+             */
+            age?: number;
+            /**
+             * Format: date
+             * @example 1990-06-15
+             */
+            birth_date?: string;
+            /**
+             * Format: double
+             * @description The height in centimetres.
+             */
+            height_cm?: number;
+            /** @description What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it. */
+            missing: ("sex" | "birth_date" | "height_cm")[];
+            /**
+             * @description The sex the energy equations take.
+             * @enum {string}
+             */
+            sex?: "male" | "female";
+        };
+        MealBody: {
+            /**
+             * @description What the meal was logged through.
+             * @enum {string}
+             */
+            client: "mcp" | "chat" | "web" | "telegram" | "import";
+            description: string;
+            /** Format: date-time */
+            eaten_at: string;
+            /** Format: uuid */
+            id: string;
+            items: components["schemas"]["ItemBody"][];
+            note?: string;
+            total: components["schemas"]["NutrientsBody"];
+        };
         MethodsBody: {
             /** @description The OpenID Connect provider, when the instance has one. */
             oidc?: components["schemas"]["OidcMethod"];
             /** @description Signing in with an email and a password works. */
             password: boolean;
+        };
+        MetricBody: {
+            /** @enum {string} */
+            kind: "weight" | "body_fat" | "lean_mass" | "steps" | "active_kcal" | "basal_kcal" | "sleep_h" | "rhr" | "hrv" | "vo2max" | "exercise_min";
+            /**
+             * @description manual is what the user gave, which counts over an import.
+             * @enum {string}
+             */
+            source: "manual" | "import";
+            unit: string;
+            /** Format: double */
+            value: number;
+        };
+        NutrientsBody: {
+            /** Format: double */
+            alcohol?: number;
+            /** Format: double */
+            carbs: number;
+            /** Format: double */
+            fat: number;
+            /** Format: double */
+            fiber?: number;
+            /** Format: double */
+            kcal: number;
+            /**
+             * Format: double
+             * @description Sugar alcohols, part of the carbs.
+             */
+            polyols?: number;
+            /** Format: double */
+            protein: number;
+            /** Format: double */
+            salt?: number;
+            /** Format: double */
+            saturated_fat?: number;
+            /** Format: double */
+            sugars?: number;
         };
         OidcMethod: {
             /**
@@ -423,6 +654,35 @@ export interface components {
              * @example Authentik
              */
             name: string;
+        };
+        PhaseBody: {
+            /**
+             * Format: date
+             * @description Its last day, when it has a planned one.
+             */
+            end?: string;
+            /**
+             * Format: double
+             * @description The goal weight, in kg.
+             */
+            goal_weight?: number;
+            /**
+             * Format: double
+             * @description A milestone on the way, in kg.
+             */
+            milestone_weight?: number;
+            /**
+             * Format: double
+             * @description The target rate, in % of the trend weight a week; a minus is a loss.
+             */
+            rate_pct_week: number;
+            /**
+             * Format: date
+             * @description The phase's first day.
+             */
+            start: string;
+            /** @enum {string} */
+            type: "cut" | "maintain" | "bulk" | "recomp";
         };
         ProfileBody: {
             /**
@@ -488,6 +748,17 @@ export interface components {
                 [key: string]: number;
             };
         };
+        TargetBody: {
+            /**
+             * Format: date
+             * @description The first day the targets hold.
+             */
+            effective_from: string;
+            /** @description On a rest day. */
+            rest: components["schemas"]["DayTargetBody"];
+            /** @description On a training day. */
+            training: components["schemas"]["DayTargetBody"];
+        };
         TokenBody: {
             /** Format: date-time */
             created_at: string;
@@ -508,6 +779,22 @@ export interface components {
         };
         TokensOutputBody: {
             tokens: components["schemas"]["TokenBody"][];
+        };
+        UnitsBody: {
+            /** @enum {string} */
+            energy: "kcal";
+            /** @enum {string} */
+            height: "cm";
+            /**
+             * @description Of protein, carbs, fat and the rest.
+             * @enum {string}
+             */
+            nutrients: "g";
+            /**
+             * @description Of a person.
+             * @enum {string}
+             */
+            weight: "kg";
         };
         UserBody: {
             /**
@@ -892,6 +1179,75 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1342,6 +1698,72 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

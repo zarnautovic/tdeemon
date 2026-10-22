@@ -100,7 +100,7 @@ func (in *instance) checkLoggedOnce(t *testing.T, secret string, want logRecord)
 func TestInternalErrorsStayInTheLog(t *testing.T) {
 	t.Parallel()
 
-	for _, tc := range []struct {
+	type failCase struct {
 		name, op, method, path, body string
 		// signedIn sends the request with a session, withToken with an
 		// API token of the ingest scope.
@@ -109,7 +109,8 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 		// says, which the answer must not.
 		breakIt func(t *testing.T, in *instance, session *http.Cookie) string
 		inside  string
-	}{
+	}
+	cases := []failCase{
 		{
 			op: "login", method: http.MethodPost, path: "/api/v1/auth/login", body: `{"email":"ana@example.com","password":"` + password + `"}`,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
@@ -213,7 +214,34 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				return ""
 			}, inside: "refused by the test",
 		},
+	}
+	// The tools read from many places: each read that fails is a 500.
+	for _, b := range []struct{ op, path, stmt, secret string }{
+		{"get-me", "/api/v1/me", "ALTER TABLE users RENAME COLUMN height_cm TO gone", "height_cm"},
+		{"get-me", "/api/v1/me", "ALTER TABLE phases RENAME TO gone", "phases"},
+		{"get-me", "/api/v1/me", "ALTER TABLE targets RENAME TO gone", "targets"},
+		{"get-me", "/api/v1/me", "ALTER TABLE profile_notes RENAME TO gone", "profile_notes"},
+		{"get-me", "/api/v1/me", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
+		{"get-me", "/api/v1/me", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE meals RENAME TO gone", "no such table: meals"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE targets RENAME TO gone", "targets"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
+		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+		{"get-day", "/api/v1/days/today", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 	} {
+		cases = append(cases, failCase{
+			name: b.op + ", " + b.secret, op: b.op, method: http.MethodGet, path: b.path, signedIn: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, b.stmt)
+				return ""
+			}, inside: b.secret,
+		})
+	}
+	for _, tc := range cases {
 		name := tc.op
 		if tc.name != "" {
 			name = tc.name
