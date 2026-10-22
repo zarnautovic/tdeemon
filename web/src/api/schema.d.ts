@@ -181,7 +181,23 @@ export interface components {
             /** @description What it may do: ingest (the phone's health data), tools (log and change through MCP), read. */
             scopes: ("ingest" | "tools" | "read")[] | null;
         };
-        CreateTokenOutputBody: {
+        CreatedTokenBody: {
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: uuid
+             * @description The token's handle; revoke it by this.
+             */
+            id: string;
+            /**
+             * Format: date-time
+             * @description When it was last used, to the hour or so; absent until then.
+             */
+            last_used_at?: string;
+            /** @description What the user calls the token. */
+            name: string;
+            /** @description What the token may do. */
+            scopes: ("ingest" | "tools" | "read")[] | null;
             /**
              * @description The token itself. It is shown only now; tdeemon keeps only its hash.
              * @example tdm_…
@@ -719,7 +735,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CreateTokenOutputBody"];
+                    "application/json": components["schemas"]["CreatedTokenBody"];
                 };
             };
             /** @description Unauthorized */
