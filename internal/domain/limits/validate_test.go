@@ -766,3 +766,65 @@ func TestValidateUnderweightNewPhase(t *testing.T) {
 		}, Change{Phase: phase(t, plan.Maintain, "2026-10-26", 0)}, nil, nil},
 	})
 }
+
+func TestUnderweight(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		bmi  float64
+		want bool
+	}{{18.4, true}, {18.5, false}, {18.5 - 1e-12, false}, {25, false}} {
+		if got := Underweight(tc.bmi); got != tc.want {
+			t.Errorf("Underweight(%v) = %v, want %v", tc.bmi, got, tc.want)
+		}
+	}
+}
+
+func TestLossUnderWay(t *testing.T) {
+	t.Parallel()
+
+	cut := plan.Phase{Type: plan.Cut, Start: day.Date{Year: 2026, Month: time.March, Day: 1}, RatePctWeek: -0.5}
+	bulk := plan.Phase{Type: plan.Bulk, Start: cut.Start, RatePctWeek: 0.25}
+	under := plan.Target{
+		EffectiveFrom: cut.Start,
+		Training:      plan.DayTarget{Kcal: 2000, Protein: 150, Fat: 60}, Rest: plan.DayTarget{Kcal: 2000, Protein: 150, Fat: 60},
+	}
+	for _, tc := range []struct {
+		name string
+		s    State
+		want bool
+	}{
+		{"a cut", State{Phase: &cut, TrendKg: 70}, true},
+		{"a bulk", State{Phase: &bulk, TrendKg: 70}, false},
+		{"a bulk whose target is under a trusted TDEE", State{Phase: &bulk, Target: &under, TDEE: 2600, TDEETrusted: true, TrendKg: 70}, true},
+		{"the same under a TDEE not trusted", State{Phase: &bulk, Target: &under, TDEE: 2600, TrendKg: 70}, false},
+		// A target at the TDEE, by float arithmetic, is no loss.
+		{"a bulk whose target is the TDEE", State{Phase: &bulk, Target: &under, TDEE: 2000 + 1e-12, TDEETrusted: true, TrendKg: 70}, false},
+		{"nothing", State{TrendKg: 70}, false},
+	} {
+		if got := LossUnderWay(tc.s); got != tc.want {
+			t.Errorf("%s: LossUnderWay = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestUnderweightLoss(t *testing.T) {
+	t.Parallel()
+
+	cut := plan.Phase{Type: plan.Cut, Start: day.Date{Year: 2026, Month: time.March, Day: 1}, RatePctWeek: -0.5}
+	pr := profile.Profile{Sex: profile.Male, BirthDate: day.Date{Year: 1990, Month: time.May, Day: 1}, HeightCm: 180}
+	for _, tc := range []struct {
+		name string
+		s    State
+		want bool
+	}{
+		// 58 kg at 180 cm is a BMI of 17.9; 60 kg is 18.5.
+		{"a cut at a BMI of 17.9", State{Profile: pr, Phase: &cut, TrendKg: 58}, true},
+		{"a cut at 18.5", State{Profile: pr, Phase: &cut, TrendKg: 60}, false},
+		{"no loss at 17.9", State{Profile: pr, TrendKg: 58}, false},
+	} {
+		if got := UnderweightLoss(tc.s); got != tc.want {
+			t.Errorf("%s: UnderweightLoss = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

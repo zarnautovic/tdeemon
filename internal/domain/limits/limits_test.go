@@ -189,3 +189,15 @@ func TestFields(t *testing.T) {
 		t.Errorf("%d fields, want the %d of Limits", n, want)
 	}
 }
+
+func TestStep(t *testing.T) {
+	t.Parallel()
+
+	// The lesser of 100 kcal and 5 % of the weekly average.
+	l := UserDefaults()
+	for _, tc := range []struct{ avg, want float64 }{{2400, 100}, {1800, 90}, {2000, 100}} {
+		if got := l.Step(tc.avg); got != tc.want {
+			t.Errorf("Step(%v) = %v, want %v", tc.avg, got, tc.want)
+		}
+	}
+}

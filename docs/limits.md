@@ -66,8 +66,9 @@ only the warning on energy availability.
   a bulk's a gain); a recomp has its own range, and maintenance is 0.
 - **The rate a kcal target implies** is the weekly average less the
   measured TDEE, times 7, over 7700 kcal per kg, as a share of the trend
-  weight. It counts once calibration trusts the measured TDEE enough for
-  a verdict (DESIGN.md §7); until then a target's kcal meet the kcal
+  weight. It counts once calibration trusts the measured TDEE (DESIGN.md
+  §7), one from before the current phase included; until then a
+  target's kcal meet the kcal
   floor, and below a BMI of 18.5 a target may not lower the weekly
   average, which the floor in the code takes for a deeper loss. A first
   target, with none before it, cannot be judged so: no rate can be told
@@ -170,9 +171,10 @@ The protein a phase starts with, between the floor and the ceiling:
 - **Maintenance:** the target rate is 0; a phase with another rate is a
   cut, a bulk or a recomp. How far the trend may stray is calibration's
   (DESIGN.md §7): its verdict tolerates ±0.1 % a week around the target
-  (a convention), and a trend more than 3 % from the one the phase
-  started with shows in the summary as the phase drifting (Stevens et
-  al. define maintenance as a change of less than 3 %). The raw weight
+  (a convention), as it does for every phase, and a trend more than 3 %
+  from the one the phase started with shows in the summary as the phase
+  drifting (Stevens et al. define maintenance as a change of less than
+  3 %). The raw weight
   swings by about 0.35 % within a week (Turicchi et al.); the trend
   smooths that out.
 - **Protein:** every g/kg value here is per kg of body weight, as in its
