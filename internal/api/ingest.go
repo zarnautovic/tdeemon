@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -16,6 +17,11 @@ import (
 // maxIngestBytes bounds the body of an ingest: a sync, or a larger export
 // split in the app.
 const maxIngestBytes = 10 << 20
+
+// ingestReadTimeout is how long HAE's body may take to arrive, on a
+// phone's slow upload: longer than the server's own deadline. The simple
+// form, a day's values, keeps huma's 5 s.
+const ingestReadTimeout = 2 * time.Minute
 
 type ingestHAEInput struct {
 	RawBody []byte `contentType:"application/json"`
@@ -90,9 +96,10 @@ func (s *sessions) registerIngest(a huma.API) {
 		Path:        Prefix + "/ingest/hae",
 		Summary:     "Import a Health Auto Export payload",
 		Description: "For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; " +
-			"the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came, for 30 days.",
-		Tags:         []string{"ingest"},
-		MaxBodyBytes: maxIngestBytes,
+			"the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came; a user's days older than 30 go with their next body.",
+		Tags:            []string{"ingest"},
+		MaxBodyBytes:    maxIngestBytes,
+		BodyReadTimeout: ingestReadTimeout,
 		// HAE's JSON, which ParseHAE reads: huma would take a raw body for
 		// a string.
 		SkipValidateBody: true,

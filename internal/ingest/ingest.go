@@ -27,9 +27,10 @@ type Day struct {
 //   - a point whose date does not read, with the date as written (RawDate),
 //     the zero Date and its value in the kind's unit;
 //   - a source's sleep stages, once, with the first one's date as written;
-//   - a point or a metric that does not read at all, a value too large to
-//     convert, or a metric in a unit its kind does not take, with no date
-//     and no value.
+//   - a value too large to convert, with its date (or the date as written)
+//     and no value, since no answer could hold an infinity;
+//   - a point or a metric that does not read at all, or a metric in a unit
+//     its kind does not take, with no date and no value.
 type Rejected struct {
 	Date    day.Date
 	RawDate string

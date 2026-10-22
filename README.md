@@ -326,7 +326,7 @@ exercise) is left out rather than read wrong.
 The values merge as an import: a value you entered stays, the day's
 first weighing stays, and a running total only grows, so a sync of part
 of the day undoes nothing. A value out of its bounds is left out, and
-the answer says why. A body may be up to 10 MB; split a large first
+the answer says why. A body must be under 10 MB; split a large first
 export by date range in the app.
 
 `POST /api/v1/ingest/metrics` takes the same from a script, one day at a
@@ -349,7 +349,7 @@ when their next body arrives.
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
 which it creates readable by its owner only, and applies database
-migrations at startup. The bodies of imports are kept apart, for 30
+migrations at startup. The bodies of imports are kept apart, about 30
 days, in `TDEEMON_DATA_DIR/ingest/` (see
 [Import from Apple Health](#import-from-apple-health)). Before it
 migrates a database that already has data, it saves a snapshot to

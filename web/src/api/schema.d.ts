@@ -135,7 +135,7 @@ export interface paths {
         put?: never;
         /**
          * Import a Health Auto Export payload
-         * @description For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came, for 30 days.
+         * @description For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came; a user's days older than 30 go with their next body.
          */
         post: operations["ingest-hae"];
         delete?: never;

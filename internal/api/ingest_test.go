@@ -1,8 +1,10 @@
 package api_test
 
 import (
+	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -276,5 +278,44 @@ func TestIngestArchives(t *testing.T) {
 	}
 	if rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date": "2026-10-22", "metrics": {"steps": 2}}`, nil, tok); rec.Code != http.StatusOK {
 		t.Errorf("POST with a broken archive = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// HAE's body may arrive past the server's own deadline, as a large export
+// does on a phone's slow upload.
+func TestIngestHAESlowBody(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	srv := httptest.NewUnstartedServer(in.h)
+	srv.Config.ReadTimeout = 300 * time.Millisecond
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	pr, pw := io.Pipe()
+	go func() {
+		half := len(haeBody) / 2
+		_, _ = pw.Write([]byte(haeBody[:half]))
+		time.Sleep(time.Second)
+		_, _ = pw.Write([]byte(haeBody[half:]))
+		_ = pw.Close()
+	}()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/api/v1/ingest/hae", pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	for k, v := range tok {
+		req.Header.Set(k, v)
+	}
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Errorf("POST = %d %s", resp.StatusCode, b)
 	}
 }

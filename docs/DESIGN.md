@@ -461,8 +461,9 @@ the first spec.
 - **Ingest:**
   - `POST /api/v1/ingest/hae` is the Health Auto Export payload; `POST
     /api/v1/ingest/metrics` takes `{date, metrics}` (`internal/ingest`).
-  - Both use a per-user `ingest` token, and the raw payloads are
-    archived for 30 days in the data directory.
+  - Both use a per-user `ingest` token, not a web session, and the
+    bodies are archived in the data directory; a user's days older than
+    30 go when their next body arrives.
   - A value belongs to the calendar date of its point, as HAE writes it;
     the day keeps its earliest weighing, with body fat and lean mass from
     the same weighing, and each value is checked on its own.
