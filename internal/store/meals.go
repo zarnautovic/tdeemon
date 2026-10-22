@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"uuid"
 
@@ -54,11 +55,24 @@ const itemColumns = `i.id, i.food_id, i.name, i.quantity_amount, i.quantity_unit
 // no meal of this user's. The time eaten is kept to the second. A meal
 // created is recorded as a's event.
 func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, m meal.Meal, now time.Time) (meal.Meal, bool, error) {
+	return db.CreateMealWithFoods(ctx, userID, a, m, nil, now)
+}
+
+// CreateMealWithFoods is CreateMeal of a meal that brings new foods: each
+// is saved as SaveFood saves it, in the meal's own transaction, and an
+// item naming a food's id takes the id the food is stored under (a food
+// of the same name and brand as one the user has is that one). A meal
+// refused saves none of them; one already under m's id (a retry, or
+// another meal) saves none either.
+func (db *DB) CreateMealWithFoods(ctx context.Context, userID uuid.UUID, a event.Actor, m meal.Meal, foods []food.Food, now time.Time) (meal.Meal, bool, error) {
 	if err := m.Validate(); err != nil {
 		return meal.Meal{}, false, fmt.Errorf("invalid meal: %w", err)
 	}
 	if err := a.Validate(); err != nil {
 		return meal.Meal{}, false, fmt.Errorf("invalid actor: %w", err)
+	}
+	if err := validFoods(foods); err != nil {
+		return meal.Meal{}, false, err
 	}
 	created := false
 	var stored meal.Meal
@@ -73,33 +87,44 @@ func (db *DB) CreateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, m
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
 		default:
-			if err := checkNotDeleted(ctx, tx, userID, m.ID); err != nil {
-				return err
-			}
 			created = true
-			// The time stored, to the second, so the state recorded is the
-			// state read back.
-			s := mealState{Meal: m, Fingerprint: m.Fingerprint(), CreatedAt: now.UTC().Truncate(time.Second)}
-			if err := insertMeal(ctx, tx, userID, s, nil, now); err != nil {
-				return err
-			}
-			if stored, err = mealInTx(ctx, tx, userID, m.ID); err != nil {
-				return err
-			}
-			s.Meal = stored
-			_, err = record(ctx, tx, userID, a, event.MealCreate, m.ID.String(), nil, s, now)
+			stored, err = insertNewMeal(ctx, tx, userID, a, m, foods, now)
 			return err
 		}
 		stored, err = mealInTx(ctx, tx, userID, m.ID)
 		return err
 	})
-	if errors.Is(err, ErrMealConflict) || errors.Is(err, ErrMealDeleted) {
+	if errors.Is(err, ErrMealConflict) || errors.Is(err, ErrMealDeleted) || errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
 		return meal.Meal{}, false, err
 	}
 	if err != nil {
 		return meal.Meal{}, false, fmt.Errorf("create meal: %w", err)
 	}
 	return stored, created, nil
+}
+
+// insertNewMeal inserts m, a meal under an id no meal has had, with the
+// new foods it brings, and records it as a's event.
+func insertNewMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, m meal.Meal, foods []food.Food, now time.Time) (meal.Meal, error) {
+	if err := checkNotDeleted(ctx, tx, userID, m.ID); err != nil {
+		return meal.Meal{}, err
+	}
+	ids, err := saveNewFoods(ctx, tx, userID, a, foods, now)
+	if err != nil {
+		return meal.Meal{}, err
+	}
+	m.Items = itemsOf(m.Items, ids)
+	// The time stored, to the second, so the state recorded is the state
+	// read back.
+	s := mealState{Meal: m, Fingerprint: m.Fingerprint(), CreatedAt: now.UTC().Truncate(time.Second)}
+	if err := insertMeal(ctx, tx, userID, s, nil, now); err != nil {
+		return meal.Meal{}, err
+	}
+	if s.Meal, err = mealInTx(ctx, tx, userID, m.ID); err != nil {
+		return meal.Meal{}, err
+	}
+	_, err = record(ctx, tx, userID, a, event.MealCreate, m.ID.String(), nil, s, now)
+	return s.Meal, err
 }
 
 // mealState is a meal as an event records it: with the fingerprint and
@@ -236,11 +261,14 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, a event.Actor, 
 // once (an agent's calls in parallel) are each made to the other's
 // result and none is lost. An error of change stores nothing, and is
 // returned as it is; a meal the user does not have is ErrNotFound.
-func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID,
+func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, foods []food.Food,
 	change func(meal.Meal) (meal.Meal, error), now time.Time,
 ) (meal.Meal, error) {
 	if err := a.Validate(); err != nil {
 		return meal.Meal{}, fmt.Errorf("invalid actor: %w", err)
+	}
+	if err := validFoods(foods); err != nil {
+		return meal.Meal{}, err
 	}
 	var stored meal.Meal
 	var changeErr error
@@ -249,11 +277,19 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 		if err != nil {
 			return err
 		}
-		m, err := change(before.Meal)
+		// A copy: the meal before goes into the event, as it was.
+		cur := before.Meal
+		cur.Items = slices.Clone(cur.Items)
+		m, err := change(cur)
 		if err != nil {
 			changeErr = err
 			return err
 		}
+		ids, err := saveNewFoods(ctx, tx, userID, a, foods, now)
+		if err != nil {
+			return err
+		}
+		m.Items = itemsOf(m.Items, ids)
 		m.ID = id
 		if err := m.Validate(); err != nil {
 			changeErr = fmt.Errorf("invalid meal: %w", err)
@@ -265,12 +301,24 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 	switch {
 	case changeErr != nil:
 		return meal.Meal{}, changeErr
-	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict):
+	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) || errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken):
 		return meal.Meal{}, err
 	case err != nil:
 		return meal.Meal{}, fmt.Errorf("update meal: %w", err)
 	}
 	return stored, nil
+}
+
+// itemsOf returns items with each food id that ids holds as the id the
+// food is stored under.
+func itemsOf(items []meal.Item, ids map[uuid.UUID]uuid.UUID) []meal.Item {
+	out := slices.Clone(items)
+	for i := range out {
+		if id, ok := ids[out[i].FoodID]; ok {
+			out[i].FoodID = id
+		}
+	}
+	return out
 }
 
 // replaceInTx writes m in place of the meal of before, and records it as

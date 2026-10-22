@@ -184,7 +184,7 @@ func answerCases() map[string]answerCase {
 		"update-meal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
-			in.do(t, http.MethodPatch, "/api/v1/meals/"+id.String(), `{"note": "with tea", "ops": [{"op": "add", "item": {"name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPatch, "/api/v1/meals/"+id.String(), `{"note": "with tea", "ops": [{"op": "add", "item": {"id": "`+meal.NewIDAt(in.clock.Now()).String()+`", "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, []*http.Cookie{session}, nil)
 		},
 		"delete-meal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

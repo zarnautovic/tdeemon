@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -268,6 +269,7 @@ func TestUpdateMealRefuses(t *testing.T) {
 	}{
 		{"a replace of no item", fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": %s}]}`, meal.NewIDAt(e.now), estimate), "no item"},
 		{"an add without an item", `{"ops": [{"op": "add"}]}`, "an add takes an item"},
+		{"an add of an item without an id", `{"ops": [{"op": "add", "item": ` + estimate + `}]}`, "an add takes an item with its id"},
 		{"a remove with an item", fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q, "item": %s}]}`, soup, estimate), "a remove takes an item_id"},
 		{"the last item removed", fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q}]}`, soup), "item"},
 	} {
@@ -358,7 +360,7 @@ func TestUpdateMealAtOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range 10 {
 		wg.Go(func() {
-			body := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"name": "Tea %d", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, i)
+			body := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "name": "Tea %d", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, meal.NewIDAt(e.now), i)
 			if rec := e.patch(t, id, body); rec.Code != http.StatusOK {
 				t.Errorf("an add: %d %s", rec.Code, rec.Body.String())
 			}
@@ -434,7 +436,7 @@ func TestUpdateMealSavesFoodsOnce(t *testing.T) {
 	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
 	// Refused for its second op, after a new food in its first.
 	refused := fmt.Sprintf(`{"ops": [
-		{"op": "add", "item": {"food": {"name": "Jam", "basis": "100g", "source": "label", "nutrients": {"kcal": 250, "protein": 0.5, "carbs": 60, "fat": 0.1}}, "amount": 20, "unit": "g"}},
+		{"op": "add", "item": {"id": "`+meal.NewIDAt(e.now).String()+`", "food": {"name": "Jam", "basis": "100g", "source": "label", "nutrients": {"kcal": 250, "protein": 0.5, "carbs": 60, "fat": 0.1}}, "amount": 20, "unit": "g"}},
 		{"op": "replace", "item_id": %q, "item": {"name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}
 	]}`, meal.NewIDAt(e.now))
 	if rec := e.patch(t, id, refused); rec.Code != http.StatusUnprocessableEntity {
@@ -462,5 +464,152 @@ func TestUpdateMealSavesFoodsOnce(t *testing.T) {
 	}
 	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
 		t.Errorf("the honey after the add again = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
+	}
+}
+
+// A meal refused saves none of its new foods, whatever refuses it: a food
+// in the way of another's alias, an item of another meal's id.
+func TestMealsRefusedSaveNoFood(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	other, item := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, other, item))
+	kefir := `{"food": {"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}, "amount": 250, "unit": "ml"}`
+	for name, second := range map[string]string{
+		"a food of a taken alias": `{"food": {"name": "Loaf", "basis": "100g", "source": "label", "aliases": ["Ana's loaf"], "nutrients": {"kcal": 250, "protein": 8, "carbs": 46, "fat": 3}}, "amount": 50, "unit": "g"}`,
+		"an item of another meal": fmt.Sprintf(`{"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}`, item),
+	} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"id": %q, "items": [%s, %s]}`, meal.NewIDAt(e.now), kefir, second), e.session, nil)
+		if rec.Code != http.StatusConflict {
+			t.Errorf("%s: %d %s, want 409", name, rec.Code, rec.Body.String())
+		}
+		if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Kefir", ""); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("%s: the kefir of a meal refused: %v, want none", name, err)
+		}
+	}
+	// An add of a new food under another meal's item's id.
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food": {"name": "Jam", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 250, "protein": 0.5, "carbs": 60, "fat": 0.1}}, "amount": 20, "unit": "g"}}]}`, item)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Bread", "nutrients": {"kcal": 100, "protein": 3, "carbs": 20, "fat": 1}}]}`, id))
+	if rec := e.patch(t, id, add); rec.Code != http.StatusConflict {
+		t.Errorf("an add under another meal's item's id: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the jam of an edit refused: %v, want none", err)
+	}
+}
+
+// A change of a meal goes back with undo, as it was.
+func TestUpdateMealUndone(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id, soup := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}},
+		{"name": "Bread", "nutrients": {"kcal": 100, "protein": 3, "carbs": 20, "fat": 1}}]}`, id, soup))
+	mid, err := uuid.Parse(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, ops := range map[string]string{
+		"a replace": fmt.Sprintf(`{"op": "replace", "item_id": %q, "item": {"name": "Stew", "nutrients": {"kcal": 300, "protein": 15, "carbs": 30, "fat": 12}}}`, soup),
+		"a remove":  fmt.Sprintf(`{"op": "remove", "item_id": %q}`, soup),
+	} {
+		if rec := e.patch(t, id, `{"ops": [`+ops+`]}`); rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", name, rec.Code, rec.Body.String())
+		}
+		if _, err := e.in.db.UndoLast(t.Context(), e.in.user.ID, isolationActor, e.now); err != nil {
+			t.Fatalf("%s: UndoLast: %v", name, err)
+		}
+		if got, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid); err != nil || !reflect.DeepEqual(got, before) {
+			t.Errorf("%s undone: %+v, %v; want %+v", name, got, err, before)
+		}
+	}
+}
+
+// A request sent again saves no food again, and finds the foods it named
+// though they were renamed since: a replace sent again, a meal sent again
+// after its new food was renamed.
+func TestRetriesFindTheirFoods(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, e.lunch(id))
+	yoghurt, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	yoghurt.Name = "Greek yogurt"
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, yoghurt, e.now); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil); rec.Code != http.StatusOK {
+		t.Errorf("the meal again, its yoghurt renamed: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the yoghurt under its old name: %v, want none", err)
+	}
+	// A replace with a new food, sent again after the food was corrected.
+	mid, err := uuid.Parse(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replace := fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": {"food": {"name": "Honey", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 304, "protein": 0.3, "carbs": 82, "fat": 0}}, "amount": 20, "unit": "g"}}]}`, m.Items[2].ID)
+	if rec := e.patch(t, id, replace); rec.Code != http.StatusOK {
+		t.Fatalf("a replace: %d %s", rec.Code, rec.Body.String())
+	}
+	honey, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	honey.Nutrients.Kcal = 300
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, honey, e.now); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.patch(t, id, replace); rec.Code != http.StatusOK {
+		t.Fatalf("the replace again: %d %s", rec.Code, rec.Body.String())
+	}
+	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
+		t.Errorf("the honey after the replace again = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
+	}
+}
+
+// An add of a new food of the same name and brand as a food of the
+// user's is that food: the item names it.
+func TestUpdateMealAddsAFoodTheUserHas(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, e.lunch(id))
+	item := meal.NewIDAt(e.now)
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food": {"name": "Greek yoghurt", "brand": "Dukat", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2}}, "amount": 150, "unit": "g"}}]}`, item)
+	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+		t.Fatalf("an add: %d %s", rec.Code, rec.Body.String())
+	}
+	yoghurt, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, err := uuid.Parse(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid)
+	if err != nil || len(m.Items) != 4 || m.Items[3].ID != item || m.Items[3].FoodID != yoghurt.ID {
+		t.Errorf("the meal = %+v, %v; want a fourth item, %v, of the yoghurt %v", m.Items, err, item, yoghurt.ID)
 	}
 }

@@ -54,21 +54,21 @@ type itemMode int
 
 const (
 	// validate checks the new food and works out the item from it as
-	// sent, saving nothing: a meal is checked whole before anything of it
-	// is saved.
+	// sent, saving nothing: the food is saved with the meal, in its
+	// transaction, so a meal refused saves none.
 	validate itemMode = iota
 	// retry takes the food of the new food's name and brand as it is
 	// stored, saving nothing: a request sent again saves no food again,
 	// so one corrected since stays corrected.
 	retry
-	// save saves the new food and works out the item from it as saved.
-	save
 )
 
-// item works out the item in: its food (a new one as mode says) and the
-// nutrients its quantity brings, or the estimate; with warnings about
-// values a client stated that do not add up.
-func (s *sessions) item(ctx context.Context, p auth.Principal, in *itemInput, mode itemMode) (meal.Item, []meal.Warning, error) {
+// item works out the item in: its food and the nutrients its quantity
+// brings, or the estimate; with warnings about values a client stated
+// that do not add up. A new food comes back too, to save with the meal,
+// when mode validates it; when mode is retry, a food renamed since is
+// found by fallback, the id of the food the item had.
+func (s *sessions) item(ctx context.Context, p auth.Principal, in *itemInput, mode itemMode, fallback uuid.UUID) (meal.Item, *food.Food, []meal.Warning, error) {
 	kinds := 0
 	for _, given := range []bool{in.FoodID != "", in.Food != nil, in.Name != "" || in.Nutrients != nil} {
 		if given {
@@ -77,29 +77,30 @@ func (s *sessions) item(ctx context.Context, p auth.Principal, in *itemInput, mo
 	}
 	// None at all fails as an estimate without its values.
 	if kinds > 1 {
-		return meal.Item{}, nil, huma.Error422UnprocessableEntity(errNotItem.Error())
+		return meal.Item{}, nil, nil, huma.Error422UnprocessableEntity(errNotItem.Error())
 	}
 	q := meal.Quantity{Amount: in.Amount, Unit: in.Unit, Servings: in.Servings, Serving: in.Serving, Portions: in.Portions}
 	var it meal.Item
+	var nf *food.Food
 	var warnings []meal.Warning
 	var err error
 	switch {
 	case in.FoodID != "":
 		it, err = s.foodItem(ctx, p, in, q)
 	case in.Food != nil:
-		it, warnings, err = s.newFoodItem(ctx, p, in, q, mode)
+		it, nf, warnings, err = s.newFoodItem(ctx, p, in, q, mode, fallback)
 	default:
 		it, warnings, err = estimateItem(in, q)
 	}
 	if err != nil {
-		return meal.Item{}, nil, err
+		return meal.Item{}, nil, nil, err
 	}
 	if in.ID != "" {
 		if it.ID, err = uuid.Parse(in.ID); err != nil {
-			return meal.Item{}, nil, huma.Error422UnprocessableEntity("the item's id: " + err.Error())
+			return meal.Item{}, nil, nil, huma.Error422UnprocessableEntity("the item's id: " + err.Error())
 		}
 	}
-	return it, warnings, nil
+	return it, nf, warnings, nil
 }
 
 // estimateItem is the item of an estimate of a whole plate, with warnings
@@ -132,35 +133,36 @@ func (s *sessions) foodItem(ctx context.Context, p auth.Principal, in *itemInput
 	return it, nil
 }
 
-// newFoodItem is the item of quantity q of the item's new food, which
-// mode says what to do with, with warnings about the food's values. The
-// item takes the food's id from the save, so a retry of the meal finds
-// the same food (DESIGN.md §9).
-func (s *sessions) newFoodItem(ctx context.Context, p auth.Principal, in *itemInput, q meal.Quantity, mode itemMode) (meal.Item, []meal.Warning, error) {
+// newFoodItem is the item of quantity q of the item's new food, as mode
+// says, with warnings about the food's values; and the food to save with
+// the meal, when mode validates. The item names the food by the id it
+// comes with, which the store turns into the id it is stored under, so a
+// retry of the meal finds the same food (DESIGN.md §9).
+func (s *sessions) newFoodItem(ctx context.Context, p auth.Principal, in *itemInput, q meal.Quantity, mode itemMode, fallback uuid.UUID) (meal.Item, *food.Food, []meal.Warning, error) {
 	f, err := newFood(in.Food)
 	if err != nil {
-		return meal.Item{}, nil, err
+		return meal.Item{}, nil, nil, err
 	}
 	warnings := meal.CheckNutrients(f.Name, f.Nutrients)
-	switch mode {
-	case save:
-		if f, err = s.saveFood(ctx, p, f); err != nil {
-			return meal.Item{}, nil, err
-		}
-	case retry:
+	toSave := &f
+	if mode == retry {
+		toSave = nil
 		stored, err := s.db.FoodByKey(ctx, p.User.ID, f.Name, f.Brand)
-		if err == nil {
-			f = stored
-		} else if !errors.Is(err, store.ErrNotFound) {
-			return meal.Item{}, nil, internalError("reading a food failed", err)
+		if errors.Is(err, store.ErrNotFound) && fallback != uuid.Nil() {
+			stored, err = s.db.FoodByID(ctx, p.User.ID, fallback)
 		}
-	case validate:
+		switch {
+		case err == nil:
+			f = stored
+		case !errors.Is(err, store.ErrNotFound):
+			return meal.Item{}, nil, nil, internalError("reading a food failed", err)
+		}
 	}
 	it, err := meal.FromFood(f, q, in.Note)
 	if err != nil {
-		return meal.Item{}, nil, huma.Error422UnprocessableEntity(oneLine(err))
+		return meal.Item{}, nil, nil, huma.Error422UnprocessableEntity(oneLine(err))
 	}
-	return it, warnings, nil
+	return it, toSave, warnings, nil
 }
 
 // foodOf returns the user's food with id, or a 422 naming the item's
@@ -193,20 +195,6 @@ func newFood(in *FoodFields) (food.Food, error) {
 		return food.Food{}, huma.Error422UnprocessableEntity("the new food: " + oneLine(err))
 	}
 	return f, nil
-}
-
-// saveFood saves f by the rule of the same name and brand, and returns it
-// as stored.
-func (s *sessions) saveFood(ctx context.Context, p auth.Principal, f food.Food) (food.Food, error) {
-	saved, err := s.db.SaveFood(ctx, p.User.ID, actorOf(p), f, s.now())
-	var conflict *store.FoodConflictError
-	switch {
-	case errors.As(err, &conflict):
-		return food.Food{}, huma.Error409Conflict(conflictDetail(conflict))
-	case err != nil:
-		return food.Food{}, internalError("saving the food failed", err)
-	}
-	return saved, nil
 }
 
 // oneLine is err's text on one line: a domain error joins its parts with
@@ -265,25 +253,27 @@ func (s *sessions) logMeal(ctx context.Context, in *logMealInput) (*mealOutput, 
 	if err != nil {
 		return nil, err
 	}
-	// The meal whole is checked before any of its new foods is saved;
-	// a meal sent again saves none.
+	// A meal sent again saves no food: it finds the foods the meal named
+	// (by their name and brand, or, renamed since, by the meal's item).
 	mode := validate
+	var had *meal.Meal
 	if used {
 		mode = retry
+		if hm, err := s.db.MealByID(ctx, p.User.ID, m.ID); err == nil {
+			had = &hm
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, internalError("logging the meal failed", err)
+		}
 	}
+	var foods []food.Food
 	var warnings []meal.Warning
-	if m.Items, warnings, err = s.items(ctx, p, in.Body.Items, mode); err != nil {
+	if m.Items, foods, warnings, err = s.items(ctx, p, in.Body.Items, mode, had); err != nil {
 		return nil, err
 	}
 	if err := m.Validate(); err != nil {
 		return nil, huma.Error422UnprocessableEntity("the meal: " + oneLine(err))
 	}
-	if !used {
-		if m.Items, warnings, err = s.items(ctx, p, in.Body.Items, save); err != nil {
-			return nil, err
-		}
-	}
-	stored, created, err := s.db.CreateMeal(ctx, p.User.ID, actorOf(p), m, now)
+	stored, created, err := s.db.CreateMealWithFoods(ctx, p.User.ID, actorOf(p), m, foods, now)
 	if err != nil {
 		return nil, createError(err)
 	}
@@ -336,19 +326,29 @@ func (s *sessions) newMeal(ctx context.Context, p auth.Principal, b *logMealBody
 	return m, cal, used, nil
 }
 
-// items works out the items in, with their warnings.
-func (s *sessions) items(ctx context.Context, p auth.Principal, in []itemInput, mode itemMode) ([]meal.Item, []meal.Warning, error) {
+// items works out the items in, with the new foods to save with them and
+// their warnings; had is the meal sent before, if any, whose items name
+// the foods a retry falls back to.
+func (s *sessions) items(ctx context.Context, p auth.Principal, in []itemInput, mode itemMode, had *meal.Meal) ([]meal.Item, []food.Food, []meal.Warning, error) {
 	var items []meal.Item
+	var foods []food.Food
 	var warnings []meal.Warning
 	for i := range in {
-		it, ws, err := s.item(ctx, p, &in[i], mode)
+		fallback := uuid.Nil()
+		if had != nil && i < len(had.Items) {
+			fallback = had.Items[i].FoodID
+		}
+		it, nf, ws, err := s.item(ctx, p, &in[i], mode, fallback)
 		if err != nil {
-			return nil, nil, itemError(i, err)
+			return nil, nil, nil, itemError(i, err)
 		}
 		items = append(items, it)
+		if nf != nil {
+			foods = append(foods, *nf)
+		}
 		warnings = append(warnings, ws...)
 	}
-	return items, warnings, nil
+	return items, foods, warnings, nil
 }
 
 // errItemTaken is the 409 of an item under the id of another meal's item.
@@ -356,7 +356,10 @@ var errItemTaken = huma.Error409Conflict("an item's id is another meal's item: a
 
 // createError is the answer to CreateMeal's err.
 func createError(err error) error {
+	var conflict *store.FoodConflictError
 	switch {
+	case errors.As(err, &conflict):
+		return huma.Error409Conflict(conflictDetail(conflict))
 	case errors.Is(err, store.ErrItemTaken):
 		return errItemTaken
 	case errors.Is(err, store.ErrMealConflict):
@@ -451,28 +454,23 @@ func (s *sessions) updateMeal(ctx context.Context, in *updateMealInput) (*mealOu
 			return nil, internalError("changing the meal failed", err)
 		}
 	}
-	// Every op is checked, on the meal as it was read, before any new
-	// food of an op is saved.
-	items, _, err := s.opItems(ctx, p, &had, b.Ops, validate)
+	items, foods, warnings, err := s.opItems(ctx, p, &had, b.Ops)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := edit(had, b, items, cal); err != nil {
-		return nil, err
-	}
-	items, warnings, err := s.opItems(ctx, p, &had, b.Ops, save)
-	if err != nil {
-		return nil, err
-	}
-	// The change is made to the meal as it is when it is stored, so
-	// changes sent at once are each kept.
-	stored, err := s.db.UpdateMeal(ctx, p.User.ID, actorOf(p), id, func(m meal.Meal) (meal.Meal, error) {
+	// The change is made to the meal as it is when it is stored, with
+	// the new foods of its ops, in one transaction: changes sent at once
+	// are each kept, and a change refused saves no food.
+	stored, err := s.db.UpdateMeal(ctx, p.User.ID, actorOf(p), id, foods, func(m meal.Meal) (meal.Meal, error) {
 		return edit(m, b, items, cal)
 	}, now)
 	var e *huma.ErrorModel
+	var conflict *store.FoodConflictError
 	switch {
 	case errors.As(err, &e):
 		return nil, err
+	case errors.As(err, &conflict):
+		return nil, huma.Error409Conflict(conflictDetail(conflict))
 	case errors.Is(err, store.ErrNotFound):
 		return nil, huma.Error404NotFound("no such meal")
 	case errors.Is(err, store.ErrItemTaken):
@@ -489,31 +487,48 @@ func (s *sessions) updateMeal(ctx context.Context, in *updateMealInput) (*mealOu
 }
 
 // opItems works out the items of ops, each at its place (none for a
-// remove), with their warnings; their new foods as mode says, but for an
-// add of an item the meal had (one sent again), which saves none.
-func (s *sessions) opItems(ctx context.Context, p auth.Principal, had *meal.Meal, ops []mealOp, mode itemMode) ([]meal.Item, []meal.Warning, error) {
+// remove), with the new foods to save with them and their warnings. An op
+// that leaves its item as the meal has it already (an add, or a replace,
+// sent again) saves no food: it finds the foods the meal named, by their
+// name and brand, or, renamed since, by the meal's item.
+func (s *sessions) opItems(ctx context.Context, p auth.Principal, had *meal.Meal, ops []mealOp) ([]meal.Item, []food.Food, []meal.Warning, error) {
 	items := make([]meal.Item, len(ops))
+	var foods []food.Food
 	var warnings []meal.Warning
 	for i := range ops {
 		op := &ops[i]
 		if err := checkOp(op); err != nil {
-			return nil, nil, opError(i, err)
+			return nil, nil, nil, opError(i, err)
 		}
 		if op.Item == nil {
 			continue
 		}
-		m := mode
-		if op.Op == "add" && slices.ContainsFunc(had.Items, func(it meal.Item) bool { return op.Item.ID != "" && it.ID.String() == op.Item.ID }) {
-			m = retry
+		target := op.ItemID
+		if op.Op == "add" {
+			target = op.Item.ID
 		}
-		it, ws, err := s.item(ctx, p, op.Item, m)
+		if at := slices.IndexFunc(had.Items, func(it meal.Item) bool { return it.ID.String() == target }); at >= 0 {
+			it, _, ws, err := s.item(ctx, p, op.Item, retry, had.Items[at].FoodID)
+			if err != nil {
+				return nil, nil, nil, opError(i, err)
+			}
+			if had.Items[at].SameAs(it) {
+				items[i] = it
+				warnings = append(warnings, ws...)
+				continue
+			}
+		}
+		it, nf, ws, err := s.item(ctx, p, op.Item, validate, uuid.Nil())
 		if err != nil {
-			return nil, nil, opError(i, err)
+			return nil, nil, nil, opError(i, err)
 		}
 		items[i] = it
+		if nf != nil {
+			foods = append(foods, *nf)
+		}
 		warnings = append(warnings, ws...)
 	}
-	return items, warnings, nil
+	return items, foods, warnings, nil
 }
 
 // edit is m changed as b says: its time, which may move it to another day
@@ -576,8 +591,8 @@ func applyOp(m *meal.Meal, op *mealOp, it meal.Item) error {
 // checkOp refuses an op of the wrong shape.
 func checkOp(op *mealOp) error {
 	switch {
-	case op.Op == "add" && (op.Item == nil || op.ItemID != ""):
-		return huma.Error422UnprocessableEntity("an add takes an item, with its id inside it, and no item_id")
+	case op.Op == "add" && (op.Item == nil || op.Item.ID == "" || op.ItemID != ""):
+		return huma.Error422UnprocessableEntity("an add takes an item with its id, a UUID the client makes, so an add sent again adds once; and no item_id")
 	case op.Op == "remove" && (op.ItemID == "" || op.Item != nil):
 		return huma.Error422UnprocessableEntity("a remove takes an item_id, and no item")
 	case op.Op == "replace" && (op.ItemID == "" || op.Item == nil):
