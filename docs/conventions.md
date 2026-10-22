@@ -107,9 +107,14 @@ for the author and the reviewer.
   `testdata/history.json`. The real one stays outside git:
   `TestCalibrateRealHistory` reads `calibration.json` in the directory
   `TDEEMON_PRIVATE_FIXTURES` names, and is skipped without it. Both are
-  held to the same checks; run with `-v`, the test says what calibration
-  made of each revision. The anonymised one is written from the real
-  one, by the anonymisation only the real one holds, with
+  held to `checkHistory`, but not to the same revisions: the real one
+  holds calibration to the manual ones and the TDEE each was made on.
+  The anonymised one keeps no TDEE, and its revisions' actions are the
+  verdicts it gave when it was written, so it holds calibration to what
+  it did then. Run with `-v`, the test says what calibration made of each
+  revision, without the real one's values or dates. The anonymised one
+  is written from the real one, by the anonymisation only the real one
+  holds, with
   `go test ./internal/domain/calibration -run TestWriteAnonymisedHistory -anonymise`,
   and read before it is committed.
 - **Tools** (`tools()` in `internal/api/tools.go`) are operations like
