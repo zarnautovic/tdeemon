@@ -112,7 +112,7 @@ type metricBody struct {
 // embed it: huma describes no field of an unexported embedded struct.
 type DaySummary struct {
 	Date           string         `json:"date" format:"date"`
-	Status         string         `json:"status" enum:"open,complete,excluded" doc:"A day is open until its end, then complete; excluded is the user's choice, which drops its intake from calibration and keeps its weigh-in."`
+	Status         string         `json:"status" enum:"open,complete,excluded" doc:"A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration."`
 	ExcludedReason string         `json:"excluded_reason,omitempty" doc:"Why the user excluded the day."`
 	Type           string         `json:"type" enum:"training,rest" doc:"The day's type, which picks its target."`
 	TrainingToggle *bool          `json:"training_toggle,omitempty" doc:"The check-in's choice of the day's type; absent when the plan's training weekdays decide."`

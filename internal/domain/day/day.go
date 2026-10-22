@@ -4,7 +4,6 @@
 package day
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -66,10 +65,8 @@ func (d Date) DaysSince(e Date) int {
 const secondsPerDay = 24 * 60 * 60
 
 // Compare returns -1 when d comes before e, 1 when after, 0 on the same
-// date: the order slices.SortFunc takes.
-func (d Date) Compare(e Date) int {
-	return cmp.Or(cmp.Compare(d.Year, e.Year), cmp.Compare(d.Month, e.Month), cmp.Compare(d.Day, e.Day))
-}
+// date: the order slices.SortFunc takes, and Before's.
+func (d Date) Compare(e Date) int { return d.at(time.UTC).Compare(e.at(time.UTC)) }
 
 func (d Date) at(loc *time.Location) time.Time {
 	return time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, loc)
@@ -158,8 +155,7 @@ func (c Calendar) End(d Date) time.Time { return c.Start(d.AddDays(1)) }
 type Status string
 
 // Statuses. A day is open until its end, then complete; excluded is the
-// user's choice, kept with a reason, and drops the day's intake from
-// calibration (its weigh-in counts).
+// user's choice, kept with a reason, and drops the day from calibration.
 const (
 	Open     Status = "open"
 	Complete Status = "complete"
@@ -169,9 +165,8 @@ const (
 // MaxReasonLen bounds an exclusion's reason, in characters.
 const MaxReasonLen = 200
 
-// Exclusion is why the user took a day's intake out of calibration: a
-// restaurant meal they could not weigh, being sick, a day they forgot to
-// log.
+// Exclusion is why the user took a day out of calibration: a restaurant
+// meal they could not weigh, being sick, a day they forgot to log.
 type Exclusion struct {
 	Reason string
 }

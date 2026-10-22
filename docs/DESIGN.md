@@ -99,7 +99,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import), note, fingerprint | the fingerprint of the create, for idempotent retries (§9) |
 | `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
-| `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day's intake from calibration (restaurant, sick, forgot to log), and keeps its weigh-in (§7); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
+| `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
 | `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
 | `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
 | `plan_settings` | user_id, training_weekdays, limits?; later autonomy (propose/autopilot) and check-in weekday | the training weekdays give each day its type ahead of time (§7); the user's limits are a JSON object of their names ([limits.md](limits.md)) holding only those off their defaults, so a limit at its default follows a later release's default, and change only from a web session, never through tools (§8) |
@@ -291,10 +291,14 @@ The replacement:
   regression of the weigh-ins in the window, not of the trend, which
   lags behind (about 9 days, at a tenth). A day without a weigh-in is
   simply missing.
-- **Intake:** the average over the window's `complete`, non-`excluded`
-  days with at least one meal. A day without a meal was not logged: its
-  intake is unknown, not 0. An excluded day's weigh-in still counts: it
-  is one weigh-in more, and the body's weight whatever was logged.
+- **Intake:** the average over the `complete`, non-`excluded` days with
+  at least one meal, from the window's first weigh-in to its last: the
+  days whose energy the slope measures. A day without a meal was not
+  logged: its intake is unknown, not 0.
+- **An excluded day** counts for nothing, its weigh-in neither, nor in
+  the trend: a day the user took out (sick, a trip, a restaurant) often
+  has a weight that is off too, and one at the window's edge would move
+  the slope.
 - **Days not logged** are taken to be like the logged ones, give or take
   the spread of a day. A day left out for being unlike them, as a big
   day one does not log or excludes, biases the TDEE low by what it would
@@ -330,12 +334,22 @@ The replacement:
   whole weeks counted back from its last day, and in its last 7 days: a
   slope that ends weeks before its last day says little of the weight
   now. Whole weeks, so someone who weighs in thrice a week passes in a
-  window of any length. The 200 kcal are a first value, to be checked
+  window of any length, and each with a weigh-in: the slope cannot see
+  into a week without one. The 200 kcal are a first value, to be checked
   against real data. With fewer than 6 weigh-ins at least a week apart,
   7 logged days, or 14 days, there is no estimate. Either way, the
   doubts say what is missing: `few_days`, `few_weigh_ins`,
   `few_logged_days`, `wide_interval`. Too few days is the only doubt of
   a window that has them, as only the days to come settle it.
+- **Known limits,** for the real data to settle (#116): trusting only
+  narrow intervals favours windows whose autocorrelation came out low,
+  so trusted intervals cover less than 80 % when much water carries
+  over; and the autocorrelation pairs weigh-ins in order, whatever the
+  days between, so weigh-ins in clusters get too narrow an interval.
+- **The day it is measured for** is yesterday, but a change of intake
+  today counts: on a phase's first day, the estimate is the one from
+  before it. The summary says the date of the last weigh-in the trend
+  weight took, as a trend weeks old is not the weight now.
 - **Verdict:** a recommendation appears only when the interval is narrow
   enough. Otherwise the summary shows the estimate with its uncertainty,
   not just "calibrating".

@@ -42,16 +42,20 @@ func Trend(days map[day.Date]Day, alpha float64) []Point {
 	return out
 }
 
-// trendOn returns the trend weight on day d, from the weigh-ins up to it;
-// 0 before the first.
-func trendOn(days map[day.Date]Day, d day.Date, alpha float64) float64 {
-	trend := Trend(days, alpha)
-	i, found := slices.BinarySearchFunc(trend, d, func(pt Point, d day.Date) int { return pt.Date.Compare(d) })
-	if found {
-		i++
+// trendOn returns the trend weight on day d, from the weigh-ins up to
+// it, and the day of the last of them; 0 and the zero Date before the
+// first.
+func trendOn(days map[day.Date]Day, d day.Date, alpha float64) (float64, day.Date) {
+	upTo := make(map[day.Date]Day, len(days))
+	for date, v := range days {
+		if !d.Before(date) {
+			upTo[date] = v
+		}
 	}
-	if i == 0 {
-		return 0
+	trend := Trend(upTo, alpha)
+	if len(trend) == 0 {
+		return 0, day.Date{}
 	}
-	return trend[i-1].Kg
+	pt := trend[len(trend)-1]
+	return pt.Kg, pt.Date
 }

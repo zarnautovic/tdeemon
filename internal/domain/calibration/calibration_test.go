@@ -99,9 +99,9 @@ func TestCalibrateCountsTheIntakeOfCompleteLoggedDays(t *testing.T) {
 		// A day without a meal was not logged: its 0 kcal would lower the
 		// intake, and the TDEE with it.
 		{"a day without a meal is not 0 kcal", Day{Status: day.Complete, WeightKg: 79}, 41, 42},
-		// The user excluded the day, a restaurant: its intake is not to
-		// be trusted, but the weight is still the body's.
-		{"an excluded day's intake", Day{Status: day.Excluded, Meals: 2, Kcal: 6000, WeightKg: 79}, 41, 42},
+		// The user excluded the day, sick, 2 kg under the line: neither
+		// its intake nor its weigh-in counts.
+		{"an excluded day", Day{Status: day.Excluded, Meals: 2, Kcal: 6000, WeightKg: 77}, 41, 41},
 		{"an open day's intake", Day{Status: day.Open, Meals: 1, Kcal: 500, WeightKg: 79}, 41, 42},
 		{"a day without a weigh-in", Day{Status: day.Complete, Meals: 1, Kcal: 2000}, 42, 41},
 	} {
@@ -109,8 +109,9 @@ func TestCalibrateCountsTheIntakeOfCompleteLoggedDays(t *testing.T) {
 			t.Parallel()
 			days := map[day.Date]Day{}
 			line(days, last, 42, 80, -1.0/28, 2000)
-			// The weigh-in on the line, where the case keeps one.
-			if tc.day.WeightKg > 0 {
+			// The weigh-in on the line, where the case keeps one, but an
+			// excluded day's, which must not count.
+			if tc.day.WeightKg > 0 && tc.day.Status != day.Excluded {
 				tc.day.WeightKg = days[last.AddDays(-23)].WeightKg
 			}
 			days[last.AddDays(-23)] = tc.day
@@ -521,6 +522,68 @@ func TestCalibrateDoesNotGoBackPastAPhaseWithoutData(t *testing.T) {
 	}
 }
 
+func TestCalibrateTakesTheIntakeOfTheDaysWeighed(t *testing.T) {
+	t.Parallel()
+
+	// Every day logged: 2500 kcal for 3 weeks of travel without a scale,
+	// then 2000 kcal with 6 weigh-ins a week, losing 0.05 kg a day. The
+	// slope measures the last 3 weeks, so the intake is theirs.
+	days := map[day.Date]Day{}
+	for i := range 42 {
+		d := Day{Status: day.Complete, Meals: 3, Kcal: 2500}
+		if i < 21 {
+			d.Kcal = 2000
+			if i%7 != 3 {
+				d.WeightKg = 80 + 0.05*float64(i)
+			}
+		}
+		days[last.AddDays(-i)] = d
+	}
+	e := Calibrate(days, nil, last, DefaultParams())
+	if !e.Measured || !near(e.TDEE, 2000+0.05*plan.KcalPerKg, 1e-6) {
+		t.Errorf("measured %v, TDEE %v; want %v", e.Measured, e.TDEE, 2000+0.05*plan.KcalPerKg)
+	}
+	// Three weeks without a weigh-in: not to be trusted, though 18 in 42
+	// days is 3 a week.
+	if e.Trusted || !slices.Equal(e.Doubts, []string{DoubtFewWeighIns}) {
+		t.Errorf("trusted %v, doubts %v; want few weigh-ins", e.Trusted, e.Doubts)
+	}
+}
+
+func TestCalibrateOnAPhasesFirstDay(t *testing.T) {
+	t.Parallel()
+
+	// A bulk starts today, the day after last: the estimate is the cut's
+	// before it, and says nothing of the bulk.
+	days := map[day.Date]Day{}
+	line(days, last, 60, 80, -0.05, 2000)
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: last.AddDays(-100), RatePctWeek: -0.5},
+		{Type: plan.Bulk, Start: last.AddDays(1), RatePctWeek: 0.25},
+	}
+	e := Calibrate(days, phases, last, DefaultParams())
+	if !e.BeforePhase || e.To != last || !e.Measured {
+		t.Errorf("window %s to %s, before the phase %v, measured %v; want the cut's to %s, before the phase",
+			e.From, e.To, e.BeforePhase, e.Measured, last)
+	}
+}
+
+func TestCalibrateSaysHowOldTheTrendIs(t *testing.T) {
+	t.Parallel()
+
+	// The scale broke 30 days ago; meals are still logged.
+	days := map[day.Date]Day{}
+	line(days, last, 90, 80, -0.05, 2000)
+	for i := range 30 {
+		d := days[last.AddDays(-i)]
+		d.WeightKg = 0
+		days[last.AddDays(-i)] = d
+	}
+	if e := Calibrate(days, nil, last, DefaultParams()); e.TrendDate != last.AddDays(-30) || e.TrendKg == 0 {
+		t.Errorf("trend %v on %s, want the one of %s", e.TrendKg, e.TrendDate, last.AddDays(-30))
+	}
+}
+
 func TestCalibrateDoesNotGoBackFar(t *testing.T) {
 	t.Parallel()
 
@@ -537,9 +600,9 @@ func TestCalibrateDoesNotGoBackFar(t *testing.T) {
 	days := map[day.Date]Day{}
 	line(days, last, 400, 80, -0.03, 2000)
 	e := Calibrate(days, phases, last, DefaultParams())
-	if e.Measured && last.DaysSince(e.To) >= DefaultParams().WindowDays {
-		t.Errorf("window %s to %s, %d days before %s; want none from %d days or more before",
-			e.From, e.To, last.DaysSince(e.To), last, DefaultParams().WindowDays)
+	if e.Measured || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
+		t.Errorf("window %s to %s, %d days before %s, doubts %v; want no estimate for few days",
+			e.From, e.To, last.DaysSince(e.To), last, e.Doubts)
 	}
 }
 
@@ -684,12 +747,18 @@ func TestTrend(t *testing.T) {
 		t.Errorf("Trend = %v, want %v", got, want)
 	}
 	for _, tc := range []struct {
-		on   day.Date
-		want float64
-	}{{d.AddDays(-1), 0}, {d, 80}, {d.AddDays(2), 81}, {last, 78.75}} {
-		if got := trendOn(days, tc.on, 0.5); got != tc.want {
-			t.Errorf("trendOn(%s) = %v, want %v", tc.on, got, tc.want)
+		on       day.Date
+		want     float64
+		wantDate day.Date
+	}{{d.AddDays(-1), 0, day.Date{}}, {d, 80, d}, {d.AddDays(2), 81, d.AddDays(1)}, {last, 78.75, d.AddDays(3)}} {
+		if got, date := trendOn(days, tc.on, 0.5); got != tc.want || date != tc.wantDate {
+			t.Errorf("trendOn(%s) = %v on %s, want %v on %s", tc.on, got, date, tc.want, tc.wantDate)
 		}
+	}
+	// An excluded day's weigh-in is not the trend's.
+	days[d.AddDays(4)] = Day{Status: day.Excluded, WeightKg: 70}
+	if got := Trend(days, 0.5); !slices.Equal(got, want) {
+		t.Errorf("Trend with an excluded day = %v, want %v", got, want)
 	}
 	if got := Trend(map[day.Date]Day{}, 0.5); len(got) != 0 {
 		t.Errorf("Trend of no days = %v, want none", got)

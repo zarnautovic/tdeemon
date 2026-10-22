@@ -675,9 +675,9 @@ func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (
 	return out, nil
 }
 
-// ExcludeDay takes userID's logical day d's intake out of calibration
-// (its weigh-in still counts), for e's reason, or changes the reason of a
-// day already out. It is recorded as a's event.
+// ExcludeDay takes userID's logical day d out of calibration, for e's
+// reason, or changes the reason of a day already out. It is recorded as
+// a's event.
 func (db *DB) ExcludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, e day.Exclusion, now time.Time) error {
 	if err := day.ValidateExclusion(e); err != nil {
 		return fmt.Errorf("invalid exclusion: %w", err)
@@ -705,8 +705,8 @@ func (db *DB) ExcludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d
 	return nil
 }
 
-// IncludeDay brings userID's logical day d's intake back into
-// calibration, as a's event. A day not excluded stays as it is, and nothing is recorded.
+// IncludeDay brings userID's logical day d back into calibration, as a's
+// event. A day not excluded stays as it is, and nothing is recorded.
 func (db *DB) IncludeDay(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date, now time.Time) error {
 	if err := a.Validate(); err != nil {
 		return fmt.Errorf("invalid actor: %w", err)
@@ -742,8 +742,8 @@ func (db *DB) DayExclusionRecorded(ctx context.Context, userID uuid.UUID, d day.
 	return n > 0, nil
 }
 
-// exclusionState is a day event's state: the reason the day's intake is
-// out of calibration, or nil when it is in.
+// exclusionState is a day event's state: the reason the day is out of
+// calibration, or nil when it is in.
 type exclusionState struct{ Reason *string }
 
 func exclusionOf(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date) (exclusionState, error) {
@@ -767,8 +767,7 @@ func setExclusion(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d day.Date,
 	return err
 }
 
-// takeBackDay puts the day of e's intake back in or out of calibration as
-// before.
+// takeBackDay puts the day of e back in or out of calibration as before.
 func takeBackDay(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
 	d, err := entityDay(e.Entity)
 	if err != nil {
