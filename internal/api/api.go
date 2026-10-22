@@ -81,7 +81,7 @@ type Config struct {
 // client's address (behind TrustedProxies, the forwarded one);
 // http.CrossOriginProtection, which refuses a cross-origin browser
 // request that is not GET, HEAD or OPTIONS (CSRF); the session or token
-// lookup for API requests; the routes.
+// lookup for API and MCP requests; the routes.
 func NewHandler(cfg Config) (http.Handler, error) {
 	if cfg.DB == nil || cfg.BaseURL == nil || cfg.Logger == nil {
 		return nil, errors.New("api: the database, the base URL and the logger are required")
@@ -126,6 +126,19 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		w.Header().Set("Content-Length", strconv.Itoa(len(spec)))
 		_, _ = w.Write(spec)
 	})
+	// MCP runs a tool through its operation, past the session or token
+	// lookup, which the call to /mcp went through.
+	routes := recordBodyErrors(withAPIErrors(mux))
+	m, err := newMCPServer(s.tools(), spec, routes, cfg.Info, cfg.Logger)
+	if err != nil {
+		return nil, err
+	}
+	// GET and DELETE too, so the web app does not take them: a stateless
+	// MCP server answers them 405.
+	mh := m.handler()
+	for _, method := range []string{http.MethodPost, http.MethodGet, http.MethodDelete} {
+		mux.Handle(method+" "+MCPPath, mh)
+	}
 
 	cop := http.NewCrossOriginProtection()
 	if err := cop.AddTrustedOrigin(cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host); err != nil {
@@ -135,7 +148,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		writeProblem(w, http.StatusForbidden, "cross-origin request refused")
 	}))
 	cl := &clients{trusted: cfg.TrustedProxies, logger: cfg.Logger}
-	return securityHeaders(s.secure, cl.resolve(cop.Handler(s.authenticate(recordBodyErrors(withAPIErrors(mux)))))), nil
+	return securityHeaders(s.secure, cl.resolve(cop.Handler(s.authenticate(routes)))), nil
 }
 
 // bodyErrorKey is the key of a request's bodyError in its context.

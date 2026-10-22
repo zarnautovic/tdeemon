@@ -311,6 +311,20 @@ ID token an authenticating proxy passes on as a Bearer, leaves the
 request to its session cookie.
 The web app's settings page comes with the web UI.
 
+### MCP
+
+An AI client reaches the tools at `<TDEEMON_BASE_URL>/mcp` (MCP over
+Streamable HTTP), with an API token as a Bearer token: one with `tools`
+for every tool, or `read` for those that only read. Each tool is the
+operation of the API above, with its validation and its answers, and a
+meal or a change made through MCP is the client `mcp`'s. Claude Code,
+for one:
+
+```sh
+claude mcp add --transport http tdeemon https://tdeemon.example.com/mcp \
+  --header "Authorization: Bearer tdm_…"
+```
+
 ### Import from Apple Health
 
 [Health Auto Export](https://www.healthexportapp.com) (iOS, its REST

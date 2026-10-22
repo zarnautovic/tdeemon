@@ -20,10 +20,13 @@ import (
 )
 
 // clientOf is what a meal of the request of p is logged through: the web
-// app with a session, the API with a token.
+// app with a session, MCP or the API with a token.
 func clientOf(p auth.Principal) meal.Client {
-	if p.Via == auth.ViaSession {
+	switch {
+	case p.Via == auth.ViaSession:
 		return meal.ClientWeb
+	case p.Client == auth.ClientMCP:
+		return meal.ClientMCP
 	}
 	return meal.ClientAPI
 }

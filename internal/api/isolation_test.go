@@ -708,32 +708,43 @@ func TestIsolation(t *testing.T) {
 				t.Run(op, func(t *testing.T) {
 					t.Parallel()
 					e := newIsolationEnv(t, adminActs)
-					sees := e.ownerSees(t)
-					rows, _ := e.rowsOf(t, e.owner.user.ID)
-					// Two hours on, a request records the use of its session
-					// or token again: the case's requests write, and a write
-					// to one of the owner's rows shows.
-					e.in.clock.Set(e.in.clock.Now().Add(2 * time.Hour))
-					e.hits.record(true)
-					run(t, e)
-					e.hits.record(false)
-					for _, a := range e.hits.recorded() {
-						e.noneOfTheOwners(t, "the answer to "+a.request, a.text)
-					}
-					if o, ok := ops[op]; ok && !e.hits.reached(o) {
-						t.Errorf("the case got no 2xx from %s %s, its operation", o.method, o.route)
-					}
-					if after, _ := e.rowsOf(t, e.owner.user.ID); !slices.Equal(after, rows) {
-						t.Errorf("the owner's rows changed:\nbefore %s\nafter  %s", strings.Join(rows, "\n       "), strings.Join(after, "\n       "))
-					}
-					if after := e.ownerSees(t); after != sees {
-						t.Errorf("what the owner sees changed:\nbefore %s\nafter  %s", sees, after)
-					}
-					e.ownersTokenWorks(t)
+					e.isolated(t, run, func() {
+						if o, ok := ops[op]; ok && !e.hits.reached(o) {
+							t.Errorf("the case got no 2xx from %s %s, its operation", o.method, o.route)
+						}
+					})
 				})
 			}
 		})
 	}
+}
+
+// isolated runs the case run in e and fails unless the owner was left as
+// they were: no answer showed the owner's values, their rows and what
+// they see did not change, and their token works; reached checks what
+// the case reached.
+func (e isolationEnv) isolated(t *testing.T, run isolationCase, reached func()) {
+	t.Helper()
+	sees := e.ownerSees(t)
+	rows, _ := e.rowsOf(t, e.owner.user.ID)
+	// Two hours on, a request records the use of its session or token
+	// again: the case's requests write, and a write to one of the owner's
+	// rows shows.
+	e.in.clock.Set(e.in.clock.Now().Add(2 * time.Hour))
+	e.hits.record(true)
+	run(t, e)
+	e.hits.record(false)
+	for _, a := range e.hits.recorded() {
+		e.noneOfTheOwners(t, "the answer to "+a.request, a.text)
+	}
+	reached()
+	if after, _ := e.rowsOf(t, e.owner.user.ID); !slices.Equal(after, rows) {
+		t.Errorf("the owner's rows changed:\nbefore %s\nafter  %s", strings.Join(rows, "\n       "), strings.Join(after, "\n       "))
+	}
+	if after := e.ownerSees(t); after != sees {
+		t.Errorf("what the owner sees changed:\nbefore %s\nafter  %s", sees, after)
+	}
+	e.ownersTokenWorks(t)
 }
 
 // Every operation in the OpenAPI document has an isolation case, and

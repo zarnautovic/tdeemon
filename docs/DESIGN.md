@@ -250,7 +250,13 @@ date or `today`, and answers the day as `get_day` does.
 
 1. **MCP server** at `/mcp`, Streamable HTTP.
    - **v1:** auth with a per-user Bearer token. That is enough for
-     Hermes, Claude Code and most self-hosted clients.
+     Hermes, Claude Code and most self-hosted clients. The server is
+     stateless and answers in JSON; it lists the tools the token's
+     scopes open, each with the input schema of its operation (its
+     parameters and body, standing alone) and hints of whether it only
+     reads; a call runs the operation in process, with the token's
+     principal, so a meal logged through MCP is the client `mcp`'s; a
+     `date` left out is today.
    - **Later:** a minimal built-in OAuth 2.1 authorisation server (PKCE,
      dynamic client registration) so Claude and ChatGPT custom
      connectors work.

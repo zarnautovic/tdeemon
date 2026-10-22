@@ -29,7 +29,7 @@ exist.
 | `internal/history` | the one-off import of a user's history from the predecessor: days' metrics and meals from its database, with the rest of a day's total, foods from its food table, and a plan file written from its goals note (DESIGN.md §10) |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan (web session only), the imports (API token only), and the tools (`tools.go`, the registry MCP will serve too) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan (web session only), the imports (API token only), and the tools (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |
@@ -90,8 +90,9 @@ details.
   the request's principal. A new operation in the OpenAPI document adds
   its case to `isolationCases` in `internal/api/isolation_test.go`, or
   the test fails, and a new kind of data adds rows of it for both users
-  to `newIsolationEnv`; routes outside the document (MCP) need cases of
-  their own (`docs/conventions.md`).
+  to `newIsolationEnv`; a new tool adds its case to
+  `mcpIsolationCases` in `internal/api/mcp_isolation_test.go`, which MCP
+  holds to (`docs/conventions.md`).
 - **Answers match the document.** Tests check every answer against
   `api/openapi.json`; a new operation adds its case to `answerCases` in
   `internal/api/schema_test.go`, or the test fails. In an answer's type

@@ -56,7 +56,13 @@ type Principal struct {
 	TokenID string
 	// Scopes are what the token may do (ViaToken).
 	Scopes []Scope
+	// Client is what a token's request came through when not the API
+	// itself: ClientMCP for a tool an MCP client called.
+	Client string
 }
+
+// ClientMCP is the Client of a request an MCP client made.
+const ClientMCP = "mcp"
 
 // Can reports whether p may act in scope: a session may do anything its
 // user may, a token only what its scopes allow.

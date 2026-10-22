@@ -154,14 +154,15 @@ func (s *sessions) clearedCookie() http.Cookie {
 	return c
 }
 
-// authenticate attaches the principal of an API request to its context:
+// authenticate attaches the principal of an API or MCP request to its
+// context:
 // the API token in its Authorization header (the Bearer scheme) or,
 // without one, the live session its cookie names. A request with neither
 // goes on anonymous, and operations that need a user refuse it; one with
 // a bad token is refused here (401), since it meant to authenticate.
 func (s *sessions) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !isAPIPath(r.URL.Path) {
+		if !isAPIPath(r.URL.Path) && r.URL.Path != MCPPath {
 			next.ServeHTTP(w, r)
 			return
 		}
