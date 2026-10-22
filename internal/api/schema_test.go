@@ -23,6 +23,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
@@ -195,6 +196,11 @@ func answerCases() map[string]answerCase {
 			t.Helper()
 			saveIsolationMetrics(t, in.db, in.user, in.clock.Now())
 			in.do(t, http.MethodDelete, "/api/v1/days/today/metrics/steps", "", []*http.Cookie{session}, nil)
+		},
+		"undo-last": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
+			in.do(t, http.MethodPost, "/api/v1/undo", `{"id": "`+clientid.NewAt(in.clock.Now()).String()+`"}`, []*http.Cookie{session}, nil)
 		},
 		"check-in": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

@@ -181,7 +181,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `find_foods(query, limit)` | the foods whose name, brand or an alias has words starting with the query's, without case or diacritics, the name's first; with the last use (the amount as given and in the food's unit) |
 | `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
 | `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, change the time and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
-| `delete_meal(id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
+| `delete_meal(id)` / `undo_last(id)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name or alias another food has is refused naming that food |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
@@ -244,7 +244,11 @@ A meal logged with a token is the client `api`'s until MCP names
 itself. `log_metric` is `PUT /api/v1/days/{date}/metrics/{kind}`,
 `delete_metric` is `DELETE` on the same route (404 for a kind the day
 has none of), and `checkin` is `PATCH /api/v1/days/{date}`; each takes a
-date or `today`, and answers the day as `get_day` does.
+date or `today`, and answers the day as `get_day` does. `undo_last` is
+`POST /api/v1/undo`: it answers the change it took back (marked
+`repeated` for an undo sent again under its id: each undo takes a new
+one), a 409 that says why for one it passed over, or a 404 with nothing
+left.
 
 ## 6. AI layer
 
@@ -738,6 +742,10 @@ the first spec.
     nothing, other content is a conflict (409). A "replace" whose item
     is as sent already is a retry too. A server-made ID fills in for an
     item logged without one.
+  - An undo carries an ID the client makes too, under the same rules: the
+    change it settled (taken back, or passed over) keeps it, and an undo
+    that found nothing is recorded with it, so the same undo sent again
+    answers as before rather than taking back another change.
   - A deleted meal's ID stays a tombstone in the event log: a late retry
     of its create (or of a create that was undone) is refused as
     deleted (409) rather than bringing the meal back.

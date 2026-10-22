@@ -101,7 +101,8 @@ type Event struct {
 	// (YYYY-MM-DD), a day and a metric ("2026-10-21/weight"), a phase by
 	// its start or a target by its first day (YYYY-MM-DD), "profile",
 	// "limits", "plan" (the training weekdays), "notes" or a source of
-	// workouts ("strong"), or for an undo the event undone.
+	// workouts ("strong"), or for an undo the event undone, or "nothing"
+	// for an undo under a client's id that found nothing to take back.
 	Entity string
 	// Before and After are the state of the entity, as JSON; nil where
 	// there was none (before a create, after a delete).

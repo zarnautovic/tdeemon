@@ -15,16 +15,16 @@ meals, metrics and the plan (profile, phases, targets, limits) in the
 domain and the database with an event log and undo, the API for the
 profile and the limits, the tool registry with `get_profile`,
 `get_day`, `find_foods`, `get_food`, `upsert_food`, `log_meal`,
-`update_meal`, `delete_meal`, `log_metric`, `delete_metric` and
-`checkin`, the MCP server that serves them at `/mcp`, the API contract
-and an empty web app
+`update_meal`, `delete_meal`, `log_metric`, `delete_metric`,
+`checkin` and `undo_last`, the MCP server that serves them at `/mcp`,
+the API contract and an empty web app
 exist.
 
 | Path | What |
 | --- | --- |
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create`, `user set-password` and `import-history` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
-| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `calibration` (the trend weight and the measured TDEE with its interval, DESIGN.md §7), `event` (who wrote what, for the audit trail and undo), `text` (the rules for free text, shared by the others) |
+| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `calibration` (the trend weight and the measured TDEE with its interval, DESIGN.md §7), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
 | `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/ingest` | what devices and apps send (Health Auto Export, a simple JSON form) turned into a day's metrics: which value a day keeps, units, a check of each value; the days of workouts in Strong's CSV export; the archive of the bodies |
 | `internal/history` | the one-off import of a user's history from the predecessor: days' metrics and meals from its database, with the rest of a day's total, foods from its food table, and a plan file written from its goals note (DESIGN.md §10) |
