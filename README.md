@@ -319,8 +319,8 @@ Streamable HTTP), with an API token as a Bearer token: one with `tools`
 for every tool, or `read` for those that only read. Each tool is the
 operation of the API above, with its validation and its answers, and a
 meal or a change made through MCP is the client `mcp`'s. The server
-tells every client how to log (its MCP instructions), so no client needs
-a skill of its own. Claude Code, for one:
+tells every client how to log (its MCP instructions), so a client's own
+skill, if any, shrinks to a few lines. Claude Code, for one:
 
 ```sh
 claude mcp add --transport http tdeemon https://tdeemon.example.com/mcp \

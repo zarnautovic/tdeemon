@@ -13,6 +13,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/zarnautovic/tdeemon/internal/api"
+
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
@@ -288,24 +290,25 @@ func TestMCPBehindALocalProxy(t *testing.T) {
 }
 
 // The server gives every client its policy of logging, short, and naming
-// only tools it serves and their arguments: a renamed tool or argument
-// fails here rather than leaving the instructions wrong.
+// only tools it serves and the properties of their requests and answers:
+// a renamed tool, argument or field fails here rather than leaving the
+// instructions wrong.
 func TestMCPInstructions(t *testing.T) {
 	t.Parallel()
 
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	got := cs.InitializeResult().Instructions
-	if !strings.Contains(got, "`log_meal`") || !strings.Contains(got, "never add up") {
+	if !strings.Contains(got, "`log_meal`") || !strings.Contains(got, "never work out") {
 		t.Fatalf("instructions = %q", got)
 	}
 	res, err := cs.ListTools(t.Context(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// What a client reads before its first call, the instructions and the
-	// tools, stays well under the 10k tokens a log may cost (DESIGN.md
-	// §6): about four bytes a token.
+	// The prefix a client reads before its first call, which every call
+	// of a log sends again (cached, as a client caches a prompt): about
+	// four bytes a token.
 	list, err := json.Marshal(res.Tools)
 	if err != nil {
 		t.Fatal(err)
@@ -318,10 +321,25 @@ func TestMCPInstructions(t *testing.T) {
 		known[tl.Name] = true
 		propertyNames(tl.InputSchema, known)
 	}
-	// Every name of the kind tools and arguments have, in backticks or not.
-	for _, m := range regexp.MustCompile("[a-z]+_[a-z_]+").FindAllString(got, -1) {
-		if !known[m] {
-			t.Errorf("the instructions name %q, which is no tool nor argument of one", m)
+	// The fields of the answers, which the instructions name too.
+	spec, err := api.Spec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc any
+	if err := json.Unmarshal(spec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	propertyNames(doc, known)
+	// Every name of the kind tools and fields have, and every word in
+	// backticks.
+	for _, m := range regexp.MustCompile("[a-z]+_[a-z_]+|`([^`]+)`").FindAllStringSubmatch(got, -1) {
+		name := m[0]
+		if m[1] != "" {
+			name = m[1]
+		}
+		if !known[name] {
+			t.Errorf("the instructions name %q, which is no tool nor field of one", name)
 		}
 	}
 }

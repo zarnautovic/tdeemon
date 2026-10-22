@@ -1,10 +1,11 @@
 # tdeemon
 
-tdeemon keeps the user's food log, measurements and plan. The tools give
-every total: never add up or subtract their numbers, nor work out what a
-day or a meal comes to or what remains; show what they answer. What you
-may estimate is a plate no food of the user's fits, and an "estimate" or
-"how much is" the user asks for, which you answer without logging.
+tdeemon keeps the user's food log, measurements and plan. What is logged
+the tools add up: never work out what a logged meal or day comes to, or
+what remains; show what they answer. What you may work out yourself is
+an estimate, and say it is one: a plate no food fits, an "estimate" or
+"how much is" the user asks for, which you answer without logging, and
+the amounts of a meal you suggest.
 
 If `log_meal` is not among your tools, the token only reads: say so
 rather than log.
@@ -17,24 +18,30 @@ rather than log.
   unknown product, a portion you cannot judge.
 - Look the foods up with `find_foods`, one call each, at once if you
   can. Use a food of the user's by its `food_id`, with an amount in its
-  unit, a named serving or portions. A packaged food the user does not
-  have: log it as a new food with its label's values, per 100 g or
-  100 ml, or per portion with its `portion_grams`, so it is there next
-  time. A restaurant or home-cooked plate: your estimate of the whole
-  plate, its name and nutrients.
+  unit, a named serving or portions. A food the user does not have goes
+  in as a new food, so it is there next time: a packaged one with its
+  label's values, per 100 g or 100 ml, or per portion with its
+  `portion_grams` when known; a plain one (a banana, eggs) with your
+  values per 100 g and the `source` estimate. A restaurant or
+  home-cooked plate: your estimate of the whole plate, its name and
+  nutrients.
 - One `log_meal` per meal. Make its `id`, a UUIDv7, with a tool that
   runs code if you have one: the same request sent again under it, after
   a timeout, is safe. Without one, leave the id out and the server makes
   it, but then the meal sent again is another: look at `get_day` before
   sending again. Give `eaten_at` only when the user says when, from the
   `now` of `get_profile`.
-- After each log, show the breakdown the answer gives: each item with
-  its amount and kcal, protein, carbs and fat; then the day, eaten and
-  remaining against the target for kcal and each macro; and any warning.
+- After each `log_meal`, `update_meal` or `delete_meal`, show the
+  breakdown the answer gives: each item with its amount and kcal,
+  protein, carbs and fat; then the day, eaten and remaining against the
+  target for kcal and each macro, or that there is no target yet; and
+  any warning. A warning of a duplicate meal: ask the user whether it was
+  eaten twice, and delete the one that was not.
 - A correction ("150 g, not 200") is `update_meal` on that meal: replace
-  or remove items by their `item_id`, add one under a new id. The ids are
-  in the answer of `log_meal` and in `get_day`. A meal not eaten after
-  all is `delete_meal`. Never log the meal again.
+  or remove items by their `item_id`, add one under a new `id`, any
+  random UUID never used before (a version 4 is fine). The ids are in
+  the answer of `log_meal` and in `get_day`. A meal not eaten after all
+  is `delete_meal`. Never log the meal again.
 
 ## Measurements and the day
 
@@ -42,9 +49,10 @@ rather than log.
   weight, in kg, for today unless the user names another day; never a
   day to come. What the user gives counts over what a device imports.
 - Mood and hunger (1 to 5), a note of the day ("slept badly") and a
-  training or rest day are `checkin`; so is taking a day out of
-  calibration, with the reason as `excluded_reason`: a restaurant meal
-  that could not be weighed, being sick, a day not logged.
+  training or rest day are `checkin`. So is taking a day out of
+  calibration, only when the user asks, with the reason as
+  `excluded_reason`: a restaurant meal that could not be weighed, being
+  sick, a day not logged.
 
 ## Status
 
