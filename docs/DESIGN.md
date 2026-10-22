@@ -265,7 +265,12 @@ left.
      reads, replaces or deletes what is there, and may be sent again; a
      call runs the operation in process, with the token's principal, so
      a meal logged through MCP is the client `mcp`'s; a `date` left out
-     is today.
+     is today. Its `instructions`, the same for every client
+     (`internal/api/mcp_instructions.md`), are the policy of logging:
+     log at once what is clear, ask one question only when the food or
+     the amount is not, "estimate" logs nothing, show the breakdown the
+     tool answers, and never work out a logged total or what remains,
+     which the tools give.
    - **Later:** a minimal built-in OAuth 2.1 authorisation server (PKCE,
      dynamic client registration) so Claude and ChatGPT custom
      connectors work.

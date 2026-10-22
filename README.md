@@ -318,8 +318,9 @@ An AI client reaches the tools at `<TDEEMON_BASE_URL>/mcp` (MCP over
 Streamable HTTP), with an API token as a Bearer token: one with `tools`
 for every tool, or `read` for those that only read. Each tool is the
 operation of the API above, with its validation and its answers, and a
-meal or a change made through MCP is the client `mcp`'s. Claude Code,
-for one:
+meal or a change made through MCP is the client `mcp`'s. The server
+tells every client how to log (its MCP instructions), so a client's own
+skill, if any, shrinks to a few lines. Claude Code, for one:
 
 ```sh
 claude mcp add --transport http tdeemon https://tdeemon.example.com/mcp \
