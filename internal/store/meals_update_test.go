@@ -287,3 +287,49 @@ func foodNamed(t *testing.T, db *store.DB, user uuid.UUID, name string) (food.Fo
 	}
 	return food.Food{}, store.ErrNotFound
 }
+
+// A new food a meal brings of the name and brand of a food the user has
+// is that food as the user has it: it is not changed, and the item comes
+// from its values. A quantity that food does not take is refused.
+func TestMealOfAFoodTheUserHas(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar()) // a label's, with its servings and alias
+	guess := food.Food{
+		ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Per100g, Source: food.Estimate,
+		Nutrients: food.Nutrients{Kcal: 500, Protein: 10, Carbs: 50, Fat: 25},
+	}
+	it, err := meal.FromFood(guess, meal.Quantity{Amount: 50, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{it}
+	got, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{guess}, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after, err := db.FoodByID(t.Context(), ana, b.ID); err != nil || !reflect.DeepEqual(after, b) {
+		t.Errorf("the user's food after a meal of a guess of it = %+v, %v; want it as it was", after, err)
+	}
+	want, err := meal.FromFood(b, meal.Quantity{Amount: 50, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := got.Items[0]; g.FoodID != b.ID || !reflect.DeepEqual(g.Nutrients, want.Nutrients) || g.Name != want.Name {
+		t.Errorf("the item = %+v, want one of the user's food, %+v", g, want)
+	}
+	// In ml, which the bar by weight does not take.
+	guess.ID, guess.Basis = uuid.NewV7(), food.Per100ml
+	it, err = meal.FromFood(guess, meal.Quantity{Amount: 50, Unit: "ml"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := breakfast(t, b, t0)
+	other.Items = []meal.Item{it}
+	var fie *store.FoodItemError
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, other, []food.Food{guess}, t0); !errors.As(err, &fie) || fie.Food.ID != b.ID {
+		t.Errorf("a meal of 50 ml of a food by weight = %v, want a FoodItemError of the user's food", err)
+	}
+}

@@ -871,3 +871,31 @@ func TestLogMealWithoutAnID(t *testing.T) {
 		t.Errorf("a meal of an empty id: %d %s, want 422", rec.Code, rec.Body.String())
 	}
 }
+
+// A new food sent with a meal under the name and brand of a food the user
+// has logs that food as the user has it, unchanged: a model's guess does
+// not overwrite a label's values. One it cannot take is a 422 naming it.
+func TestLogMealOfAFoodTheUserHas(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	guess := fmt.Sprintf(`{"food": {"name": %q, "basis": "100g", "source": "estimate", "nutrients": {"kcal": 300, "protein": 5, "carbs": 60, "fat": 2}}, "amount": 40, "unit": "g"}`, bread.Name)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+guess+`]}`, e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"food_id":"`+e.bread+`"`) {
+		t.Fatalf("a meal of a guess of the bread: %d %s", rec.Code, rec.Body.String())
+	}
+	if after, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, bread.ID); err != nil || !reflect.DeepEqual(after, bread) {
+		t.Errorf("the bread after a meal of a guess of it = %+v, %v; want it as it was", after, err)
+	}
+	if strings.Contains(rec.Body.String(), `"kcal":120`) {
+		t.Errorf("the item has the guess's values: %s", rec.Body.String())
+	}
+	inML := fmt.Sprintf(`{"items": [{"food": {"name": %q, "basis": "100ml", "source": "estimate", "nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 200, "unit": "ml"}]}`, bread.Name)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", inML, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), bread.Name) {
+		t.Errorf("200 ml of a food by weight: %d %s, want a 422 naming it", rec.Code, rec.Body.String())
+	}
+}

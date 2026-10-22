@@ -204,26 +204,43 @@ func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 
 // saveNewFoods saves the foods of foods that items name in tx, each as
 // SaveFood does, and returns the id each is stored under by the id it came
-// with: a food of the same name and brand as one the user has is that
-// food. A food no item names (one of an op found done already) is not
-// saved.
-func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item, now time.Time) (map[uuid.UUID]uuid.UUID, error) {
+// with. A food of the same name and brand as one the user has is that
+// food, as the user has it: it is not changed (upsert_food corrects a
+// food), and kept holds it, by its id, for its items to be worked out of.
+// A food no item names (one of an op found done already) is not saved.
+func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item,
+	now time.Time,
+) (ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]food.Food, err error) {
 	named := make(map[uuid.UUID]bool, len(items))
 	for i := range items {
 		named[items[i].FoodID] = true
 	}
-	ids := make(map[uuid.UUID]uuid.UUID, len(foods))
+	ids = make(map[uuid.UUID]uuid.UUID, len(foods))
+	kept = map[uuid.UUID]food.Food{}
 	for i := range foods {
-		if !named[foods[i].ID] {
+		f := &foods[i]
+		if !named[f.ID] {
 			continue
 		}
-		stored, err := saveFoodInTx(ctx, tx, userID, a, foods[i], false, now)
+		target, exists, err := saveTarget(ctx, tx, userID, f.ID, food.Key(f.Name), food.Key(f.Brand), false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		ids[foods[i].ID] = stored.ID
+		if exists {
+			had, err := foodInTx(ctx, tx, userID, target)
+			if err != nil {
+				return nil, nil, err
+			}
+			ids[f.ID], kept[target] = target, had
+			continue
+		}
+		stored, err := saveFoodInTx(ctx, tx, userID, a, *f, false, now)
+		if err != nil {
+			return nil, nil, err
+		}
+		ids[f.ID] = stored.ID
 	}
-	return ids, nil
+	return ids, kept, nil
 }
 
 // validFoods reports the first of foods that breaks the rules.

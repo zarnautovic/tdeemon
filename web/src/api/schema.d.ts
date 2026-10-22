@@ -805,7 +805,7 @@ export interface components {
              * @description How much of the food, in unit: the food's own (g or ml).
              */
             amount?: number;
-            /** @description A new food, saved as it is logged: one of the same name and brand is that food, corrected. */
+            /** @description A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food). */
             food?: components["schemas"]["FoodFields"];
             /**
              * Format: uuid

@@ -133,13 +133,15 @@ time; the code does the arithmetic. A food is one of:
   again, and produces the same kind of food, with `source: recipe`.
 
 The same name and brand (compared without regard to case or runs of
-space) are the same food: saving it again corrects it rather than adding
-a second. An alias leads to one food. Search runs over names, brands and
-aliases through a full-text index that ignores case and diacritics
-("cevapi" finds "Ćevapi") and matches word prefixes: foods whose name
-holds every word first, then name and aliases, then the rest, shorter
-names first, from the user's own foods alone; archived foods stay out
-of it but keep their history.
+space) are the same food: saving it again (`upsert_food`) corrects it
+rather than adding a second, while a new food sent with a meal under
+them is that food as the user has it, unchanged, so a model's guess
+never overwrites a label's values. An alias leads to one food. Search
+runs over names, brands and aliases through a full-text index that
+ignores case and diacritics ("cevapi" finds "Ćevapi") and matches word
+prefixes: foods whose name holds every word first, then name and
+aliases, then the rest, shorter names first, from the user's own foods
+alone; archived foods stay out of it but keep their history.
 
 A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
@@ -213,14 +215,16 @@ is known.
 ```
 
 The response holds the stored meal (items with computed macros), the day
-totals against the day-type target, what remains, and `warnings`. Warning
-examples: the stated kcal are more than 15 % (and 10 kcal) off what the
-grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol, with fiber
-and polyols by any of the conventions labels use), saturated fat is
-above total fat, a duplicate of a meal logged minutes ago. A new food is
-saved in the meal's transaction, so a meal refused saves none, and a
-meal sent again saves none: it is told by what was sent (§9) before
-anything of it is read or saved.
+totals against the day-type target, what remains, and `warnings`.
+Warning examples: the stated kcal are more than 15 % (and 10 kcal) off
+what the grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol,
+with fiber and polyols by any of the conventions labels use), saturated
+fat is above total fat, a duplicate of a meal logged minutes ago. A new
+food is saved in the meal's transaction (one of the name and brand of a
+food the user has is that food, unchanged, and the item comes from its
+values, or is a 422 when they do not take its quantity), so a meal
+refused saves none, and a meal sent again saves none: it is told by what
+was sent (§9) before anything of it is read or saved.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
 scripts. A tool is one operation of the API, in the registry

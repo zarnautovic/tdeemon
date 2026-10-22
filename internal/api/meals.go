@@ -37,7 +37,7 @@ func clientOf(p auth.Principal) meal.Client {
 type itemInput struct {
 	ID       string      `json:"id,omitempty" format:"uuid" doc:"The client's id for the item; a new one when left out."`
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
-	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved as it is logged: one of the same name and brand is that food, corrected."`
+	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food)."`
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit: the food's own (g or ml)."`
 	Unit     string      `json:"unit,omitempty" enum:"g,ml"`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
@@ -337,10 +337,20 @@ func newFoods(foods []*food.Food) []food.Food {
 // errItemTaken is the 409 of an item under the id of another meal's item.
 var errItemTaken = huma.Error409Conflict("an item's id is another meal's item: a new item takes a new id")
 
+// foodItemError is the 422 of an item of a new food that is a food the
+// user has, whose quantity that food does not take.
+func foodItemError(e *store.FoodItemError) error {
+	return huma.Error422UnprocessableEntity(fmt.Sprintf("a new food named as the user's food %q is that food, as the user has it (upsert_food corrects it), "+
+		"and it takes no such quantity: %s; give its food_id with an amount it takes", e.Food.Name, oneLine(e.Err)))
+}
+
 // createError is the answer to CreateMeal's err.
 func createError(err error) error {
 	var conflict *store.FoodConflictError
+	var fie *store.FoodItemError
 	switch {
+	case errors.As(err, &fie):
+		return foodItemError(fie)
 	case errors.As(err, &conflict):
 		return huma.Error409Conflict(conflictDetail(conflict))
 	case errors.Is(err, store.ErrItemTaken):
@@ -450,9 +460,12 @@ func (s *sessions) updateMeal(ctx context.Context, in *updateMealInput) (*mealOu
 	}, now)
 	var e *huma.ErrorModel
 	var conflict *store.FoodConflictError
+	var fie *store.FoodItemError
 	switch {
 	case errors.As(err, &e):
 		return nil, err
+	case errors.As(err, &fie):
+		return nil, foodItemError(fie)
 	case errors.As(err, &conflict):
 		return nil, huma.Error409Conflict(conflictDetail(conflict))
 	case errors.Is(err, store.ErrNotFound):

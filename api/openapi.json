@@ -826,7 +826,7 @@
           },
           "food": {
             "$ref": "#/components/schemas/FoodFields",
-            "description": "A new food, saved as it is logged: one of the same name and brand is that food, corrected."
+            "description": "A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food)."
           },
           "food_id": {
             "description": "A food of the user's, from find_foods.",
