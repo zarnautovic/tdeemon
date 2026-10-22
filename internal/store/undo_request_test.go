@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"database/sql"
 	"errors"
 	"sync"
 	"testing"
@@ -155,5 +156,37 @@ func TestUndoOfNothingSentAgain(t *testing.T) {
 	}
 	if after, _ := db.Events(t.Context(), ana, store.MaxEvents); len(after) != len(before) {
 		t.Errorf("UndoLast of nothing recorded %d events", len(after)-len(before))
+	}
+}
+
+// A failure to record an undo that found nothing is a failure, not
+// "nothing to undo": the undo sent again must not take back a change
+// made since as if it were new.
+func TestUndoOfNothingNotRecorded(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	exec := func(q string) {
+		t.Helper()
+		if err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+			_, err := tx.ExecContext(t.Context(), q)
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`CREATE TRIGGER no_nothing BEFORE INSERT ON events WHEN NEW.entity = 'nothing'
+		BEGIN SELECT RAISE(ABORT, 'the disk is full'); END`)
+	request := clientid.NewAt(t0)
+	if _, _, err := db.Undo(t.Context(), ana, testActor, request, t0); err == nil || errors.Is(err, store.ErrNothingToUndo) {
+		t.Errorf("an undo of nothing that could not be recorded = %v, want a failure", err)
+	}
+	exec("DROP TRIGGER no_nothing")
+	m := createMeal(t, db, ana, breakfast(t, saveFood(t, db, ana, bar()), t0))
+	// The failure kept nothing: the undo sent again is a new one, and
+	// takes back the meal, which is what a client that saw the failure
+	// asks for.
+	if e, again, err := db.Undo(t.Context(), ana, testActor, request, t0); err != nil || again || e.Entity != m.ID.String() {
+		t.Errorf("the undo again = %+v, %v, %v", e, again, err)
 	}
 }

@@ -251,8 +251,11 @@ func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 		if errors.Is(err, ErrNothingToUndo) && request != nil {
 			// The same undo sent again finds nothing again, rather than a
 			// change made since.
+			if err := recordNothing(ctx, tx, userID, a, *request, now); err != nil {
+				return err
+			}
 			nothing = true
-			return recordNothing(ctx, tx, userID, a, *request, now)
+			return nil
 		}
 		if err != nil || request == nil {
 			return err
@@ -266,14 +269,20 @@ func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 			request.String(), userID.String(), id.String())
 		return err
 	})
-	if errors.Is(err, ErrNothingToUndo) || errors.Is(err, ErrUndoID) {
+	return undoAnswer(undone, again, nothing, conflict, err)
+}
+
+// undoAnswer is what Undo returns of the outcome of its transaction:
+// err, which a failure of the database wraps; the nothing to undo it
+// recorded; the conflict it passed over; or the change it took back.
+func undoAnswer(undone event.Event, again, nothing bool, conflict *UndoConflictError, err error) (event.Event, bool, error) {
+	switch {
+	case errors.Is(err, ErrNothingToUndo) || errors.Is(err, ErrUndoID):
 		return event.Event{}, false, err
-	}
-	if nothing {
-		return event.Event{}, false, ErrNothingToUndo
-	}
-	if err != nil {
+	case err != nil:
 		return event.Event{}, false, fmt.Errorf("undo: %w", err)
+	case nothing:
+		return event.Event{}, false, ErrNothingToUndo
 	}
 	if conflict != nil {
 		return event.Event{}, false, conflict

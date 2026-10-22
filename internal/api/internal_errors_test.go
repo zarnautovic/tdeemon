@@ -189,6 +189,10 @@ func dayFailCases() []failCase {
 		{"check-in", http.MethodPatch, "/api/v1/days/today", `{"mood": 3}`, "ALTER TABLE meals RENAME TO gone", "meals"},
 		{"check-in", http.MethodPatch, "/api/v1/days/today", `{"mood": 3}`, "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
 		{"undo-last", http.MethodPost, "/api/v1/undo", `{"id": "` + clientid.NewAt(testNow).String() + `"}`, "ALTER TABLE events RENAME COLUMN undo_request TO gone", "undo_request"},
+		{
+			"undo-last", http.MethodPost, "/api/v1/undo", `{"id": "` + clientid.NewAt(testNow).String() + `"}`,
+			"CREATE TRIGGER no_nothing BEFORE INSERT ON events WHEN NEW.entity = 'nothing' BEGIN SELECT RAISE(ABORT, 'the disk is full'); END", "the disk is full",
+		},
 	} {
 		cases = append(cases, failCase{
 			name: b.op + ", " + b.secret, op: b.op, method: b.method, path: b.path, body: b.body, signedIn: true,
