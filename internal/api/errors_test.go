@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -56,8 +57,10 @@ func TestAPITyposDoNotReachACatchAll(t *testing.T) {
 // the handler returned: a plain error, which huma would answer with its
 // text, or a 500 with the error as its detail. A 5xx that carries no
 // detail (the server is busy) is no failure to log, and a 4xx's details
-// are about the request, so they stay. A client that went away logs at
-// debug level: it says nothing about the server.
+// are about the request, so they stay. The error decides the level: a
+// client that went away, or a request that ran out of time, says nothing
+// about the server and logs at debug level, but a failure that came while
+// the client left is still a failure.
 func TestHideInternalErrors(t *testing.T) {
 	t.Parallel()
 
@@ -69,11 +72,19 @@ func TestHideInternalErrors(t *testing.T) {
 		status    int
 		wantLevel string // "" for nothing logged
 		keeps     string // in the answer
+		unsaid    bool   // what failed is not in the log either
 	}{
 		{name: "a plain error", err: errors.New(inside), status: http.StatusInternalServerError, wantLevel: "ERROR", keeps: "unexpected error occurred"},
 		{name: "a 500 with the error", err: huma.Error500InternalServerError("reading failed", errors.New(inside)), status: http.StatusInternalServerError, wantLevel: "ERROR", keeps: "reading failed"},
 		{name: "a 500 with no error", err: huma.Error500InternalServerError("reading failed", nil, errors.New(inside)), status: http.StatusInternalServerError, wantLevel: "ERROR", keeps: "reading failed"},
-		{name: "a client that went away", err: errors.New(inside), gone: true, status: http.StatusInternalServerError, wantLevel: "DEBUG"},
+		{name: "a 500 with only a nil error", err: huma.Error500InternalServerError("reading failed", nil), status: http.StatusInternalServerError, wantLevel: "ERROR", keeps: "reading failed", unsaid: true},
+		{name: "a failure", err: internalError("reading failed", errors.New(inside)), status: http.StatusInternalServerError, wantLevel: "ERROR", keeps: "reading failed"},
+		{name: "a client that went away", err: internalError("reading failed", fmt.Errorf("%s: %w", inside, context.Canceled)), gone: true, status: http.StatusInternalServerError, wantLevel: "DEBUG"},
+		{name: "a timeout", err: internalError("reading failed", fmt.Errorf("%s: %w", inside, context.DeadlineExceeded)), status: http.StatusInternalServerError, wantLevel: "DEBUG"},
+		{name: "no hashing slot", err: internalError("signing in failed", fmt.Errorf("%s: %w", inside, auth.ErrBusy)), status: http.StatusInternalServerError, wantLevel: "WARN"},
+		{name: "a failure while the client went away", err: internalError("reading failed", errors.New(inside)), gone: true, status: http.StatusInternalServerError, wantLevel: "ERROR"},
+		{name: "a plain error while the client went away", err: errors.New(inside), gone: true, status: http.StatusInternalServerError, wantLevel: "ERROR"},
+		{name: "a failure and a cancellation", err: huma.Error500InternalServerError("reading failed", internalDetail(errors.New(inside)), internalDetail(context.Canceled)), status: http.StatusInternalServerError, wantLevel: "ERROR"},
 		{name: "a 503 without details", err: huma.Error503ServiceUnavailable("busy; try again shortly"), status: http.StatusServiceUnavailable, keeps: "busy; try again shortly"},
 		{name: "a 422 with details", err: huma.Error422UnprocessableEntity("bad", errors.New(inside)), status: http.StatusUnprocessableEntity, keeps: inside},
 	} {
@@ -109,7 +120,11 @@ func TestHideInternalErrors(t *testing.T) {
 				}
 				return
 			}
-			for _, want := range []string{"level=" + tc.wantLevel, `msg="an API operation failed"`, inside, "operation_id=fail", "method=GET", "path=/fail", "user_id=" + u.ID.String()} {
+			wants := []string{"level=" + tc.wantLevel, `msg="an API operation failed"`, "operation_id=fail", "method=GET", "path=/fail", "user_id=" + u.ID.String()}
+			if !tc.unsaid {
+				wants = append(wants, inside)
+			}
+			for _, want := range wants {
 				if !strings.Contains(got, want) {
 					t.Errorf("logged %q, want %q in it", got, want)
 				}

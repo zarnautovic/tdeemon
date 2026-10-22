@@ -2,9 +2,11 @@ package api_test
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -191,5 +193,29 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Errorf("logged %+v, want %+v", logged[0], want)
 			}
 		})
+	}
+}
+
+// A client that leaves while its sign-in reads the credentials gets no
+// error logged: it says nothing about the server, and a client can do it
+// at will.
+func TestGoneSignInLogsAtDebug(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", passwordHash(t))
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	body := `{"email":"ana@example.com","password":"` + password + `"}`
+	r := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/auth/login", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	rec := in.serve(t, r)
+	var failed []logRecord
+	for _, l := range in.logRecords(t) {
+		if l.Msg == "an API operation failed" {
+			failed = append(failed, l)
+		}
+	}
+	if rec.Code != http.StatusInternalServerError || len(failed) != 1 || failed[0].Level != "DEBUG" || !strings.Contains(failed[0].Error, "context canceled") {
+		t.Errorf("%d %s, logged %+v; want a 500 logged once at debug level", rec.Code, rec.Body.String(), failed)
 	}
 }

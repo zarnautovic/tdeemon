@@ -233,7 +233,8 @@ func newAPI(mux *http.ServeMux, logger *slog.Logger) huma.API {
 	cfg.CreateHooks = nil
 	// A misspelled query parameter is an error, not silently ignored.
 	cfg.RejectUnknownQueryParameters = true
-	cfg.Transformers = append(cfg.Transformers, dropErrorValues, hideInternalErrors(logger))
+	// hideInternalErrors first: it reads the errors dropErrorValues drops.
+	cfg.Transformers = append(cfg.Transformers, hideInternalErrors(logger), dropErrorValues)
 	cfg.OnAddOperation = append(cfg.OnAddOperation, documentRequestErrors)
 	a := humago.New(mux, cfg)
 	// Before any operation registers: huma fixes an operation's
@@ -258,10 +259,13 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 }
 
 // documentRequestErrors lists in an operation's responses the problems
-// huma answers before the handler runs, which it does not list itself:
-// 422 for an unknown query parameter (RejectUnknownQueryParameters), and
-// for a body 400 (not JSON), 408 (too slow), 413 (too large) and 415 (not
-// JSON's content type).
+// answered before the handler runs, which huma does not list itself: the
+// server's 401 for a bad API token and 429 for an address that sent too
+// many (authenticateToken), huma's 422 for an unknown query parameter
+// (RejectUnknownQueryParameters), and for a body huma's 400 (not JSON),
+// 408 (too slow), 413 (too large) and 415 (not JSON's content type). The
+// 403 for a browser's cross-origin request every operation that is not a
+// read lists already.
 //
 // huma lists 500 for every operation that lists its errors; one that
 // lists none has a default response instead, which covers these too.
@@ -270,7 +274,7 @@ func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
 	if problem == nil {
 		return
 	}
-	codes := []int{http.StatusUnprocessableEntity}
+	codes := []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusUnprocessableEntity}
 	if op.RequestBody != nil {
 		codes = append(codes, http.StatusBadRequest, http.StatusRequestTimeout,
 			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
@@ -280,14 +284,29 @@ func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
 	}
 }
 
+// internalError is a handler's answer to a failure inside the server: a
+// 500 with msg, whose detail carries err for hideInternalErrors to log.
+func internalError(msg string, err error) error {
+	return huma.Error500InternalServerError(msg, internalDetail(err))
+}
+
+// internalDetail is the detail of a 5xx that carries err, so the log can
+// tell a client that went away (logLevel) from a failure.
+func internalDetail(err error) *huma.ErrorDetail {
+	return &huma.ErrorDetail{Message: err.Error(), Value: err}
+}
+
 // hideInternalErrors keeps what failed inside the server out of a 5xx
 // answer and logs it instead, once, with the request it came from. huma
 // answers a handler's error with its text in the answer's errors, and that
 // text can name a file, a query or a user; so a handler returns the error
-// (plain, or as a 500's detail) and does not log it itself. A 5xx without
-// details (the server is busy) is no failure, and is not logged. A client
-// that went away logs at debug level: it says nothing about the server,
-// and a client can do it at will.
+// (internalError, or plain) and does not log it itself. A 5xx without
+// details (the server is busy) is no failure, and is not logged.
+//
+// The request comes from humago.Unwrap, not from the huma.Context, which
+// has the same: contextcheck knows a request carries its context, and
+// takes the context from a huma.Context for one made up. The API is
+// humago's (newAPI).
 func hideInternalErrors(logger *slog.Logger) huma.Transformer {
 	return func(ctx huma.Context, _ string, v any) (any, error) {
 		e, ok := v.(*huma.ErrorModel)
@@ -301,17 +320,25 @@ func hideInternalErrors(logger *slog.Logger) huma.Transformer {
 	}
 }
 
-// logInternalError logs the details of e, the answer of op to r.
+// logInternalError logs the details of e, the answer of op to r, at the
+// level of its worst error (logLevel); a detail that carries no error (a
+// handler's plain error), or no detail at all, is a failure.
 func logInternalError(r *http.Request, logger *slog.Logger, op *huma.Operation, e *huma.ErrorModel) {
 	msgs := make([]string, 0, len(e.Errors))
+	level := slog.LevelDebug
 	for _, d := range e.Errors {
-		if d != nil {
-			msgs = append(msgs, d.Message)
+		if d == nil {
+			continue
 		}
+		msgs = append(msgs, d.Message)
+		l := slog.LevelError
+		if err, ok := d.Value.(error); ok {
+			l = logLevel(err)
+		}
+		level = max(level, l)
 	}
-	level := slog.LevelError
-	if r.Context().Err() != nil {
-		level = slog.LevelDebug
+	if len(msgs) == 0 {
+		level = slog.LevelError
 	}
 	attrs := []any{
 		"status", e.Status, "error", strings.Join(msgs, "; "),

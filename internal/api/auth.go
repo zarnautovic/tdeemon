@@ -293,7 +293,7 @@ func (s *sessions) login(ctx context.Context, in *loginInput) (*sessionOutput, e
 	u, hash, err := s.db.UserCredentials(ctx, email)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.giveBack(attempt)
-		return nil, huma.Error500InternalServerError("signing in failed", err)
+		return nil, internalError("signing in failed", err)
 	}
 	// hash is "" for an unknown address: VerifyLogin still spends a hash.
 	ok, err := s.verifyLogin(ctx, in.Body.Password, hash)
@@ -401,7 +401,7 @@ func (s *sessions) rehash(ctx context.Context, u user.User, oldHash, password st
 func (s *sessions) logout(ctx context.Context, _ *struct{}) (*logoutOutput, error) {
 	if p, ok := auth.PrincipalFrom(ctx); ok && p.Via == auth.ViaSession {
 		if err := s.db.DeleteSession(ctx, p.User.ID, p.SessionID); err != nil {
-			return nil, huma.Error500InternalServerError("signing out failed", err)
+			return nil, internalError("signing out failed", err)
 		}
 		s.logger.InfoContext(ctx, "signed out", "user_id", p.User.ID.String())
 	}

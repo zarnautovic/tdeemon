@@ -66,17 +66,20 @@ for the author and the reviewer.
   `TestAnswersMatchTheDocument` has a case for every operation, which
   must answer with success; `TestAnswersCoverEveryOperation` fails for an
   operation without one, so a new operation adds its case to
-  `answerCases`. The problems huma answers before a handler runs (an
-  unknown query parameter, a body that is not JSON, too large or too
-  slow) are listed for every operation (`documentRequestErrors`).
+  `answerCases`. The problems answered before a handler runs, huma's
+  (an unknown query parameter, a body that is not JSON, too large or
+  too slow) and the server's (a bad API token, an address that sent too
+  many), are listed for every operation (`documentRequestErrors`).
   What an answer's type may hold, so the document and the TypeScript
   types say what comes:
   - a struct it embeds is exported: huma describes no field of an
     unexported embedded struct;
   - a pointer has `omitempty`: nil is then left out, never `null`;
-  - a slice has `omitempty` or `nullable:"false"`, and is never nil
-    without `omitempty` (`[]`, not `null`): huma lets a slice be null
-    otherwise;
+  - a slice says `nullable:"false"`, as huma describes every other slice
+    as null or an array, and is never nil without `omitempty` (`[]`,
+    not `null`);
+  - a slice or a map holds no pointers: huma describes their elements
+    as not null;
   - a map is never nil without `omitempty`.
 
   `TestAnswersHoldNoNull` holds the types of every operation's answers
@@ -317,14 +320,18 @@ in `web/`.
   - compare with `errors.Is` and `errors.As`, never by text;
   - messages are lower case, without final punctuation;
   - an error is either handled (logged) or returned, not both;
-  - an API handler returns an error it cannot handle, plain or as a
-    500's detail (`huma.Error500InternalServerError("reading the
-    profile failed", err)`), and does not log it. The answer keeps no
-    word of it, as a file, a query or a user could be in it:
-    `hideInternalErrors` drops the details of every 5xx and logs them
-    once, with the operation, the method, the path and the user. A 5xx
-    without details (the server is busy) is not logged, and one for a
-    client that went away is logged at debug level.
+  - an API handler returns an error it cannot handle as
+    `internalError("reading the profile failed", err)`, and does not log
+    it. The answer keeps no word of it, as a file, a query or a user
+    could be in it: `hideInternalErrors` drops the details of every 5xx
+    and logs them once, with the operation, the method, the path and
+    the user, at the level of the error (`logLevel`: debug for a client
+    that went away). A plain error is logged the same way, at error
+    level. A 5xx without details (the server is busy) is not logged.
+    What answers before an operation runs (the session and token
+    lookups) or outside one (OpenID Connect's browser flow, and the
+    session a sign-in starts, which the two share) logs its failures
+    itself and answers with a bare problem.
 - **`context.Context`** is the first parameter of anything that queries
   the database, talks to the network or waits on other goroutines, and is
   never stored in a struct. File system calls take none, as `os` has no

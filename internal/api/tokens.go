@@ -211,7 +211,7 @@ type whoamiOutput struct {
 	Body         struct {
 		User   userBody `json:"user"`
 		Via    string   `json:"via" enum:"session,token" doc:"How the request authenticated."`
-		Scopes []string `json:"scopes,omitempty" enum:"ingest,tools,read" doc:"What the token may do (via token)."`
+		Scopes []string `json:"scopes,omitempty" nullable:"false" enum:"ingest,tools,read" doc:"What the token may do (via token)."`
 	}
 }
 
@@ -279,7 +279,7 @@ func (s *sessions) listTokens(ctx context.Context, _ *struct{}) (*tokensOutput, 
 	}
 	tokens, err := s.db.APITokens(ctx, p.User.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("listing the tokens failed", err)
+		return nil, internalError("listing the tokens failed", err)
 	}
 	out := &tokensOutput{CacheControl: "no-store"}
 	out.Body.Tokens = make([]TokenBody, 0, len(tokens))
@@ -308,7 +308,7 @@ func (s *sessions) createToken(ctx context.Context, in *createTokenInput) (*crea
 		CreatedAt: s.now().Truncate(time.Second),
 	}
 	if err := s.db.CreateAPIToken(ctx, t, hash); err != nil {
-		return nil, huma.Error500InternalServerError("creating the token failed", err)
+		return nil, internalError("creating the token failed", err)
 	}
 	s.logger.InfoContext(ctx, "created an API token", "user_id", p.User.ID.String(), "token_id", t.ID.String(), "scopes", t.Scopes)
 	return &createTokenOutput{CacheControl: "no-store", Body: createdTokenBody{TokenBody: newTokenBody(t), Token: token}}, nil
@@ -326,7 +326,7 @@ func (s *sessions) revokeToken(ctx context.Context, in *revokeTokenInput) (*stru
 	if err := s.db.RevokeAPIToken(ctx, p.User.ID, id); errors.Is(err, store.ErrNotFound) {
 		return nil, huma.Error404NotFound("no such token")
 	} else if err != nil {
-		return nil, huma.Error500InternalServerError("revoking the token failed", err)
+		return nil, internalError("revoking the token failed", err)
 	}
 	s.logger.InfoContext(ctx, "revoked an API token", "user_id", p.User.ID.String(), "token_id", id.String())
 	return nil, nil //nolint:nilnil // huma answers a nil output with the DefaultStatus, 204.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
+	"github.com/zarnautovic/tdeemon/internal/auth"
 )
 
 // document is the API's description: the operations by the route they
@@ -56,7 +58,8 @@ func (d documentRoutes) operation(r *http.Request) *huma.Operation {
 }
 
 // checkAnswer fails unless rec, the answer to r, is one the document
-// describes: its status is among the operation's responses, and its body
+// describes: its status is among the operation's responses (or the
+// operation has a default response), and its body
 // is valid against the schema for its content type, all the way down
 // through every $ref, array and object: the types, the required
 // properties, no property the document leaves out. A response type the
@@ -82,6 +85,9 @@ func checkAnswer(tb testing.TB, r *http.Request, rec *httptest.ResponseRecorder)
 func checkBody(tb testing.TB, op *huma.Operation, rec *httptest.ResponseRecorder) {
 	tb.Helper()
 	resp, ok := op.Responses[strconv.Itoa(rec.Code)]
+	if !ok {
+		resp, ok = op.Responses["default"]
+	}
 	if !ok {
 		tb.Errorf("%s answered %d, which the document does not list: %s", op.OperationID, rec.Code, rec.Body.String())
 		return
@@ -285,18 +291,26 @@ func TestCheckAnswer(t *testing.T) {
 	}
 }
 
-// nullableFields returns the fields of t, and of every type within it,
-// that can come out as null although the document may say they cannot:
-// a pointer without omitempty, which huma describes as a required
-// object, and a slice without omitempty that does not say
-// nullable:"false", which huma lets be null. A map comes out as null
-// only when it is nil; the document says it cannot, and checkAnswer
-// holds every answer to that.
+// nullableFields returns the fields of t, and of every type of this
+// module within it, that can come out as null, or that the document says
+// can although they never do:
+//   - a pointer without omitempty, which huma describes as required and
+//     not null;
+//   - a slice or a map of pointers, whose elements huma describes as not
+//     null;
+//   - a slice that does not say nullable:"false", which huma describes as
+//     null or an array, even with omitempty.
+//
+// A map comes out as null only when it is nil; the document says it
+// cannot, and checkAnswer holds every answer to that. huma's own types
+// (the problem's ErrorModel) are its affair.
 func nullableFields(t reflect.Type, seen map[reflect.Type]bool) []string {
 	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice || t.Kind() == reflect.Map {
 		t = t.Elem()
 	}
-	if t.Kind() != reflect.Struct || seen[t] {
+	// An answer's body is often a struct with no name, and no package.
+	foreign := t.Name() != "" && !strings.HasPrefix(t.PkgPath(), "github.com/zarnautovic/tdeemon/")
+	if t.Kind() != reflect.Struct || seen[t] || foreign {
 		return nil
 	}
 	seen[t] = true
@@ -322,11 +336,14 @@ func nullableFields(t reflect.Type, seen map[reflect.Type]bool) []string {
 // nullable says why the field f can be null, or "" when it cannot.
 func nullable(f reflect.StructField) string {
 	omitempty := slices.Contains(strings.Split(f.Tag.Get("json"), ",")[1:], "omitempty")
+	k := f.Type.Kind()
 	switch {
-	case f.Type.Kind() == reflect.Pointer && !omitempty:
+	case k == reflect.Pointer && !omitempty:
 		return "a pointer without omitempty"
-	case f.Type.Kind() == reflect.Slice && !omitempty && f.Tag.Get("nullable") != "false":
-		return `a slice without omitempty or nullable:"false"`
+	case (k == reflect.Slice || k == reflect.Map) && f.Type.Elem().Kind() == reflect.Pointer:
+		return "a collection of pointers"
+	case k == reflect.Slice && f.Tag.Get("nullable") != "false":
+		return `a slice without nullable:"false"`
 	}
 	return ""
 }
@@ -364,17 +381,24 @@ func TestNullableFields(t *testing.T) {
 	t.Parallel()
 
 	type inner struct {
-		Fine     []string          `json:"fine" nullable:"false"`
-		Skipped  []string          `json:"skipped,omitempty"`
-		Values   map[string]string `json:"values"`
-		List     []string          `json:"list"`
-		Optional *string           `json:"optional,omitempty"`
+		Fine     []string           `json:"fine" nullable:"false"`
+		Optional []string           `json:"optional,omitempty" nullable:"false"`
+		Skipped  []string           `json:"skipped,omitempty"`
+		Values   map[string]string  `json:"values"`
+		List     []string           `json:"list"`
+		Pointers []*string          `json:"pointers" nullable:"false"`
+		ByName   map[string]*string `json:"by_name"`
+		Absent   *string            `json:"absent,omitempty"`
 	}
 	type Embedded struct {
 		Tags []string `json:"tags"`
 	}
 	type outer struct {
 		Embedded
+		Body struct {
+			Problem huma.ErrorModel `json:"problem"`
+			Names   []string        `json:"names"`
+		} `json:"body"`
 		Inner  *inner   `json:"inner"`
 		Deep   []inner  `json:"deep" nullable:"false"`
 		Hidden *string  `json:"-"`
@@ -385,49 +409,86 @@ func TestNullableFields(t *testing.T) {
 	got := nullableFields(reflect.TypeFor[outer](), map[reflect.Type]bool{})
 	slices.Sort(got)
 	want := []string{
-		"api_test.Embedded.Tags: a slice without omitempty or nullable:\"false\"",
-		"api_test.inner.List: a slice without omitempty or nullable:\"false\"",
+		"api_test.Embedded.Tags: a slice without nullable:\"false\"",
+		"api_test.inner.ByName: a collection of pointers",
+		"api_test.inner.List: a slice without nullable:\"false\"",
+		"api_test.inner.Pointers: a collection of pointers",
+		"api_test.inner.Skipped: a slice without nullable:\"false\"",
 		"api_test.outer.Count: a pointer without omitempty",
 		"api_test.outer.Inner: a pointer without omitempty",
+		"struct { Problem huma.ErrorModel \"json:\\\"problem\\\"\"; Names []string \"json:\\\"names\\\"\" }.Names: a slice without nullable:\"false\"",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("nullableFields = %q, want %q", got, want)
 	}
 }
 
-// The problems huma answers before an operation's handler runs are in
-// the document, for every operation: an unknown query parameter, and a
-// body that is not JSON, comes with another content type, is too large
-// or too slow. serve checks each answer (checkAnswer).
+// The problems answered before an operation's handler runs are in the
+// document, for every operation: huma's (an unknown query parameter; a
+// body that is not JSON, comes with another content type, is too large or
+// too slow) and the server's own (a bad API token, an address that sent
+// too many, a browser's cross-origin request that is not a read). serve
+// checks each answer (checkAnswer).
 func TestRequestProblemsAreDocumented(t *testing.T) {
 	t.Parallel()
 
 	in, session := signedIn(t)
-	request := func(t *testing.T, op *huma.Operation, query string, body io.Reader, contentType string) *http.Request {
+	// An address that sent too many bad tokens.
+	const flooding = "192.0.2.99:1234"
+	for i := 0; ; i++ {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/whoami", nil)
+		r.RemoteAddr = flooding
+		r.Header.Set("Authorization", "Bearer "+auth.TokenPrefix+"bogus")
+		if rec := in.serve(t, r); rec.Code == http.StatusTooManyRequests {
+			break
+		} else if i == 100 {
+			t.Fatalf("no 429 after %d bad tokens: %d", i, rec.Code)
+		}
+	}
+	type problem struct {
+		name string
+		req  *http.Request
+		want int
+	}
+	request := func(t *testing.T, op *huma.Operation, query string, body io.Reader, header map[string]string) *http.Request {
 		t.Helper()
 		path := strings.ReplaceAll(op.Path, "{id}", uuid.NewV7().String())
 		r := httptest.NewRequestWithContext(t.Context(), op.Method, path+query, body)
-		if contentType != "" {
-			r.Header.Set("Content-Type", contentType)
+		for k, v := range header {
+			if k == "RemoteAddr" {
+				r.RemoteAddr = v
+				continue
+			}
+			r.Header.Set(k, v)
 		}
 		r.AddCookie(session)
 		return r
 	}
-	for _, op := range document().ops {
+	ops := slices.Collect(maps.Values(document().ops))
+	for i, op := range ops {
 		t.Run(op.OperationID, func(t *testing.T) {
 			t.Parallel()
-			type problem struct {
-				name string
-				req  *http.Request
-				want int
+			asJSON := map[string]string{"Content-Type": "application/json"}
+			problems := []problem{
+				{"an unknown query parameter", request(t, op, "?typo=1", nil, nil), http.StatusUnprocessableEntity},
+				// From an address of its own, which one bad token does not
+				// stop.
+				{"a bad API token", request(t, op, "", nil, map[string]string{
+					"Authorization": "Bearer " + auth.TokenPrefix + "bogus", "RemoteAddr": fmt.Sprintf("192.0.2.%d:1234", i+1),
+				}), http.StatusUnauthorized},
+				{"an address that sent too many bad tokens", request(t, op, "", nil, map[string]string{
+					"Authorization": "Bearer " + auth.TokenPrefix + "bogus", "RemoteAddr": flooding,
+				}), http.StatusTooManyRequests},
 			}
-			problems := []problem{{"an unknown query parameter", request(t, op, "?typo=1", nil, ""), http.StatusUnprocessableEntity}}
+			if op.Method != http.MethodGet {
+				problems = append(problems, problem{"a cross-origin request", request(t, op, "", nil, map[string]string{"Sec-Fetch-Site": "cross-site"}), http.StatusForbidden})
+			}
 			if op.RequestBody != nil {
 				problems = append(problems,
-					problem{"a body that is not JSON", request(t, op, "", strings.NewReader("{"), "application/json"), http.StatusBadRequest},
-					problem{"another content type", request(t, op, "", strings.NewReader("a=b"), "application/x-www-form-urlencoded"), http.StatusUnsupportedMediaType},
-					problem{"a body too large", request(t, op, "", strings.NewReader(`"`+strings.Repeat("a", 1<<20)+`"`), "application/json"), http.StatusRequestEntityTooLarge},
-					problem{"a body too slow", request(t, op, "", iotest.ErrReader(os.ErrDeadlineExceeded), "application/json"), http.StatusRequestTimeout},
+					problem{"a body that is not JSON", request(t, op, "", strings.NewReader("{"), asJSON), http.StatusBadRequest},
+					problem{"another content type", request(t, op, "", strings.NewReader("a=b"), map[string]string{"Content-Type": "application/x-www-form-urlencoded"}), http.StatusUnsupportedMediaType},
+					problem{"a body too large", request(t, op, "", strings.NewReader(`"`+strings.Repeat("a", 1<<20)+`"`), asJSON), http.StatusRequestEntityTooLarge},
+					problem{"a body too slow", request(t, op, "", iotest.ErrReader(os.ErrDeadlineExceeded), asJSON), http.StatusRequestTimeout},
 				)
 			}
 			for _, p := range problems {
@@ -436,5 +497,26 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// An operation that lists no errors has a default response, which
+// covers every status it does not list.
+func TestCheckBodyTakesTheDefault(t *testing.T) {
+	t.Parallel()
+
+	var problem *huma.Response
+	for _, op := range document().ops {
+		problem = op.Responses[strconv.Itoa(http.StatusInternalServerError)]
+	}
+	op := &huma.Operation{OperationID: "quiet", Responses: map[string]*huma.Response{"default": problem}}
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", "application/problem+json")
+	rec.WriteHeader(http.StatusNotFound)
+	_, _ = rec.WriteString(`{"title":"Not Found","status":404,"detail":"no such thing"}`)
+	e := &errorsOf{TB: t}
+	checkBody(e, op, rec)
+	if len(e.errs) > 0 {
+		t.Errorf("reported %q, want nothing", e.errs)
 	}
 }

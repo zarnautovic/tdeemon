@@ -132,7 +132,7 @@ func (s *sessions) getProfile(ctx context.Context, _ *struct{}) (*profileOutput,
 	}
 	pr, err := s.db.Profile(ctx, p.User.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("reading the profile failed", err)
+		return nil, internalError("reading the profile failed", err)
 	}
 	return &profileOutput{CacheControl: "no-store", Body: newProfileBody(pr)}, nil
 }
@@ -165,13 +165,13 @@ func (s *sessions) setProfile(ctx context.Context, in *setProfileInput) (*profil
 	}
 	today, err := s.today(p)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("setting the profile failed", fmt.Errorf("the user's calendar: %w", err))
+		return nil, internalError("setting the profile failed", fmt.Errorf("the user's calendar: %w", err))
 	}
 	if err := pr.Validate(today); err != nil {
 		return nil, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
 	}
 	if err := s.db.SetProfile(ctx, p.User.ID, webActor, pr, today, s.now()); err != nil {
-		return nil, huma.Error500InternalServerError("setting the profile failed", err)
+		return nil, internalError("setting the profile failed", err)
 	}
 	s.logger.InfoContext(ctx, "set the profile", "user_id", p.User.ID.String())
 	return &profileOutput{CacheControl: "no-store", Body: newProfileBody(pr)}, nil
@@ -211,7 +211,7 @@ func (s *sessions) getLimits(ctx context.Context, _ *struct{}) (*limitsOutput, e
 	}
 	l, err := s.db.UserLimits(ctx, p.User.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("reading the limits failed", err)
+		return nil, internalError("reading the limits failed", err)
 	}
 	return &limitsOutput{CacheControl: "no-store", Body: s.newLimitsBody(l)}, nil
 }
@@ -239,7 +239,7 @@ func (s *sessions) setLimits(ctx context.Context, in *setLimitsInput) (*limitsOu
 	case refusal != nil:
 		return nil, refusal
 	case err != nil:
-		return nil, huma.Error500InternalServerError("changing the limits failed", err)
+		return nil, internalError("changing the limits failed", err)
 	}
 	s.logger.InfoContext(ctx, "changed the limits", "user_id", p.User.ID.String(), "loosened", loosened)
 	return &limitsOutput{CacheControl: "no-store", Body: s.newLimitsBody(next)}, nil

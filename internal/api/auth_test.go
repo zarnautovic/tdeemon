@@ -91,7 +91,7 @@ func newInstance(t *testing.T, baseURL, hash string) *instance {
 		t.Fatalf("parse %s: %v", baseURL, err)
 	}
 	logs := &lockedBuffer{}
-	h, err := api.NewHandler(api.Config{Info: testInfo, DB: db, BaseURL: base, Logger: slog.New(slog.NewJSONHandler(logs, nil)), Now: c.Now})
+	h, err := api.NewHandler(api.Config{Info: testInfo, DB: db, BaseURL: base, Logger: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), Now: c.Now})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
