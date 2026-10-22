@@ -207,7 +207,7 @@ type logMealInput struct {
 
 // logMealBody is a meal as log_meal takes it.
 type logMealBody struct {
-	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own)."`
+	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own)."`
 	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When the meal was eaten; the time of the id when left out, so a retry has the same."`
 	Description string      `json:"description,omitempty" maxLength:"200" doc:"What the meal was, in the user's words."`
 	Items       []itemInput `json:"items" minItems:"1" maxItems:"50"`

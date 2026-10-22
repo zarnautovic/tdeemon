@@ -882,7 +882,7 @@ export interface components {
             eaten_at?: string;
             /**
              * Format: uuid
-             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own).
+             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own).
              */
             id?: string;
             items: components["schemas"]["ItemInput"][] | null;

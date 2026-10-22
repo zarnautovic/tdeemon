@@ -859,4 +859,15 @@ func TestLogMealWithoutAnID(t *testing.T) {
 	if ids[0] == ids[1] {
 		t.Errorf("both sends under %s, want two meals", ids[0])
 	}
+	// Items of ids of their own make the meal sent again a 409, of those
+	// ids, not another meal; and an empty id is no id left out.
+	withItemID := fmt.Sprintf(`{"items": [{"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}]}`, meal.NewIDAt(e.now))
+	for i, want := range []int{http.StatusCreated, http.StatusConflict} {
+		if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", withItemID, e.session, nil); rec.Code != want {
+			t.Errorf("a meal of an item's id, send %d: %d %s, want %d", i+1, rec.Code, rec.Body.String(), want)
+		}
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"id": "", "items": [{"name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a meal of an empty id: %d %s, want 422", rec.Code, rec.Body.String())
+	}
 }
