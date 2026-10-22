@@ -21,12 +21,13 @@ import (
 // import's: undos themselves, and the changes of the plan. The profile
 // and the user's limits only a web session changes; the phases, the
 // targets and the training weekdays must meet the limits as they are now,
-// and go back as a revert, which limits.Validate checks. stateNow and
-// takeBack have no way back for them.
+// and go back as a revert, which limits.Validate checks. The days of
+// workouts only an import writes, and its next run replaces them. stateNow
+// and takeBack have no way back for them.
 func undoLeaves() []event.Action {
 	return []event.Action{
 		event.Undo, event.ProfileSet, event.LimitsSet, event.PhaseSet, event.PhaseDelete,
-		event.TargetSet, event.TargetDelete, event.WeekdaysSet,
+		event.TargetSet, event.TargetDelete, event.WeekdaysSet, event.WorkoutsSet,
 	}
 }
 
@@ -381,7 +382,7 @@ func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) 
 	case event.TrainingDay, event.NotesSet:
 		return planStateNow(ctx, tx, userID, e)
 	case event.ProfileSet, event.LimitsSet, event.PhaseSet, event.PhaseDelete, event.TargetSet, event.TargetDelete,
-		event.WeekdaysSet, event.Undo: // UndoLast never takes them back
+		event.WeekdaysSet, event.WorkoutsSet, event.Undo: // UndoLast never takes them back
 	}
 	return nil, fmt.Errorf("no state for %q", e.Action)
 }
@@ -400,7 +401,7 @@ func takeBack(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, 
 	case event.TrainingDay, event.NotesSet:
 		return takeBackPlan(ctx, tx, userID, e, now)
 	case event.ProfileSet, event.LimitsSet, event.PhaseSet, event.PhaseDelete, event.TargetSet, event.TargetDelete,
-		event.WeekdaysSet, event.Undo:
+		event.WeekdaysSet, event.WorkoutsSet, event.Undo:
 	}
 	return fmt.Errorf("no way to take back %q", e.Action)
 }

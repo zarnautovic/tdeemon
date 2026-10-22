@@ -135,7 +135,7 @@ func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 	t.Parallel()
 
 	open := map[string]bool{
-		"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true, "get-me": true, "get-day": true,
+		"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true, "ingest-strong": true, "get-me": true, "get-day": true,
 		"find-foods": true, "get-food": true, "upsert-food": true,
 	}
 	in, session := signedIn(t)

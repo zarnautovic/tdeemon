@@ -224,8 +224,8 @@ func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time
 }
 
 // saveIsolationPlan gives u a profile, a phase, a target, training
-// weekdays, limits of their own, a toggle of a day's type and notes for a
-// coach, which name u, so they are text unique to u.
+// weekdays, limits of their own, a toggle of a day's type, a day of a
+// workout and notes for a coach, which name u, so they are text unique to u.
 func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
 	today := day.DateOf(now)
@@ -254,6 +254,9 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	}
 	if err := db.SetTrainingDay(ctx, u.ID, isolationActor, today, new(true), now); err != nil {
 		t.Fatalf("save %s's training day: %v", u.Name, err)
+	}
+	if _, _, err := db.SetWorkoutDays(ctx, u.ID, isolationActor, store.Strong, []day.Date{today.AddDays(-1)}, now); err != nil {
+		t.Fatalf("save %s's days of workouts: %v", u.Name, err)
 	}
 	if err := db.SetProfileNotes(ctx, u.ID, isolationActor, "Notes of "+u.Name+": no fish, trains at dawn.", now); err != nil {
 		t.Fatalf("save %s's notes: %v", u.Name, err)
@@ -615,6 +618,10 @@ func isolationCases() map[string]isolationCase {
 		}),
 		"ingest-metrics": ingestCase("/api/v1/ingest/metrics", func(today string) string {
 			return `{"date": "` + today + `", "metrics": {"steps": 99999, "weight": 70.5}}`
+		}),
+		// The owner has a workout yesterday, which the other's export lacks.
+		"ingest-strong": ingestCase("/api/v1/ingest/strong", func(today string) string {
+			return "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n" + today + " 07:00:00,Day A,1h,Squat,1,90,5,0\n"
 		}),
 		"revoke-token": func(t *testing.T, e isolationEnv) {
 			theirs := e.in.do(t, http.MethodDelete, "/api/v1/tokens/"+e.owner.token.ID, "", []*http.Cookie{e.other.session}, nil)

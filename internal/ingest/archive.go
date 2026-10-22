@@ -27,9 +27,10 @@ type Archive struct {
 // dayLayout names a day's directory.
 const dayLayout = "2006-01-02"
 
-// Save writes body, of a source such as "hae", to userID's archive, and
-// removes the user's days older than Keep.
-func (a *Archive) Save(userID uuid.UUID, source string, body []byte) error {
+// Save writes body to userID's archive under name, the source and the
+// format of body such as "hae.json" or "strong.csv", and removes the
+// user's days older than Keep.
+func (a *Archive) Save(userID uuid.UUID, name string, body []byte) error {
 	now := time.Now
 	if a.Now != nil {
 		now = a.Now
@@ -40,11 +41,30 @@ func (a *Archive) Save(userID uuid.UUID, source string, body []byte) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("archive: %w", err)
 	}
-	name := filepath.Join(dir, t.Format("150405")+"-"+uuid.NewV7().String()+"-"+source+".json.gz")
-	if err := writeGzip(name, body); err != nil {
+	file := filepath.Join(dir, t.Format("150405")+"-"+uuid.NewV7().String()+"-"+name+".gz")
+	if err := writeGzip(file, body); err != nil {
 		return fmt.Errorf("archive: %w", err)
 	}
 	return a.prune(userDir, t)
+}
+
+// SaveLatest keeps body as userID's latest of name, such as
+// "strong.csv", outside the days that go after Keep: the last export
+// that read, which the training module (P3) reads its sets from. It
+// replaces the one before whole, or leaves it.
+func (a *Archive) SaveLatest(userID uuid.UUID, name string, body []byte) error {
+	userDir := filepath.Join(a.Dir, userID.String())
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		return fmt.Errorf("archive: %w", err)
+	}
+	tmp := filepath.Join(userDir, "."+uuid.NewV7().String()+".tmp")
+	if err := writeGzip(tmp, body); err != nil {
+		return errors.Join(fmt.Errorf("archive: %w", err), os.Remove(tmp))
+	}
+	if err := os.Rename(tmp, filepath.Join(userDir, "latest-"+name+".gz")); err != nil {
+		return errors.Join(fmt.Errorf("archive: %w", err), os.Remove(tmp))
+	}
+	return nil
 }
 
 func writeGzip(name string, body []byte) (err error) {

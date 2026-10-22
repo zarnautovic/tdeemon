@@ -44,11 +44,12 @@ CREATE TABLE "events" (
         'food.save', 'food.archive', 'meal.create', 'meal.replace', 'meal.delete',
         'day.exclude', 'day.include', 'metrics.merge', 'metric.set', 'metric.delete', 'undo',
         'profile.set', 'phase.set', 'phase.delete', 'target.set', 'target.delete',
-        'day.training', 'plan.weekdays', 'limits.set', 'notes.set'
+        'day.training', 'plan.weekdays', 'limits.set', 'notes.set', 'workouts.set'
     )),
     -- What changed: a food's or a meal's id, a day, a day and a metric,
     -- a phase's start, a target's first day, "profile", "plan",
-    -- "limits" or "notes", or for an undo the event it took back.
+    -- "limits", "notes" or a source of workouts, or for an undo the event
+    -- it took back.
     entity TEXT NOT NULL CHECK (entity <> ''),
     -- The entity's state as JSON; NULL where there was none.
     before_state TEXT CHECK (before_state IS NULL OR json_valid(before_state)),
@@ -345,3 +346,10 @@ CREATE TABLE users (
 CHECK (birth_date GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'), height_cm REAL CHECK (height_cm BETWEEN 50 AND 275)) STRICT;
 
 CREATE UNIQUE INDEX users_email ON users (email);
+
+CREATE TABLE workout_days (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    source TEXT NOT NULL CHECK (source IN ('strong')),
+    day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
+    PRIMARY KEY (user_id, source, day)
+) STRICT;
