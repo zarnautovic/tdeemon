@@ -62,8 +62,10 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 	}
 	email := user.NormalizeEmail(f.email)
 	var r history.Report
+	var u user.User
 	err = withDatabase(ctx, cfg.DataDir, func(db *store.DB) error {
-		u, err := db.UserByEmail(ctx, email)
+		var err error
+		u, err = db.UserByEmail(ctx, email)
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("no user with the address %q", email)
 		} else if err != nil {
@@ -77,18 +79,19 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 		// on from there.
 		return err
 	}
-	return printReport(out, r, f.dryRun)
+	return printReport(out, u, r, f.dryRun)
 }
 
-// printReport writes what an import did, or would do, and what it left
-// out.
-func printReport(out io.Writer, r history.Report, dryRun bool) error {
+// printReport writes what an import into u did, or would do, by u's
+// calendar, and what it left out.
+func printReport(out io.Writer, u user.User, r history.Report, dryRun bool) error {
 	var b strings.Builder
 	verb := "Imported"
 	if dryRun {
 		verb = "Would import (a dry run, nothing written)"
 	}
-	fmt.Fprintf(&b, "%s: %d days, %d metric values, %d meals, of them %d rests of a day.\n", verb, r.Days, r.Metrics, r.Meals, r.Rests)
+	fmt.Fprintf(&b, "%s for %s, whose days start at %02d:00 in %s: %d days, %d metric values, %d meals, of them %d rests of a day; %d days excluded for their remark.\n",
+		verb, u.Email, u.DayStartHour, u.TimeZone, r.Days, r.Metrics, r.Meals, r.Rests, r.Excluded)
 	list := func(title string, lines []string) {
 		if len(lines) == 0 {
 			return
@@ -103,7 +106,7 @@ func printReport(out io.Writer, r history.Report, dryRun bool) error {
 		rejected[i] = fmt.Sprintf("%s %s: %s", x.Date, x.Kind, x.Reason)
 	}
 	list("Values left out", rejected)
-	list("Days whose meals are more than the day's total, kept without a rest", r.Over)
+	list("Days whose meals have more kcal than the day's total, kept without a rest", r.Over)
 	list("Meals renamed", r.Renamed)
 	list("Skipped", r.Skipped)
 	_, err := io.WriteString(out, b.String())

@@ -31,7 +31,7 @@ func predecessor(t *testing.T) string {
 	if _, err := db.ExecContext(t.Context(), string(schema)+`
 INSERT INTO days (date, kalorije, proteini, ugljikohidrati, masti, kilaza, san) VALUES ('2026-09-01', 2000, 150, 200, 60, 81.2, 30);
 INSERT INTO meals VALUES ('2026-09-01', '08:10', 'Oats with milk', 500, 25, 70, 12);
-INSERT INTO days (date, kalorije, proteini, ugljikohidrati, masti) VALUES ('2026-09-02', 900, 60, 90, 30);
+INSERT INTO days (date, kalorije, proteini, ugljikohidrati, masti, napomena) VALUES ('2026-09-02', 900, 60, 90, 30, 'At a wedding');
 INSERT INTO meals VALUES ('2026-09-02', '12:00', 'Stew', 1000, 70, 100, 40);
 INSERT INTO meals VALUES ('2026-09-02', '13:00', '`+strings.Repeat("a", 210)+`', 10, 1, 1, 0);
 INSERT INTO days (date, kilaza) VALUES ('soon', 80);
@@ -55,7 +55,8 @@ func TestImportHistory(t *testing.T) {
 	if err := run(t.Context(), []string{"import-history", "--email", "ANA@example.com", "--health-db", old, "--dry-run"}, env, noInput(), &dry, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(dry.String(), "Would import (a dry run, nothing written): 2 days, 1 metric values, 4 meals, of them 1 rests of a day.") {
+	if !strings.HasPrefix(dry.String(), "Would import (a dry run, nothing written) for ana@example.com, whose days start at 04:00 in Europe/Zagreb: "+
+		"2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded for their remark.") {
 		t.Errorf("the dry run said:\n%s", dry.String())
 	}
 	if n := mealsOn(t, dbPath, "ana@example.com", day.Date{Year: 2026, Month: 9, Day: 1}); n != 0 {
@@ -67,9 +68,9 @@ func TestImportHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"Imported: 2 days, 1 metric values, 4 meals, of them 1 rests of a day.",
+		"Imported for ana@example.com, whose days start at 04:00 in Europe/Zagreb: 2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded",
 		"Values left out (1):\n  2026-09-01 sleep_h: sleep_h 30: want 0 to 24 h",
-		"Days whose meals are more than the day's total, kept without a rest (1):\n  2026-09-02",
+		"Days whose meals have more kcal than the day's total, kept without a rest (1):\n  2026-09-02",
 		"Meals renamed (1):\n  2026-09-02: aaa",
 		`Skipped (1):` + "\n" + `  "soon"`,
 	} {

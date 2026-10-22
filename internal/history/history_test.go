@@ -115,7 +115,7 @@ func TestReadRefuses(t *testing.T) {
 	// A database that is not the predecessor's, or lacks its meals.
 	for name, c := range map[string]struct{ sql, want string }{
 		"no days":  {"CREATE TABLE notes (x)", "the predecessor's days"},
-		"no meals": {"CREATE TABLE days (date TEXT, kalorije, proteini, ugljikohidrati, masti, kilaza, masnoca, misicna_masa, koraci, aktivne_kalorije, bazalne_kalorije, san, rhr, hrv, vo2max, trening_min)", "the predecessor's meals"},
+		"no meals": {"CREATE TABLE days (date TEXT, kalorije, proteini, ugljikohidrati, masti, kilaza, masnoca, misicna_masa, koraci, aktivne_kalorije, bazalne_kalorije, san, rhr, hrv, vo2max, trening_min, napomena)", "the predecessor's meals"},
 	} {
 		path := filepath.Join(t.TempDir(), "other.db")
 		db, err := sql.Open("sqlite", path)
@@ -155,7 +155,7 @@ func TestImportReport(t *testing.T) {
 	t.Parallel()
 
 	_, _, r := imported(t)
-	if r.Days != 4 || r.Metrics != 6 || r.Meals != 7 || r.Rests != 1 || len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep ||
+	if r.Days != 4 || r.Metrics != 6 || r.Meals != 7 || r.Rests != 1 || r.Excluded != 1 || len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep ||
 		!slices.Equal(r.Over, []string{"2026-09-02"}) || len(r.Skipped) != 1 || !strings.Contains(r.Skipped[0], "1. 9. 2026.") {
 		t.Errorf("report = %+v", r)
 	}
@@ -213,31 +213,47 @@ func TestImportMeals(t *testing.T) {
 	}
 }
 
-// A meal at the day's start hour is the day's own; one a minute before is
-// past midnight; a time that does not read is noon.
+// A meal before the predecessor's rollover, 05:00, is past midnight; one
+// between the user's day start, 04:00, and the rollover is the end of the
+// note's day; a time that does not read is noon. For a user whose day
+// starts at 06:00, a meal at 05:30 is the start of the note's day.
 func TestImportTimes(t *testing.T) {
 	t.Parallel()
 
 	db, u := newUser(t)
 	d := day.Date{Year: 2026, Month: 9, Day: 10}
 	days := []history.Day{{Date: d.String(), Metrics: map[string]float64{}, Meals: []history.Meal{
-		{Time: "04:00", Description: "At four", Nutrients: kcal(100)},
-		{Time: "03:59", Description: "A minute before", Nutrients: kcal(100)},
+		{Time: "05:00", Description: "At five", Nutrients: kcal(100)},
+		{Time: "04:30", Description: "Before the rollover", Nutrients: kcal(100)},
+		{Time: "03:59", Description: "Before the day's start", Nutrients: kcal(100)},
 		{Time: "half past", Description: "Some time", Nutrients: kcal(100)},
 	}}}
 	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
 		t.Fatal(err)
 	}
 	ms, err := db.MealsOfDay(t.Context(), u.ID, d)
-	if err != nil || len(ms) != 3 {
+	if err != nil || len(ms) != 4 {
 		t.Fatalf("meals = %+v, %v", ms, err)
 	}
 	zagreb, _ := time.LoadLocation("Europe/Zagreb")
 	for _, m := range ms {
 		got := m.EatenAt.In(zagreb).Format("01-02 15:04")
-		if want := map[string]string{"At four": "09-10 04:00", "A minute before": "09-11 03:59", "Some time": "09-10 12:00"}[m.Description]; got != want {
+		if want := map[string]string{
+			"At five": "09-10 05:00", "Before the rollover": "09-11 03:59", "Before the day's start": "09-11 03:59", "Some time": "09-10 12:00",
+		}[m.Description]; got != want {
 			t.Errorf("%s at %s, want %s", m.Description, got, want)
 		}
+	}
+
+	late := u
+	late.DayStartHour = 6
+	early := []history.Day{{Date: "2026-09-15", Metrics: map[string]float64{}, Meals: []history.Meal{{Time: "05:30", Description: "Early", Nutrients: kcal(100)}}}}
+	if _, err := history.Import(t.Context(), db, late, early, now, false); err != nil {
+		t.Fatal(err)
+	}
+	ms, _ = db.MealsOfDay(t.Context(), u.ID, day.Date{Year: 2026, Month: 9, Day: 15})
+	if len(ms) != 1 || ms[0].EatenAt.In(zagreb).Format("01-02 15:04") != "09-15 06:00" {
+		t.Errorf("a meal before a 06:00 start = %+v, want the day's first minute", ms)
 	}
 }
 
@@ -253,12 +269,14 @@ INSERT INTO meals VALUES ('2026-09-05', '09:00', 'Eggs', 600, 90, 10, 30);
 INSERT INTO days (date, kalorije, proteini, ugljikohidrati, masti) VALUES ('2026-09-06', 1000.4, 79.6, 50, 40);
 INSERT INTO meals VALUES ('2026-09-06', '09:00', 'All of it', 1000, 80, 50, 40);
 INSERT INTO days (date, kalorije, proteini, ugljikohidrati, masti) VALUES ('2026-09-07', 900, 70, 60, 30);
+INSERT INTO days (date, kalorije, proteini, ugljikohidrati, masti) VALUES ('2026-09-14', 999.6, 80, 50, 40);
+INSERT INTO meals VALUES ('2026-09-14', '09:00', 'Under a kcal over', 1000, 80, 50, 40);
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	r, err := history.Import(t.Context(), db, u, days, now, false)
-	if err != nil || r.Rests != 2 || !slices.Equal(r.Over, []string{"2026-09-05"}) {
+	if err != nil || r.Rests != 2 || len(r.Over) != 0 {
 		t.Fatalf("report = %+v, %v", r, err)
 	}
 	rest := func(d day.Date) *meal.Meal {
@@ -373,5 +391,56 @@ func TestImportRefuses(t *testing.T) {
 	days = []history.Day{{Date: "2026-09-09", Metrics: map[string]float64{}, Meals: []history.Meal{{Description: "Soup", Nutrients: kcal(200)}}}}
 	if _, err := history.Import(t.Context(), db, stranger, days, now, false); err == nil || errors.Is(err, store.ErrMealDeleted) {
 		t.Errorf("a meal for no user: %v", err)
+	}
+}
+
+// A day with a remark is excluded for it, a long one cut; a run again
+// leaves the exclusion as it is.
+func TestImportRemarks(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	days := []history.Day{
+		{Date: "2026-09-11", Metrics: map[string]float64{}, Remark: "Birthday dinner"},
+		{Date: "2026-09-12", Metrics: map[string]float64{}, Remark: strings.Repeat("a", 250)},
+		{Date: "2026-09-13", Metrics: map[string]float64{}},
+	}
+	dry, err := history.Import(t.Context(), db, u, days, now, true)
+	if err != nil || dry.Excluded != 2 {
+		t.Fatalf("the dry run = %+v, %v", dry, err)
+	}
+	for range 2 {
+		if r, err := history.Import(t.Context(), db, u, days, now, false); err != nil || r.Excluded != 2 {
+			t.Fatalf("report = %+v, %v", r, err)
+		}
+	}
+	es, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
+	if len(es) != 2 || es[0].Actor != history.Actor {
+		t.Errorf("events = %+v, want the two exclusions once", es)
+	}
+	d := day.Date{Year: 2026, Month: 9, Day: 11}
+	ex, err := db.Exclusions(t.Context(), u.ID, d, d.AddDays(2))
+	if err != nil || len(ex) != 2 || ex[d].Reason != "Birthday dinner" || ex[d.AddDays(1)].Reason != strings.Repeat("a", day.MaxReasonLen-1)+"…" {
+		t.Errorf("exclusions = %+v, %v", ex, err)
+	}
+}
+
+// A meal an import before wrote differently, as a note fixed since or
+// another time zone makes it, stays as it is, and the import goes on.
+func TestImportChangedSince(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	days, err := history.Read(t.Context(), oldDB(t, oldRows))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+		t.Fatal(err)
+	}
+	u.TimeZone = "UTC"
+	r, err := history.Import(t.Context(), db, u, days, now, false)
+	if err != nil || r.Meals != 7 || !slices.ContainsFunc(r.Skipped, func(s string) bool { return strings.Contains(s, "differs from an import before") }) {
+		t.Errorf("the run in another zone = %+v, %v", r, err)
 	}
 }

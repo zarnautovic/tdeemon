@@ -382,19 +382,30 @@ days, as `TDEEMON_DATA_DIR/ingest/<user>/latest-strong.csv.gz`.
 tdeemon replaces the maintainer's earlier service, health-api, and takes
 its history once: the days' metrics and meals from its database (its
 `health.db`, an index of the vault's daily notes). Each meal becomes an
-estimate on its note's day; a day whose total in the note is more than
-its meals gets the rest as one estimate, "Rest of the day (history
-import)", so the day's intake is the note's. The note's mood, hunger,
-status and remark are left out.
+estimate on its note's day, at its time on your clock (one before 05:00,
+the predecessor's rollover, past midnight); a day whose total in the
+note has more kcal than its meals gets the rest as one estimate, "Rest
+of the day (history import)", so the day's intake is the note's. A day
+with a remark (a restaurant, an illness, a trip) is excluded from
+calibration for it, as the predecessor's calibration left it out; mood,
+hunger and status are left out.
+
+Copy `health.db` while health-api is stopped, or with `sqlite3 health.db
+".backup copy.db"`: a copy without its `-wal` file misses the last
+writes. Put it in a directory tdeemon can write to, as SQLite reads a
+database in WAL mode only there.
 
 ```sh
 kubectl exec deploy/tdeemon -- /tdeemon import-history \
   --email you@example.com --health-db /data/health.db --dry-run
 ```
 
-Without `--dry-run` it writes, and says what it left out: a value out of
-its bounds, a day whose meals are more than its total, a meal renamed
-to fit. It may run again, and changes nothing it imported before.
+It says which time zone and day start it imports by: create the user
+with your `--timezone` first. Without `--dry-run` it writes, and says
+what it left out: a value out of its bounds, a day whose meals pass its
+total, a meal renamed to fit. It may run again, and changes nothing it
+imported before: a meal that differs from the last run's (the note, the
+time zone or the day's start changed) stays as it was, and is reported.
 
 ## Data
 

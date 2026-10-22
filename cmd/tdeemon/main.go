@@ -62,7 +62,7 @@ Flags of import-history:
   --dry-run          say what it would import, and write nothing
 
 An import runs again without changing what it imported: a value merges
-as before, and a meal keeps its id.
+as before, and a meal keeps its id and what it held.
 
 The user and import commands work on the database of a server that has
 started at least once, which creates and migrates it; the server may be
