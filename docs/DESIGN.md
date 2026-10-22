@@ -485,9 +485,10 @@ The replacement:
   (`internal/domain/calibration/testdata/history.json`). Real data stays
   in a private fixture outside git and is checked against past manual
   target revisions. From one measured day to the next measured one, the
-  estimate moves at most 150 kcal while its window is of the same phase;
-  the switch from the estimate before a phase to the phase's own is
-  another window. Its
+  estimate moves at most 150 kcal while its window's data follow the
+  same change of intake (a phase's start, or the day after a planned end
+  with no phase after it); the switch from the estimate before a phase
+  to the phase's own is another window. Its
   interval holds the TDEE each revision was made on. The first verdict
   within a week of each takes the revision's action, or the action the
   fixture says it takes instead, and why; or there is none, for the

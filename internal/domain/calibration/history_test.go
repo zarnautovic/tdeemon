@@ -71,13 +71,16 @@ type historyTarget struct {
 	RestKcal     float64 `json:"rest_kcal"`
 }
 
+// historyLimits are the user's limits of data, each nil for the
+// default's.
 type historyLimits struct {
-	LoggedDays float64 `json:"logged_days"`
-	WeighIns   float64 `json:"weigh_ins"`
+	LoggedDays *float64 `json:"logged_days,omitempty"`
+	WeighIns   *float64 `json:"weigh_ins,omitempty"`
 }
 
 // anonymisation moves the days by Weeks whole weeks, so weekdays stay; it
-// takes each weight to WeightScale times it plus WeightShift, each intake
+// takes each weight to WeightScale times it plus WeightShift, a measured
+// lean mass to WeightScale times it plus half of WeightShift, each intake
 // and target to KcalScale times it, each body fat to it plus
 // BodyFatShift, and the steps and the active energy to StepsScale and
 // ActiveScale times them, with noise from Seed.
@@ -253,34 +256,24 @@ func readHistory(tb testing.TB, path string, private bool) history {
 }
 
 // duplicateKey returns a key an object of b has twice, ignoring case as
-// encoding/json does when it matches a field, which keeps the last of
-// them without a word.
+// encoding/json does when it matches a field (Unicode's simple folding),
+// which keeps the last of them without a word.
 func duplicateKey(b []byte) (string, error) {
-	// An object's keys so far, and whether its next token is a key; nil
-	// for an array.
-	type object struct {
-		keys    map[string]bool
-		wantKey bool
-	}
-	var stack []*object
+	var stack []*jsonObject
 	dec := json.NewDecoder(bytes.NewReader(b))
 	for {
 		tok, err := dec.Token()
-		if errors.Is(err, io.EOF) {
-			return "", nil
-		}
 		if err != nil {
-			return "", err
+			return "", ended(err, len(stack))
 		}
-		var top *object
+		var top *jsonObject
 		if len(stack) > 0 {
 			top = stack[len(stack)-1]
 		}
-		if k, ok := tok.(string); ok && top != nil && top.wantKey {
-			if top.keys[strings.ToLower(k)] {
+		if k, ok := tok.(string); ok && top.keyNext() {
+			if top.seen(k) {
 				return k, nil
 			}
-			top.keys[strings.ToLower(k)], top.wantKey = true, false
 			continue
 		}
 		if d, ok := tok.(json.Delim); ok && (d == '}' || d == ']') {
@@ -294,11 +287,44 @@ func duplicateKey(b []byte) (string, error) {
 		}
 		switch tok {
 		case json.Delim('{'):
-			stack = append(stack, &object{keys: map[string]bool{}, wantKey: true})
+			stack = append(stack, &jsonObject{wantKey: true})
 		case json.Delim('['):
 			stack = append(stack, nil)
 		}
 	}
+}
+
+// ended returns what the error err of a token at the depth depth means:
+// nil for the end of the JSON, an unexpected end inside an object or an
+// array.
+func ended(err error, depth int) error {
+	switch {
+	case !errors.Is(err, io.EOF):
+		return err
+	case depth > 0:
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+
+// jsonObject is an object duplicateKey reads: its keys so far, and
+// whether its next token is a key. A nil one is an array.
+type jsonObject struct {
+	keys    []string
+	wantKey bool
+}
+
+// keyNext reports whether o's next token is a key: false for an array.
+func (o *jsonObject) keyNext() bool { return o != nil && o.wantKey }
+
+// seen reports whether o has the key k already, as encoding/json folds
+// keys, and adds it if not.
+func (o *jsonObject) seen(k string) bool {
+	if slices.ContainsFunc(o.keys, func(seen string) bool { return strings.EqualFold(seen, k) }) {
+		return true
+	}
+	o.keys, o.wantKey = append(o.keys, k), false
+	return false
 }
 
 // decodeError tells what is wrong with a private history's JSON without
@@ -389,11 +415,19 @@ func (h *history) build(r reader) built {
 		r.fail("the profile: not all of it, or of no kind", fmt.Sprintf("the profile %+v: %v", b.pr, err))
 	}
 	if l := h.Limits; l != nil {
-		b.lim.LoggedDays, b.lim.WeighIns = l.LoggedDays, l.WeighIns
+		if l.LoggedDays != nil {
+			b.lim.LoggedDays = *l.LoggedDays
+		}
+		if l.WeighIns != nil {
+			b.lim.WeighIns = *l.WeighIns
+		}
 		if err := b.lim.Validate(); err != nil {
 			r.fail("the limits are of no kind", fmt.Sprintf("the limits: %v", err))
 		}
 	}
+	// A user may tighten the limits of data, not loosen them past the
+	// instance's, as get_summary takes them.
+	b.lim = limits.Effective(b.lim, limits.Instance())
 	b.params.LoggedDays, b.params.WeighIns = b.lim.LoggedDays, b.lim.WeighIns
 	b.checkRevisions(r, h.Revisions)
 	return b
@@ -432,7 +466,6 @@ func (h *history) timeline(r reader) ([]plan.Phase, []plan.Target) {
 func (h *history) days(r reader, today day.Date) map[day.Date]Day {
 	r.tb.Helper()
 	days := map[day.Date]Day{}
-	statuses := []day.Status{day.Open, day.Complete, day.Excluded}
 	for i, d := range h.Days {
 		on := r.date(d.Date)
 		_, dup := days[on]
@@ -440,25 +473,31 @@ func (h *history) days(r reader, today day.Date) map[day.Date]Day {
 			Status: day.Status(d.Status), Meals: d.Meals, Kcal: d.Kcal, WeightKg: d.WeightKg,
 			BodyFatPct: d.BodyFatPct, LeanMassKg: d.LeanMassKg, Steps: d.Steps, ActiveKcal: d.ActiveKcal,
 		}
-		var why string
-		switch {
-		case d.Date == "" || dup:
-			why = "no date, or another day's"
-		case today.Before(on):
-			why = "after today"
-		case !slices.Contains(statuses, v.Status) || v.Status != day.Excluded && (v.Status == day.Open) != (on == today):
-			why = fmt.Sprintf("a status of no kind, or not its own: want one of %v, open only today", statuses)
-		case (v.Meals > 0) != (v.Kcal > 0):
-			why = "meals and no kcal, or kcal and no meals"
-		case slices.ContainsFunc([]float64{float64(v.Meals), v.Kcal, v.WeightKg, v.BodyFatPct, v.LeanMassKg, v.Steps, v.ActiveKcal}, func(x float64) bool { return x < 0 }) || v.BodyFatPct >= 100:
-			why = "a value under 0, or body fat of 100 % or more"
-		}
-		if why != "" {
+		if why := dayFault(v, on, today, d.Date == "" || dup); why != "" {
 			r.fail(fmt.Sprintf("day %d: %s", i+1, why), fmt.Sprintf("day %d, %+v: %s", i+1, d, why))
 		}
 		days[on] = v
 	}
 	return days
+}
+
+// dayFault returns what is wrong with the day v on the day on, before
+// today; none is whether it has no date or another day's. "" for nothing.
+func dayFault(v Day, on, today day.Date, none bool) string {
+	statuses := []day.Status{day.Open, day.Complete, day.Excluded}
+	switch {
+	case none:
+		return "no date, or another day's"
+	case today.Before(on):
+		return "after today"
+	case !slices.Contains(statuses, v.Status) || v.Status != day.Excluded && (v.Status == day.Open) != (on == today):
+		return fmt.Sprintf("a status of no kind, or not its own: want one of %v, open only today", statuses)
+	case (v.Meals > 0) != (v.Kcal > 0):
+		return "meals and no kcal, or kcal and no meals"
+	case slices.ContainsFunc([]float64{float64(v.Meals), v.Kcal, v.WeightKg, v.BodyFatPct, v.LeanMassKg, v.Steps, v.ActiveKcal}, func(x float64) bool { return x < 0 }) || v.BodyFatPct >= 100:
+		return "a value under 0, or body fat of 100 % or more"
+	}
+	return ""
 }
 
 // checkRevisions fails for no revision, and for one fault finds wrong.
@@ -749,20 +788,30 @@ func (h *history) anonymised(secret reader, a *anonymisation) history {
 		Today: move(h.Today), Profile: historyProfile{Sex: "male", BirthDate: "1990-01-01", HeightCm: 180},
 		TrainingWeekdays: slices.Clone(h.TrainingWeekdays),
 	}
-	if h.Limits != nil {
-		out.Limits = &historyLimits{LoggedDays: h.Limits.LoggedDays, WeighIns: h.Limits.WeighIns}
+	if l := h.Limits; l != nil {
+		out.Limits = &historyLimits{}
+		if l.LoggedDays != nil {
+			out.Limits.LoggedDays = new(*l.LoggedDays)
+		}
+		if l.WeighIns != nil {
+			out.Limits.WeighIns = new(*l.WeighIns)
+		}
 	}
 	for _, p := range h.Phases {
 		out.Phases = append(out.Phases, historyPhase{Type: p.Type, Start: move(p.Start), End: move(p.End), RatePctWeek: p.RatePctWeek})
 	}
-	for _, t := range h.Targets {
-		// A target the same on both types of day stays so.
-		tg := historyTarget{From: move(t.From), RestKcal: roundTo(t.RestKcal*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)}
-		tg.TrainingKcal = tg.RestKcal
-		if t.TrainingKcal != t.RestKcal {
-			tg.TrainingKcal = roundTo(t.TrainingKcal*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)
+	// The same kcal take the same noise, so a target the same on both
+	// types of day, or kept by a revision, stays so.
+	kcal := map[float64]float64{}
+	scaled := func(v float64) float64 {
+		if _, ok := kcal[v]; !ok {
+			kcal[v] = roundTo(v*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)
 		}
-		out.Targets = append(out.Targets, tg)
+		return kcal[v]
+	}
+	for _, t := range h.Targets {
+		rest := scaled(t.RestKcal)
+		out.Targets = append(out.Targets, historyTarget{From: move(t.From), RestKcal: rest, TrainingKcal: scaled(t.TrainingKcal)})
 	}
 	for _, d := range h.Days {
 		out.Days = append(out.Days, anonymisedDay(secret, d, a, move, r))
@@ -881,3 +930,159 @@ func anonymisedDay(secret reader, d historyDay, a *anonymisation, move func(stri
 // roundTo rounds v to the nearest 1/per: 20 for twentieths, 1 for whole
 // numbers, 0.1 for tens. It divides last, so a twentieth prints as one.
 func roundTo(v, per float64) float64 { return math.Round(v*per) / per }
+
+func TestDuplicateKey(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, json, want string
+	}{
+		{"none", `{"a": 1, "b": {"a": 2}, "c": [{"a": 1}, {"a": 2}]}`, ""},
+		{"twice", `{"a": 1, "a": 2}`, "a"},
+		{"in another case", `{"today": "x", "Today": "y"}`, "Today"},
+		{"folded as JSON folds", `{"sex": "male", "ſex": "female"}`, "ſex"},
+		{"in an object in an array", `{"days": [{"kcal": 1, "kcal": 2}]}`, "kcal"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got, err := duplicateKey([]byte(tc.json)); err != nil || got != tc.want {
+				t.Errorf("duplicateKey = %q, %v; want %q", got, err, tc.want)
+			}
+		})
+	}
+	if _, err := duplicateKey([]byte(`{"a": `)); err == nil {
+		t.Error("duplicateKey of no JSON: no error")
+	}
+}
+
+func TestDayFault(t *testing.T) {
+	t.Parallel()
+
+	today := day.Date{Year: 2030, Month: time.March, Day: 10}
+	logged := Day{Status: day.Complete, Meals: 3, Kcal: 2100, WeightKg: 80, BodyFatPct: 20}
+	for _, tc := range []struct {
+		name  string
+		v     Day
+		on    day.Date
+		none  bool
+		fault bool
+	}{
+		{"a logged day", logged, today.AddDays(-1), false, false},
+		{"today open", Day{Status: day.Open, Meals: 1, Kcal: 400}, today, false, false},
+		{"today excluded", Day{Status: day.Excluded}, today, false, false},
+		{"a day excluded", Day{Status: day.Excluded, WeightKg: 80}, today.AddDays(-3), false, false},
+		{"no date", logged, today.AddDays(-1), true, true},
+		{"after today", logged, today.AddDays(1), false, true},
+		{"open before today", Day{Status: day.Open}, today.AddDays(-1), false, true},
+		{"complete today", Day{Status: day.Complete}, today, false, true},
+		{"of no kind", Day{Status: "done"}, today.AddDays(-1), false, true},
+		{"meals and no kcal", Day{Status: day.Complete, Meals: 2}, today.AddDays(-1), false, true},
+		{"kcal and no meals", Day{Status: day.Complete, Kcal: 1800}, today.AddDays(-1), false, true},
+		{"under 0", Day{Status: day.Complete, Steps: -1}, today.AddDays(-1), false, true},
+		{"body fat of 100", Day{Status: day.Complete, WeightKg: 80, BodyFatPct: 100}, today.AddDays(-1), false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := dayFault(tc.v, tc.on, today, tc.none); (got != "") != tc.fault {
+				t.Errorf("dayFault = %q, want a fault: %v", got, tc.fault)
+			}
+		})
+	}
+}
+
+func TestRevisionFault(t *testing.T) {
+	t.Parallel()
+
+	start := day.Date{Year: 2030, Month: time.January, Day: 1}
+	on := start.AddDays(30)
+	kcal := func(k float64) plan.DayTarget { return plan.DayTarget{Kcal: k} }
+	b := built{
+		today: on.AddDays(20), training: plan.Weekdays(0b0101010),
+		targets: []plan.Target{
+			{EffectiveFrom: start, Training: kcal(2600), Rest: kcal(2400)},
+			{EffectiveFrom: on, Training: kcal(2300), Rest: kcal(2100)},
+		},
+	}
+	revised := map[day.Date]plan.Target{on: b.targets[0]}
+	lower := revision{Date: on.String(), Action: ActionLowerKcal}
+	for _, tc := range []struct {
+		name  string
+		rv    revision
+		on    day.Date
+		i     int
+		prev  day.Date
+		fault bool
+	}{
+		{"a revision", lower, on, 0, day.Date{}, false},
+		{"its TDEE", revision{Action: ActionLowerKcal, TDEELow: 2600, TDEEHigh: 2800}, on, 0, day.Date{}, false},
+		{"a verdict that differs, and why", revision{Action: ActionLowerKcal, Verdict: ActionRaiseProteinOrKcal, Differs: "the lean mass falls"}, on, 0, day.Date{}, false},
+		{"no verdict, for a reason", revision{Action: ActionLowerKcal, NoVerdict: ReasonNotTrusted}, on, 0, day.Date{}, false},
+		{"a day no target took effect", lower, on.AddDays(1), 0, day.Date{}, true},
+		{"within a week of the one before", lower, on, 1, on.AddDays(-6), true},
+		{"a week past today", lower, on, 0, day.Date{}, true},
+		{"a TDEE of one bound", revision{Action: ActionLowerKcal, TDEEHigh: 2800}, on, 0, day.Date{}, true},
+		{"the bounds out of order", revision{Action: ActionLowerKcal, TDEELow: 2800, TDEEHigh: 2600}, on, 0, day.Date{}, true},
+		{"an action of no kind", revision{Action: "cut"}, on, 0, day.Date{}, true},
+		{"against the targets' way", revision{Action: ActionRaiseKcal}, on, 0, day.Date{}, true},
+		{"a hold of a target lowered", revision{Action: ActionHold}, on, 0, day.Date{}, true},
+		{"a verdict the revision's own", revision{Action: ActionLowerKcal, Verdict: ActionLowerKcal, Differs: "the same"}, on, 0, day.Date{}, true},
+		{"a verdict without why", revision{Action: ActionLowerKcal, Verdict: ActionHold}, on, 0, day.Date{}, true},
+		{"why with a number", revision{Action: ActionLowerKcal, Verdict: ActionHold, Differs: "300 kcal"}, on, 0, day.Date{}, true},
+		{"a reason of no kind", revision{Action: ActionLowerKcal, NoVerdict: "too wide"}, on, 0, day.Date{}, true},
+		{"a reason beside a verdict", revision{Action: ActionLowerKcal, Verdict: ActionHold, Differs: "held", NoVerdict: ReasonNotTrusted}, on, 0, day.Date{}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			bb := b
+			if tc.name == "a week past today" {
+				bb.today = on.AddDays(weekAfter - 1)
+			}
+			if got := bb.fault(tc.i, tc.rv, tc.on, tc.prev, revised); (got != "") != tc.fault {
+				t.Errorf("fault = %q, want a fault: %v", got, tc.fault)
+			}
+		})
+	}
+}
+
+func TestStillNear(t *testing.T) {
+	t.Parallel()
+
+	var orig, moved, kept []historyDay
+	for i := range 20 {
+		d := historyDay{Status: "complete", Meals: 3, Kcal: 2000 + float64(i), WeightKg: 80, BodyFatPct: 20, Steps: 8000}
+		orig = append(orig, d)
+		m := d
+		m.Kcal, m.WeightKg, m.BodyFatPct, m.Steps = d.Kcal*1.2, 90, 24, 9000
+		moved = append(moved, m)
+		// The weight scaled and shifted back onto itself.
+		k := m
+		k.WeightKg = 80*0.9 + 8
+		kept = append(kept, k)
+	}
+	if got := stillNear(orig, orig); !slices.Equal(got, []string{"weight", "lean mass of weight and body fat", "body fat", "intake", "steps"}) {
+		t.Errorf("stillNear of the days themselves = %v, want every kind they have", got)
+	}
+	if got := stillNear(orig, moved); len(got) != 0 {
+		t.Errorf("stillNear of days moved = %v, want none", got)
+	}
+	if got := stillNear(orig, kept); !slices.Equal(got, []string{"weight"}) {
+		t.Errorf("stillNear of a weight its scale and shift undo = %v, want the weight", got)
+	}
+}
+
+// A history's limits of data take effect as get_summary takes them: one
+// it leaves out is the default's, and one looser than the instance's is
+// the instance's.
+func TestHistoryLimits(t *testing.T) {
+	t.Parallel()
+
+	h := readHistory(t, filepath.Join("testdata", "history.json"), false)
+	h.Limits = &historyLimits{WeighIns: new(5.0)}
+	if b := h.build(reader{t, false}); b.params.WeighIns != 5 || b.params.LoggedDays != limits.UserDefaults().LoggedDays {
+		t.Errorf("params %+v: 5 weigh-ins, the default's logged days", b.params)
+	}
+	h.Limits = &historyLimits{LoggedDays: new(1.0)}
+	if b := h.build(reader{t, false}); b.params.LoggedDays != limits.Instance().LoggedDays {
+		t.Errorf("params %+v: the instance's logged days, not looser", b.params)
+	}
+}
