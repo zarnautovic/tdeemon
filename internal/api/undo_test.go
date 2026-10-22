@@ -49,9 +49,10 @@ func TestUndoLast(t *testing.T) {
 		e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
 	}
 	request := clientid.NewAt(e.now)
-	for name, want := range map[string]string{"an undo": "", "the undo again": " (repeated)"} {
-		if code, got, body := undo(t, e, request); code != http.StatusOK || got != "meal.create "+second+" web"+want {
-			t.Errorf("%s: %d %s", name, code, body)
+	// In order: the second send is the repeated one.
+	for _, step := range []struct{ name, want string }{{"an undo", ""}, {"the undo again", " (repeated)"}} {
+		if code, got, body := undo(t, e, request); code != http.StatusOK || got != "meal.create "+second+" web"+step.want {
+			t.Errorf("%s: %d %s", step.name, code, body)
 		}
 	}
 	if rec := e.in.do(t, http.MethodGet, "/api/v1/days/today", "", e.session, nil); !strings.Contains(rec.Body.String(), first) || strings.Contains(rec.Body.String(), second) {
