@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -172,8 +173,7 @@ func (s *sessions) store(ctx context.Context, p auth.Principal, client string, r
 	for _, d := range r.Days {
 		changes, err := s.db.MergeMetrics(ctx, p.User.ID, a, d.Date, d.Values, s.now())
 		if err != nil {
-			s.logger.ErrorContext(ctx, "importing metrics failed", "error", err, "day", d.Date.String())
-			return nil, huma.Error500InternalServerError("importing the metrics failed")
+			return nil, internalError("importing the metrics failed", fmt.Errorf("the day %s: %w", d.Date, err))
 		}
 		day := ingestDay{Date: d.Date.String(), Changed: []ingestChange{}}
 		for _, c := range changes {

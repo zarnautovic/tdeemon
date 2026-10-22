@@ -139,6 +139,14 @@ func answerCases() map[string]answerCase {
 		"get-session":      get("/api/v1/auth/session"),
 		"whoami":           get("/api/v1/auth/whoami"),
 		"get-limits":       get("/api/v1/limits"),
+		"ingest-hae": func(t *testing.T, in *instance, _ *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, ingestToken(t, in, `"ingest"`))
+		},
+		"ingest-metrics": func(t *testing.T, in *instance, _ *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date":"2026-10-21","metrics":{"weight":77.7,"sleep_h":30,"typo":1}}`, nil, ingestToken(t, in, `"ingest"`))
+		},
 		"get-profile": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			// Empty, then whole.
@@ -435,6 +443,56 @@ func TestNullableFields(t *testing.T) {
 	}
 }
 
+// requestProblem is a request that goes wrong, and the status it must get:
+// 0 for any the document lists.
+type requestProblem struct {
+	name string
+	req  *http.Request
+	want int
+}
+
+// floodBadTokens sends bad tokens from addr until it gets a 429.
+func floodBadTokens(t *testing.T, in *instance, addr string) {
+	t.Helper()
+	for i := range 100 {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/whoami", nil)
+		r.RemoteAddr = addr
+		r.Header.Set("Authorization", "Bearer "+auth.TokenPrefix+"bogus")
+		if rec := in.serve(t, r); rec.Code == http.StatusTooManyRequests {
+			return
+		} else if i == 99 {
+			t.Fatalf("no 429 after %d bad tokens: %d", i+1, rec.Code)
+		}
+	}
+}
+
+// bodyProblems are the bodies op can get wrong, as the operation takes
+// one: from a token (with every scope) when it is open to them, up to its
+// own limit. A body huma does not read (SkipValidateBody) is the
+// operation's to refuse, with a problem it lists.
+func bodyProblems(op *huma.Operation, token string, request func(io.Reader, map[string]string) *http.Request) []requestProblem {
+	asJSON := map[string]string{"Content-Type": "application/json"}
+	if api.OpenToTokens(op) {
+		asJSON["Authorization"] = "Bearer " + token
+	}
+	other := maps.Clone(asJSON)
+	other["Content-Type"] = "application/x-www-form-urlencoded"
+	limit := op.MaxBodyBytes
+	if limit == 0 {
+		limit = 1 << 20
+	}
+	notJSON, otherType := http.StatusBadRequest, http.StatusUnsupportedMediaType
+	if op.SkipValidateBody {
+		notJSON, otherType = 0, 0
+	}
+	return []requestProblem{
+		{"a body that is not JSON", request(strings.NewReader("{"), asJSON), notJSON},
+		{"another content type", request(strings.NewReader("a=b"), other), otherType},
+		{"a body too large", request(strings.NewReader(`"`+strings.Repeat("a", int(limit))+`"`), asJSON), http.StatusRequestEntityTooLarge},
+		{"a body too slow", request(iotest.ErrReader(os.ErrDeadlineExceeded), asJSON), http.StatusRequestTimeout},
+	}
+}
+
 // The problems answered before an operation's handler runs are in the
 // document, for every operation: huma's (an unknown query parameter; a
 // body that is not JSON, comes with another content type, is too large or
@@ -447,27 +505,20 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 	in, session := signedIn(t)
 	// An address that sent too many bad tokens.
 	const flooding = "192.0.2.99:1234"
-	for i := 0; ; i++ {
-		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/auth/whoami", nil)
-		r.RemoteAddr = flooding
-		r.Header.Set("Authorization", "Bearer "+auth.TokenPrefix+"bogus")
-		if rec := in.serve(t, r); rec.Code == http.StatusTooManyRequests {
-			break
-		} else if i == 100 {
-			t.Fatalf("no 429 after %d bad tokens: %d", i, rec.Code)
-		}
-	}
+	floodBadTokens(t, in, flooding)
 	// A token that may only read, which the operations not open to it
 	// refuse.
 	reader, rec := in.createToken(t, session, `{"name":"reader","scopes":["read"]}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create a token: %d %s", rec.Code, rec.Body.String())
 	}
-	type problem struct {
-		name string
-		req  *http.Request
-		want int
+	// A token with every scope, for the bodies of the operations open to
+	// tokens (an import takes nothing else).
+	every, rec := in.createToken(t, session, `{"name":"every","scopes":["ingest","read","tools"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create a token: %d %s", rec.Code, rec.Body.String())
 	}
+	type problem = requestProblem
 	request := func(t *testing.T, op *huma.Operation, query string, body io.Reader, header map[string]string) *http.Request {
 		t.Helper()
 		path := strings.ReplaceAll(op.Path, "{id}", uuid.NewV7().String())
@@ -486,7 +537,6 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 	for i, op := range ops {
 		t.Run(op.OperationID, func(t *testing.T) {
 			t.Parallel()
-			asJSON := map[string]string{"Content-Type": "application/json"}
 			problems := []problem{
 				{"an unknown query parameter", request(t, op, "?typo=1", nil, nil), http.StatusUnprocessableEntity},
 				// From an address of its own, which one bad token does not
@@ -505,15 +555,12 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 				problems = append(problems, problem{"a cross-origin request", request(t, op, "", nil, map[string]string{"Sec-Fetch-Site": "cross-site"}), http.StatusForbidden})
 			}
 			if op.RequestBody != nil {
-				problems = append(problems,
-					problem{"a body that is not JSON", request(t, op, "", strings.NewReader("{"), asJSON), http.StatusBadRequest},
-					problem{"another content type", request(t, op, "", strings.NewReader("a=b"), map[string]string{"Content-Type": "application/x-www-form-urlencoded"}), http.StatusUnsupportedMediaType},
-					problem{"a body too large", request(t, op, "", strings.NewReader(`"`+strings.Repeat("a", 1<<20)+`"`), asJSON), http.StatusRequestEntityTooLarge},
-					problem{"a body too slow", request(t, op, "", iotest.ErrReader(os.ErrDeadlineExceeded), asJSON), http.StatusRequestTimeout},
-				)
+				problems = append(problems, bodyProblems(op, every.Token, func(body io.Reader, header map[string]string) *http.Request {
+					return request(t, op, "", body, header)
+				})...)
 			}
 			for _, p := range problems {
-				if rec := in.serve(t, p.req); rec.Code != p.want {
+				if rec := in.serve(t, p.req); p.want != 0 && rec.Code != p.want {
 					t.Errorf("%s: %d %s, want %d", p.name, rec.Code, rec.Body.String(), p.want)
 				}
 			}

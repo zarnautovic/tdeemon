@@ -148,6 +148,14 @@ func TestDocumentRequestErrorsWithoutErrors(t *testing.T) {
 	}
 }
 
+// asToken is ctx with its principal's request made with an API token, as
+// an import is.
+func asToken(ctx context.Context) context.Context {
+	p, _ := auth.PrincipalFrom(ctx)
+	p.Via = auth.ViaToken
+	return auth.WithPrincipal(ctx, p)
+}
+
 // A handler passes on the error it cannot handle whole (internalError),
 // so a client that leaves while the handler runs, waiting for the
 // database's write lock, is logged at debug level and a failure at error
@@ -177,6 +185,17 @@ func TestHandlersPassOnTheirErrors(t *testing.T) {
 			return err
 		},
 		"logout": func(ctx context.Context) error { _, err := s.logout(ctx, nil); return err },
+		"ingest-metrics": func(ctx context.Context) error {
+			in := &ingestMetricsInput{}
+			in.Body.Date, in.Body.Metrics = "2026-10-21", map[string]float64{"weight": 77.7}
+			_, err := s.ingestMetrics(asToken(ctx), in)
+			return err
+		},
+		"ingest-hae": func(ctx context.Context) error {
+			body := `{"data":{"metrics":[{"name":"step_count","units":"count","data":[{"date":"2026-10-20 00:00:00 +0200","qty":7300}]}]}}`
+			_, err := s.ingestHAE(asToken(ctx), &ingestHAEInput{RawBody: []byte(body)})
+			return err
+		},
 	} {
 		t.Run(op, func(t *testing.T) {
 			t.Parallel()

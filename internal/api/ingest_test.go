@@ -81,7 +81,6 @@ func TestIngestHAE(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST = %d %s", rec.Code, rec.Body.String())
 	}
-	checkBody(t, "ingest-hae", http.StatusOK, rec.Body.Bytes())
 	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
 	if len(got.Days) != 2 || got.Days[0].Date != "2026-10-20" || got.Days[0].Changed[0].Metric != "steps" || got.Days[0].Changed[0].Value != 7300 ||
 		got.Days[1].Changed[0].Metric != "weight" {
@@ -135,7 +134,6 @@ func TestIngestMetrics(t *testing.T) {
 		rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", body, nil, tok)
 		var got ingestResponse
 		if rec.Code == http.StatusOK {
-			checkBody(t, "ingest-metrics", http.StatusOK, rec.Body.Bytes())
 			got = decodeJSON[ingestResponse](t, rec.Body.Bytes())
 		}
 		return rec.Code, got, rec.Body.String()
