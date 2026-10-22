@@ -548,8 +548,27 @@ func TestUpsertFood(t *testing.T) {
 		!strings.Contains(rec.Body.String(), `the alias \"my yoghurt\" is taken by food `) || !strings.Contains(rec.Body.String(), "archived") {
 		t.Errorf("a taken alias: %d %s", rec.Code, rec.Body.String())
 	}
-	// A new food under the id the client chose; the event says who wrote:
-	// the web app with a session, the API with a token.
+	// The archived food, corrected without its alias, stays archived when
+	// the save says so: out of a search.
+	body := fmt.Sprintf(`{"id": %q, "archived": true, `, saved.ID) + strings.Replace(fmt.Sprintf(yoghurt, "x")[1:], `"aliases": ["x"], `, "", 1)
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods", body, session, nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"archived":true`) ||
+		strings.Contains(rec.Body.String(), "aliases") {
+		t.Errorf("the archived food corrected: %d %s", rec.Code, rec.Body.String())
+	}
+	// A food that breaks the rules.
+	rec = in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Air", "basis": "100g", "source": "label", "nutrients": {"kcal": 950, "protein": 0, "carbs": 0, "fat": 0}}`, session, nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("an invalid food: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A new food takes the id the client chose, and its event says who wrote
+// it: the web app with a session, the API with a token.
+func TestUpsertFoodIDAndActor(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
 	chosen := uuid.NewV7()
 	body := fmt.Sprintf(`{"id": %q, "name": "Skyr", "basis": "100g", "source": "label", "nutrients": {"kcal": 63, "protein": 11, "carbs": 4, "fat": 0.2}}`, chosen)
 	if rec := in.do(t, http.MethodPost, "/api/v1/foods", body, session, nil); !strings.Contains(rec.Body.String(), `"id":"`+chosen.String()+`"`) {
@@ -560,23 +579,26 @@ func TestUpsertFood(t *testing.T) {
 	if es, err := in.db.Events(t.Context(), in.user.ID, 2); err != nil || len(es) != 2 || es[0].Actor.Client != "api" || es[1].Actor.Client != "web" {
 		t.Errorf("the events = %+v, %v; want the API's, then the web app's", es, err)
 	}
-	// A food that breaks the rules.
-	rec = in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Air", "basis": "100g", "source": "label", "nutrients": {"kcal": 950, "protein": 0, "carbs": 0, "fat": 0}}`, session, nil)
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("an invalid food: %d %s", rec.Code, rec.Body.String())
-	}
 }
 
-// A food's id is the user's: another user's food under the same id is
-// theirs, and saving under it makes one of the user's own.
+// A food's id, name and aliases are the user's: another user's food
+// under the same id, or of the same name, brand and alias, is theirs, and
+// no conflict; saving makes one of the user's own.
 func TestUpsertFoodIDsArePerUser(t *testing.T) {
 	t.Parallel()
 
 	e := newIsolationEnv(t, false)
-	body := fmt.Sprintf(`{"id": %q, "name": "Crackers", "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`, e.owner.bread.ID)
+	b := e.owner.bread
+	body := fmt.Sprintf(`{"id": %q, "name": "Crackers", "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`, b.ID)
 	rec := e.in.do(t, http.MethodPost, "/api/v1/foods", body, nil, bearer(e.other.token.Token))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"name":"Crackers"`) {
 		t.Fatalf("the other's food: %d %s", rec.Code, rec.Body.String())
+	}
+	body = fmt.Sprintf(`{"name": %q, "brand": %q, "aliases": [%q], "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`,
+		b.Name, b.Brand, b.Aliases[0])
+	rec = e.in.do(t, http.MethodPost, "/api/v1/foods", body, nil, bearer(e.other.token.Token))
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), b.ID.String()) {
+		t.Fatalf("the other's food of the owner's name and alias: %d %s", rec.Code, rec.Body.String())
 	}
 	f, err := e.in.db.FoodByID(t.Context(), e.owner.user.ID, e.owner.bread.ID)
 	if err != nil || f.Name != e.owner.bread.Name {

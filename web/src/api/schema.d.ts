@@ -139,7 +139,7 @@ export interface paths {
         put?: never;
         /**
          * Save a food
-         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. Saving an archived food brings it back. A name and brand, or an alias, another food has is refused (409), naming that food.
+         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. Saving an archived food brings it back, unless archived says to keep it so. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search.
          */
         post: operations["upsert-food"];
         delete?: never;
@@ -447,7 +447,7 @@ export interface components {
             type?: string;
         };
         FoodBody: {
-            /** @description Other names the user calls the food by; search finds them. */
+            /** @description Other names the user calls the food by, up to 100 characters each; search finds them. */
             aliases?: string[];
             /** @description An archived food stays out of a search, and keeps its name and aliases. */
             archived: boolean;
@@ -471,7 +471,7 @@ export interface components {
              * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
              */
             portion_grams?: number;
-            /** @description Named amounts: a piece, a slice. */
+            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
              * @description Where the values come from: a label is exact, an estimate a judgement.
@@ -933,8 +933,10 @@ export interface components {
             weight: "kg";
         };
         UpsertFoodInputBody: {
-            /** @description Other names the user calls the food by; search finds them. */
+            /** @description Other names the user calls the food by, up to 100 characters each; search finds them. */
             aliases?: string[];
+            /** @description Keeps the food archived: out of a search. Left out, a save brings an archived food back. */
+            archived?: boolean;
             /**
              * @description What the nutrients are for: 100 g, 100 ml, or a portion.
              * @enum {string}
@@ -956,7 +958,7 @@ export interface components {
              * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
              */
             portion_grams?: number;
-            /** @description Named amounts: a piece, a slice. */
+            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
              * @description Where the values come from: a label is exact, an estimate a judgement.

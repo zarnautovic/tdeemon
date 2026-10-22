@@ -27,7 +27,7 @@ func actorOf(p auth.Principal) event.Actor {
 
 // servingBody is a named amount of a food, in its unit.
 type servingBody struct {
-	Name   string  `json:"name" minLength:"1" maxLength:"200" example:"slice"`
+	Name   string  `json:"name" minLength:"1" maxLength:"50" example:"slice"`
 	Amount float64 `json:"amount" exclusiveMinimum:"0" doc:"In the food's unit: grams or ml."`
 }
 
@@ -70,8 +70,8 @@ type FoodFields struct {
 	Basis        string            `json:"basis" enum:"100g,100ml,portion" doc:"What the nutrients are for: 100 g, 100 ml, or a portion."`
 	Nutrients    foodNutrientsBody `json:"nutrients"`
 	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"The weight of a portion of a food per portion, when known: it can then be logged in grams."`
-	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" doc:"Named amounts: a piece, a slice."`
-	Aliases      []string          `json:"aliases,omitempty" nullable:"false" doc:"Other names the user calls the food by; search finds them."`
+	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" maxItems:"20" doc:"Named amounts of a food by weight or volume: a piece, a slice."`
+	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" doc:"Other names the user calls the food by, up to 100 characters each; search finds them."`
 	Source       string            `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from: a label is exact, an estimate a judgement."`
 	Note         string            `json:"note,omitempty" maxLength:"2000"`
 }
@@ -156,6 +156,7 @@ type upsertFoodInput struct {
 	Body struct {
 		ID string `json:"id,omitempty" format:"uuid" doc:"The food to correct, by its id; without one, the food of the same name and brand, or a new one."`
 		FoodFields
+		Archived bool `json:"archived,omitempty" doc:"Keeps the food archived: out of a search. Left out, a save brings an archived food back."`
 	}
 }
 
@@ -171,7 +172,7 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 	b := in.Body
 	f := food.Food{
 		ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Basis(b.Basis), Nutrients: b.Nutrients.nutrients(),
-		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Source: food.Source(b.Source), Note: b.Note,
+		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Source: food.Source(b.Source), Note: b.Note, Archived: b.Archived,
 	}
 	if b.ID != "" {
 		if f.ID, err = uuid.Parse(b.ID); err != nil {

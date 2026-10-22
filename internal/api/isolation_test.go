@@ -503,6 +503,8 @@ func ingestCase(path string, body func(today string) string) isolationCase {
 
 // isolateUpsertFood is upsert-food's case: the other saves a food of
 // their own, with a token, and the owner's foods stay as they were.
+// (TestUpsertFoodIDsArePerUser saves the owner's name, brand and alias,
+// which this case cannot: its answer would show them.)
 func isolateUpsertFood(t *testing.T, e isolationEnv) {
 	t.Helper()
 	body := fmt.Sprintf(`{"name": "%s's crackers", "basis": "100g", "source": "user", "nutrients": {"kcal": 420, "protein": 10, "carbs": 70, "fat": 10}}`,
