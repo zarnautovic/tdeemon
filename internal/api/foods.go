@@ -28,7 +28,7 @@ func actorOf(p auth.Principal) event.Actor {
 // servingBody is a named amount of a food, in its unit.
 type servingBody struct {
 	Name   string  `json:"name" minLength:"1" maxLength:"50" example:"slice"`
-	Amount float64 `json:"amount" exclusiveMinimum:"0" doc:"In the food's unit: grams or ml."`
+	Amount float64 `json:"amount" exclusiveMinimum:"0" maximum:"10000" doc:"In the food's unit: grams or ml."`
 }
 
 // foodNutrientsBody is a food's nutrients as they are stored, per 100 g,
@@ -71,7 +71,7 @@ type FoodFields struct {
 	Nutrients    foodNutrientsBody `json:"nutrients"`
 	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"The weight of a portion of a food per portion, when known: it can then be logged in grams."`
 	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" maxItems:"20" doc:"Named amounts of a food by weight or volume: a piece, a slice."`
-	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" doc:"Other names the user calls the food by, up to 100 characters each; search finds them."`
+	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" minLength:"1" maxLength:"100" doc:"Other names the user calls the food by; search finds them."`
 	Source       string            `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from: a label is exact, an estimate a judgement."`
 	Note         string            `json:"note,omitempty" maxLength:"2000"`
 }
@@ -152,9 +152,36 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 	return out, nil
 }
 
+type getFoodInput struct {
+	ID string `path:"id" format:"uuid"`
+}
+
+type foodOutputNoStore struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         foodBody
+}
+
+func (s *sessions) getFood(ctx context.Context, in *getFoodInput) (*foodOutputNoStore, error) {
+	p, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("no such food")
+	}
+	f, err := s.db.FoodByID(ctx, p.User.ID, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, huma.Error404NotFound("no such food")
+	} else if err != nil {
+		return nil, internalError("reading the food failed", err)
+	}
+	return &foodOutputNoStore{CacheControl: "no-store", Body: newFoodBody(&f)}, nil
+}
+
 type upsertFoodInput struct {
 	Body struct {
-		ID string `json:"id,omitempty" format:"uuid" doc:"The food to correct, by its id; without one, the food of the same name and brand, or a new one."`
+		ID string `json:"id,omitempty" format:"uuid" doc:"The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one."`
 		FoodFields
 		Archived bool `json:"archived,omitempty" doc:"Keeps the food archived: out of a search. Left out, a save brings an archived food back."`
 	}
@@ -175,8 +202,15 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Source: food.Source(b.Source), Note: b.Note, Archived: b.Archived,
 	}
 	if b.ID != "" {
+		// An id corrects a food the user has; a new food comes without
+		// one, so a mistyped or made-up id makes no duplicate.
 		if f.ID, err = uuid.Parse(b.ID); err != nil {
 			return nil, huma.Error422UnprocessableEntity("the id: " + err.Error())
+		}
+		if _, err := s.db.FoodByID(ctx, p.User.ID, f.ID); errors.Is(err, store.ErrNotFound) {
+			return nil, huma.Error404NotFound("no such food: a new food comes without an id")
+		} else if err != nil {
+			return nil, internalError("saving the food failed", err)
 		}
 	}
 	for _, sv := range b.Servings {

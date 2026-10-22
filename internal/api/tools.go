@@ -77,6 +77,14 @@ func (s *sessions) tools() []tool {
 				"the name's matches first, then the shorter name. Each has how much a meal had of it last. Archived foods are left out.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.findFoods),
+		newTool("get_food", readScopes, huma.Operation{
+			OperationID: "get-food",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/foods/{id}",
+			Summary:     "Get a food",
+			Description: "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
+		}, s.getFood),
 		newTool("upsert_food", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "upsert-food",
 			Method:      http.MethodPost,
@@ -85,8 +93,8 @@ func (s *sessions) tools() []tool {
 			Description: "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. " +
 				"A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, " +
 				"without its last_use. Saving an archived food brings it back, unless archived says to keep it so. " +
-				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search.",
-			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
+				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.upsertFood),
 	}
 }

@@ -501,6 +501,20 @@ func ingestCase(path string, body func(today string) string) isolationCase {
 	}
 }
 
+// isolateGetFood is get-food's case: the owner's food answers the other
+// as one that does not exist; their own they get.
+func isolateGetFood(t *testing.T, e isolationEnv) {
+	t.Helper()
+	theirs := e.in.do(t, http.MethodGet, "/api/v1/foods/"+e.owner.bread.ID.String(), "", nil, bearer(e.other.token.Token))
+	none := e.in.do(t, http.MethodGet, "/api/v1/foods/"+uuid.NewV7().String(), "", nil, bearer(e.other.token.Token))
+	if theirs.Code != http.StatusNotFound || theirs.Body.String() != none.Body.String() {
+		t.Errorf("the owner's food: %d %s; one that does not exist: %d %s; want the same 404", theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
+	}
+	if own := e.in.do(t, http.MethodGet, "/api/v1/foods/"+e.other.bread.ID.String(), "", []*http.Cookie{e.other.session}, nil); own.Code != http.StatusOK {
+		t.Errorf("their own food: %d %s", own.Code, own.Body.String())
+	}
+}
+
 // isolateUpsertFood is upsert-food's case: the other saves a food of
 // their own, with a token, and the owner's foods stay as they were.
 // (TestUpsertFoodIDsArePerUser saves the owner's name, brand and alias,
@@ -577,6 +591,7 @@ func isolationCases() map[string]isolationCase {
 			return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
 		}),
 		"upsert-food": isolateUpsertFood,
+		"get-food":    isolateGetFood,
 		"get-me": read("/api/v1/me", true, func(e isolationEnv) []string {
 			return []string{"Notes of " + e.other.user.Name, fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),

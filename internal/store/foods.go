@@ -125,8 +125,8 @@ func nullable(p *float64) any {
 //   - otherwise f is added. Ids are per user: another user's food under
 //     f's id is not this user's, and does not change the answer.
 //
-// Saving the name and brand of an archived food corrects it and, as f is
-// not archived, brings it back: it is in use again. An alias another
+// Saving the name and brand of an archived food corrects it and, unless f
+// is archived too, brings it back: it is in use again. An alias another
 // food goes by is refused (ErrAliasTaken). The save is recorded as a's
 // event, with the food before (none for a new one) and after.
 func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, now time.Time) (food.Food, error) {

@@ -139,9 +139,29 @@ export interface paths {
         put?: never;
         /**
          * Save a food
-         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. Saving an archived food brings it back, unless archived says to keep it so. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search.
+         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. Saving an archived food brings it back, unless archived says to keep it so. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
          */
         post: operations["upsert-food"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/foods/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a food
+         * @description A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).
+         */
+        get: operations["get-food"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -447,7 +467,7 @@ export interface components {
             type?: string;
         };
         FoodBody: {
-            /** @description Other names the user calls the food by, up to 100 characters each; search finds them. */
+            /** @description Other names the user calls the food by; search finds them. */
             aliases?: string[];
             /** @description An archived food stays out of a search, and keeps its name and aliases. */
             archived: boolean;
@@ -933,7 +953,7 @@ export interface components {
             weight: "kg";
         };
         UpsertFoodInputBody: {
-            /** @description Other names the user calls the food by, up to 100 characters each; search finds them. */
+            /** @description Other names the user calls the food by; search finds them. */
             aliases?: string[];
             /** @description Keeps the food archived: out of a search. Left out, a save brings an archived food back. */
             archived?: boolean;
@@ -946,7 +966,7 @@ export interface components {
             brand?: string;
             /**
              * Format: uuid
-             * @description The food to correct, by its id; without one, the food of the same name and brand, or a new one.
+             * @description The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one.
              */
             id?: string;
             /** @example Greek yoghurt 2 % */
@@ -1573,6 +1593,15 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
             /** @description Request Timeout */
             408: {
                 headers: {
@@ -1602,6 +1631,83 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-food": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

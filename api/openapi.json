@@ -264,8 +264,10 @@
         "additionalProperties": false,
         "properties": {
           "aliases": {
-            "description": "Other names the user calls the food by, up to 100 characters each; search finds them.",
+            "description": "Other names the user calls the food by; search finds them.",
             "items": {
+              "maxLength": 100,
+              "minLength": 1,
               "type": "string"
             },
             "maxItems": 20,
@@ -1252,6 +1254,7 @@
             "description": "In the food's unit: grams or ml.",
             "exclusiveMinimum": 0,
             "format": "double",
+            "maximum": 10000,
             "type": "number"
           },
           "name": {
@@ -1431,8 +1434,10 @@
         "additionalProperties": false,
         "properties": {
           "aliases": {
-            "description": "Other names the user calls the food by, up to 100 characters each; search finds them.",
+            "description": "Other names the user calls the food by; search finds them.",
             "items": {
+              "maxLength": 100,
+              "minLength": 1,
               "type": "string"
             },
             "maxItems": 20,
@@ -1457,7 +1462,7 @@
             "type": "string"
           },
           "id": {
-            "description": "The food to correct, by its id; without one, the food of the same name and brand, or a new one.",
+            "description": "The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one.",
             "format": "uuid",
             "type": "string"
           },
@@ -2259,7 +2264,7 @@
         ]
       },
       "post": {
-        "description": "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. Saving an archived food brings it back, unless archived says to keep it so. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search.",
+        "description": "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. Saving an archived food brings it back, unless archived says to keep it so. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
         "operationId": "upsert-food",
         "requestBody": {
           "content": {
@@ -2311,6 +2316,16 @@
               }
             },
             "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
           },
           "408": {
             "content": {
@@ -2384,6 +2399,106 @@
           }
         },
         "summary": "Save a food",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/foods/{id}": {
+      "get": {
+        "description": "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+        "operationId": "get-food",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoodBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a food",
         "tags": [
           "tools"
         ]

@@ -213,6 +213,17 @@ func TestHandlersPassOnTheirErrors(t *testing.T) {
 			_, err := s.findFoods(ctx, &findFoodsInput{Query: "rye", Limit: 10})
 			return err
 		},
+		"get-food": func(ctx context.Context) error {
+			_, err := s.getFood(ctx, &getFoodInput{ID: uuid.NewV7().String()})
+			return err
+		},
+		"upsert-food, by its id": func(ctx context.Context) error {
+			in := &upsertFoodInput{}
+			in.Body.ID, in.Body.Name, in.Body.Basis, in.Body.Source = uuid.NewV7().String(), "Skyr", "100g", "label"
+			in.Body.Nutrients = foodNutrientsBody{Kcal: 63, Protein: 11, Carbs: 4, Fat: 0.2}
+			_, err := s.upsertFood(ctx, in)
+			return err
+		},
 		"upsert-food": func(ctx context.Context) error {
 			in := &upsertFoodInput{}
 			in.Body.Name, in.Body.Basis, in.Body.Source = "Skyr", "100g", "label"

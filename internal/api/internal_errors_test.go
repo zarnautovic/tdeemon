@@ -217,6 +217,24 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			}, inside: "meal_items",
 		},
 		{
+			op: "get-food", method: http.MethodGet, signedIn: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+				in.exec(t, "ALTER TABLE foods RENAME COLUMN portion_g TO gone")
+				return "/api/v1/foods/" + bread.ID.String()
+			}, inside: "portion_g",
+		},
+		{
+			name: "upsert-food, the food of the id", op: "upsert-food", method: http.MethodPost, path: "/api/v1/foods", signedIn: true,
+			body: `{"id": "01a16294-ab09-7d2f-8ab3-53f0c382f162", "name": "Skyr", "basis": "100g", "source": "label", "nutrients": {"kcal": 63, "protein": 11, "carbs": 4, "fat": 0.2}}`,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "ALTER TABLE foods RENAME COLUMN portion_g TO gone")
+				return ""
+			}, inside: "portion_g",
+		},
+		{
 			op: "upsert-food", method: http.MethodPost, path: "/api/v1/foods", signedIn: true,
 			body: `{"name": "Skyr", "basis": "100g", "source": "label", "nutrients": {"kcal": 63, "protein": 11, "carbs": 4, "fat": 0.2}}`,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
