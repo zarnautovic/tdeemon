@@ -3,6 +3,7 @@ package storetest_test
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"slices"
@@ -16,7 +17,7 @@ import (
 )
 
 // schema returns the SQL of every table, index, view and trigger of db,
-// and its journal mode.
+// and the migrations it records: their number and the last version.
 func schema(t *testing.T, db *sql.DB) ([]string, string) {
 	t.Helper()
 	rows, err := db.QueryContext(t.Context(), "SELECT coalesce(sql, name) FROM sqlite_schema ORDER BY type, name")
@@ -35,15 +36,16 @@ func schema(t *testing.T, db *sql.DB) ([]string, string) {
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	var mode string
-	if err := db.QueryRowContext(t.Context(), "PRAGMA journal_mode").Scan(&mode); err != nil {
+	var n, last int
+	if err := db.QueryRowContext(t.Context(), "SELECT count(*), max(version) FROM schema_migrations").Scan(&n, &last); err != nil {
 		t.Fatal(err)
 	}
-	return out, mode
+	return out, fmt.Sprintf("%d migrations, the last %d", n, last)
 }
 
-// A database of Open has the schema a migration of a new file makes, in
-// WAL mode, and each is the test's own: a write to one is not in another.
+// A database of Open has the schema and the record of migrations a
+// migration of a new file makes, and each is the test's own: a write to
+// one is not in another. (store.Open refuses one not in WAL mode.)
 func TestOpen(t *testing.T) {
 	t.Parallel()
 
@@ -55,12 +57,12 @@ func TestOpen(t *testing.T) {
 	if err := migrated.Migrate(t.Context(), slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatal(err)
 	}
-	want, _ := schema(t, migrated.Read())
+	want, wantMigrations := schema(t, migrated.Read())
 
 	a, b := storetest.Open(t), storetest.Open(t)
-	got, mode := schema(t, a.Read())
-	if !slices.Equal(got, want) || mode != "wal" {
-		t.Errorf("schema of %d entries in %s mode, want the migrated one of %d in wal", len(got), mode, len(want))
+	got, migrations := schema(t, a.Read())
+	if !slices.Equal(got, want) || migrations != wantMigrations {
+		t.Errorf("schema of %d entries and %s, want %d and %s", len(got), migrations, len(want), wantMigrations)
 	}
 	now := time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)
 	ana := user.User{
