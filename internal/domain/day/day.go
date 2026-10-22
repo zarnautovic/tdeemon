@@ -4,6 +4,7 @@
 package day
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"strings"
@@ -63,6 +64,12 @@ func (d Date) DaysSince(e Date) int {
 }
 
 const secondsPerDay = 24 * 60 * 60
+
+// Compare returns -1 when d comes before e, 1 when after, 0 on the same
+// date: the order slices.SortFunc takes.
+func (d Date) Compare(e Date) int {
+	return cmp.Or(cmp.Compare(d.Year, e.Year), cmp.Compare(d.Month, e.Month), cmp.Compare(d.Day, e.Day))
+}
 
 func (d Date) at(loc *time.Location) time.Time {
 	return time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, loc)

@@ -278,7 +278,8 @@ The replacement:
 
 - **Window:** the 42 days up to yesterday, today not being over
   (`internal/domain/calibration`), and none before the user's first day
-  with a weigh-in or a meal. Over 28 days the estimate swung with
+  with a meal: weigh-ins imported from before it have no intake to go
+  with. Over 28 days the estimate swung with
   water the weight held for weeks, as after a change of training; over
   42 it kept closer to the past manual revisions and still followed the
   TDEE as it fell.
@@ -314,8 +315,9 @@ The replacement:
     certain.
   - The intake average's, for the days not logged: they are taken to
     differ from the logged ones together, as the weekends of someone who
-    logs only on weekdays would, so the error is a day's spread times
-    the share of days not logged, and none when every day is. Weekends
+    logs only on weekdays would, so the error is a day's spread, at
+    least a tenth of the average intake, times the share of days not
+    logged, and none when every day is. Weekends
     never logged and 400 kcal higher bias the TDEE 114 kcal low; the
     interval still covers it in about 61 % of the simulated windows,
     where one that took the days not logged for a random sample covers
@@ -356,7 +358,8 @@ The replacement:
     estimate is the latest one from before the phase, marked as such,
     with no verdict on the phase. It goes back past a phase too short to
     give one, as a diet break, but not past one with days enough and too
-    little data in them: an estimate from before it would be too old.
+    little data in them, nor to a window that ends 42 days or more
+    before: an estimate from before those would be too old.
   - NEAT guard: steps ±30 % from baseline, in either direction.
   - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss turns a cut
     into "raise protein/calories".

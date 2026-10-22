@@ -300,6 +300,27 @@ func TestDaysSince(t *testing.T) {
 	}
 }
 
+func TestCompare(t *testing.T) {
+	t.Parallel()
+
+	d := Date{2026, time.February, 28}
+	for _, tc := range []struct {
+		e    Date
+		want int
+	}{
+		{d, 0},
+		{d.AddDays(1), -1},
+		{d.AddDays(-1), 1},
+		{Date{2025, time.December, 31}, 1},
+		{Date{2026, time.March, 1}, -1},
+		{Date{2027, time.January, 1}, -1},
+	} {
+		if got := d.Compare(tc.e); got != tc.want {
+			t.Errorf("%s.Compare(%s) = %d, want %d", d, tc.e, got, tc.want)
+		}
+	}
+}
+
 func TestValidateExclusion(t *testing.T) {
 	t.Parallel()
 

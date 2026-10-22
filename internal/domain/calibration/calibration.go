@@ -84,7 +84,8 @@ type Params struct {
 	TrustedKcal float64
 	// LoggedDays and WeighIns are the fewest logged days and weigh-ins a
 	// week of an estimate that is trusted, over the window's whole weeks
-	// and in its last 7 days.
+	// and in its last 7 days. They are the autopilot's data limits, which
+	// a user may tighten: a caller takes them from the user's limits.
 	LoggedDays float64
 	WeighIns   float64
 }
@@ -165,8 +166,9 @@ type Estimate struct {
 // day before today for a summary.
 //
 // days holds the days by date; a date it lacks is a day with nothing
-// logged, though no window starts before the first day with a weigh-in
-// or a meal: a user's days before it were never theirs to log. It should
+// logged, though no window starts before the first day with a meal: the
+// intake before it is unknown, as the user had not begun to log, even
+// with weigh-ins imported from before. It should
 // hold the user's history up to last: the trend weight starts at the
 // first weigh-in it has, and an estimate from before a phase reads the
 // Params.WindowDays before the phase started.
@@ -178,7 +180,8 @@ type Estimate struct {
 // the days left are fewer than Params.MinDays, the estimate is the latest
 // one before that change (BeforePhase). It goes back past a change too
 // recent to give one, as a short diet break, but not past days enough
-// that held too little: an estimate from before those would be too old.
+// that held too little, nor to a window that ends Params.WindowDays or
+// more before last: an estimate from before those would be too old.
 //
 // Days not logged and days excluded are taken to be like the logged ones,
 // give or take the spread of a day. Days left out for being unlike them,
@@ -191,13 +194,15 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	e := measure(days, windowFrom(last, change, first, p), last, p)
 	for e.Days < p.MinDays && !change.IsZero() {
 		before := change.AddDays(-1)
-		change = latestChange(changes, before)
-		b := measure(days, windowFrom(before, change, first, p), before, p)
-		if b.Measured {
-			b.BeforePhase = true
-			e = b
+		if last.DaysSince(before) >= p.WindowDays {
+			break
 		}
-		if b.Days >= p.MinDays {
+		change = latestChange(changes, before)
+		if b := measure(days, windowFrom(before, change, first, p), before, p); b.Days >= p.MinDays {
+			if b.Measured {
+				b.BeforePhase = true
+				e = b
+			}
 			break
 		}
 	}
@@ -205,12 +210,12 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	return e
 }
 
-// firstData returns the first day of days with a weigh-in or a meal, the
-// zero Date for none.
+// firstData returns the first day of days with a meal, the zero Date for
+// none.
 func firstData(days map[day.Date]Day) day.Date {
 	var first day.Date
 	for d, v := range days {
-		if (weighed(v) || v.Meals > 0) && (first.IsZero() || d.Before(first)) {
+		if v.Meals > 0 && (first.IsZero() || d.Before(first)) {
 			first = d
 		}
 	}
@@ -245,7 +250,7 @@ func latestChange(changes []day.Date, d day.Date) day.Date {
 // windowFrom returns the first day of the window that ends on last, whose
 // intake last changed on change (the zero Date for never): the window
 // leaves out the first Params.WaterDays from it, and the days before
-// first, the user's first day with data.
+// first, the user's first day with a meal.
 func windowFrom(last, change, first day.Date, p Params) day.Date {
 	from := last.AddDays(1 - p.WindowDays)
 	if !change.IsZero() {
@@ -275,7 +280,11 @@ type counts struct {
 // measure estimates the TDEE over the days from to to.
 func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	e := Estimate{From: from, To: to, Days: to.DaysSince(from) + 1}
-	weeks := counts{days: week * (max(e.Days, 0) / week)}
+	// A window shorter than a week is its own whole week.
+	weeks := counts{days: week * (e.Days / week)}
+	if weeks.days == 0 {
+		weeks.days = e.Days
+	}
 	var xs, kgs, kcal []float64
 	for i := range e.Days {
 		d := days[from.AddDays(i)]
@@ -340,7 +349,8 @@ func doubts(e *Estimate, weeks counts, p Params) []string {
 	return out
 }
 
-// perWeek returns n of days days as a number a week.
+// perWeek returns n of days days as a number a week. doubts asks only
+// of a window with data, which has a day or more.
 func perWeek(n, days int) float64 { return 7 * float64(n) / float64(days) }
 
 func btoi(b bool) int {
@@ -379,9 +389,15 @@ func regress(xs, kgs []float64) fit {
 		residuals[i] = kgs[i] - mk - slope*(x-mx)
 		sse += square(residuals[i])
 	}
-	rho := autocorrelation(residuals, sse)
+	// Residuals under the scale's step are the rounding of float
+	// arithmetic, whose autocorrelation means nothing.
+	floor := (n - 2) * square(scaleStep) / 12
+	var rho float64
+	if sse > floor {
+		rho = autocorrelation(residuals, sse)
+	}
 	inflation := (1 + rho) / (1 - rho)
-	sse = max(sse, (n-2)*square(scaleStep)/12)
+	sse = max(sse, floor)
 	return fit{
 		slope: slope,
 		se:    math.Sqrt(sse / (n - 2) / sxx * inflation),
@@ -390,16 +406,14 @@ func regress(xs, kgs []float64) fit {
 }
 
 // autocorrelation returns the lag-1 autocorrelation of the residuals,
-// whose squares add up to sse, from 0 to maxAutocorrelation: a negative
-// one would narrow the error, which the data of a few weeks cannot tell.
+// whose squares add up to sse, more than 0, from 0 to
+// maxAutocorrelation: a negative one would narrow the error, which the
+// data of a few weeks cannot tell.
 // The estimate from a short series falls short of the true one, more so
 // once a mean and a slope are taken out, so it is raised by
 // (2 + 4ρ) / n; the tests' simulation finds the interval then covers
 // about 80 %, for water that carries over from not at all to strongly.
 func autocorrelation(residuals []float64, sse float64) float64 {
-	if sse == 0 {
-		return 0
-	}
 	var lagged float64
 	for i := 1; i < len(residuals); i++ {
 		lagged += residuals[i] * residuals[i-1]
@@ -415,7 +429,9 @@ func autocorrelation(residuals []float64, sse float64) float64 {
 // as the weekends of someone who logs only on weekdays would, by as much
 // as one day spreads: the error is that spread times the share of the
 // days not logged, 0 when every day is. It is wider than if they were a
-// random sample, whose differences would cancel out.
+// random sample, whose differences would cancel out. The spread is at
+// least minSpread of the average: someone who eats the same on every day
+// they log may not on the days they do not.
 func intakeVariance(kcal []float64, days int) float64 {
 	m := len(kcal)
 	if m >= days {
@@ -426,8 +442,14 @@ func intakeVariance(kcal []float64, days int) float64 {
 	for _, k := range kcal {
 		ss += square(k - avg)
 	}
-	return square(float64(days-m)/float64(days)) * ss / float64(m-1)
+	spread := max(ss/float64(m-1), square(minSpread*avg))
+	return square(float64(days-m)/float64(days)) * spread
 }
+
+// minSpread is the least spread of a day's intake, as a share of the
+// average, that the days not logged are taken to differ by: a tenth, about
+// what logging itself misses by.
+const minSpread = 0.1
 
 // combinedDF returns the degrees of freedom of the sum of two variances
 // with df1 and df2 of their own (Welch and Satterthwaite): near the larger

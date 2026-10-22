@@ -1,7 +1,6 @@
 package calibration
 
 import (
-	"cmp"
 	"math"
 	"slices"
 
@@ -29,7 +28,7 @@ func Trend(days map[day.Date]Day, alpha float64) []Point {
 			dates = append(dates, d)
 		}
 	}
-	slices.SortFunc(dates, compareDates)
+	slices.SortFunc(dates, day.Date.Compare)
 	out := make([]Point, 0, len(dates))
 	var kg float64
 	for i, d := range dates {
@@ -47,7 +46,7 @@ func Trend(days map[day.Date]Day, alpha float64) []Point {
 // 0 before the first.
 func trendOn(days map[day.Date]Day, d day.Date, alpha float64) float64 {
 	trend := Trend(days, alpha)
-	i, found := slices.BinarySearchFunc(trend, d, func(pt Point, d day.Date) int { return compareDates(pt.Date, d) })
+	i, found := slices.BinarySearchFunc(trend, d, func(pt Point, d day.Date) int { return pt.Date.Compare(d) })
 	if found {
 		i++
 	}
@@ -55,8 +54,4 @@ func trendOn(days map[day.Date]Day, d day.Date, alpha float64) float64 {
 		return 0
 	}
 	return trend[i-1].Kg
-}
-
-func compareDates(a, b day.Date) int {
-	return cmp.Or(cmp.Compare(a.Year, b.Year), cmp.Compare(a.Month, b.Month), cmp.Compare(a.Day, b.Day))
 }

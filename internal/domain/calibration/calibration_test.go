@@ -52,11 +52,17 @@ func TestCalibrateExactLineIsNearlyCertain(t *testing.T) {
 	t.Parallel()
 
 	// A line without noise, every day logged: only the scale's step is
-	// uncertain, a few kcal.
-	days := map[day.Date]Day{}
-	line(days, last, 60, 80, -0.07, 2000)
-	if e := Calibrate(days, nil, last, DefaultParams()); e.HalfWidth <= 0 || e.HalfWidth > 5 || !near(e.KgPerWeekSE, 0, 0.005) {
-		t.Errorf("half the interval %v, the slope's error %v; want a few kcal", e.HalfWidth, e.KgPerWeekSE)
+	// uncertain, a few kcal. Weights the floats cannot hold exactly leave
+	// residuals of rounding, whose autocorrelation must not count.
+	for _, tc := range []struct{ kgEnd, kgPerDay float64 }{
+		{80, -0.07}, {87.3, -0.07}, {87.3, -0.03}, {87.3, -0.1}, {87.3, 0.02}, {87.3, -0.0333},
+	} {
+		days := map[day.Date]Day{}
+		line(days, last, 60, tc.kgEnd, tc.kgPerDay, 2000)
+		if e := Calibrate(days, nil, last, DefaultParams()); e.HalfWidth <= 0 || e.HalfWidth > 5 || !near(e.KgPerWeekSE, 0, 0.005) {
+			t.Errorf("%v kg, %v a day: half the interval %v, the slope's error %v; want a few kcal",
+				tc.kgEnd, tc.kgPerDay, e.HalfWidth, e.KgPerWeekSE)
+		}
 	}
 }
 
@@ -85,7 +91,7 @@ func TestCalibrateCountsTheIntakeOfCompleteLoggedDays(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		// day is what the window's fifth day becomes.
+		// day is what the window's 19th day, 23 before last, becomes.
 		day Day
 		// wantLogged and wantWeighIns count the window's 42 days.
 		wantLogged, wantWeighIns int
@@ -229,7 +235,7 @@ func TestCalibrateDoubts(t *testing.T) {
 		{"2 weigh-ins a week", func(i int) (bool, bool) { return i%7 < 2, true }, true, []string{DoubtFewWeighIns}},
 		{"3 logged days a week", func(i int) (bool, bool) { return true, i%7 < 3 }, true, []string{DoubtFewLoggedDays}},
 		{"2 weigh-ins", func(i int) (bool, bool) { return i < 2, true }, false, []string{DoubtFewWeighIns}},
-		{"1 logged day", func(i int) (bool, bool) { return true, i == 0 }, false, []string{DoubtFewLoggedDays}},
+		{"2 logged days", func(i int) (bool, bool) { return true, i == 0 || i == 41 }, false, []string{DoubtFewLoggedDays}},
 		{"nothing", func(int) (bool, bool) { return false, false }, false, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
 		// 3.5 weigh-ins a week on average, but none in the last 3 weeks:
 		// the slope says little of the weight now.
@@ -477,6 +483,19 @@ func TestCalibrateWidensWithTheDaysNotLogged(t *testing.T) {
 	if !near(widths[3], 110, 10) {
 		t.Errorf("half the interval with 4 days a week logged: %v, want about 110", widths[3])
 	}
+	// The same 2000 kcal on every weekday logged, weekends never: the
+	// weekends may differ by a tenth of a day, 200 kcal, times 2/7.
+	days := map[day.Date]Day{}
+	for i := range 42 {
+		d := Day{Status: day.Complete, WeightKg: 80}
+		if wd := last.AddDays(-i).Weekday(); wd != time.Saturday && wd != time.Sunday {
+			d.Meals, d.Kcal = 1, 2000
+		}
+		days[last.AddDays(-i)] = d
+	}
+	if e := Calibrate(days, nil, last, DefaultParams()); !near(e.HalfWidth, tNormal*2.0/7*200, 6) {
+		t.Errorf("half the interval with an even intake on weekdays: %v, want about %v", e.HalfWidth, tNormal*2.0/7*200)
+	}
 }
 
 func TestCalibrateDoesNotGoBackPastAPhaseWithoutData(t *testing.T) {
@@ -502,6 +521,52 @@ func TestCalibrateDoesNotGoBackPastAPhaseWithoutData(t *testing.T) {
 	}
 }
 
+func TestCalibrateDoesNotGoBackFar(t *testing.T) {
+	t.Parallel()
+
+	// A long cut, then half a year of cuts of 3 weeks and breaks of 1,
+	// every day logged: each phase leaves too few days after its first
+	// 14, and the estimate from before them all would be months old.
+	phases := []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-400), RatePctWeek: -0.5}}
+	for start := last.AddDays(-180); start.Before(last); start = start.AddDays(28) {
+		phases = append(phases,
+			plan.Phase{Type: plan.Cut, Start: start, RatePctWeek: -0.5},
+			plan.Phase{Type: plan.Maintain, Start: start.AddDays(21)},
+		)
+	}
+	days := map[day.Date]Day{}
+	line(days, last, 400, 80, -0.03, 2000)
+	e := Calibrate(days, phases, last, DefaultParams())
+	if e.Measured && last.DaysSince(e.To) >= DefaultParams().WindowDays {
+		t.Errorf("window %s to %s, %d days before %s; want none from %d days or more before",
+			e.From, e.To, last.DaysSince(e.To), last, DefaultParams().WindowDays)
+	}
+}
+
+func TestCalibrateWithFewerMinDaysThanAWeek(t *testing.T) {
+	t.Parallel()
+
+	// Settings a user may have once they are the user's (P1): a window
+	// shorter than a week is its own week, and an empty one counts no
+	// data, never a number that is none.
+	p := DefaultParams()
+	p.MinDays = 0
+	days := map[day.Date]Day{}
+	line(days, last, 60, 80, -0.05, 2000)
+	for _, tc := range []struct {
+		name   string
+		phases []plan.Phase
+		want   []string
+	}{
+		{"a window of 6 days", []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-19), RatePctWeek: -0.5}}, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
+		{"an empty window", []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-5), RatePctWeek: -0.5}}, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
+	} {
+		if e := Calibrate(days, tc.phases, last, p); !slices.Equal(e.Doubts, tc.want) {
+			t.Errorf("%s: %d days, doubts %v; want %v", tc.name, e.Days, e.Doubts, tc.want)
+		}
+	}
+}
+
 func TestCalibrateStartsAtTheFirstData(t *testing.T) {
 	t.Parallel()
 
@@ -513,11 +578,17 @@ func TestCalibrateStartsAtTheFirstData(t *testing.T) {
 	if e.From != last.AddDays(-19) || e.Days != 20 || !e.Trusted || len(e.Doubts) != 0 {
 		t.Errorf("window %s to %s, %d days, trusted %v, doubts %v; want the 20 days, trusted", e.From, e.To, e.Days, e.Trusted, e.Doubts)
 	}
-	// 10 days are too few, and only the days to come settle that.
+	// 10 days are too few, and only the days to come settle that, also
+	// with weigh-ins imported from long before the first meal logged.
 	days = map[day.Date]Day{}
-	line(days, last, 10, 80, -0.05, 2000)
-	if e := Calibrate(days, nil, last, DefaultParams()); e.Measured || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
-		t.Errorf("10 days: measured %v, doubts %v; want no estimate for few days", e.Measured, e.Doubts)
+	line(days, last, 400, 80, -0.05, 2000)
+	for i := 10; i < 400; i++ {
+		d := days[last.AddDays(-i)]
+		d.Meals, d.Kcal = 0, 0
+		days[last.AddDays(-i)] = d
+	}
+	if e := Calibrate(days, nil, last, DefaultParams()); e.Measured || e.Days != 10 || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
+		t.Errorf("10 days of meals: measured %v, %d days, doubts %v; want no estimate for few days", e.Measured, e.Days, e.Doubts)
 	}
 }
 

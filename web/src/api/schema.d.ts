@@ -475,7 +475,7 @@ export interface components {
             /** @description What the target leaves after the total; below 0 past it. */
             remaining?: components["schemas"]["RemainingBody"];
             /**
-             * @description A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration.
+             * @description A day is open until its end, then complete; excluded is the user's choice, which drops its intake from calibration and keeps its weigh-in.
              * @enum {string}
              */
             status: "open" | "complete" | "excluded";
