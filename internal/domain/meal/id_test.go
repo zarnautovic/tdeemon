@@ -24,7 +24,9 @@ func TestIDTime(t *testing.T) {
 	if got, ok := meal.IDTime(uuid.NewV7()); !ok || time.Since(got) > time.Minute {
 		t.Errorf("IDTime(NewV7()) = %v, %v; want about now", got, ok)
 	}
-	for name, id := range map[string]uuid.UUID{"version 4": uuid.NewV4(), "nil": uuid.Nil(), "max": uuid.Max()} {
+	otherVariant := meal.NewIDAt(at)
+	otherVariant[8] |= 0xc0
+	for name, id := range map[string]uuid.UUID{"version 4": uuid.NewV4(), "nil": uuid.Nil(), "max": uuid.Max(), "version 7 of another variant": otherVariant} {
 		if _, ok := meal.IDTime(id); ok {
 			t.Errorf("%s has a time", name)
 		}

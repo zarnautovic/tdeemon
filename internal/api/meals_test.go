@@ -105,13 +105,14 @@ func TestLogMealThroughTheAPI(t *testing.T) {
 
 	e := newMealsEnv(t)
 	tok, _ := e.in.createToken(t, e.session[0], `{"name":"agent","scopes":["tools"]}`)
-	// 01:30 in Zagreb, before the day's start at 04:00: the day before.
-	eaten := time.Date(2026, 10, 20, 23, 30, 0, 0, time.UTC)
+	// 03:00 in Zagreb, before the day's start at 04:00: the day before,
+	// where the date in UTC is the day after.
+	eaten := time.Date(2026, 10, 21, 1, 0, 0, 0, time.UTC)
 	body := fmt.Sprintf(`{"id": %q, "eaten_at": %q, "items": [{"name": "Snack", "nutrients": {"kcal": 200, "protein": 5, "carbs": 30, "fat": 6}}]}`,
 		meal.NewIDAt(e.now), eaten.Format(time.RFC3339))
 	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, nil, bearer(tok.Token))
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"client":"api"`) ||
-		!strings.Contains(rec.Body.String(), `"date":"2026-10-20"`) || !strings.Contains(rec.Body.String(), `"eaten_at":"2026-10-20T23:30:00Z"`) {
+		!strings.Contains(rec.Body.String(), `"date":"2026-10-20"`) || !strings.Contains(rec.Body.String(), `"eaten_at":"2026-10-21T01:00:00Z"`) {
 		t.Errorf("%d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -131,6 +132,12 @@ func TestLogMealWarns(t *testing.T) {
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"code":"duplicate_meal"`) {
 		t.Errorf("a meal twice: %d %s", rec.Code, rec.Body.String())
 	}
+	// A new food's values that do not add up.
+	cake := fmt.Sprintf(`{"id": %q, "items": [{"food": {"name": "Cake", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 400, "protein": 5, "carbs": 50, "fat": 20, "saturated_fat": 25}}, "amount": 100, "unit": "g"}]}`, meal.NewIDAt(e.now.Add(-time.Hour)))
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", cake, e.session, nil); rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"code":"saturated_fat"`) {
+		t.Errorf("a new food's values: %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 // log_meal refuses a meal it cannot take, saying why, and stores nothing.
@@ -146,6 +153,8 @@ func TestLogMealRefuses(t *testing.T) {
 		{"an id from days ago", meal.NewIDAt(e.now.Add(-49 * time.Hour)).String(), estimate, "more than a day before"},
 		{"an item of two kinds", meal.NewIDAt(e.now).String(), fmt.Sprintf(`{"food_id": %q, "portions": 1, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, e.bread), "one of"},
 		{"an estimate without its values", meal.NewIDAt(e.now).String(), `{"name": "Soup"}`, "one of"},
+		{"an estimate without its name", meal.NewIDAt(e.now).String(), `{"nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, "one of"},
+		{"no kind", meal.NewIDAt(e.now).String(), `{"note": "something"}`, "one of"},
 		{"a quantity on an estimate", meal.NewIDAt(e.now).String(), `{"name": "Soup", "portions": 2, "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, "an estimate is the whole plate"},
 		{"a food no one has", meal.NewIDAt(e.now).String(), fmt.Sprintf(`{"food_id": %q, "amount": 50, "unit": "g"}`, meal.NewIDAt(e.now)), "no such food"},
 		{"ml of a food by weight", meal.NewIDAt(e.now).String(), fmt.Sprintf(`{"food_id": %q, "amount": 250, "unit": "ml"}`, e.bread), "ml"},

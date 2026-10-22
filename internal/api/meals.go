@@ -59,7 +59,8 @@ func (s *sessions) item(ctx context.Context, p auth.Principal, in *itemInput) (m
 			kinds++
 		}
 	}
-	if kinds != 1 {
+	// None at all fails as an estimate without its values.
+	if kinds > 1 {
 		return meal.Item{}, nil, huma.Error422UnprocessableEntity(errNotItem.Error())
 	}
 	q := meal.Quantity{Amount: in.Amount, Unit: in.Unit, Servings: in.Servings, Serving: in.Serving, Portions: in.Portions}
