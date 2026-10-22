@@ -110,7 +110,9 @@ Every invalid or missing variable is reported at startup in one go.
 
 The image holds one static binary with the web app inside, on distroless,
 and runs as an unprivileged user (uid 65532). Everything it writes goes to
-one volume at `/data`, so the root filesystem can be read-only.
+one volume at `/data`, so the root filesystem can be read-only. Each
+release publishes it as `ghcr.io/zarnautovic/tdeemon:X.Y.Z` (also `:X.Y`),
+for linux/amd64 and linux/arm64; or build it yourself:
 
 ```sh
 docker build -t tdeemon .
