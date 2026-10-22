@@ -774,21 +774,38 @@ func (db *DB) UserLimits(ctx context.Context, userID uuid.UUID) (limits.Limits, 
 // sets them, with a confirmation for a limit it loosens
 // (limits.Loosened), and undo leaves them (UndoLast).
 func (db *DB) SetUserLimits(ctx context.Context, userID uuid.UUID, a event.Actor, l, instance limits.Limits, now time.Time) error {
-	if err := l.Validate(); err != nil {
-		return fmt.Errorf("invalid limits: %w", err)
-	}
-	if names := limits.Beyond(l, instance); names != nil {
-		return fmt.Errorf("%w: %s", ErrLimitsBeyond, strings.Join(names, ", "))
-	}
+	_, err := db.UpdateUserLimits(ctx, userID, a, instance, func(limits.Limits) (limits.Limits, error) { return l, nil }, now)
+	return err
+}
+
+// UpdateUserLimits stores the limits change returns as userID's, as a's
+// event, and returns them. change gets the limits as they are in the
+// transaction that stores its answer, so a check it makes against them (a
+// loosening needs a confirmation) holds when it is stored, whatever another
+// change did meanwhile. An error of change stores nothing, and is returned
+// wrapped. What change returns meets SetUserLimits's rules.
+func (db *DB) UpdateUserLimits(ctx context.Context, userID uuid.UUID, a event.Actor, instance limits.Limits,
+	change func(current limits.Limits) (limits.Limits, error), now time.Time,
+) (limits.Limits, error) {
 	if err := a.Validate(); err != nil {
-		return fmt.Errorf("invalid actor: %w", err)
+		return limits.Limits{}, fmt.Errorf("invalid actor: %w", err)
 	}
+	var next limits.Limits
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		before, err := limitsOf(ctx, tx, userID)
 		if err != nil {
 			return err
 		}
-		after := limitsStateOf(l)
+		if next, err = change(before.limits()); err != nil {
+			return err
+		}
+		if err := next.Validate(); err != nil {
+			return fmt.Errorf("invalid limits: %w", err)
+		}
+		if names := limits.Beyond(next, instance); names != nil {
+			return fmt.Errorf("%w: %s", ErrLimitsBeyond, strings.Join(names, ", "))
+		}
+		after := limitsStateOf(next)
 		if err := putLimits(ctx, tx, userID, after, now); err != nil {
 			return err
 		}
@@ -796,9 +813,9 @@ func (db *DB) SetUserLimits(ctx context.Context, userID uuid.UUID, a event.Actor
 		return err
 	})
 	if err != nil {
-		return fmt.Errorf("set user limits: %w", err)
+		return limits.Limits{}, fmt.Errorf("set user limits: %w", err)
 	}
-	return nil
+	return next, nil
 }
 
 // notesState is the state of the notes for a coach, nil for none.

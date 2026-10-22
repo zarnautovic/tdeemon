@@ -228,7 +228,10 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
 	today := day.DateOf(now)
 	ctx := t.Context()
-	p := profile.Profile{Sex: profile.Female, BirthDate: today.AddDays(-12000), HeightCm: 170}
+	// Values of each user's own: the first letter of the name (A, I)
+	// sets them apart, so a case can tell whose it shows.
+	n := int(u.Name[0] % 20)
+	p := profile.Profile{Sex: profile.Female, BirthDate: today.AddDays(-12000 - n), HeightCm: 160 + float64(n)}
 	if err := db.SetProfile(ctx, u.ID, isolationActor, p, today, now); err != nil {
 		t.Fatalf("save %s's profile: %v", u.Name, err)
 	}
@@ -243,7 +246,7 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 		t.Fatalf("save %s's training weekdays: %v", u.Name, err)
 	}
 	l := limits.UserDefaults()
-	l.ProteinFloorGrams = 120
+	l.ProteinFloorGrams = 100 + float64(n)
 	if err := db.SetUserLimits(ctx, u.ID, isolationActor, l, limits.Instance(), now); err != nil {
 		t.Fatalf("save %s's limits: %v", u.Name, err)
 	}
@@ -353,7 +356,7 @@ func (e isolationEnv) noneOfTheOwners(t *testing.T, what, body string) {
 func (e isolationEnv) ownerSees(t *testing.T) string {
 	t.Helper()
 	var b strings.Builder
-	for _, path := range []string{"/api/v1/auth/session", "/api/v1/tokens"} {
+	for _, path := range []string{"/api/v1/auth/session", "/api/v1/tokens", "/api/v1/profile", "/api/v1/limits"} {
 		rec := e.in.do(t, http.MethodGet, path, "", []*http.Cookie{e.owner.session}, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("the owner's GET %s: %d %s", path, rec.Code, rec.Body.String())
@@ -533,6 +536,24 @@ func isolationCases() map[string]isolationCase {
 			who := e.in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(created.Token))
 			if !strings.Contains(who.Body.String(), e.other.user.Email) {
 				t.Errorf("the other's new token acts for %s, want them", who.Body.String())
+			}
+		},
+		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
+		}),
+		"get-limits": read("/api/v1/limits", false, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20))}
+		}),
+		"set-profile": func(t *testing.T, e isolationEnv) {
+			rec := e.in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"male","birth_date":"1985-01-20","height_cm":181}`, []*http.Cookie{e.other.session}, nil)
+			if rec.Code != http.StatusOK {
+				t.Errorf("the other's profile: %d %s", rec.Code, rec.Body.String())
+			}
+		},
+		"set-limits": func(t *testing.T, e isolationEnv) {
+			rec := e.in.do(t, http.MethodPut, "/api/v1/limits", `{"limits":{"cut_rate":-0.4}}`, []*http.Cookie{e.other.session}, nil)
+			if want := fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20)); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("the other's limits: %d %s", rec.Code, rec.Body.String())
 			}
 		},
 		"revoke-token": func(t *testing.T, e isolationEnv) {

@@ -51,7 +51,7 @@ type Profile struct {
 const (
 	FieldSex       = "sex"
 	FieldBirthDate = "birth_date"
-	FieldHeight    = "height"
+	FieldHeight    = "height_cm"
 )
 
 // Missing lists the fields a plan needs that p does not give, in a fixed

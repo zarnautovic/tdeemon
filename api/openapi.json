@@ -163,6 +163,58 @@
         },
         "type": "object"
       },
+      "LimitsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "defaults": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "A user's limits at the start.",
+            "type": "object"
+          },
+          "effective": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "The limits that hold: for each, the stricter of the user's and the instance's.",
+            "type": "object"
+          },
+          "instance": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "The instance's limits: no user's goes past them.",
+            "type": "object"
+          },
+          "limits": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "The user's limits, by name (docs/limits.md, \"The names of the limits\").",
+            "type": "object"
+          },
+          "looser_below": {
+            "description": "The limits a lower value loosens (floors, the fastest loss, the waits); a higher value loosens the others.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "limits",
+          "instance",
+          "effective",
+          "defaults",
+          "looser_below"
+        ],
+        "type": "object"
+      },
       "LoginInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -224,6 +276,77 @@
         ],
         "type": "object"
       },
+      "ProfileBody": {
+        "additionalProperties": false,
+        "properties": {
+          "birth_date": {
+            "examples": [
+              "1990-06-15"
+            ],
+            "format": "date",
+            "type": "string"
+          },
+          "height_cm": {
+            "description": "The height in centimetres.",
+            "format": "double",
+            "maximum": 275,
+            "minimum": 50,
+            "type": "number"
+          },
+          "missing": {
+            "description": "What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it.",
+            "items": {
+              "enum": [
+                "sex",
+                "birth_date",
+                "height_cm"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sex": {
+            "description": "The sex the energy equations take.",
+            "enum": [
+              "male",
+              "female"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "missing"
+        ],
+        "type": "object"
+      },
+      "ProfileFields": {
+        "additionalProperties": false,
+        "properties": {
+          "birth_date": {
+            "examples": [
+              "1990-06-15"
+            ],
+            "format": "date",
+            "type": "string"
+          },
+          "height_cm": {
+            "description": "The height in centimetres.",
+            "format": "double",
+            "maximum": 275,
+            "minimum": 50,
+            "type": "number"
+          },
+          "sex": {
+            "description": "The sex the energy equations take.",
+            "enum": [
+              "male",
+              "female"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ServerInfo": {
         "additionalProperties": false,
         "properties": {
@@ -263,6 +386,27 @@
         "required": [
           "user",
           "expires_at"
+        ],
+        "type": "object"
+      },
+      "SetLimitsInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Loosening a limit takes this: the user saw that the change allows a plan the limit refused.",
+            "type": "boolean"
+          },
+          "limits": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "The limits to change, by name; those not named stay as they are.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "limits"
         ],
         "type": "object"
       },
@@ -807,6 +951,288 @@
         "summary": "Get server info",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/api/v1/limits": {
+      "get": {
+        "description": "Needs a web session. Your limits of a plan, the instance's, the ones that hold and the defaults.",
+        "operationId": "get-limits",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get your limits",
+        "tags": [
+          "plan"
+        ]
+      },
+      "put": {
+        "description": "Needs a web session, never an API token. A limit may be tightened freely; loosening one takes `confirm`, and goes no further than the instance's (422). A limit the instance has tightened since is brought to the instance's.",
+        "operationId": "set-limits",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLimitsInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Change your limits",
+        "tags": [
+          "plan"
+        ]
+      }
+    },
+    "/api/v1/profile": {
+      "get": {
+        "description": "Needs a web session. The profile a plan needs: the sex of the energy equations, the birth date and the height.",
+        "operationId": "get-profile",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get your profile",
+        "tags": [
+          "plan"
+        ]
+      },
+      "put": {
+        "description": "Needs a web session: the limits of a plan depend on the profile (docs/limits.md), so no API token changes it. A field left out is cleared.",
+        "operationId": "set-profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileFields"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Set your profile",
+        "tags": [
+          "plan"
         ]
       }
     },

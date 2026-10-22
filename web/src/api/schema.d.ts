@@ -124,6 +124,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your limits
+         * @description Needs a web session. Your limits of a plan, the instance's, the ones that hold and the defaults.
+         */
+        get: operations["get-limits"];
+        /**
+         * Change your limits
+         * @description Needs a web session, never an API token. A limit may be tightened freely; loosening one takes `confirm`, and goes no further than the instance's (422). A limit the instance has tightened since is brought to the instance's.
+         */
+        put: operations["set-limits"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your profile
+         * @description Needs a web session. The profile a plan needs: the sex of the energy equations, the birth date and the height.
+         */
+        get: operations["get-profile"];
+        /**
+         * Set your profile
+         * @description Needs a web session: the limits of a plan depend on the profile (docs/limits.md), so no API token changes it. A field left out is cleared.
+         */
+        put: operations["set-profile"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tokens": {
         parameters: {
             query?: never;
@@ -245,6 +293,26 @@ export interface components {
              */
             type?: string;
         };
+        LimitsBody: {
+            /** @description A user's limits at the start. */
+            defaults: {
+                [key: string]: number;
+            };
+            /** @description The limits that hold: for each, the stricter of the user's and the instance's. */
+            effective: {
+                [key: string]: number;
+            };
+            /** @description The instance's limits: no user's goes past them. */
+            instance: {
+                [key: string]: number;
+            };
+            /** @description The user's limits, by name (docs/limits.md, "The names of the limits"). */
+            limits: {
+                [key: string]: number;
+            };
+            /** @description The limits a lower value loosens (floors, the fastest loss, the waits); a higher value loosens the others. */
+            looser_below: string[];
+        };
         LoginInputBody: {
             /** @description The address the user signs in with; case does not matter. */
             email: string;
@@ -268,6 +336,42 @@ export interface components {
              */
             name: string;
         };
+        ProfileBody: {
+            /**
+             * Format: date
+             * @example 1990-06-15
+             */
+            birth_date?: string;
+            /**
+             * Format: double
+             * @description The height in centimetres.
+             */
+            height_cm?: number;
+            /** @description What a plan still needs: sex, birth_date, height_cm. A plan needs the whole profile; logging needs none of it. */
+            missing: ("sex" | "birth_date" | "height_cm")[];
+            /**
+             * @description The sex the energy equations take.
+             * @enum {string}
+             */
+            sex?: "male" | "female";
+        };
+        ProfileFields: {
+            /**
+             * Format: date
+             * @example 1990-06-15
+             */
+            birth_date?: string;
+            /**
+             * Format: double
+             * @description The height in centimetres.
+             */
+            height_cm?: number;
+            /**
+             * @description The sex the energy equations take.
+             * @enum {string}
+             */
+            sex?: "male" | "female";
+        };
         ServerInfo: {
             /**
              * @description Name of the server software.
@@ -287,6 +391,14 @@ export interface components {
              */
             expires_at: string;
             user: components["schemas"]["UserBody"];
+        };
+        SetLimitsInputBody: {
+            /** @description Loosening a limit takes this: the user saw that the change allows a plan the limit refused. */
+            confirm?: boolean;
+            /** @description The limits to change, by name; those not named stay as they are. */
+            limits: {
+                [key: string]: number;
+            };
         };
         TokenBody: {
             /** Format: date-time */
@@ -649,6 +761,233 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitsBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLimitsInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitsBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileFields"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

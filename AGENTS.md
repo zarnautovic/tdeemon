@@ -10,8 +10,10 @@ same rules; the full versions are in
 tdeemon is a self-hosted nutrition tracker with an adaptive TDEE: one Go
 binary with SQLite and a React web app inside, an MCP server and a REST
 API. It is early: the skeleton, the database layer, users, sign-in
-(password, sessions, OpenID Connect), API tokens with scopes, the API
-contract and an empty web app exist.
+(password, sessions, OpenID Connect), API tokens with scopes, foods,
+meals, metrics and the plan (profile, phases, targets, limits) in the
+domain and the database with an event log and undo, the API for the
+profile and the limits, the API contract and an empty web app exist.
 
 | Path | What |
 | --- | --- |
@@ -21,7 +23,7 @@ contract and an empty web app exist.
 | `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions and API tokens |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, and the profile and the limits of a plan (web session only) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |

@@ -723,3 +723,36 @@ func TestEditATarget(t *testing.T) {
 		t.Errorf("Targets = %+v, want %+v", got, edited)
 	}
 }
+
+// UpdateUserLimits hands its change the limits stored, and stores nothing
+// when the change refuses.
+func TestUpdateUserLimits(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	l := limits.UserDefaults()
+	l.CutRate = -0.5
+	if err := db.SetUserLimits(t.Context(), ana, testActor, l, limits.Instance(), t0); err != nil {
+		t.Fatal(err)
+	}
+	refused := errors.New("refused")
+	if _, err := db.UpdateUserLimits(t.Context(), ana, testActor, limits.Instance(), func(current limits.Limits) (limits.Limits, error) {
+		current.CutRate = -0.9
+		return current, refused
+	}, t0); !errors.Is(err, refused) {
+		t.Errorf("a refused change = %v, want its error", err)
+	}
+	got, err := db.UpdateUserLimits(t.Context(), ana, testActor, limits.Instance(), func(current limits.Limits) (limits.Limits, error) {
+		if current.CutRate != -0.5 {
+			t.Errorf("the change got %v, want the stored -0.5", current.CutRate)
+		}
+		current.DriftPct = 12
+		return current, nil
+	}, t0)
+	if err != nil || got.CutRate != -0.5 || got.DriftPct != 12 {
+		t.Errorf("UpdateUserLimits = %+v, %v", got, err)
+	}
+	if stored, _ := db.UserLimits(t.Context(), ana); stored != got {
+		t.Errorf("stored = %+v, want %+v", stored, got)
+	}
+}
