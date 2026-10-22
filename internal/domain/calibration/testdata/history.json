@@ -1,0 +1,971 @@
+{
+  "today": "2031-01-23",
+  "profile": {
+    "sex": "male",
+    "birth_date": "1990-01-01",
+    "height_cm": 180
+  },
+  "phases": [
+    {
+      "type": "cut",
+      "start": "2030-10-24",
+      "rate_pct_week": -0.75
+    }
+  ],
+  "targets": [
+    {
+      "from": "2030-10-24",
+      "training_kcal": 2610,
+      "rest_kcal": 2610
+    },
+    {
+      "from": "2030-12-08",
+      "training_kcal": 2330,
+      "rest_kcal": 2330
+    },
+    {
+      "from": "2031-01-16",
+      "training_kcal": 2240,
+      "rest_kcal": 2050
+    }
+  ],
+  "training_weekdays": [
+    1,
+    3,
+    5
+  ],
+  "revisions": [
+    {
+      "date": "2030-12-08",
+      "action": "raise_protein_or_kcal"
+    },
+    {
+      "date": "2031-01-16",
+      "action": "",
+      "no_verdict": "none within a week in the anonymised history"
+    }
+  ],
+  "days": [
+    {
+      "date": "2030-10-21",
+      "status": "complete",
+      "weight_kg": 109.9,
+      "body_fat_pct": 31.6,
+      "steps": 8861,
+      "active_kcal": 1226
+    },
+    {
+      "date": "2030-10-22",
+      "status": "complete",
+      "weight_kg": 109.9,
+      "body_fat_pct": 30.5,
+      "steps": 5417,
+      "active_kcal": 1163
+    },
+    {
+      "date": "2030-10-23",
+      "status": "complete",
+      "steps": 8015,
+      "active_kcal": 1235
+    },
+    {
+      "date": "2030-10-24",
+      "status": "complete",
+      "steps": 4656,
+      "active_kcal": 892
+    },
+    {
+      "date": "2030-10-25",
+      "status": "complete",
+      "meals": 1,
+      "kcal": 574
+    },
+    {
+      "date": "2030-10-26",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 3490,
+      "weight_kg": 109.55000000000001,
+      "body_fat_pct": 30.8,
+      "steps": 5021,
+      "active_kcal": 735
+    },
+    {
+      "date": "2030-10-27",
+      "status": "complete",
+      "meals": 9,
+      "kcal": 2281,
+      "weight_kg": 108.9,
+      "body_fat_pct": 29.900000000000002,
+      "steps": 4040,
+      "active_kcal": 966
+    },
+    {
+      "date": "2030-10-28",
+      "status": "complete",
+      "meals": 8,
+      "kcal": 2280,
+      "weight_kg": 108.80000000000001,
+      "body_fat_pct": 30.1,
+      "steps": 8349,
+      "active_kcal": 1718
+    },
+    {
+      "date": "2030-10-29",
+      "status": "excluded",
+      "meals": 5,
+      "kcal": 2444,
+      "weight_kg": 109.35000000000001,
+      "body_fat_pct": 30.200000000000003,
+      "steps": 5148,
+      "active_kcal": 1089
+    },
+    {
+      "date": "2030-10-30",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 1681,
+      "weight_kg": 109.2,
+      "body_fat_pct": 30.3,
+      "steps": 10398,
+      "active_kcal": 1676
+    },
+    {
+      "date": "2030-10-31",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 1973,
+      "weight_kg": 107.80000000000001,
+      "body_fat_pct": 29.700000000000003,
+      "steps": 5202,
+      "active_kcal": 955
+    },
+    {
+      "date": "2030-11-01",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2098,
+      "weight_kg": 107.7,
+      "body_fat_pct": 30.200000000000003,
+      "steps": 7814,
+      "active_kcal": 1515
+    },
+    {
+      "date": "2030-11-02",
+      "status": "complete",
+      "meals": 8,
+      "kcal": 2346,
+      "weight_kg": 107.75,
+      "body_fat_pct": 30,
+      "steps": 3019,
+      "active_kcal": 617
+    },
+    {
+      "date": "2030-11-03",
+      "status": "complete",
+      "meals": 9,
+      "kcal": 2340,
+      "weight_kg": 106.5,
+      "body_fat_pct": 30.1,
+      "steps": 2249,
+      "active_kcal": 693
+    },
+    {
+      "date": "2030-11-04",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2269,
+      "weight_kg": 106.4,
+      "body_fat_pct": 30,
+      "steps": 7506,
+      "active_kcal": 1557
+    },
+    {
+      "date": "2030-11-05",
+      "status": "complete",
+      "meals": 9,
+      "kcal": 2050,
+      "weight_kg": 106.9,
+      "body_fat_pct": 29.6,
+      "steps": 2173,
+      "active_kcal": 538
+    },
+    {
+      "date": "2030-11-06",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2199,
+      "weight_kg": 107,
+      "body_fat_pct": 30.400000000000002,
+      "steps": 6944,
+      "active_kcal": 1378
+    },
+    {
+      "date": "2030-11-07",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2004,
+      "weight_kg": 106.85000000000001,
+      "body_fat_pct": 29.700000000000003,
+      "steps": 832,
+      "active_kcal": 66
+    },
+    {
+      "date": "2030-11-08",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 1772,
+      "weight_kg": 107.05000000000001,
+      "body_fat_pct": 29.700000000000003,
+      "steps": 8936,
+      "active_kcal": 1630
+    },
+    {
+      "date": "2030-11-09",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2042,
+      "weight_kg": 106.45,
+      "body_fat_pct": 30,
+      "steps": 4637,
+      "active_kcal": 669
+    },
+    {
+      "date": "2030-11-10",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 2152,
+      "weight_kg": 106.05000000000001,
+      "body_fat_pct": 29.900000000000002,
+      "steps": 5168,
+      "active_kcal": 794
+    },
+    {
+      "date": "2030-11-11",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 1848,
+      "weight_kg": 106.15,
+      "body_fat_pct": 29,
+      "steps": 7907,
+      "active_kcal": 1630
+    },
+    {
+      "date": "2030-11-12",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 3139,
+      "weight_kg": 106.5,
+      "body_fat_pct": 30.400000000000002,
+      "steps": 6751,
+      "active_kcal": 1102
+    },
+    {
+      "date": "2030-11-13",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2066,
+      "weight_kg": 106.35000000000001,
+      "body_fat_pct": 29.6,
+      "steps": 8575,
+      "active_kcal": 1751
+    },
+    {
+      "date": "2030-11-14",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 1732,
+      "weight_kg": 107.30000000000001,
+      "body_fat_pct": 30.1,
+      "steps": 4688,
+      "active_kcal": 872
+    },
+    {
+      "date": "2030-11-15",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 1863,
+      "weight_kg": 106.2,
+      "body_fat_pct": 29.400000000000002,
+      "steps": 8632,
+      "active_kcal": 1590
+    },
+    {
+      "date": "2030-11-16",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2364,
+      "weight_kg": 105.75,
+      "body_fat_pct": 29.400000000000002,
+      "steps": 2849,
+      "active_kcal": 539
+    },
+    {
+      "date": "2030-11-17",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2452,
+      "weight_kg": 104.9,
+      "body_fat_pct": 29.400000000000002,
+      "steps": 3911,
+      "active_kcal": 795
+    },
+    {
+      "date": "2030-11-18",
+      "status": "complete",
+      "meals": 2,
+      "kcal": 2318,
+      "weight_kg": 104.85000000000001,
+      "body_fat_pct": 29.6,
+      "steps": 8470,
+      "active_kcal": 1484
+    },
+    {
+      "date": "2030-11-19",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 1904,
+      "weight_kg": 105.2,
+      "body_fat_pct": 29.8,
+      "steps": 6616,
+      "active_kcal": 1186
+    },
+    {
+      "date": "2030-11-20",
+      "status": "complete",
+      "meals": 2,
+      "kcal": 2046,
+      "weight_kg": 104.9,
+      "body_fat_pct": 29.200000000000003,
+      "steps": 2647,
+      "active_kcal": 368
+    },
+    {
+      "date": "2030-11-21",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2080,
+      "weight_kg": 105.05000000000001,
+      "body_fat_pct": 29.1,
+      "steps": 8922,
+      "active_kcal": 1094
+    },
+    {
+      "date": "2030-11-22",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 1938,
+      "weight_kg": 104.30000000000001,
+      "body_fat_pct": 28.700000000000003,
+      "steps": 7144,
+      "active_kcal": 1214
+    },
+    {
+      "date": "2030-11-23",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 1782,
+      "weight_kg": 104.80000000000001,
+      "body_fat_pct": 29.700000000000003,
+      "steps": 4725,
+      "active_kcal": 738
+    },
+    {
+      "date": "2030-11-24",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2052,
+      "weight_kg": 104.2,
+      "body_fat_pct": 29,
+      "steps": 6352,
+      "active_kcal": 701
+    },
+    {
+      "date": "2030-11-25",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 2192,
+      "weight_kg": 103.4,
+      "body_fat_pct": 28.6,
+      "steps": 9124,
+      "active_kcal": 1699
+    },
+    {
+      "date": "2030-11-26",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2105,
+      "weight_kg": 103.65,
+      "body_fat_pct": 29.900000000000002,
+      "steps": 2855,
+      "active_kcal": 608
+    },
+    {
+      "date": "2030-11-27",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 1712,
+      "weight_kg": 103.15,
+      "body_fat_pct": 29.3,
+      "steps": 9671,
+      "active_kcal": 1738
+    },
+    {
+      "date": "2030-11-28",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 1793,
+      "weight_kg": 102.95,
+      "body_fat_pct": 28.8,
+      "steps": 6313,
+      "active_kcal": 1048
+    },
+    {
+      "date": "2030-11-29",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 2146,
+      "weight_kg": 102.7,
+      "body_fat_pct": 29.1,
+      "steps": 8514,
+      "active_kcal": 1778
+    },
+    {
+      "date": "2030-11-30",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 1784,
+      "weight_kg": 102.35000000000001,
+      "body_fat_pct": 28.700000000000003,
+      "steps": 7935,
+      "active_kcal": 1218
+    },
+    {
+      "date": "2030-12-01",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 1555,
+      "weight_kg": 102.15,
+      "body_fat_pct": 28.8,
+      "steps": 10793,
+      "active_kcal": 1628
+    },
+    {
+      "date": "2030-12-02",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 1806,
+      "steps": 10575,
+      "active_kcal": 1617
+    },
+    {
+      "date": "2030-12-03",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 2215,
+      "steps": 12212,
+      "active_kcal": 1675
+    },
+    {
+      "date": "2030-12-04",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 1664,
+      "steps": 12139,
+      "active_kcal": 1756
+    },
+    {
+      "date": "2030-12-05",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2219,
+      "steps": 11915,
+      "active_kcal": 1800
+    },
+    {
+      "date": "2030-12-06",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 1485,
+      "steps": 13031,
+      "active_kcal": 1471
+    },
+    {
+      "date": "2030-12-07",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2035,
+      "weight_kg": 100.85000000000001,
+      "body_fat_pct": 28.6,
+      "steps": 3104,
+      "active_kcal": 671
+    },
+    {
+      "date": "2030-12-08",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2127,
+      "weight_kg": 100.45,
+      "body_fat_pct": 28.8,
+      "steps": 3498,
+      "active_kcal": 815
+    },
+    {
+      "date": "2030-12-09",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 2165,
+      "weight_kg": 100.80000000000001,
+      "steps": 8870,
+      "active_kcal": 1516
+    },
+    {
+      "date": "2030-12-10",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2104,
+      "weight_kg": 100.05000000000001,
+      "body_fat_pct": 28.200000000000003,
+      "steps": 5521,
+      "active_kcal": 908
+    },
+    {
+      "date": "2030-12-11",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2156,
+      "weight_kg": 99.5,
+      "body_fat_pct": 28.3,
+      "steps": 13278,
+      "active_kcal": 1588
+    },
+    {
+      "date": "2030-12-12",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2031,
+      "weight_kg": 98.9,
+      "body_fat_pct": 28.8,
+      "steps": 6915,
+      "active_kcal": 959
+    },
+    {
+      "date": "2030-12-13",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2149,
+      "weight_kg": 100.10000000000001,
+      "body_fat_pct": 28.200000000000003,
+      "steps": 10131,
+      "active_kcal": 1604
+    },
+    {
+      "date": "2030-12-14",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2095,
+      "weight_kg": 100.55000000000001,
+      "body_fat_pct": 28.700000000000003,
+      "steps": 9257,
+      "active_kcal": 1053
+    },
+    {
+      "date": "2030-12-15",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2340,
+      "weight_kg": 100,
+      "body_fat_pct": 28.6,
+      "steps": 6013,
+      "active_kcal": 932
+    },
+    {
+      "date": "2030-12-16",
+      "status": "complete",
+      "meals": 2,
+      "kcal": 2112,
+      "weight_kg": 98.80000000000001,
+      "body_fat_pct": 28.5,
+      "steps": 6637,
+      "active_kcal": 1492
+    },
+    {
+      "date": "2030-12-17",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2095,
+      "weight_kg": 99.05000000000001,
+      "body_fat_pct": 28.8,
+      "steps": 14226,
+      "active_kcal": 1335
+    },
+    {
+      "date": "2030-12-18",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2206,
+      "weight_kg": 98.95,
+      "body_fat_pct": 28.3,
+      "steps": 10206,
+      "active_kcal": 1450
+    },
+    {
+      "date": "2030-12-19",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 1757,
+      "weight_kg": 99.10000000000001,
+      "body_fat_pct": 28,
+      "steps": 9719,
+      "active_kcal": 1070
+    },
+    {
+      "date": "2030-12-20",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 1931,
+      "weight_kg": 98.9,
+      "body_fat_pct": 28.400000000000002,
+      "steps": 9196,
+      "active_kcal": 1482
+    },
+    {
+      "date": "2030-12-21",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2296,
+      "weight_kg": 98.55000000000001,
+      "body_fat_pct": 28.200000000000003,
+      "steps": 6416,
+      "active_kcal": 1004
+    },
+    {
+      "date": "2030-12-22",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 1806,
+      "weight_kg": 99.2,
+      "body_fat_pct": 28.5,
+      "steps": 11220,
+      "active_kcal": 1120
+    },
+    {
+      "date": "2030-12-23",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 1950,
+      "weight_kg": 98.7,
+      "body_fat_pct": 28,
+      "steps": 6892,
+      "active_kcal": 1363
+    },
+    {
+      "date": "2030-12-24",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2492,
+      "weight_kg": 99.30000000000001,
+      "body_fat_pct": 28.400000000000002,
+      "steps": 6725,
+      "active_kcal": 925
+    },
+    {
+      "date": "2030-12-25",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2257,
+      "weight_kg": 99.2,
+      "body_fat_pct": 28.1,
+      "steps": 2787,
+      "active_kcal": 715
+    },
+    {
+      "date": "2030-12-26",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2158,
+      "weight_kg": 99.2,
+      "body_fat_pct": 27.8,
+      "steps": 2887,
+      "active_kcal": 732
+    },
+    {
+      "date": "2030-12-27",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2315,
+      "weight_kg": 99.60000000000001,
+      "body_fat_pct": 27.400000000000002,
+      "steps": 4660,
+      "active_kcal": 799
+    },
+    {
+      "date": "2030-12-28",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2478,
+      "weight_kg": 99.25,
+      "body_fat_pct": 28,
+      "steps": 3970,
+      "active_kcal": 737
+    },
+    {
+      "date": "2030-12-29",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 3276,
+      "weight_kg": 99.4,
+      "body_fat_pct": 27.8,
+      "steps": 6811,
+      "active_kcal": 929
+    },
+    {
+      "date": "2030-12-30",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2042,
+      "weight_kg": 100.2,
+      "body_fat_pct": 28.400000000000002,
+      "steps": 7071,
+      "active_kcal": 1530
+    },
+    {
+      "date": "2030-12-31",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2151,
+      "weight_kg": 100.30000000000001,
+      "body_fat_pct": 28.1,
+      "steps": 6768,
+      "active_kcal": 734
+    },
+    {
+      "date": "2031-01-01",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 1631,
+      "weight_kg": 100.55000000000001,
+      "body_fat_pct": 28.200000000000003,
+      "steps": 6621,
+      "active_kcal": 1884
+    },
+    {
+      "date": "2031-01-02",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 2080,
+      "weight_kg": 99.55000000000001,
+      "body_fat_pct": 28.700000000000003,
+      "steps": 4553,
+      "active_kcal": 832
+    },
+    {
+      "date": "2031-01-03",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2237,
+      "weight_kg": 99.80000000000001,
+      "body_fat_pct": 28.6,
+      "steps": 7607,
+      "active_kcal": 1482
+    },
+    {
+      "date": "2031-01-04",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 1836,
+      "weight_kg": 98.4,
+      "body_fat_pct": 28.400000000000002,
+      "steps": 8030,
+      "active_kcal": 939
+    },
+    {
+      "date": "2031-01-05",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2246,
+      "weight_kg": 98.4,
+      "body_fat_pct": 28.5,
+      "steps": 3266,
+      "active_kcal": 653
+    },
+    {
+      "date": "2031-01-06",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2059,
+      "weight_kg": 98.4,
+      "body_fat_pct": 28.1,
+      "steps": 6354,
+      "active_kcal": 1249
+    },
+    {
+      "date": "2031-01-07",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 2120,
+      "weight_kg": 98.10000000000001,
+      "body_fat_pct": 28.200000000000003,
+      "steps": 5096,
+      "active_kcal": 874
+    },
+    {
+      "date": "2031-01-08",
+      "status": "complete",
+      "meals": 7,
+      "kcal": 2147,
+      "weight_kg": 97.75,
+      "body_fat_pct": 28,
+      "steps": 8455,
+      "active_kcal": 1636
+    },
+    {
+      "date": "2031-01-09",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 1859,
+      "weight_kg": 98.10000000000001,
+      "body_fat_pct": 27.6,
+      "steps": 7501,
+      "active_kcal": 940
+    },
+    {
+      "date": "2031-01-10",
+      "status": "complete",
+      "meals": 3,
+      "kcal": 2034,
+      "weight_kg": 97.75,
+      "body_fat_pct": 27.700000000000003,
+      "steps": 7529,
+      "active_kcal": 1548
+    },
+    {
+      "date": "2031-01-11",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2116,
+      "weight_kg": 97.35000000000001,
+      "body_fat_pct": 27.8,
+      "steps": 6069,
+      "active_kcal": 779
+    },
+    {
+      "date": "2031-01-12",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 3114,
+      "weight_kg": 97.7,
+      "body_fat_pct": 27.6,
+      "steps": 7192,
+      "active_kcal": 922
+    },
+    {
+      "date": "2031-01-13",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2072,
+      "weight_kg": 98.4,
+      "body_fat_pct": 28,
+      "steps": 6898,
+      "active_kcal": 1385
+    },
+    {
+      "date": "2031-01-14",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2033,
+      "weight_kg": 97.65,
+      "body_fat_pct": 28.5,
+      "steps": 5992,
+      "active_kcal": 750
+    },
+    {
+      "date": "2031-01-15",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2397,
+      "weight_kg": 97.55000000000001,
+      "body_fat_pct": 28.1,
+      "steps": 7234,
+      "active_kcal": 1350
+    },
+    {
+      "date": "2031-01-16",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2129,
+      "weight_kg": 96.85000000000001,
+      "body_fat_pct": 28.1,
+      "steps": 9203,
+      "active_kcal": 1385
+    },
+    {
+      "date": "2031-01-17",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2125,
+      "weight_kg": 97.80000000000001,
+      "body_fat_pct": 28,
+      "steps": 9496,
+      "active_kcal": 1021
+    },
+    {
+      "date": "2031-01-18",
+      "status": "complete",
+      "meals": 6,
+      "kcal": 2171,
+      "weight_kg": 96.65,
+      "body_fat_pct": 27.900000000000002,
+      "steps": 3731,
+      "active_kcal": 654
+    },
+    {
+      "date": "2031-01-19",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2318,
+      "weight_kg": 96.5,
+      "body_fat_pct": 27.700000000000003,
+      "steps": 5619,
+      "active_kcal": 894
+    },
+    {
+      "date": "2031-01-20",
+      "status": "complete",
+      "meals": 4,
+      "kcal": 2306,
+      "weight_kg": 95.85000000000001,
+      "body_fat_pct": 27.6,
+      "steps": 5932,
+      "active_kcal": 964
+    },
+    {
+      "date": "2031-01-21",
+      "status": "complete",
+      "weight_kg": 96.25,
+      "body_fat_pct": 27.6,
+      "steps": 6406,
+      "active_kcal": 1039
+    },
+    {
+      "date": "2031-01-22",
+      "status": "complete",
+      "meals": 5,
+      "kcal": 2359,
+      "weight_kg": 96.25,
+      "body_fat_pct": 27.400000000000002,
+      "steps": 6349,
+      "active_kcal": 1657
+    },
+    {
+      "date": "2031-01-23",
+      "status": "open",
+      "meals": 2,
+      "kcal": 2197,
+      "weight_kg": 96.2,
+      "body_fat_pct": 27.1,
+      "steps": 1964,
+      "active_kcal": 465
+    }
+  ]
+}
