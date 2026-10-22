@@ -295,12 +295,14 @@ the profile and the plan today; `GET /api/v1/days/{date}`, a day,
 `today` or `YYYY-MM-DD`; `GET /api/v1/foods?query=…` and
 `GET /api/v1/foods/{id}`), and those that
 write with `tools` alone (`POST /api/v1/foods`, a food saved or
-corrected). Every other operation is closed to tokens (403), so a
-token can never create, list or revoke tokens, read the session or
-change a setting. Only `Authorization: Bearer tdm_…` carries a token
-(an empty Bearer is a bad one): another header, such as a reverse
-proxy's Basic credentials or the ID token an authenticating proxy
-passes on as a Bearer, leaves the request to its session cookie.
+corrected; `POST /api/v1/meals`, and `PATCH` and `DELETE` on
+`/api/v1/meals/{id}`, a meal logged, changed or deleted). Every other
+operation is closed to tokens (403), so a token can never create, list
+or revoke tokens, read the session or change a setting. Only
+`Authorization: Bearer tdm_…` carries a token (an empty Bearer is a bad
+one): another header, such as a reverse proxy's Basic credentials or the
+ID token an authenticating proxy passes on as a Bearer, leaves the
+request to its session cookie.
 The web app's settings page comes with the web UI.
 
 ### Import from Apple Health

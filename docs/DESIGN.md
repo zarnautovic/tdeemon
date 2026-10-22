@@ -232,7 +232,13 @@ takes its `date` as optional, `today` when left out); `find_foods` is
 archived too; and `upsert_food` is `POST /api/v1/foods`, which corrects
 a food by an id it has (404 for another) or by its name and brand, and
 names the food in the way of a name or an alias (409), archived or not,
-which a search would not find but `get_food` gives.
+which a search would not find but `get_food` gives. `log_meal` is
+`POST /api/v1/meals` (201, or 200 for a retry), `update_meal` is
+`PATCH /api/v1/meals/{id}` (ops: add, replace, remove an item; an item
+no op touches keeps what it brought when logged), and `delete_meal` is
+`DELETE /api/v1/meals/{id}`; each answers where the meal's day stands.
+A meal logged with a token is the client `api`'s until MCP names
+itself.
 
 ## 6. AI layer
 
@@ -565,7 +571,8 @@ the first spec.
     corrected is still a retry. A client gives the meal's `id`; when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
     the clock, so a retry has the same one. A new meal's ID must be a
-    version 7 ID whose time is near the clock, so a model cannot reuse
+    version 7 ID whose time is near the clock (from a day before to five
+    minutes after: a day of an offline client), so a model cannot reuse
     yesterday's meal ID or make one up; an ID already stored goes to the
     fingerprint instead, so an offline queue's late retry still finds its
     meal.

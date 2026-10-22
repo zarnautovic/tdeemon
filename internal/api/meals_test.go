@@ -1,0 +1,301 @@
+package api_test
+
+import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
+)
+
+// mealsEnv is an instance with Ana's rye bread and plan, and her session.
+type mealsEnv struct {
+	in      *instance
+	session []*http.Cookie
+	now     time.Time
+	bread   string
+}
+
+func newMealsEnv(t *testing.T) mealsEnv {
+	t.Helper()
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	bread := saveIsolationFoods(t, in.db, in.user, now)
+	saveIsolationPlan(t, in.db, in.user, now)
+	return mealsEnv{in: in, session: []*http.Cookie{sessionOf(t, in)}, now: now, bread: bread.ID.String()}
+}
+
+// lunch is a meal of three items of the three kinds: a food of the user's
+// by its id, a new food, and an estimate.
+func (e mealsEnv) lunch(id string) string {
+	return fmt.Sprintf(`{"id": %q, "description": "Lunch", "note": "at home", "items": [
+		{"food_id": %q, "servings": 2, "serving": "slice", "note": "toasted"},
+		{"food": {"name": "Greek yoghurt", "brand": "Dukat", "basis": "100g", "source": "label",
+		  "nutrients": {"kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2}}, "amount": 200, "unit": "g"},
+		{"name": "Restaurant pasta", "nutrients": {"kcal": 850, "protein": 32, "carbs": 105, "fat": 30}}
+	]}`, id, e.bread)
+}
+
+// log_meal stores a meal of each kind of item, under the client's id, at
+// the time of the id, and answers with the meal, where the day stands and
+// any warnings; the same meal sent again is a retry.
+func TestLogMeal(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	foods, err := e.in.db.FindFoods(t.Context(), e.in.user.ID, "greek yoghurt", 5)
+	if err != nil || len(foods) != 1 {
+		t.Fatalf("the new food: %v, %v", foods, err)
+	}
+	total := `{"kcal": 1203, "protein": 57.8, "carbs": 150.6, "fat": 36.6, "fiber": 4.8}`
+	want := fmt.Sprintf(`{
+		"meal": {
+			"id": %[1]q, "eaten_at": %[2]q, "description": "Lunch", "client": "web", "note": "at home",
+			"items": [
+				{"id": "*", "food_id": %[3]q, "name": "Ana's rye bread", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g",
+				 "nutrients": {"kcal": 207, "protein": 6.8, "carbs": 38.4, "fat": 2.6, "fiber": 4.8}, "source": "user", "note": "toasted"},
+				{"id": "*", "food_id": %[4]q, "name": "Dukat Greek yoghurt", "quantity": {"amount": 200, "unit": "g"}, "amount": 200, "unit": "g",
+				 "nutrients": {"kcal": 146, "protein": 19, "carbs": 7.2, "fat": 4}, "source": "label"},
+				{"id": "*", "name": "Restaurant pasta", "quantity": {"portions": 1}, "amount": 1, "unit": "portion",
+				 "nutrients": {"kcal": 850, "protein": 32, "carbs": 105, "fat": 30}, "source": "estimate"}
+			],
+			"total": %[5]s
+		},
+		"day": {
+			"date": %[6]q, "status": "open", "type": "training", "training_toggle": true, "total": %[5]s,
+			"target": {"kcal": 2100, "protein": 150, "fat": 60, "carbs": 240},
+			"remaining": {"kcal": 897, "protein": 92.2, "fat": 23.4, "carbs": 89.4}
+		},
+		"warnings": []
+	}`, id, e.now.Format(time.RFC3339), e.bread, foods[0].ID, total, day.DateOf(e.now))
+	checkJSON(t, rec.Body.Bytes(), want)
+
+	// Sent again: the same meal, which is not logged twice.
+	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("a retry: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	checkJSON(t, rec.Body.Bytes(), want)
+	// Other content under the id is another meal.
+	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", strings.Replace(e.lunch(id), "Lunch", "Dinner", 1), e.session, nil)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("another meal under the id: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+}
+
+// A meal logged with a token is the API's; its time, when given, is the
+// user's, and it belongs to their logical day.
+func TestLogMealThroughTheAPI(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	tok, _ := e.in.createToken(t, e.session[0], `{"name":"agent","scopes":["tools"]}`)
+	// 01:30 in Zagreb, before the day's start at 04:00: the day before.
+	eaten := time.Date(2026, 10, 20, 23, 30, 0, 0, time.UTC)
+	body := fmt.Sprintf(`{"id": %q, "eaten_at": %q, "items": [{"name": "Snack", "nutrients": {"kcal": 200, "protein": 5, "carbs": 30, "fat": 6}}]}`,
+		meal.NewIDAt(e.now), eaten.Format(time.RFC3339))
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, nil, bearer(tok.Token))
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"client":"api"`) ||
+		!strings.Contains(rec.Body.String(), `"date":"2026-10-20"`) || !strings.Contains(rec.Body.String(), `"eaten_at":"2026-10-20T23:30:00Z"`) {
+		t.Errorf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// log_meal warns about values that do not add up, and about a meal that
+// looks like one logged minutes before; it stores the meal anyway.
+func TestLogMealWarns(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	body := `{"id": %q, "items": [{"name": "Burger", "nutrients": {"kcal": 300, "protein": 30, "carbs": 50, "fat": 30}}]}`
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(body, meal.NewIDAt(e.now)), e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"code":"atwater"`) {
+		t.Errorf("values that do not add up: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(body, meal.NewIDAt(e.now.Add(time.Minute))), e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"code":"duplicate_meal"`) {
+		t.Errorf("a meal twice: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// log_meal refuses a meal it cannot take, saying why, and stores nothing.
+func TestLogMealRefuses(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	estimate := `{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`
+	for _, tc := range []struct {
+		name, id, items, want string
+	}{
+		{"a version 4 id", "f47ac10b-58cc-4372-a567-0e02b2c3d479", estimate, "not a version 7"},
+		{"an id from days ago", meal.NewIDAt(e.now.Add(-49 * time.Hour)).String(), estimate, "more than a day before"},
+		{"an item of two kinds", meal.NewIDAt(e.now).String(), fmt.Sprintf(`{"food_id": %q, "portions": 1, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, e.bread), "one of"},
+		{"an estimate without its values", meal.NewIDAt(e.now).String(), `{"name": "Soup"}`, "one of"},
+		{"a quantity on an estimate", meal.NewIDAt(e.now).String(), `{"name": "Soup", "portions": 2, "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, "an estimate is the whole plate"},
+		{"a food no one has", meal.NewIDAt(e.now).String(), fmt.Sprintf(`{"food_id": %q, "amount": 50, "unit": "g"}`, meal.NewIDAt(e.now)), "no such food"},
+		{"ml of a food by weight", meal.NewIDAt(e.now).String(), fmt.Sprintf(`{"food_id": %q, "amount": 250, "unit": "ml"}`, e.bread), "ml"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"id": %q, "items": [%s]}`, tc.id, tc.items), e.session, nil)
+			if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("%d %s, want 422 with %q", rec.Code, rec.Body.String(), tc.want)
+			}
+		})
+	}
+	if meals, err := e.in.db.MealsOfDay(t.Context(), e.in.user.ID, day.DateOf(e.now)); err != nil || len(meals) != 0 {
+		t.Errorf("meals = %d, %v; want none", len(meals), err)
+	}
+}
+
+// logged logs body and fails the test unless it is stored.
+func (e mealsEnv) logged(t *testing.T, body string) {
+	t.Helper()
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusCreated {
+		t.Fatalf("log the meal: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// patch sends ops to the meal id.
+func (e mealsEnv) patch(t *testing.T, id, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return e.in.do(t, http.MethodPatch, "/api/v1/meals/"+id, body, e.session, nil)
+}
+
+// update_meal adds, replaces and removes items, and changes the time and
+// the words; an item it does not touch keeps what it brought when logged,
+// though its food was corrected since.
+func TestUpdateMeal(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	toast, pasta, egg := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "description": "Lunch", "items": [
+		{"id": %q, "food_id": %q, "servings": 2, "serving": "slice"},
+		{"id": %q, "name": "Pasta", "nutrients": {"kcal": 600, "protein": 20, "carbs": 90, "fat": 15}}
+	]}`, id, toast, e.bread, pasta))
+	// The bread, corrected since.
+	f, err := e.in.db.FindFoods(t.Context(), e.in.user.ID, "rye", 1)
+	if err != nil || len(f) != 1 {
+		t.Fatalf("the bread: %v, %v", f, err)
+	}
+	f[0].Nutrients.Kcal = 300
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, f[0], e.now); err != nil {
+		t.Fatal(err)
+	}
+
+	add := fmt.Sprintf(`{"op": "add", "item": {"id": %q, "food_id": %q, "servings": 1, "serving": "slice"}}`, egg, e.bread)
+	rec := e.patch(t, id, fmt.Sprintf(`{"description": "Late lunch", "note": "with tea", "ops": [
+		%s,
+		{"op": "replace", "item_id": %q, "item": {"name": "Pasta", "nutrients": {"kcal": 700, "protein": 22, "carbs": 100, "fat": 20}}}
+	]}`, add, pasta))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("an edit: %d %s", rec.Code, rec.Body.String())
+	}
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
+		"meal": {"id": %[1]q, "eaten_at": "*", "description": "Late lunch", "note": "with tea", "client": "web", "total": "*", "items": [
+			{"id": %[2]q, "food_id": %[3]q, "name": "Ana's rye bread", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g",
+			 "nutrients": {"kcal": 207, "protein": 6.8, "carbs": 38.4, "fat": 2.6, "fiber": 4.8}, "source": "user"},
+			{"id": %[4]q, "name": "Pasta", "quantity": {"portions": 1}, "amount": 1, "unit": "portion",
+			 "nutrients": {"kcal": 700, "protein": 22, "carbs": 100, "fat": 20}, "source": "estimate"},
+			{"id": %[5]q, "food_id": %[3]q, "name": "Ana's rye bread", "quantity": {"servings": 1, "serving": "slice"}, "amount": 40, "unit": "g",
+			 "nutrients": {"kcal": 120, "protein": 3.4, "carbs": 19.2, "fat": 1.3, "fiber": 2.4}, "source": "user"}
+		]},
+		"day": "*", "warnings": []
+	}`, id, toast, e.bread, pasta, egg))
+
+	// The add sent again is a retry; another item under its id a conflict.
+	if rec := e.patch(t, id, `{"ops": [`+add+`]}`); rec.Code != http.StatusOK || strings.Count(rec.Body.String(), `"name":"Ana's rye bread"`) != 2 {
+		t.Errorf("the add again: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := e.patch(t, id, `{"ops": [`+strings.Replace(add, `"servings": 1`, `"servings": 3`, 1)+`]}`); rec.Code != http.StatusConflict {
+		t.Errorf("another item under the add's id: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	// A remove, sent again, changes nothing more.
+	remove := fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q}]}`, egg)
+	for range 2 {
+		if rec := e.patch(t, id, remove); rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), egg) {
+			t.Errorf("a remove: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	// Eaten the day before: the meal moves to that day.
+	rec = e.patch(t, id, fmt.Sprintf(`{"eaten_at": %q}`, e.now.Add(-24*time.Hour).Format(time.RFC3339)))
+	if before := day.DateOf(e.now).AddDays(-1).String(); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"date":"`+before+`"`) {
+		t.Errorf("another day: %d %s, want %s", rec.Code, rec.Body.String(), before)
+	}
+}
+
+// update_meal refuses what it cannot do, saying why, and changes nothing.
+func TestUpdateMealRefuses(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	soup := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id, soup))
+	estimate := `{"name": "Bread", "nutrients": {"kcal": 100, "protein": 3, "carbs": 20, "fat": 1}}`
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{"a replace of no item", fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": %s}]}`, meal.NewIDAt(e.now), estimate), "no item"},
+		{"an add without an item", `{"ops": [{"op": "add"}]}`, "an add takes an item"},
+		{"a remove with an item", fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q, "item": %s}]}`, soup, estimate), "a remove takes an item_id"},
+		{"the last item removed", fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q}]}`, soup), "item"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if rec := e.patch(t, id, tc.body); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Errorf("%d %s, want 422 with %q", rec.Code, rec.Body.String(), tc.want)
+			}
+		})
+	}
+	if rec := e.patch(t, meal.NewIDAt(e.now).String(), `{"description": "x"}`); rec.Code != http.StatusNotFound {
+		t.Errorf("a meal that does not exist: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+}
+
+// delete_meal deletes a meal and says where its day stands; its id is not
+// the id of a new meal.
+func TestDeleteMeal(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	body := fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id)
+	e.logged(t, body)
+	rec := e.in.do(t, http.MethodDelete, "/api/v1/meals/"+id, "", e.session, nil)
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{"day": {"date": %q, "status": "open", "type": "training", "training_toggle": true,
+		"total": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}, "target": "*", "remaining": {"kcal": 2100, "protein": 150, "fat": 60, "carbs": 240}}}`, day.DateOf(e.now)))
+	if rec := e.in.do(t, http.MethodDelete, "/api/v1/meals/"+id, "", e.session, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("deleted again: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusConflict {
+		t.Errorf("logged again under its id: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+}
+
+// A meal's id is the user's: another user's meal under the same id is
+// theirs, and logging under it logs one of the user's own.
+func TestLogMealIDsArePerUser(t *testing.T) {
+	t.Parallel()
+
+	e := newIsolationEnv(t, false)
+	body := fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, e.owner.meal)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, nil, bearer(e.other.token.Token)); rec.Code != http.StatusCreated {
+		t.Fatalf("the other's meal under the owner's id: %d %s, want 201", rec.Code, rec.Body.String())
+	}
+	m, err := e.in.db.MealByID(t.Context(), e.owner.user.ID, e.owner.meal)
+	if err != nil || m.Description != e.owner.user.Name+"'s lunch" || len(m.Items) != 2 {
+		t.Errorf("the owner's meal = %+v, %v; want it as it was", m, err)
+	}
+}

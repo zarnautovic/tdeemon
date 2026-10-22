@@ -305,25 +305,36 @@ func (m Meal) Fingerprint() string {
 	// so no two meals write the same text.
 	lines := []string{fmt.Sprintf("%q %q %q %d", m.EatenAt.UTC().Truncate(time.Second).Format(time.RFC3339), m.Description, m.Note, len(m.Items))}
 	for i := range m.Items {
-		it := &m.Items[i]
-		q := it.Quantity
-		line := []string{fmt.Sprintf("%s %v %q %v %q %v %q", it.FoodID, q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Note)}
-		if it.FoodID == uuid.Nil() {
-			n := it.Nutrients
-			line = append(line, fmt.Sprintf("%q %v %v %v %v", it.Name, n.Kcal, n.Protein, n.Carbs, n.Fat))
-			for _, v := range []*float64{n.Fiber, n.SaturatedFat, n.Sugars, n.Salt, n.Polyols, n.Alcohol} {
-				if v == nil {
-					line = append(line, "-")
-				} else {
-					line = append(line, fmt.Sprint(*v))
-				}
-			}
-		}
-		lines = append(lines, strings.Join(line, " "))
+		lines = append(lines, m.Items[i].sent())
 	}
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:])
 }
+
+// sent is what a client sent for the item, as Fingerprint writes it: the
+// food and the quantity, or an estimate's name and values, and the note.
+func (it Item) sent() string {
+	q := it.Quantity
+	line := []string{fmt.Sprintf("%s %v %q %v %q %v %q", it.FoodID, q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Note)}
+	if it.FoodID == uuid.Nil() {
+		n := it.Nutrients
+		line = append(line, fmt.Sprintf("%q %v %v %v %v", it.Name, n.Kcal, n.Protein, n.Carbs, n.Fat))
+		for _, v := range []*float64{n.Fiber, n.SaturatedFat, n.Sugars, n.Salt, n.Polyols, n.Alcohol} {
+			if v == nil {
+				line = append(line, "-")
+			} else {
+				line = append(line, fmt.Sprint(*v))
+			}
+		}
+	}
+	return strings.Join(line, " ")
+}
+
+// SameAs reports whether it and other are what a client sent alike: the
+// same food and quantity, or estimate, and note, whatever their ids or a
+// food corrected since. An "add" of an item the meal has, sent again, is
+// a retry when it is the same.
+func (it Item) SameAs(other Item) bool { return it.sent() == other.sent() }
 
 // Total returns the nutrients of every item of m.
 func (m Meal) Total() food.Nutrients {

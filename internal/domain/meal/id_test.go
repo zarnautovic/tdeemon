@@ -83,3 +83,49 @@ func TestMealClients(t *testing.T) {
 		t.Errorf("client fax: %v", err)
 	}
 }
+
+// Two items are the same when a client sent the same: the food and its
+// quantity, an estimate's name and values, the note; not the id, nor what
+// the server worked out from a food corrected since.
+func TestItemSameAs(t *testing.T) {
+	t.Parallel()
+
+	egg := food.Food{
+		ID: uuid.NewV7(), Name: "Egg", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 143, Protein: 12.6, Carbs: 0.7, Fat: 9.5}, Servings: []food.Serving{{Name: "piece", Amount: 60}},
+	}
+	two, err := meal.FromFood(egg, meal.Quantity{Servings: 2, Serving: "piece"}, "boiled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := two
+	again.ID = uuid.NewV7()
+	egg.Nutrients.Kcal = 150
+	corrected, err := meal.FromFood(egg, meal.Quantity{Servings: 2, Serving: "piece"}, "boiled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	three, err := meal.FromFood(egg, meal.Quantity{Servings: 3, Serving: "piece"}, "boiled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	soup, _ := meal.Estimate("Soup", food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
+	saltier, _ := meal.Estimate("Soup", food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8, Salt: new(2.0)}, "")
+	for _, tc := range []struct {
+		name string
+		a, b meal.Item
+		want bool
+	}{
+		{"another id", two, again, true},
+		{"the food corrected since", two, corrected, true},
+		{"another quantity", two, three, false},
+		{"another note", two, func() meal.Item { i := two; i.Note = "fried"; return i }(), false},
+		{"an estimate", soup, soup, true},
+		{"an estimate's values", soup, saltier, false},
+		{"a food and an estimate", two, soup, false},
+	} {
+		if got := tc.a.SameAs(tc.b); got != tc.want {
+			t.Errorf("%s: SameAs = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

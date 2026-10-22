@@ -5,12 +5,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"testing/iotest"
+	"time"
+	"uuid"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
 // exec runs stmt on the instance's database, to break it for a test.
@@ -48,6 +54,17 @@ func (in *instance) logRecords(t *testing.T) []logRecord {
 		out = append(out, r)
 	}
 	return out
+}
+
+// testNow is the time of a new instance's clock.
+var testNow = time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
+
+// knownFood is the id of a food a case saves, which its body names.
+var knownFood = uuid.MustParse("01a16294-ab09-7d2f-8ab3-53f0c382f162")
+
+// mealOf is the body of log_meal for a meal id of items.
+func mealOf(id uuid.UUID, items ...string) string {
+	return fmt.Sprintf(`{"id": %q, "items": [%s]}`, id, strings.Join(items, ", "))
 }
 
 // route is the path of the operation opID, as the document has it.
@@ -94,22 +111,85 @@ func (in *instance) checkLoggedOnce(t *testing.T, secret string, want logRecord)
 	}
 }
 
+// mealFailCases fail a meal's update and delete at each step that reads
+// or writes.
+func mealFailCases() []failCase {
+	var cases []failCase
+	// A meal's update and delete, at each step that reads or writes.
+	for _, b := range []struct{ name, method, body, stmt, inside string }{
+		{"update-meal, the meal", http.MethodPatch, `{"note": "x"}`, "ALTER TABLE meals RENAME COLUMN note TO gone", "note"},
+		{"update-meal, the change", http.MethodPatch, `{"note": "x"}`, "CREATE TRIGGER refuse BEFORE UPDATE ON meals BEGIN SELECT RAISE(ABORT, 'refused by the test'); END", "refused by the test"},
+		{"update-meal, the day after", http.MethodPatch, `{"note": "x"}`, "ALTER TABLE targets RENAME TO gone", "targets"},
+		{"update-meal, the user's calendar", http.MethodPatch, `{"eaten_at": "2026-10-21T07:00:00Z"}`, "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+		{"delete-meal, the meal", http.MethodDelete, "", "ALTER TABLE meals RENAME COLUMN note TO gone", "note"},
+		{"delete-meal, the delete", http.MethodDelete, "", "CREATE TRIGGER refuse BEFORE DELETE ON meals BEGIN SELECT RAISE(ABORT, 'refused by the test'); END", "refused by the test"},
+		{"delete-meal, the day after", http.MethodDelete, "", "ALTER TABLE targets RENAME TO gone", "targets"},
+	} {
+		cases = append(cases, failCase{
+			name: b.name, op: strings.SplitN(b.name, ",", 2)[0], method: b.method, body: b.body, signedIn: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
+				in.exec(t, b.stmt)
+				return "/api/v1/meals/" + id.String()
+			}, inside: b.inside,
+		})
+	}
+	return cases
+}
+
+// toolFailCases fail the tools that read, at each place they read from.
+func toolFailCases() []failCase {
+	var cases []failCase
+	// The tools read from many places: each read that fails is a 500.
+	for _, b := range []struct{ op, path, stmt, secret string }{
+		{"get-me", "/api/v1/me", "ALTER TABLE users RENAME COLUMN height_cm TO gone", "height_cm"},
+		{"get-me", "/api/v1/me", "ALTER TABLE phases RENAME TO gone", "phases"},
+		{"get-me", "/api/v1/me", "ALTER TABLE targets RENAME TO gone", "targets"},
+		{"get-me", "/api/v1/me", "ALTER TABLE profile_notes RENAME TO gone", "profile_notes"},
+		{"get-me", "/api/v1/me", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
+		{"get-me", "/api/v1/me", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE meals RENAME TO gone", "no such table: meals"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
+		{"get-me", "/api/v1/me", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE targets RENAME TO gone", "targets"},
+		{"get-day", "/api/v1/days/today", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
+		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+		{"get-day", "/api/v1/days/today", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
+	} {
+		cases = append(cases, failCase{
+			name: b.op + ", " + b.secret, op: b.op, method: http.MethodGet, path: b.path, signedIn: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, b.stmt)
+				return ""
+			}, inside: b.secret,
+		})
+	}
+	return cases
+}
+
+// failCase is a request that fails inside the server, and how.
+type failCase struct {
+	name, op, method, path, body string
+	// signedIn sends the request with a session, withToken with an
+	// API token of the ingest scope.
+	signedIn, withToken bool
+	// breakIt makes the operation fail; inside is what the failure
+	// says, which the answer must not.
+	breakIt func(t *testing.T, in *instance, session *http.Cookie) string
+	inside  string
+}
+
 // An operation that fails inside the server answers 500 with no word of
 // what failed, which could name a file, a query or a user; the log has
 // it, once, with the request it came from.
 func TestInternalErrorsStayInTheLog(t *testing.T) {
 	t.Parallel()
 
-	type failCase struct {
-		name, op, method, path, body string
-		// signedIn sends the request with a session, withToken with an
-		// API token of the ingest scope.
-		signedIn, withToken bool
-		// breakIt makes the operation fail; inside is what the failure
-		// says, which the answer must not.
-		breakIt func(t *testing.T, in *instance, session *http.Cookie) string
-		inside  string
-	}
 	cases := []failCase{
 		{
 			op: "login", method: http.MethodPost, path: "/api/v1/auth/login", body: `{"email":"ana@example.com","password":"` + password + `"}`,
@@ -227,6 +307,64 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			}, inside: "meal_items",
 		},
 		{
+			name: "log-meal, the meal of the id", op: "log-meal", method: http.MethodPost, path: "/api/v1/meals", signedIn: true,
+			body: mealOf(meal.NewIDAt(testNow), `{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`),
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "ALTER TABLE meals RENAME COLUMN note TO gone")
+				return ""
+			}, inside: "note",
+		},
+		{
+			name: "log-meal, a food by id", op: "log-meal", method: http.MethodPost, path: "/api/v1/meals", signedIn: true,
+			body: mealOf(meal.NewIDAt(testNow), `{"food_id": "`+knownFood.String()+`", "amount": 50, "unit": "g"}`),
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				f := food.Food{ID: knownFood, Name: "Rye roll", Basis: food.Per100g, Source: food.Label, Nutrients: food.Nutrients{Kcal: 250, Protein: 8, Carbs: 46, Fat: 3}}
+				if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, f, in.clock.Now()); err != nil {
+					t.Fatal(err)
+				}
+				in.exec(t, "ALTER TABLE foods RENAME COLUMN portion_g TO gone")
+				return ""
+			}, inside: "portion_g",
+		},
+		{
+			name: "log-meal, a new food", op: "log-meal", method: http.MethodPost, path: "/api/v1/meals", signedIn: true,
+			body: mealOf(meal.NewIDAt(testNow), `{"food": {"name": "Skyr", "basis": "100g", "source": "label", "nutrients": {"kcal": 63, "protein": 11, "carbs": 4, "fat": 0.2}}, "amount": 150, "unit": "g"}`),
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.failWrites(t, "INSERT", "foods")
+				return ""
+			}, inside: "refused by the test",
+		},
+		{
+			name: "log-meal, the meal", op: "log-meal", method: http.MethodPost, path: "/api/v1/meals", signedIn: true,
+			body: mealOf(meal.NewIDAt(testNow), `{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`),
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.failWrites(t, "INSERT", "meals")
+				return ""
+			}, inside: "refused by the test",
+		},
+		{
+			name: "log-meal, the day after", op: "log-meal", method: http.MethodPost, path: "/api/v1/meals", signedIn: true,
+			body: mealOf(meal.NewIDAt(testNow), `{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`),
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "ALTER TABLE targets RENAME TO gone")
+				return ""
+			}, inside: "targets",
+		},
+		{
+			name: "log-meal, the user's calendar", op: "log-meal", method: http.MethodPost, path: "/api/v1/meals", signedIn: true,
+			body: mealOf(meal.NewIDAt(testNow), `{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`),
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "UPDATE users SET timezone = 'Nowhere/Bogus'")
+				return ""
+			}, inside: "Nowhere/Bogus",
+		},
+		{
 			op: "get-food", method: http.MethodGet, signedIn: true,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
 				t.Helper()
@@ -272,34 +410,8 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			}, inside: "refused by the test",
 		},
 	}
-	// The tools read from many places: each read that fails is a 500.
-	for _, b := range []struct{ op, path, stmt, secret string }{
-		{"get-me", "/api/v1/me", "ALTER TABLE users RENAME COLUMN height_cm TO gone", "height_cm"},
-		{"get-me", "/api/v1/me", "ALTER TABLE phases RENAME TO gone", "phases"},
-		{"get-me", "/api/v1/me", "ALTER TABLE targets RENAME TO gone", "targets"},
-		{"get-me", "/api/v1/me", "ALTER TABLE profile_notes RENAME TO gone", "profile_notes"},
-		{"get-me", "/api/v1/me", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
-		{"get-me", "/api/v1/me", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE meals RENAME TO gone", "no such table: meals"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE metrics RENAME TO gone", "no such table: metrics"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN excluded_reason TO gone", "excluded_reason"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE days RENAME COLUMN training_day TO gone", "training_day"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
-		{"get-me", "/api/v1/me", "ALTER TABLE workout_days RENAME TO gone", "workout_days"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE targets RENAME TO gone", "targets"},
-		{"get-day", "/api/v1/days/today", "ALTER TABLE plan_settings RENAME COLUMN training_weekdays TO gone", "training_weekdays"},
-		{"get-me", "/api/v1/me", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
-		{"get-day", "/api/v1/days/today", "UPDATE users SET timezone = 'Nowhere/Bogus'", "Nowhere/Bogus"},
-	} {
-		cases = append(cases, failCase{
-			name: b.op + ", " + b.secret, op: b.op, method: http.MethodGet, path: b.path, signedIn: true,
-			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
-				t.Helper()
-				in.exec(t, b.stmt)
-				return ""
-			}, inside: b.secret,
-		})
-	}
+	cases = append(cases, mealFailCases()...)
+	cases = append(cases, toolFailCases()...)
 	for _, tc := range cases {
 		name := tc.op
 		if tc.name != "" {

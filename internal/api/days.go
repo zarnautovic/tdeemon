@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
@@ -69,7 +70,7 @@ type mealBody struct {
 	ID          string        `json:"id" format:"uuid"`
 	EatenAt     time.Time     `json:"eaten_at"`
 	Description string        `json:"description"`
-	Client      string        `json:"client" enum:"mcp,chat,web,telegram,import" doc:"What the meal was logged through."`
+	Client      string        `json:"client" enum:"mcp,chat,web,telegram,import,api" doc:"What the meal was logged through: api is the API with a token."`
 	Note        string        `json:"note,omitempty"`
 	Items       []itemBody    `json:"items" nullable:"false"`
 	Total       nutrientsBody `json:"total"`
@@ -106,17 +107,24 @@ type metricBody struct {
 	Source string  `json:"source" enum:"manual,import" doc:"manual is what the user gave, which counts over an import."`
 }
 
-type dayBody struct {
+// DaySummary is where a day stands: its type, its total against the
+// target of that type, and what remains. It is exported so dayBody can
+// embed it: huma describes no field of an unexported embedded struct.
+type DaySummary struct {
 	Date           string         `json:"date" format:"date"`
 	Status         string         `json:"status" enum:"open,complete,excluded" doc:"A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration."`
 	ExcludedReason string         `json:"excluded_reason,omitempty" doc:"Why the user excluded the day."`
 	Type           string         `json:"type" enum:"training,rest" doc:"The day's type, which picks its target."`
 	TrainingToggle *bool          `json:"training_toggle,omitempty" doc:"The check-in's choice of the day's type; absent when the plan's training weekdays decide."`
-	Meals          []mealBody     `json:"meals" nullable:"false" doc:"In the order they were eaten."`
 	Total          nutrientsBody  `json:"total" doc:"What the day's meals add up to."`
 	Target         *dayTargetBody `json:"target,omitempty" doc:"The target of the day's type; absent before the first target."`
 	Remaining      *remainingBody `json:"remaining,omitempty" doc:"What the target leaves after the total; below 0 past it."`
-	Metrics        []metricBody   `json:"metrics" nullable:"false"`
+}
+
+type dayBody struct {
+	DaySummary
+	Meals   []mealBody   `json:"meals" nullable:"false" doc:"In the order they were eaten."`
+	Metrics []metricBody `json:"metrics" nullable:"false"`
 }
 
 // remainingBody is what a day's target leaves after its total, each part
@@ -160,7 +168,7 @@ func (s *sessions) getDay(ctx context.Context, in *dayInput) (*dayOutput, error)
 		return nil, err
 	}
 	now := s.now()
-	cal, d, err := userDay(p, now)
+	_, d, err := userDay(p, now)
 	if err != nil {
 		return nil, internalError("reading the day failed", err)
 	}
@@ -169,17 +177,20 @@ func (s *sessions) getDay(ctx context.Context, in *dayInput) (*dayOutput, error)
 			return nil, huma.Error422UnprocessableEntity("the date: " + err.Error())
 		}
 	}
-	b, err := s.readDay(ctx, p.User.ID, d)
+	b, err := s.readDay(ctx, p, d, now)
 	if err != nil {
 		return nil, internalError("reading the day failed", err)
 	}
-	excluded := b.ExcludedReason != ""
-	b.Status = string(cal.StatusOf(d, now, excluded))
 	return &dayOutput{CacheControl: "no-store", Body: b}, nil
 }
 
-// readDay reads the user's day d, all but its status.
-func (s *sessions) readDay(ctx context.Context, userID uuid.UUID, d day.Date) (dayBody, error) {
+// readDay reads the day d of p's user, as it stands at now.
+func (s *sessions) readDay(ctx context.Context, p auth.Principal, d day.Date, now time.Time) (dayBody, error) {
+	cal, _, err := userDay(p, now)
+	if err != nil {
+		return dayBody{}, err
+	}
+	userID := p.User.ID
 	b := dayBody{Date: d.String(), Meals: []mealBody{}, Metrics: []metricBody{}}
 	meals, err := s.db.MealsOfDay(ctx, userID, d)
 	if err != nil {
@@ -216,5 +227,6 @@ func (s *sessions) readDay(ctx context.Context, userID uuid.UUID, d day.Date) (d
 		b.Target = &target
 		b.Remaining = new(newRemainingBody(t, total))
 	}
+	b.Status = string(cal.StatusOf(d, now, b.ExcludedReason != ""))
 	return b, nil
 }
