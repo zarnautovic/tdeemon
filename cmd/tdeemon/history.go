@@ -90,8 +90,8 @@ func printReport(out io.Writer, u user.User, r history.Report, dryRun bool) erro
 	if dryRun {
 		verb = "Would import (a dry run, nothing written)"
 	}
-	fmt.Fprintf(&b, "%s for %s, whose days start at %02d:00 in %s: %d days, %d metric values, %d meals, of them %d rests of a day; %d days excluded for their remark.\n",
-		verb, u.Email, u.DayStartHour, u.TimeZone, r.Days, r.Metrics, r.Meals, r.Rests, r.Excluded)
+	fmt.Fprintf(&b, "%s for %s, whose days start at %02d:00 in %s: %d days, %d metric values, %d meals, of them %d rests of a day; %d days excluded.\n",
+		verb, u.Email, u.DayStartHour, u.TimeZone, r.Days, r.Metrics, r.Meals, r.Rests, len(r.Excluded))
 	list := func(title string, lines []string) {
 		if len(lines) == 0 {
 			return

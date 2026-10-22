@@ -56,7 +56,7 @@ func TestImportHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(dry.String(), "Would import (a dry run, nothing written) for ana@example.com, whose days start at 04:00 in Europe/Zagreb: "+
-		"2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded for their remark.") {
+		"2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded.") {
 		t.Errorf("the dry run said:\n%s", dry.String())
 	}
 	if n := mealsOn(t, dbPath, "ana@example.com", day.Date{Year: 2026, Month: 9, Day: 1}); n != 0 {
@@ -68,7 +68,7 @@ func TestImportHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"Imported for ana@example.com, whose days start at 04:00 in Europe/Zagreb: 2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded",
+		"Imported for ana@example.com, whose days start at 04:00 in Europe/Zagreb: 2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded.",
 		"Values left out (1):\n  2026-09-01 sleep_h: sleep_h 30: want 0 to 24 h",
 		"Days whose meals have more kcal than the day's total, kept without a rest (1):\n  2026-09-02",
 		"Meals renamed (1):\n  2026-09-02: aaa",

@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -183,8 +184,9 @@ type Report struct {
 	// Meals counts the meals the history holds, created now or by a run
 	// before; Rests the estimates of a day's rest among them.
 	Meals, Rests int
-	// Excluded counts the days excluded for their remark.
-	Excluded int
+	// Excluded are the days excluded, each with why: a remark, or no
+	// intake.
+	Excluded []string
 	// Rejected are the values left out, by their rule.
 	Rejected []ingest.Rejected
 	// Over are the days whose meals have more kcal than the day's total;
@@ -239,24 +241,28 @@ func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time
 		if err != nil {
 			continue
 		}
-		if err := importMeals(ctx, db, u.ID, cal, date, d, now, dryRun, &r); err != nil {
+		meals, err := importMeals(ctx, db, u.ID, cal, date, d, now, dryRun, &r)
+		if err != nil {
 			return r, err
 		}
-		if err := exclude(ctx, db, u.ID, date, d, now, dryRun, &r); err != nil {
+		if err := exclude(ctx, db, u.ID, cal, date, d, meals, now, dryRun, &r); err != nil {
 			return r, err
 		}
 	}
 	return r, nil
 }
 
-// exclude excludes date for its remark, if it has one.
-func exclude(ctx context.Context, db *store.DB, userID uuid.UUID, date day.Date, d Day, now time.Time, dryRun bool, r *Report) error {
-	reason := exclusionReason(d, r)
-	if reason == "" {
-		return nil
+// exclude excludes date for its remark, or as a day without intake, if
+// it is one of those.
+func exclude(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Calendar, date day.Date, d Day, meals int, now time.Time,
+	dryRun bool, r *Report,
+) error {
+	reason, err := exclusionReason(ctx, db, userID, cal, date, d, meals, now)
+	if err != nil || reason == "" {
+		return err
 	}
-	// A day excluded or included before, by an import before or by the
-	// user, stays as it is.
+	// A day excluded before, by a run before or by the user, and included
+	// since or not, stays as it is.
 	decided, err := db.DayExclusionRecorded(ctx, userID, date)
 	if err != nil {
 		return err
@@ -267,80 +273,67 @@ func exclude(ctx context.Context, db *store.DB, userID uuid.UUID, date day.Date,
 			return err
 		}
 		if ex[date].Reason != reason {
-			r.Skipped = append(r.Skipped, fmt.Sprintf("%s: in or out of calibration as decided since an import before, which stays", date))
+			r.Skipped = append(r.Skipped, fmt.Sprintf("%s: in or out of calibration as decided before, which stays", date))
 		}
 		return nil
 	}
-	r.Excluded++
+	fitted, replaced := fitName(reason, day.MaxReasonLen, "Remark of the predecessor's note")
+	if replaced && fitted == "Remark of the predecessor's note" {
+		r.Renamed = append(r.Renamed, d.Date+": a remark that is no reason, replaced")
+	}
+	r.Excluded = append(r.Excluded, d.Date+": "+fitted)
 	if dryRun {
 		return nil
 	}
-	if err := db.ExcludeDay(ctx, userID, Actor, date, day.Exclusion{Reason: reason}, now); err != nil {
+	if err := db.ExcludeDay(ctx, userID, Actor, date, day.Exclusion{Reason: fitted}, now); err != nil {
 		return fmt.Errorf("excluding %s: %w", date, err)
 	}
 	return nil
 }
 
-// NoIntakeReason excludes a day of the predecessor's without intake: no
-// total and no meal, as its calibration left such a day out too.
-const NoIntakeReason = "No intake logged in the predecessor"
+// Why a day is excluded that has no intake: none in the note, or none
+// that could be imported.
+const (
+	NoIntakeReason     = "No intake logged in the predecessor"
+	UnimportableReason = "Intake of the predecessor not importable"
+)
 
-// exclusionReason returns why d is out of calibration, or "": its remark,
-// its spaces joined and cut to a reason's length (reported when it had to
-// be replaced), or no intake logged.
-func exclusionReason(d Day, r *Report) string {
+// exclusionReason returns why date is out of calibration, or "": its
+// remark, its spaces joined; else, when the day has no meal after the
+// import (meals), it is over, and the user logged none of their own in
+// tdeemon, no intake.
+func exclusionReason(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Calendar, date day.Date, d Day, meals int,
+	now time.Time,
+) (string, error) {
 	if remark := strings.Join(strings.Fields(d.Remark), " "); remark != "" {
-		reason, changed := fitName(remark, day.MaxReasonLen, "Remark of the predecessor's note")
-		if changed && reason == "Remark of the predecessor's note" {
-			r.Renamed = append(r.Renamed, d.Date+": a remark that is no reason, replaced")
-		}
-		return reason
+		return remark, nil
 	}
-	if (d.Total == nil || d.Total.Kcal <= 0) && len(d.Meals) == 0 {
-		return NoIntakeReason
+	if meals > 0 || now.Before(cal.End(date)) {
+		return "", nil
 	}
-	return ""
+	own, err := db.MealsOfDay(ctx, userID, date)
+	if err != nil || len(own) > 0 {
+		return "", err
+	}
+	if len(d.Meals) > 0 || d.Total != nil && d.Total.Kcal > 0 {
+		return UnimportableReason, nil
+	}
+	return NoIntakeReason, nil
 }
 
 // importMeals writes a day's meals, and the estimate of its rest when its
-// total was more than its meals.
+// total was more than its meals, and returns how many it gives the day:
+// written now, by a run before, or deleted since by the user, who decided
+// the day then.
 func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Calendar, date day.Date, d Day, now time.Time,
 	dryRun bool, r *Report,
-) error {
-	var sum food.Nutrients
-	ms := make([]meal.Meal, 0, len(d.Meals)+1)
-	for i, m := range d.Meals {
-		desc, renamed := fitName(m.Description, meal.MaxNameLen, "Meal")
-		if renamed {
-			r.Renamed = append(r.Renamed, d.Date+": "+desc)
-		}
-		item, err := meal.Estimate(desc, m.Nutrients, "")
-		if err != nil {
-			r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: %v", d.Date, desc, err))
-			continue
-		}
-		sum = add(sum, m.Nutrients)
-		ms = append(ms, meal.Meal{
-			ID: mealID(userID, date, strconv.Itoa(i)), EatenAt: eatenAt(cal, date, m.Time), Day: date,
-			Description: desc, Client: meal.ClientImport, Items: []meal.Item{item},
-		})
-	}
-	if d.Total != nil {
-		rest, over := restOf(*d.Total, sum)
-		if over {
-			r.Over = append(r.Over, d.Date)
-		}
-		if rest != nil {
-			item, err := meal.Estimate(RestName, *rest, "")
-			if err != nil {
-				r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: %v", d.Date, RestName, err))
-			} else {
-				ms = append(ms, meal.Meal{
-					ID: mealID(userID, date, "rest"), EatenAt: cal.End(date).Add(-time.Minute), Day: date,
-					Description: RestName, Client: meal.ClientImport, Items: []meal.Item{item},
-				})
-				r.Rests++
-			}
+) (int, error) {
+	ms := buildMeals(userID, cal, date, d, r)
+	if d.Total != nil && !slices.ContainsFunc(ms, func(m meal.Meal) bool { return m.Description == RestName }) && !dryRun {
+		// A rest a run before wrote stays, though the meals reach the
+		// total now.
+		if _, err := db.MealByID(ctx, userID, mealID(userID, date, "rest")); err == nil {
+			r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: of a run before, stays though the meals reach the total now", d.Date, RestName))
 		}
 	}
 	for i := range ms {
@@ -360,10 +353,53 @@ func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Ca
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("a meal of %s: %w", d.Date, err)
+			return 0, fmt.Errorf("a meal of %s: %w", d.Date, err)
 		}
 	}
-	return nil
+	return len(ms), nil
+}
+
+// buildMeals returns the meals of a day's note, and the estimate of its
+// rest when its total was more than its meals.
+func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, r *Report) []meal.Meal {
+	var sum food.Nutrients
+	ms := make([]meal.Meal, 0, len(d.Meals)+1)
+	for i, m := range d.Meals {
+		desc, renamed := fitName(m.Description, meal.MaxNameLen, "Meal")
+		if renamed {
+			r.Renamed = append(r.Renamed, d.Date+": "+desc)
+		}
+		item, err := meal.Estimate(desc, m.Nutrients, "")
+		if err != nil {
+			r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: %v", d.Date, desc, err))
+			continue
+		}
+		sum = add(sum, m.Nutrients)
+		ms = append(ms, meal.Meal{
+			ID: mealID(userID, date, strconv.Itoa(i)), EatenAt: eatenAt(cal, date, m.Time), Day: date,
+			Description: desc, Client: meal.ClientImport, Items: []meal.Item{item},
+		})
+	}
+	if d.Total == nil {
+		return ms
+	}
+	rest, over := restOf(*d.Total, sum)
+	if over {
+		r.Over = append(r.Over, d.Date)
+	}
+	if rest == nil {
+		return ms
+	}
+	item, err := meal.Estimate(RestName, *rest, "")
+	if err != nil {
+		r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: %v", d.Date, RestName, err))
+		return ms
+	}
+	r.Rests++
+	return append(ms, meal.Meal{
+		ID: mealID(userID, date, "rest"), EatenAt: cal.End(date).Add(-time.Minute), Day: date,
+		Description: RestName, Client: meal.ClientImport, Items: []meal.Item{item},
+	})
 }
 
 // restOf returns what total holds beyond sum, each part at least 0 (a

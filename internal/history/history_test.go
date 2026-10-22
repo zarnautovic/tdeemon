@@ -167,7 +167,7 @@ func TestImportReport(t *testing.T) {
 	t.Parallel()
 
 	_, _, r := imported(t)
-	if r.Days != 4 || r.Metrics != 6 || r.Meals != 7 || r.Rests != 1 || r.Excluded != 2 || len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep ||
+	if r.Days != 4 || r.Metrics != 6 || r.Meals != 7 || r.Rests != 1 || len(r.Excluded) != 2 || len(r.Rejected) != 1 || r.Rejected[0].Kind != metric.Sleep ||
 		!slices.Equal(r.Over, []string{"2026-09-02"}) || len(r.Skipped) != 1 || !strings.Contains(r.Skipped[0], "1. 9. 2026.") {
 		t.Errorf("report = %+v", r)
 	}
@@ -447,11 +447,12 @@ func TestImportExclusions(t *testing.T) {
 		{Date: "2026-09-17", Metrics: map[string]float64{}, Total: &food.Nutrients{Kcal: 1800}},
 	}
 	dry, err := history.Import(t.Context(), db, u, days, now, true)
-	if err != nil || dry.Excluded != 5 {
+	if err != nil || len(dry.Excluded) != 5 {
 		t.Fatalf("the dry run = %+v, %v", dry, err)
 	}
 	r, err := history.Import(t.Context(), db, u, days, now, false)
-	if err != nil || r.Excluded != 5 || len(r.Renamed) != 1 || !strings.Contains(r.Renamed[0], "2026-09-14") {
+	if err != nil || len(r.Excluded) != 5 || r.Excluded[0] != "2026-09-11: Birthday dinner with friends" || len(r.Renamed) != 1 ||
+		!strings.Contains(r.Renamed[0], "2026-09-14") {
 		t.Fatalf("report = %+v, %v", r, err)
 	}
 	d := day.Date{Year: 2026, Month: 9, Day: 11}
@@ -498,7 +499,7 @@ func TestImportExclusionsAgain(t *testing.T) {
 	}
 	before, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
 	r, err := history.Import(t.Context(), db, u, days, now, false)
-	if err != nil || r.Excluded != 0 || len(r.Skipped) != 2 {
+	if err != nil || len(r.Excluded) != 0 || len(r.Skipped) != 2 {
 		t.Fatalf("the run again = %+v, %v", r, err)
 	}
 	after, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
@@ -525,5 +526,81 @@ func TestImportChangedSince(t *testing.T) {
 	r, err := history.Import(t.Context(), db, u, days, now, false)
 	if err != nil || r.Meals != 7 || !slices.ContainsFunc(r.Skipped, func(s string) bool { return strings.Contains(s, "differs from an import before") }) {
 		t.Errorf("the run in another zone = %+v, %v", r, err)
+	}
+}
+
+// No intake excludes a day that is over and has no meal, the user's own
+// included: today stays in, a day with a meal logged in tdeemon stays in,
+// and a day whose intake could not be imported is excluded as such.
+func TestImportNoIntake(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	d := day.Date{Year: 2026, Month: 10, Day: 20}
+	mine := meal.Meal{
+		ID: uuid.NewV7(), EatenAt: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC), Day: d, Description: "Logged in tdeemon",
+		Client: meal.ClientWeb, Items: []meal.Item{estimate(t, "Soup", 700)},
+	}
+	if _, _, err := db.CreateMeal(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, mine, now); err != nil {
+		t.Fatal(err)
+	}
+	days := []history.Day{
+		{Date: "2026-10-20", Metrics: map[string]float64{"weight": 80}},
+		{Date: "2026-10-21", Metrics: map[string]float64{"weight": 80}, Total: &food.Nutrients{Kcal: 20000}},
+		{Date: "2026-10-22", Metrics: map[string]float64{"weight": 80}},
+	}
+	r, err := history.Import(t.Context(), db, u, days, now, false)
+	if err != nil || !slices.Equal(r.Excluded, []string{"2026-10-21: " + history.UnimportableReason}) {
+		t.Errorf("excluded = %q, %v; want only the day whose intake did not import", r.Excluded, err)
+	}
+}
+
+// A rest a run before wrote stays when the note's meals reach its total
+// now, and the run says so.
+func TestImportRestOfARunBefore(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	days := []history.Day{{
+		Date: "2026-09-21", Metrics: map[string]float64{}, Total: &food.Nutrients{Kcal: 900},
+		Meals: []history.Meal{{Time: "12:00", Description: "Lunch", Nutrients: kcal(500)}},
+	}}
+	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+		t.Fatal(err)
+	}
+	days[0].Meals = append(days[0].Meals, history.Meal{Time: "19:00", Description: "Dinner", Nutrients: kcal(400)})
+	r, err := history.Import(t.Context(), db, u, days, now, false)
+	if err != nil || !slices.ContainsFunc(r.Skipped, func(s string) bool { return strings.Contains(s, "stays though the meals reach the total") }) {
+		t.Errorf("report = %+v, %v", r, err)
+	}
+}
+
+func estimate(t *testing.T, name string, n float64) meal.Item {
+	t.Helper()
+	item, err := meal.Estimate(name, kcal(n), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return item
+}
+
+// A day whose imported meals the user deleted stays in calibration on a
+// run again: they decided the day.
+func TestImportDeletedMealsLeaveTheDay(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	days := []history.Day{{Date: "2026-09-22", Metrics: map[string]float64{}, Meals: []history.Meal{{Time: "12:00", Description: "Lunch", Nutrients: kcal(500)}}}}
+	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+		t.Fatal(err)
+	}
+	d := day.Date{Year: 2026, Month: 9, Day: 22}
+	ms, _ := db.MealsOfDay(t.Context(), u.ID, d)
+	if err := db.DeleteMeal(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, ms[0].ID, now); err != nil {
+		t.Fatal(err)
+	}
+	r, err := history.Import(t.Context(), db, u, days, now, false)
+	if ex, _ := db.Exclusions(t.Context(), u.ID, d, d); err != nil || len(r.Excluded) != 0 || len(ex) != 0 {
+		t.Errorf("the run again = %+v, %v; exclusions %+v", r, err, ex)
 	}
 }
