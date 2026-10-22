@@ -89,7 +89,7 @@ func TestMCPListsTheTools(t *testing.T) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
 			readOnly := slices.Contains([]string{"get_profile", "get_day", "find_foods", "get_food"}, tl.Name)
-			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin"}, tl.Name)
+			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last"}, tl.Name)
 			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive || tl.Description == "" {
 				t.Errorf("%s: annotations %+v, description %q", tl.Name, tl.Annotations, tl.Description)
 			}

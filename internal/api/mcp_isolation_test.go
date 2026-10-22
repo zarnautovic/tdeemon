@@ -9,6 +9,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
@@ -97,6 +98,9 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 			return map[string]any{"kind": "weight", "value": 77.3}
 		}, nil),
 		"delete_metric": mcpWorks("delete_metric", func(isolationEnv) map[string]any { return map[string]any{"kind": "weight"} }, nil),
+		"undo_last": mcpWorks("undo_last", func(e isolationEnv) map[string]any {
+			return map[string]any{"id": clientid.NewAt(e.in.clock.Now()).String()}
+		}, nil),
 		"checkin": mcpWorks("checkin", func(isolationEnv) map[string]any {
 			return map[string]any{"mood": 2, "note": "a quiet day", "training_day": "rest", "excluded_reason": "sick"}
 		}, nil),

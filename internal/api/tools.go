@@ -127,7 +127,7 @@ func (s *sessions) tools() []tool {
 				"A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, " +
 				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
-		}, s.undoLast),
+		}, s.undoLast).destroys(),
 		newTool("find_foods", readScopes, huma.Operation{
 			OperationID: "find-foods",
 			Method:      http.MethodGet,
