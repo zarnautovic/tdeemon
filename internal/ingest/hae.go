@@ -73,8 +73,11 @@ type haePoint struct {
 	Deep       *float64 `json:"deep"`
 	Rem        *float64 `json:"rem"`
 	// Value names the stage of a sleep segment, in an export HAE does not
-	// summarize; a segment is no night.
-	Value *string `json:"value"`
+	// summarize; a segment is no night, and may have its start and end
+	// alone.
+	Value     *string `json:"value"`
+	StartDate string  `json:"startDate"`
+	EndDate   string  `json:"endDate"`
 }
 
 // sample is a value at an instant; at is zero when the point gives a date
@@ -84,8 +87,15 @@ type sample struct {
 	v  float64
 }
 
-// haeTime is the form of HAE's dates.
-const haeTime = "2006-01-02 15:04:05 -0700"
+// haeTimes are the forms of HAE's dates: its own, and the forms a phone's
+// clock settings may give it.
+var haeTimes = []string{
+	"2006-01-02 15:04:05 -0700",
+	"2006-01-02 15:04 -0700",
+	"2006-01-02 3:04:05 PM -0700",
+	"2006-01-02 3:04 PM -0700",
+	time.RFC3339,
+}
 
 // ParseHAE reads a Health Auto Export payload (REST API automation, JSON).
 // A value belongs to the calendar date of its point, as HAE gives it: a
@@ -128,6 +138,9 @@ type collector struct {
 	samples map[day.Date]map[metric.Kind][]sample
 	ignored map[string]bool
 	bad     []Rejected
+	// staged is set once a sleep stage is left out: a night has dozens,
+	// and one says what to turn on.
+	staged bool
 }
 
 // metric reads the points of m, each checked on its own before a day's
@@ -163,10 +176,13 @@ func (c *collector) point(k metric.Kind, conv func(float64) float64, raw json.Ra
 		return
 	}
 	if k == metric.Sleep && pt.Value != nil {
-		c.bad = append(c.bad, Rejected{
-			Kind: k, RawDate: pt.Date,
-			Reason: "a sleep stage (" + *pt.Value + "), not a night: turn on Summarize Data in Health Auto Export",
-		})
+		if !c.staged {
+			c.staged = true
+			c.bad = append(c.bad, Rejected{
+				Kind: k, RawDate: cmp.Or(pt.Date, pt.EndDate, pt.StartDate),
+				Reason: "sleep stages (" + *pt.Value + " and the others), not nights: turn on Summarize Data in Health Auto Export",
+			})
+		}
 		return
 	}
 	v, ok := pt.value(k)
@@ -233,7 +249,7 @@ func pointDate(s string) (day.Date, time.Time, error) {
 	if err != nil {
 		return day.Date{}, time.Time{}, fmt.Errorf("date %q: want 2006-01-02 15:04:05 -0700", s)
 	}
-	for _, layout := range []string{haeTime, time.RFC3339} {
+	for _, layout := range haeTimes {
 		if t, err := time.Parse(layout, s); err == nil {
 			return d, t, nil
 		}
@@ -311,12 +327,38 @@ func pick(kinds map[metric.Kind][]sample) map[metric.Kind]float64 {
 	return out
 }
 
-func earliest(ss []sample) sample {
-	return slices.MinFunc(ss, func(a, b sample) int { return a.at.Compare(b.at) })
+// byTime orders samples by their time, those without one after: a point
+// whose time does not read is no earlier than one whose time does.
+func byTime(a, b sample) int {
+	switch {
+	case a.at.IsZero() || b.at.IsZero():
+		return cmp.Compare(btoi(a.at.IsZero()), btoi(b.at.IsZero()))
+	default:
+		return a.at.Compare(b.at)
+	}
 }
 
+func btoi(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// earliest returns the first sample in time, the first listed of those as
+// early.
+func earliest(ss []sample) sample { return slices.MinFunc(ss, byTime) }
+
+// latest returns the last sample in time, the last listed of those as
+// late.
 func latest(ss []sample) sample {
-	return slices.MaxFunc(ss, func(a, b sample) int { return a.at.Compare(b.at) })
+	out := ss[0]
+	for _, s := range ss[1:] {
+		if byTime(s, out) >= 0 {
+			out = s
+		}
+	}
+	return out
 }
 
 // nearest returns the sample nearest in time to t, the earliest of those

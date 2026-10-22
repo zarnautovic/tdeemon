@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
@@ -315,6 +316,18 @@ func TestParseHAERefusesAValueAlone(t *testing.T) {
 	}
 }
 
+// A point left out has its value in the kind's unit.
+func TestParseHAERejectsInTheKindsUnit(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "lean_body_mass", "units": "lb", "data": [{"date": "the 21st", "qty": 140}]}
+	]}}`)
+	if len(r.Rejected) != 1 || !near(r.Rejected[0].Value, 140*0.45359237) {
+		t.Errorf("Rejected = %+v, want the value in kg", r.Rejected)
+	}
+}
+
 // A point dated without a time belongs to that date.
 func TestParseHAEDateAlone(t *testing.T) {
 	t.Parallel()
@@ -329,9 +342,10 @@ func TestParseHAEDateAlone(t *testing.T) {
 	if got, _ := valueOf(t, r, "2026-10-21", metric.Weight); got != 80.5 {
 		t.Errorf("weight = %v", got)
 	}
-	// The weighing has no time, so body fat is the earliest of its own.
-	if got, _ := valueOf(t, r, "2026-10-21", metric.BodyFat); got != 21 {
-		t.Errorf("body fat = %v, want 21", got)
+	// The weighing has no time, so body fat is the earliest of its own:
+	// the one with a time, since one without may be later.
+	if got, _ := valueOf(t, r, "2026-10-21", metric.BodyFat); got != 22 {
+		t.Errorf("body fat = %v, want 22", got)
 	}
 }
 
@@ -521,6 +535,80 @@ func TestParseHAESleepSegment(t *testing.T) {
 	}
 	if len(r.Rejected) != 1 || !strings.Contains(r.Rejected[0].Reason, "turn on Summarize Data") || r.Rejected[0].RawDate != "2026-10-21 02:00:00 +0200" {
 		t.Errorf("Rejected = %+v", r.Rejected)
+	}
+}
+
+// A night in stages is left out once, dated by the first stage's end when
+// it has no date.
+func TestParseHAESleepStages(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [{"name": "sleep_analysis", "units": "hr", "data": [
+		{"startDate": "2026-10-20 23:40:00 +0200", "endDate": "2026-10-21 01:00:00 +0200", "qty": 1.33, "value": "Core"},
+		{"startDate": "2026-10-21 01:00:00 +0200", "endDate": "2026-10-21 01:40:00 +0200", "qty": 0.67, "value": "Deep"},
+		{"startDate": "2026-10-21 01:40:00 +0200", "qty": 0.5, "value": "REM"}
+	]}]}}`)
+	if len(r.Rejected) != 1 || r.Rejected[0].RawDate != "2026-10-21 01:00:00 +0200" || len(r.Days) != 0 {
+		t.Errorf("Result = %+v, want the stages left out once", r)
+	}
+	r = parseHAE(t, `{"data": {"metrics": [{"name": "sleep_analysis", "units": "hr", "data": [
+		{"startDate": "2026-10-21 01:40:00 +0200", "qty": 0.5, "value": "REM"}
+	]}]}}`)
+	if len(r.Rejected) != 1 || r.Rejected[0].RawDate != "2026-10-21 01:40:00 +0200" {
+		t.Errorf("Rejected = %+v, want the start for a date", r.Rejected)
+	}
+}
+
+// The times a phone's clock settings give HAE read, and a point whose time
+// does not read is neither the earliest nor, over one whose time does,
+// the latest... unless all are alike, when the order listed decides.
+func TestParseHAETimes(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "resting_heart_rate", "units": "bpm", "data": [
+			{"date": "2026-10-21 11:00:00 PM +0200", "qty": 52},
+			{"date": "2026-10-21 8:00:00 AM +0200", "qty": 57},
+			{"date": "2026-10-22 00:00:00 +0200", "qty": 60},
+			{"date": "2026-10-22 00:00:00 +0200", "qty": 61}
+		]},
+		{"name": "weight_body_mass", "units": "kg", "data": [
+			{"date": "2026-10-21 7:00:00 PM +0200", "qty": 81},
+			{"date": "2026-10-21 7:00 AM +0200", "qty": 80},
+			{"date": "2026-10-22 at seven", "qty": 79},
+			{"date": "2026-10-22 21:00 +0200", "qty": 82},
+			{"date": "2026-10-23 at seven", "qty": 78},
+			{"date": "2026-10-23 at nine", "qty": 77}
+		]}
+	]}}`)
+	for _, c := range []struct {
+		date string
+		kind metric.Kind
+		want float64
+	}{
+		{"2026-10-21", metric.RestingHR, 52},
+		{"2026-10-22", metric.RestingHR, 61},
+		{"2026-10-21", metric.Weight, 80},
+		{"2026-10-22", metric.Weight, 82},
+		{"2026-10-23", metric.Weight, 78},
+	} {
+		if got, ok := valueOf(t, r, c.date, c.kind); !ok || got != c.want {
+			t.Errorf("%s %s = %v, %v; want %v", c.date, c.kind, got, ok, c.want)
+		}
+	}
+}
+
+// Of samples whose times do not read, the latest is the last listed, and
+// one whose time reads comes before.
+func TestLatest(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 7, 0, 0, 0, time.UTC)
+	if got := latest([]sample{{time.Time{}, 1}, {at, 2}, {time.Time{}, 3}}); got.v != 3 {
+		t.Errorf("latest = %v, want 3", got.v)
+	}
+	if got := latest([]sample{{at, 1}, {at.Add(-time.Hour), 2}}); got.v != 1 {
+		t.Errorf("latest = %v, want 1", got.v)
 	}
 }
 

@@ -21,10 +21,14 @@ type Day struct {
 	Values []metric.Value
 }
 
-// Rejected is what a payload gives that is left out: a value that breaks
-// its kind's rule (metric.Value.Validate), in the kind's unit; a point
-// whose date does not read, with the date as written (RawDate) and the
-// zero Date; a point or a metric that does not read at all, with neither.
+// Rejected is what a payload gives that is left out:
+//   - a value that breaks its kind's rule (metric.Value.Validate), with its
+//     Date, in the kind's unit;
+//   - a point whose date does not read, with the date as written (RawDate),
+//     the zero Date and its value in the kind's unit;
+//   - a source's sleep stages, once, with the first one's date as written;
+//   - a point or a metric that does not read at all, or a metric in a unit
+//     its kind does not take, with no date and no value.
 type Rejected struct {
 	Date    day.Date
 	RawDate string
