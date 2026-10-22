@@ -89,6 +89,20 @@ type Params struct {
 	// a user may tighten: a caller takes them from the user's limits.
 	LoggedDays float64
 	WeighIns   float64
+	// TolerancePctWeek is how far, in % of the trend weight a week, the
+	// measured rate may lie from the phase's target and be on it.
+	TolerancePctWeek float64
+	// StepsChange is the share by which the last 7 days' steps may differ
+	// from the days before them before the verdict holds the kcal: the
+	// change is the activity's, not the metabolism's.
+	StepsChange float64
+	// LeanLossKgWeek is the loss of lean mass, in kg a week, at which a
+	// cut or a recomp raises protein or calories instead of cutting.
+	LeanLossKgWeek float64
+	// DriftShare is how far the trend weight may stray from the one a
+	// maintenance phase started with, as a share of it, before the
+	// summary flags the phase drifting.
+	DriftShare float64
 }
 
 // The settings are checked when they become a user's (P1); until then
@@ -97,7 +111,10 @@ type Params struct {
 // DefaultParams returns the settings of DESIGN.md §7: a window of 42
 // days with at least 14 left after a phase's first 14, a trend that takes
 // a tenth a day, and trust at an interval of ±200 kcal or narrower with
-// the data an autopilot step needs (docs/limits.md). A window of 28 days
+// the data an autopilot step needs (docs/limits.md); a verdict that
+// tolerates ±0.1 % a week around the target, holds at steps 30 % off,
+// and turns at a lean loss of 0.5 kg a week; and a maintenance phase
+// that drifts at 3 %. A window of 28 days
 // swung with water the weight held for weeks, as after a change of
 // training.
 func DefaultParams() Params {
@@ -105,6 +122,7 @@ func DefaultParams() Params {
 	return Params{
 		WindowDays: 42, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
 		TrustedKcal: 200, LoggedDays: l.LoggedDays, WeighIns: l.WeighIns,
+		TolerancePctWeek: 0.1, StepsChange: 0.3, LeanLossKgWeek: 0.5, DriftShare: 0.03,
 	}
 }
 
@@ -122,6 +140,10 @@ type Day struct {
 	// WeightKg is the day's weigh-in, 0 for none. A value that is no
 	// number, or an infinite one, counts as none, as does such a Kcal.
 	WeightKg float64
+	// Steps, BodyFatPct, LeanMassKg and ActiveKcal are the day's other
+	// measurements the verdict's guards and the limits read, 0 for none,
+	// with the same rules.
+	Steps, BodyFatPct, LeanMassKg, ActiveKcal float64
 }
 
 // Estimate is the TDEE measured over a span of days, the window.
@@ -148,6 +170,14 @@ type Estimate struct {
 	// last weigh-in it took, which says how old it is.
 	TrendKg   float64
 	TrendDate day.Date
+	// PhaseStartTrendKg is the trend weight on the day the current phase
+	// started, 0 without a phase or a weigh-in before it.
+	PhaseStartTrendKg float64
+	// Body is what the window says of the body besides the weight, for
+	// the verdict's guards, and Now what the 7 days up to the last day
+	// asked for say, whatever the window, for the limits.
+	Body Body
+	Now  Now
 	// Measured is false when the window holds too little for an estimate:
 	// only the fields above are set, and Doubts say what is missing.
 	Measured bool
@@ -219,6 +249,11 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 		}
 	}
 	e.TrendKg, e.TrendDate = trendOn(days, last, p.TrendAlpha)
+	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
+		e.PhaseStartTrendKg, _ = trendOn(days, ph.Start, p.TrendAlpha)
+	}
+	e.Body = bodyOf(days, e.From, e.To)
+	e.Now = nowOf(days, last)
 	return e
 }
 

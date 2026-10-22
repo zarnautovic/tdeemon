@@ -170,9 +170,10 @@ The protein a phase starts with, between the floor and the ceiling:
 - **Maintenance:** the target rate is 0; a phase with another rate is a
   cut, a bulk or a recomp. How far the trend may stray is calibration's
   (DESIGN.md §7): its verdict tolerates ±0.1 % a week around the target
-  (a convention), and a trend more than 3 % from the one the phase
-  started with shows in the summary as the phase drifting (Stevens et
-  al. define maintenance as a change of less than 3 %). The raw weight
+  (a convention), as it does for every phase, and a trend more than 3 %
+  from the one the phase started with shows in the summary as the phase
+  drifting (Stevens et al. define maintenance as a change of less than
+  3 %). The raw weight
   swings by about 0.35 % within a week (Turicchi et al.); the trend
   smooths that out.
 - **Protein:** every g/kg value here is per kg of body weight, as in its
