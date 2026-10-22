@@ -58,11 +58,36 @@ for the author and the reviewer.
   (`storetest.Open`), and every migration from an empty database.
 - **HTTP and MCP handlers:** integration tests through the handler, with a
   real store behind it.
-  A struct an answer's type embeds is exported: huma describes no field
-  of an unexported embedded struct, so the OpenAPI document, and the
-  TypeScript types made from it, would leave them out.
-  `TestAnswersMatchTheDocument` holds the answers of the operations it
-  lists to the document, at the top level of the body (`checkBody`).
+  Every answer a test gets through the instance's `do` or `serve` is
+  checked against the OpenAPI document (`checkAnswer`, with
+  `huma.Validate` in its mode for answers): its status must be one the
+  operation lists, and its body valid all the way down, through every
+  `$ref`, array and object, with no property the document leaves out.
+  `TestAnswersMatchTheDocument` has a case for every operation, which
+  must answer with success; `TestAnswersCoverEveryOperation` fails for an
+  operation without one, so a new operation adds its case to
+  `answerCases`. The problems answered before a handler runs, huma's
+  (an unknown query parameter, a body that is not JSON, too large or
+  too slow) and the server's (a bad API token, an address that sent too
+  many, a token the operation does not let in), are listed for every
+  operation (`documentRequestErrors`).
+  What an answer's type may hold, so the document and the TypeScript
+  types say what comes:
+  - its body is a struct, never a bare slice, whose top level no tag
+    could keep from being null;
+  - a struct it embeds is exported: huma describes no field of an
+    unexported embedded struct;
+  - a pointer has `omitempty`: nil is then left out, never `null`;
+  - a slice says `nullable:"false"`, as huma describes every other slice
+    as null or an array, and is never nil without `omitempty` (`[]`,
+    not `null`);
+  - a slice or a map holds no pointers: huma describes their elements
+    as not null;
+  - a map is never nil without `omitempty`.
+
+  `TestAnswersHoldNoNull` holds the types of every operation's answers
+  to the rules for bodies, pointers and slices, whatever the data;
+  `checkAnswer` catches a nil slice or map in the answers the tests get.
 - **Imports:** payloads of the shapes a source sends, with made-up
   values, in `internal/ingest/testdata/` (Health Auto Export's in
   `hae/`). Real ones stay outside git: `TestRealPayloads` reads the
@@ -297,7 +322,24 @@ in `web/`.
     `fmt.Errorf("list views: %w", err)`;
   - compare with `errors.Is` and `errors.As`, never by text;
   - messages are lower case, without final punctuation;
-  - an error is either handled (logged) or returned, not both.
+  - an error is either handled (logged) or returned, not both;
+  - an API handler returns an error it cannot handle as
+    `internalError("reading the profile failed", err)`, and does not log
+    it. The answer keeps no word of it, as a file, a query or a user
+    could be in it: `hideInternalErrors` drops the details of every 5xx
+    and logs them once, with the operation, its route (not the
+    request's path: nothing the client sent) and the user, at the
+    level of the error (`logLevel`: debug for a client that went
+    away). A plain error is logged the same way, at error level; a body
+    that did not come whole, which huma answers with a 500 before any
+    handler, at debug level (`recordBodyErrors`). A 5xx without details
+    (the server is busy) is not logged.
+    What answers before an operation runs (the session and token
+    lookups) or outside one (OpenID Connect's browser flow, and the
+    session a sign-in starts, which the two share) logs its failures
+    itself and answers with a bare problem; so does a failure an
+    operation handles and goes on from (an ingest's archive), with the
+    user.
 - **`context.Context`** is the first parameter of anything that queries
   the database, talks to the network or waits on other goroutines, and is
   never stored in a struct. File system calls take none, as `os` has no

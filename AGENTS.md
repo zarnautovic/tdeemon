@@ -87,6 +87,12 @@ details.
   the test fails, and a new kind of data adds rows of it for both users
   to `newIsolationEnv`; routes outside the document (MCP) need cases of
   their own (`docs/conventions.md`).
+- **Answers match the document.** Tests check every answer against
+  `api/openapi.json`; a new operation adds its case to `answerCases` in
+  `internal/api/schema_test.go`, or the test fails. In an answer's type
+  a pointer has `omitempty` and a slice `nullable:"false"`, and a
+  handler returns `internalError(msg, err)` instead of logging it
+  (`docs/conventions.md`).
 - **Migrations only go forward.** Never edit a migration once it is
   merged; add a new one. The rules are in
   `internal/store/migrations/README.md`.

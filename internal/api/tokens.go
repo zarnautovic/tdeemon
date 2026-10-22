@@ -163,7 +163,7 @@ func (s *sessions) authenticateToken(w http.ResponseWriter, r *http.Request, tok
 type TokenBody struct {
 	ID         string     `json:"id" format:"uuid" doc:"The token's handle; revoke it by this."`
 	Name       string     `json:"name" doc:"What the user calls the token."`
-	Scopes     []string   `json:"scopes" enum:"ingest,tools,read" doc:"What the token may do."`
+	Scopes     []string   `json:"scopes" nullable:"false" enum:"ingest,tools,read" doc:"What the token may do."`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty" doc:"When it was last used, to the hour or so; absent until then."`
 }
@@ -180,7 +180,7 @@ func newTokenBody(t store.APIToken) TokenBody {
 type tokensOutput struct {
 	CacheControl string `header:"Cache-Control" doc:"no-store"`
 	Body         struct {
-		Tokens []TokenBody `json:"tokens"`
+		Tokens []TokenBody `json:"tokens" nullable:"false"`
 	}
 }
 
@@ -211,7 +211,7 @@ type whoamiOutput struct {
 	Body         struct {
 		User   userBody `json:"user"`
 		Via    string   `json:"via" enum:"session,token" doc:"How the request authenticated."`
-		Scopes []string `json:"scopes,omitempty" enum:"ingest,tools,read" doc:"What the token may do (via token)."`
+		Scopes []string `json:"scopes,omitempty" nullable:"false" enum:"ingest,tools,read" doc:"What the token may do (via token)."`
 	}
 }
 
@@ -279,8 +279,7 @@ func (s *sessions) listTokens(ctx context.Context, _ *struct{}) (*tokensOutput, 
 	}
 	tokens, err := s.db.APITokens(ctx, p.User.ID)
 	if err != nil {
-		s.logger.ErrorContext(ctx, "listing API tokens failed", "error", err)
-		return nil, huma.Error500InternalServerError("listing the tokens failed")
+		return nil, internalError("listing the tokens failed", err)
 	}
 	out := &tokensOutput{CacheControl: "no-store"}
 	out.Body.Tokens = make([]TokenBody, 0, len(tokens))
@@ -309,8 +308,7 @@ func (s *sessions) createToken(ctx context.Context, in *createTokenInput) (*crea
 		CreatedAt: s.now().Truncate(time.Second),
 	}
 	if err := s.db.CreateAPIToken(ctx, t, hash); err != nil {
-		s.logger.ErrorContext(ctx, "creating an API token failed", "error", err)
-		return nil, huma.Error500InternalServerError("creating the token failed")
+		return nil, internalError("creating the token failed", err)
 	}
 	s.logger.InfoContext(ctx, "created an API token", "user_id", p.User.ID.String(), "token_id", t.ID.String(), "scopes", t.Scopes)
 	return &createTokenOutput{CacheControl: "no-store", Body: createdTokenBody{TokenBody: newTokenBody(t), Token: token}}, nil
@@ -328,8 +326,7 @@ func (s *sessions) revokeToken(ctx context.Context, in *revokeTokenInput) (*stru
 	if err := s.db.RevokeAPIToken(ctx, p.User.ID, id); errors.Is(err, store.ErrNotFound) {
 		return nil, huma.Error404NotFound("no such token")
 	} else if err != nil {
-		s.logger.ErrorContext(ctx, "revoking an API token failed", "error", err)
-		return nil, huma.Error500InternalServerError("revoking the token failed")
+		return nil, internalError("revoking the token failed", err)
 	}
 	s.logger.InfoContext(ctx, "revoked an API token", "user_id", p.User.ID.String(), "token_id", id.String())
 	return nil, nil //nolint:nilnil // huma answers a nil output with the DefaultStatus, 204.

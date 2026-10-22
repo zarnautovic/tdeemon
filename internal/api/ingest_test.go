@@ -81,7 +81,6 @@ func TestIngestHAE(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST = %d %s", rec.Code, rec.Body.String())
 	}
-	checkBody(t, "ingest-hae", http.StatusOK, rec.Body.Bytes())
 	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
 	if len(got.Days) != 2 || got.Days[0].Date != "2026-10-20" || got.Days[0].Changed[0].Metric != "steps" || got.Days[0].Changed[0].Value != 7300 ||
 		got.Days[1].Changed[0].Metric != "weight" {
@@ -135,7 +134,6 @@ func TestIngestMetrics(t *testing.T) {
 		rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", body, nil, tok)
 		var got ingestResponse
 		if rec.Code == http.StatusOK {
-			checkBody(t, "ingest-metrics", http.StatusOK, rec.Body.Bytes())
 			got = decodeJSON[ingestResponse](t, rec.Body.Bytes())
 		}
 		return rec.Code, got, rec.Body.String()
@@ -243,7 +241,7 @@ func TestIngestArchives(t *testing.T) {
 	dir := t.TempDir()
 	base, _ := url.Parse("http://localhost")
 	h, err := api.NewHandler(api.Config{
-		Info: testInfo, DB: in.db, BaseURL: base, Logger: slog.New(slog.DiscardHandler), Now: in.clock.Now,
+		Info: testInfo, DB: in.db, BaseURL: base, Logger: slog.New(slog.NewJSONHandler(in.logs, nil)), Now: in.clock.Now,
 		IngestArchive: &ingest.Archive{Dir: dir, Keep: 30 * 24 * time.Hour, Now: in.clock.Now},
 	})
 	if err != nil {
@@ -270,7 +268,8 @@ func TestIngestArchives(t *testing.T) {
 	if hae != 2 || metrics != 1 {
 		t.Errorf("archived %d of HAE and %d of the simple form", hae, metrics)
 	}
-	// An archive that cannot be written does not stop the import.
+	// An archive that cannot be written does not stop the import; the
+	// log says whose body it lost.
 	if err := os.RemoveAll(dir); err != nil {
 		t.Fatal(err)
 	}
@@ -280,6 +279,7 @@ func TestIngestArchives(t *testing.T) {
 	if rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date": "2026-10-22", "metrics": {"steps": 2}}`, nil, tok); rec.Code != http.StatusOK {
 		t.Errorf("POST with a broken archive = %d %s", rec.Code, rec.Body.String())
 	}
+	in.checkLogged(t, logRecord{Level: "ERROR", Msg: "archiving an ingest failed", UserID: in.user.ID.String()})
 }
 
 // HAE's body may arrive past the server's own deadline, as a large export

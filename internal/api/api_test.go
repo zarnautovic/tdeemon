@@ -40,6 +40,7 @@ func serve(t *testing.T, method, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
+	checkAnswer(t, req, rec)
 	return rec
 }
 
@@ -153,8 +154,10 @@ func TestAppGetsEveryOtherGET(t *testing.T) {
 		"/api/v1/typo":  "application/problem+json",
 		"/api/whatever": "application/problem+json",
 	} {
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil))
+		h.ServeHTTP(rec, req)
+		checkAnswer(t, req, rec)
 		if got := rec.Header().Get("Content-Type"); got != want {
 			t.Errorf("GET %s: Content-Type = %q, want %q", path, got, want)
 		}
