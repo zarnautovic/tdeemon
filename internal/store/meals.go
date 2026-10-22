@@ -19,6 +19,10 @@ import (
 // another of the user's meals.
 var ErrMealConflict = errors.New("a meal with this id holds something else")
 
+// ErrItemTaken reports an item under the id of another of the user's
+// meals' items. It is an ErrMealConflict too.
+var ErrItemTaken = errors.New("another meal's item has this id")
+
 // ErrMealDeleted reports a meal created under the id of one of the
 // user's meals that was deleted (or its create undone): a late retry of
 // its create does not bring it back.
@@ -214,34 +218,7 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, a event.Actor, 
 		if err != nil {
 			return err
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE meals SET eaten_at = ?, day = ?, description = ?, note = ?,
-			updated_at = ? WHERE id = ? AND user_id = ?`,
-			formatTime(m.EatenAt), m.Day.String(), m.Description, m.Note, formatTime(now), m.ID.String(), userID.String())
-		if err != nil {
-			return err
-		}
-		if n, err := res.RowsAffected(); err != nil {
-			return err
-		} else if n == 0 {
-			return ErrNotFound
-		}
-		kept, err := itemIDs(ctx, tx, userID, m.ID)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, "DELETE FROM meal_items WHERE meal_id = ? AND user_id = ?",
-			m.ID.String(), userID.String()); err != nil {
-			return err
-		}
-		if err := insertItems(ctx, tx, userID, m, kept); err != nil {
-			return err
-		}
-		after, err := stateOf(ctx, tx, userID, m.ID)
-		if err != nil {
-			return err
-		}
-		stored = after.Meal
-		_, err = record(ctx, tx, userID, a, event.MealReplace, m.ID.String(), before, after, now)
+		stored, err = replaceInTx(ctx, tx, userID, a, before, m, now)
 		return err
 	})
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) {
@@ -251,6 +228,98 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, a event.Actor, 
 		return meal.Meal{}, fmt.Errorf("replace meal: %w", err)
 	}
 	return stored, nil
+}
+
+// UpdateMeal stores in place of userID's meal id what change makes of it,
+// as ReplaceMeal does, and returns it as stored. change gets the meal as
+// it is in the transaction that stores its answer, so changes made at
+// once (an agent's calls in parallel) are each made to the other's
+// result and none is lost. An error of change stores nothing, and is
+// returned as it is; a meal the user does not have is ErrNotFound.
+func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID,
+	change func(meal.Meal) (meal.Meal, error), now time.Time,
+) (meal.Meal, error) {
+	if err := a.Validate(); err != nil {
+		return meal.Meal{}, fmt.Errorf("invalid actor: %w", err)
+	}
+	var stored meal.Meal
+	var changeErr error
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		before, err := stateOf(ctx, tx, userID, id)
+		if err != nil {
+			return err
+		}
+		m, err := change(before.Meal)
+		if err != nil {
+			changeErr = err
+			return err
+		}
+		m.ID = id
+		if err := m.Validate(); err != nil {
+			changeErr = fmt.Errorf("invalid meal: %w", err)
+			return changeErr
+		}
+		stored, err = replaceInTx(ctx, tx, userID, a, before, m, now)
+		return err
+	})
+	switch {
+	case changeErr != nil:
+		return meal.Meal{}, changeErr
+	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict):
+		return meal.Meal{}, err
+	case err != nil:
+		return meal.Meal{}, fmt.Errorf("update meal: %w", err)
+	}
+	return stored, nil
+}
+
+// replaceInTx writes m in place of the meal of before, and records it as
+// a's event.
+func replaceInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, before mealState, m meal.Meal, now time.Time) (meal.Meal, error) {
+	{
+		res, err := tx.ExecContext(ctx, `UPDATE meals SET eaten_at = ?, day = ?, description = ?, note = ?,
+			updated_at = ? WHERE id = ? AND user_id = ?`,
+			formatTime(m.EatenAt), m.Day.String(), m.Description, m.Note, formatTime(now), m.ID.String(), userID.String())
+		if err != nil {
+			return meal.Meal{}, err
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return meal.Meal{}, err
+		} else if n == 0 {
+			return meal.Meal{}, ErrNotFound
+		}
+	}
+	kept, err := itemIDs(ctx, tx, userID, m.ID)
+	if err != nil {
+		return meal.Meal{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM meal_items WHERE meal_id = ? AND user_id = ?",
+		m.ID.String(), userID.String()); err != nil {
+		return meal.Meal{}, err
+	}
+	if err := insertItems(ctx, tx, userID, m, kept); err != nil {
+		return meal.Meal{}, err
+	}
+	after, err := stateOf(ctx, tx, userID, m.ID)
+	if err != nil {
+		return meal.Meal{}, err
+	}
+	_, err = record(ctx, tx, userID, a, event.MealReplace, m.ID.String(), before, after, now)
+	return after.Meal, err
+}
+
+// MealIDUsed reports whether id is the id of one of userID's meals, or of
+// one that was deleted (or whose create was undone): a meal logged under
+// it is a retry, which CreateMeal decides, not a new meal.
+func (db *DB) MealIDUsed(ctx context.Context, userID, id uuid.UUID) (bool, error) {
+	var used bool
+	err := db.read.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM meals WHERE user_id = ? AND id = ?)
+		OR EXISTS (SELECT 1 FROM events WHERE user_id = ? AND entity = ? AND operation IN ('meal.create', 'meal.delete'))`,
+		userID.String(), id.String(), userID.String(), id.String()).Scan(&used)
+	if err != nil {
+		return false, fmt.Errorf("meal id used: %w", err)
+	}
+	return used, nil
 }
 
 // itemIDs returns the ids of the items of userID's meal mealID.
@@ -294,7 +363,7 @@ func insertItems(ctx context.Context, tx *sql.Tx, userID uuid.UUID, m meal.Meal,
 			err := tx.QueryRowContext(ctx, "SELECT meal_id FROM meal_items WHERE user_id = ? AND id = ?",
 				userID.String(), id.String()).Scan(&other)
 			if err == nil {
-				return fmt.Errorf("%w: item %s is another meal's", ErrMealConflict, id)
+				return fmt.Errorf("%w: %w: item %s", ErrMealConflict, ErrItemTaken, id)
 			}
 			if !errors.Is(err, sql.ErrNoRows) {
 				return err

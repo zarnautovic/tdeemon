@@ -329,6 +329,37 @@ func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, er
 	return f, nil
 }
 
+// FoodByKey returns userID's food of name and brand, compared as SaveFood
+// compares them (food.Key), archived too, or ErrNotFound: the food a save
+// of that name and brand would correct, read without saving.
+func (db *DB) FoodByKey(ctx context.Context, userID uuid.UUID, name, brand string) (food.Food, error) {
+	var f food.Food
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		var id string
+		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ?",
+			userID.String(), food.Key(name), food.Key(brand)).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		fid, err := uuid.Parse(id)
+		if err != nil {
+			return fmt.Errorf("food id %q: %w", id, err)
+		}
+		f, err = foodInTx(ctx, tx, userID, fid)
+		return err
+	})
+	if errors.Is(err, ErrNotFound) {
+		return food.Food{}, err
+	}
+	if err != nil {
+		return food.Food{}, fmt.Errorf("food by key: %w", err)
+	}
+	return f, nil
+}
+
 // foodInTx reads userID's food id with its children in tx, or returns
 // ErrNotFound.
 func foodInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (food.Food, error) {

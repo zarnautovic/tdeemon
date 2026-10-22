@@ -1,15 +1,19 @@
 package api_test
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
+	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
 // mealsEnv is an instance with Ana's rye bread and plan, and her session.
@@ -297,6 +301,12 @@ func TestDeleteMeal(t *testing.T) {
 	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusConflict {
 		t.Errorf("logged again under its id: %d %s, want 409", rec.Code, rec.Body.String())
 	}
+	// Days on, an offline queue's late retry: still the deleted meal's id,
+	// not a new meal under an old id.
+	e.in.clock.Set(e.now.Add(48 * time.Hour))
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "deleted") {
+		t.Errorf("a late retry of a deleted meal: %d %s, want 409", rec.Code, rec.Body.String())
+	}
 }
 
 // A meal's id is the user's: another user's meal under the same id is
@@ -334,5 +344,123 @@ func TestMealConflicts(t *testing.T) {
 	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `the alias \"Ana's loaf\" is taken by food `+e.bread) {
 		t.Errorf("a new food of a taken alias: %d %s, want 409 naming the bread", rec.Code, rec.Body.String())
+	}
+}
+
+// Changes of a meal sent at once, as an agent's calls in parallel, are
+// all kept.
+func TestUpdateMealAtOnce(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	var wg sync.WaitGroup
+	for i := range 10 {
+		wg.Go(func() {
+			body := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"name": "Tea %d", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, i)
+			if rec := e.patch(t, id, body); rec.Code != http.StatusOK {
+				t.Errorf("an add: %d %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+	wg.Wait()
+	mid, err := uuid.Parse(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, mid); err != nil || len(m.Items) != 11 {
+		t.Errorf("the meal has %d items, %v; want 11", len(m.Items), err)
+	}
+}
+
+// A new meal's item under the id of another meal's item is a conflict
+// that says so, not one of the meal's id.
+func TestLogMealItemOfAnotherMeal(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	item := meal.NewIDAt(e.now).String()
+	soup := fmt.Sprintf(`{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`, item)
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [%s]}`, meal.NewIDAt(e.now), soup))
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"id": %q, "items": [%s]}`, meal.NewIDAt(e.now), soup), e.session, nil)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "another meal's item") {
+		t.Errorf("%d %s, want 409 about the item", rec.Code, rec.Body.String())
+	}
+}
+
+// A meal sent again saves none of its new foods again: a food corrected
+// since stays corrected. A meal refused saves none of them at all.
+func TestLogMealSavesFoodsOnce(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, e.lunch(id))
+	yoghurt, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	yoghurt.Nutrients.Kcal = 80
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, yoghurt, e.now); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(id), e.session, nil); rec.Code != http.StatusOK {
+		t.Fatalf("the retry: %d %s", rec.Code, rec.Body.String())
+	}
+	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Greek yoghurt", "Dukat"); err != nil || got.Nutrients.Kcal != 80 {
+		t.Errorf("the yoghurt after the retry = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
+	}
+	// Refused for its second item, after a new food in its first.
+	body := fmt.Sprintf(`{"id": %q, "items": [
+		{"food": {"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}, "amount": 250, "unit": "ml"},
+		{"food_id": %q, "amount": 50, "unit": "g"}
+	]}`, meal.NewIDAt(e.now), meal.NewIDAt(e.now))
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("a meal refused: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Kefir", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the kefir of a meal refused: %v, want none", err)
+	}
+}
+
+// An edit saves its new foods once: none when it is refused, none again
+// when an add of it is sent again.
+func TestUpdateMealSavesFoodsOnce(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	// Refused for its second op, after a new food in its first.
+	refused := fmt.Sprintf(`{"ops": [
+		{"op": "add", "item": {"food": {"name": "Jam", "basis": "100g", "source": "label", "nutrients": {"kcal": 250, "protein": 0.5, "carbs": 60, "fat": 0.1}}, "amount": 20, "unit": "g"}},
+		{"op": "replace", "item_id": %q, "item": {"name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}
+	]}`, meal.NewIDAt(e.now))
+	if rec := e.patch(t, id, refused); rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("an edit refused: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Jam", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the jam of an edit refused: %v, want none", err)
+	}
+	// An add sent again saves its food no more either.
+	add := `{"ops": [{"op": "add", "item": {"id": "` + meal.NewIDAt(e.now).String() + `", "food": {"name": "Honey", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 304, "protein": 0.3, "carbs": 82, "fat": 0}}, "amount": 20, "unit": "g"}}]}`
+	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+		t.Fatalf("an add: %d %s", rec.Code, rec.Body.String())
+	}
+	honey, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	honey.Nutrients.Kcal = 300
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, honey, e.now); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+		t.Fatalf("the add again: %d %s", rec.Code, rec.Body.String())
+	}
+	if got, err := e.in.db.FoodByKey(t.Context(), e.in.user.ID, "Honey", ""); err != nil || got.Nutrients.Kcal != 300 {
+		t.Errorf("the honey after the add again = %v kcal, %v; want the correction kept", got.Nutrients.Kcal, err)
 	}
 }

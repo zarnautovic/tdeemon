@@ -131,3 +131,16 @@ func TestItemSameAs(t *testing.T) {
 		}
 	}
 }
+
+// A meal's items each have an id of their own.
+func TestMealItemIDsDiffer(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 8, 0, 0, 0, time.UTC)
+	soup, _ := meal.Estimate("Soup", food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
+	soup.ID = meal.NewIDAt(at)
+	m := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{soup, soup}}
+	if err := m.Validate(); err == nil || !strings.Contains(err.Error(), "twice") {
+		t.Errorf("two items of one id: %v", err)
+	}
+}
