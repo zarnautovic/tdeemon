@@ -278,6 +278,28 @@ func TestDate(t *testing.T) {
 	}
 }
 
+func TestDaysSince(t *testing.T) {
+	t.Parallel()
+
+	d := Date{2026, time.February, 28}
+	for _, tc := range []struct {
+		e    Date
+		want int
+	}{
+		{d, 0},
+		{d.AddDays(-1), 1},
+		{d.AddDays(1), -1},
+		// Across a leap day and a year.
+		{Date{2024, time.February, 28}, 731},
+		// Further apart than a time.Duration reaches, about 292 years.
+		{Date{1, time.January, 1}, 739674},
+	} {
+		if got := d.DaysSince(tc.e); got != tc.want {
+			t.Errorf("%s.DaysSince(%s) = %d, want %d", d, tc.e, got, tc.want)
+		}
+	}
+}
+
 func TestValidateExclusion(t *testing.T) {
 	t.Parallel()
 

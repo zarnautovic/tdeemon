@@ -276,13 +276,38 @@ estimates to agree within ±200 kcal.
 
 The replacement:
 
-- **Weight trend:** an exponentially smoothed trend weight plus a linear
-  regression over a rolling 21–28-day window. The slope comes with a
-  standard error.
-- **Intake:** the average over `complete`, non-`excluded` days in the
-  same window.
-- **TDEE** = intake − slope × 7700 / 7, with a confidence interval
-  derived from the slope error and logging completeness.
+- **Window:** the 28 days up to yesterday, today not being over
+  (`internal/domain/calibration`).
+- **Weight trend:** an exponentially smoothed trend weight, which takes a
+  tenth of each weigh-in's difference from it. The summary shows it, and
+  it is the trend weight the limits read. The slope is a linear
+  regression of the weigh-ins in the window, not of the trend, which
+  lags behind (about 9 days, at a tenth). A day without a weigh-in is
+  simply missing.
+- **Intake:** the average over the window's `complete`, non-`excluded`
+  days with at least one meal. A day without a meal was not logged: its
+  intake is unknown, not 0. An excluded day's weigh-in still counts, as
+  the day's energy stays in the weight whatever was logged.
+- **TDEE** = intake − slope × 7700 / 7, with an 80 % interval from two
+  errors:
+  - The slope's, widened by the autocorrelation of the residuals.
+    Weigh-ins on following days carry water and salt over, so fewer of
+    them are independent than it seems. The lag-1 autocorrelation of a
+    few weeks falls short of the true one, and is raised by
+    (2 + 4ρ) / n. In a simulation, the interval then covers the TDEE in
+    about 80 % of the windows, for water that carries over from not at
+    all to strongly. One that takes the weigh-ins as independent covers
+    55 to 70 %.
+  - The intake average's, for the days not logged; none when every day
+    is.
+- **Trust:** an estimate is trusted when half its interval is at most
+  200 kcal, and the window has, on average, the data an autopilot step
+  needs: 4 logged days and 3 weigh-ins a week
+  ([limits.md](limits.md)). The 200 kcal are a first value, to be
+  checked against real data. With fewer than 3 weigh-ins, 2 logged
+  days, or 14 days, there is no estimate. Either way, the doubts say what
+  is missing: `few_days`, `few_weigh_ins`, `few_logged_days`,
+  `wide_interval`.
 - **Verdict:** a recommendation appears only when the interval is narrow
   enough. Otherwise the summary shows the estimate with its uncertainty,
   not just "calibrating".
@@ -299,7 +324,10 @@ The replacement:
     summary when the trend strays 3 % from the phase's start).
 - **Guards, by phase type:**
   - Water/glycogen window: the first 14 days of *every* phase (glycogen
-    refills on a bulk start too).
+    refills on a bulk start too) are left out. A window needs 14 days of
+    the phase after them, so until the phase's 28th day the estimate is
+    the one of the 28 days before the phase started, marked as such,
+    with no verdict on the phase.
   - NEAT guard: steps ±30 % from baseline, in either direction.
   - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss turns a cut
     into "raise protein/calories".
@@ -321,7 +349,9 @@ The replacement:
   grams, and the limit is checked in g/kg; a floor in grams the user
   sets only narrows it.
 - **Per-user parameters** for all of the above, within the limits
-  ([limits.md](limits.md)).
+  ([limits.md](limits.md)). In P0 they are the same for everyone
+  (`calibration.DefaultParams`); with the autopilot (P1), they become the
+  user's.
 - **Test fixtures:** an anonymised multi-week dataset lives in the repo.
   Real data stays in a private fixture outside git and is checked
   against past manual target revisions.
