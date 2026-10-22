@@ -353,7 +353,7 @@ func (e isolationEnv) noneOfTheOwners(t *testing.T, what, body string) {
 func (e isolationEnv) ownerSees(t *testing.T) string {
 	t.Helper()
 	var b strings.Builder
-	for _, path := range []string{"/api/v1/auth/session", "/api/v1/tokens"} {
+	for _, path := range []string{"/api/v1/auth/session", "/api/v1/tokens", "/api/v1/profile", "/api/v1/limits"} {
 		rec := e.in.do(t, http.MethodGet, path, "", []*http.Cookie{e.owner.session}, nil)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("the owner's GET %s: %d %s", path, rec.Code, rec.Body.String())
@@ -533,6 +533,20 @@ func isolationCases() map[string]isolationCase {
 			who := e.in.do(t, http.MethodGet, "/api/v1/auth/whoami", "", nil, bearer(created.Token))
 			if !strings.Contains(who.Body.String(), e.other.user.Email) {
 				t.Errorf("the other's new token acts for %s, want them", who.Body.String())
+			}
+		},
+		"get-profile": read("/api/v1/profile", false, nil),
+		"get-limits":  read("/api/v1/limits", false, nil),
+		"set-profile": func(t *testing.T, e isolationEnv) {
+			rec := e.in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"male","birth_date":"1985-01-20","height_cm":181}`, []*http.Cookie{e.other.session}, nil)
+			if rec.Code != http.StatusOK {
+				t.Errorf("the other's profile: %d %s", rec.Code, rec.Body.String())
+			}
+		},
+		"set-limits": func(t *testing.T, e isolationEnv) {
+			rec := e.in.do(t, http.MethodPut, "/api/v1/limits", `{"limits":{"cut_rate":-0.4}}`, []*http.Cookie{e.other.session}, nil)
+			if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"protein_floor_grams":120`) {
+				t.Errorf("the other's limits: %d %s", rec.Code, rec.Body.String())
 			}
 		},
 		"revoke-token": func(t *testing.T, e isolationEnv) {

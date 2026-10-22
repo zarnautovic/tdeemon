@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -36,6 +37,9 @@ type sessions struct {
 
 	// Failures per client address and per account (limit.go).
 	signInByAddr, signInByAccount, badTokens *limiter
+
+	// instance holds the instance's limits of a plan.
+	instance limits.Limits
 }
 
 func newSessions(cfg Config) *sessions {
@@ -45,6 +49,7 @@ func newSessions(cfg Config) *sessions {
 		signInByAddr:    newLimiter(signInFailures, signInWindow, cfg.Now),
 		signInByAccount: newLimiter(signInFailures, signInWindow, cfg.Now),
 		badTokens:       newLimiter(badTokenFailures, badTokenWindow, cfg.Now),
+		instance:        cfg.Limits,
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/config"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -65,6 +66,9 @@ type Config struct {
 	TrustedProxies []netip.Prefix
 	// Now returns the current time; time.Now when nil.
 	Now func() time.Time
+	// Limits are the instance's limits of a plan; limits.Instance() when
+	// zero.
+	Limits limits.Limits
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
@@ -80,6 +84,9 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
+	}
+	if cfg.Limits == (limits.Limits{}) {
+		cfg.Limits = limits.Instance()
 	}
 	s := newSessions(cfg)
 	auth.PrepareLogin()
@@ -245,6 +252,7 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.register(a)
 	s.registerTokens(a)
+	s.registerPlan(a)
 	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",
