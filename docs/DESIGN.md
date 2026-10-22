@@ -604,7 +604,7 @@ the first spec.
   - PR titles follow Conventional Commits, and every merge to `main`
     that brings a `feat`, `fix` or `perf` commit or a breaking change
     cuts a semver release automatically: a tag and a GitHub Release
-    with the changelog, and, once deploys exist, the image.
+    with the changelog, and the image on ghcr.io.
   - On the author's instance, Flux image automation deploys new
     releases, so a deploy depends only on the merge.
   - CI runs tests with coverage gates plus strict lint and format for

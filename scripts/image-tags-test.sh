@@ -37,6 +37,16 @@ expect "a pre-release" fail v1.2.3-rc.1 "$sha" o/r
 expect "a short commit" fail v1.2.3 0123456 o/r
 expect "a repository without an owner" fail v1.2.3 "$sha" tdeemon
 expect "too few arguments" fail v1.2.3 "$sha"
+expect "too many arguments" fail v1.2.3 "$sha" o/r extra
+expect "a repository with a tag" fail v1.2.3 "$sha" o/r:latest
+
+# macOS's /bin/bash is 3.2, which has no case-changing expansions.
+if grep -nE '[$][{][^}]*(,,|\^\^)' "$root/scripts/image-tags.sh"; then
+  echo "FAIL bash 3.2: a case-changing expansion above"
+  fails=$((fails + 1))
+else
+  echo "ok   bash 3.2"
+fi
 
 if ((fails > 0)); then
   echo "$fails failed"

@@ -36,11 +36,15 @@
   ],
   customManagers: [
     {
-      // The BuildKit image the Docker image job builds with, pinned by
-      // digest in the buildx driver options.
+      // The BuildKit image the Docker image jobs build with, pinned by
+      // digest in the buildx driver options, and the SBOM's scanner of a
+      // release.
       customType: 'regex',
       managerFilePatterns: ['/^\\.github/workflows/.+\\.ya?ml$/'],
-      matchStrings: ['image=(?<depName>moby/buildkit):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})'],
+      matchStrings: [
+        'image=(?<depName>moby/buildkit):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+        'generator=docker\\.io/(?<depName>docker/buildkit-syft-scanner):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+      ],
       datasourceTemplate: 'docker',
     },
   ],

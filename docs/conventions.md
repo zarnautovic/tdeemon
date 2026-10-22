@@ -211,7 +211,12 @@ A change is done when:
     linux/arm64, tagged `X.Y.Z`, `X.Y` and `sha-<commit>`
     (`scripts/image-tags.sh`), with its SBOM and provenance; it builds
     without a cache, in a job of the same workflow, as a release the
-    workflow's token makes starts no other;
+    workflow's token makes starts no other. If that job fails, use
+    *Re-run failed jobs* within 30 days: *Re-run all jobs* finds the
+    commit released and releases nothing, image included;
+  - once, after the first release with an image: set the package
+    `tdeemon` on ghcr.io to public, and check that it is linked to the
+    repository; a new package is private;
   - other types (docs, chore, ci, refactor…) make no release;
   - a commit that is already in a release makes no other, so re-running
     the workflow is safe.

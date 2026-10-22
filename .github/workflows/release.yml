@@ -72,7 +72,8 @@ jobs:
     if: needs.version.outputs.version != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # The only job that can write, and it runs no action: only gh.
+    # The only job that can write to the repository, and it runs no
+    # action: only gh.
     permissions:
       contents: write # create the version tag and the GitHub Release
     steps:
@@ -131,5 +132,7 @@ jobs:
             VERSION=${{ needs.version.outputs.version }}
             GOPROXY=${{ env.GOPROXY }}
           provenance: mode=max
-          sbom: true
+          # The SBOM's scanner pinned like BuildKit, not its moving default.
+          # yamllint disable-line rule:line-length
+          sbom: generator=docker.io/docker/buildkit-syft-scanner:1.12.0@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
           # No cache: a release builds from its sources alone.
