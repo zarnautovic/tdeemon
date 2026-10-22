@@ -138,9 +138,9 @@ func TestMCPToolSchemas(t *testing.T) {
 			t.Errorf("%s requires %v, want %v", name, got, want)
 		}
 	}
-	// A tool is safe to send again but log_meal, whose meal sent without
-	// an id is another.
-	for name, want := range map[string]bool{"log_metric": true, "delete_meal": true, "log_meal": false, "update_meal": true, "upsert_food": true, "get_day": true} {
+	// A tool is safe to send again but log_meal and undo_last, whose meal
+	// or undo sent without an id is another.
+	for name, want := range map[string]bool{"log_metric": true, "delete_meal": true, "log_meal": false, "undo_last": false, "update_meal": true, "upsert_food": true, "get_day": true} {
 		if got := byName[name].Annotations.IdempotentHint; got != want {
 			t.Errorf("%s idempotent = %v, want %v", name, got, want)
 		}
