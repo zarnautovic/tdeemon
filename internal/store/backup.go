@@ -28,9 +28,11 @@ const DailyEvery = 23*time.Hour + 30*time.Minute
 // DailySnapshot writes a snapshot of the database to the backups directory
 // next to the database file, when there is none younger than DailyEvery
 // (one of a time to come is none), and returns its path; "" when none
-// was due. It keeps the newest keep daily snapshots, and removes the older
-// ones and the temporary files of one interrupted; the snapshots before a
-// migration are not touched.
+// was due. Before it writes, it removes the temporary files of one
+// interrupted, so they never fill the room the new one needs; after, it
+// keeps the newest keep daily snapshots up to now and removes the older
+// ones and those of a time to come. The snapshots before a migration are
+// not touched.
 func (db *DB) DailySnapshot(ctx context.Context, now time.Time, keep int) (string, error) {
 	if keep < 1 {
 		return "", fmt.Errorf("daily snapshot: keep %d, want 1 or more", keep)
@@ -47,6 +49,9 @@ func (db *DB) DailySnapshot(ctx context.Context, now time.Time, keep int) (strin
 			return "", nil
 		}
 	}
+	if err := removeDailyTemps(dir); err != nil {
+		return "", fmt.Errorf("daily snapshot: %w", err)
+	}
 	// The read pool is query only, which refuses VACUUM INTO; the copy
 	// holds the write connection, so writes wait for it, a moment for a
 	// database of one household.
@@ -54,7 +59,7 @@ func (db *DB) DailySnapshot(ctx context.Context, now time.Time, keep int) (strin
 	if err != nil {
 		return "", fmt.Errorf("daily snapshot: %w", err)
 	}
-	return dst, pruneDaily(dir, keep)
+	return dst, pruneDaily(snapshots, dst, now, keep)
 }
 
 type dailySnap struct {
@@ -87,30 +92,43 @@ func dailySnapshots(dir string) ([]dailySnap, error) {
 	return out, nil
 }
 
-// pruneDaily removes the daily snapshots in dir past the newest keep, and
-// the temporary files a killed snapshot left behind.
-func pruneDaily(dir string, keep int) error {
-	snapshots, err := dailySnapshots(dir)
-	if err != nil {
-		return err
-	}
-	var stale []string
-	for _, s := range snapshots[min(keep, len(snapshots)):] {
-		stale = append(stale, s.path)
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if name := e.Name(); !e.IsDir() && strings.HasPrefix(name, dailyPrefix) && strings.HasSuffix(name, ".tmp") {
-			stale = append(stale, filepath.Join(dir, name))
+// pruneDaily removes, of the daily snapshots there were before written
+// was, those past the newest keep-1 up to now, and those of a time to
+// come: a clock that was ahead named them, and kept they would pass for
+// the newest.
+func pruneDaily(before []dailySnap, written string, now time.Time, keep int) error {
+	var errs []error
+	kept := 1 // written
+	for _, s := range before {
+		if s.path == written {
+			continue
 		}
+		if s.at.After(now) || kept >= keep {
+			if err := os.Remove(s.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
+			continue
+		}
+		kept++
+	}
+	return errors.Join(errs...)
+}
+
+// removeDailyTemps removes the temporary files a killed daily snapshot
+// left in dir; only one snapshot runs at a time, so none is under way.
+func removeDailyTemps(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
 	}
 	var errs []error
-	for _, f := range stale {
-		if err := os.Remove(f); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			errs = append(errs, err)
+	for _, e := range entries {
+		if name := e.Name(); !e.IsDir() && strings.HasPrefix(name, dailyPrefix) && strings.HasSuffix(name, ".tmp") {
+			if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				errs = append(errs, err)
+			}
 		}
 	}
 	return errors.Join(errs...)

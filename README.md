@@ -464,9 +464,10 @@ lower number takes effect with the next one, and `0` takes no more but
 leaves the ones there. A snapshot is a whole copy of the database,
 written with `VACUUM INTO` while tdeemon runs; writes wait for it. Leave
 room on the volume for one copy more than it keeps, as the oldest goes
-only once the new one is written. The snapshots sit on the same disk as
-the database: copy the backups directory off it, for example with a
-volume snapshot or a job of your backup tool.
+only once the new one is written, besides the three snapshots before a
+migration: with the default, 11 copies of the database. The snapshots
+sit on the same disk as the database: copy the backups directory off
+it, for example with a volume snapshot or a job of your backup tool.
 
 To restore a snapshot:
 

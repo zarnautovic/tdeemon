@@ -101,21 +101,49 @@ func TestDailySnapshotHourly(t *testing.T) {
 }
 
 // A snapshot of a time to come, from a clock that was ahead, does not
-// stop the daily ones, nor make one at every check.
+// stop the daily ones, nor make one at every check, nor push out the new
+// ones: it goes.
 func TestDailySnapshotAfterAClockAhead(t *testing.T) {
 	t.Parallel()
 
 	db := storetest.Open(t)
 	ahead := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := db.DailySnapshot(t.Context(), ahead, 7); err != nil {
+	if _, err := db.DailySnapshot(t.Context(), ahead, 2); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
-	if dst, err := db.DailySnapshot(t.Context(), at, 7); dst == "" || err != nil {
-		t.Errorf("after a clock ahead = %q, %v", dst, err)
+	dst, err := db.DailySnapshot(t.Context(), at, 2)
+	if dst == "" || err != nil {
+		t.Fatalf("after a clock ahead = %q, %v", dst, err)
 	}
-	if dst, err := db.DailySnapshot(t.Context(), at.Add(time.Hour), 7); dst != "" || err != nil {
+	if got := files(t, backupsDir(t, db)); !slices.Equal(got, []string{filepath.Base(dst)}) {
+		t.Errorf("files = %v, want only %s", got, filepath.Base(dst))
+	}
+	if dst, err := db.DailySnapshot(t.Context(), at.Add(time.Hour), 2); dst != "" || err != nil {
 		t.Errorf("an hour later = %q, %v", dst, err)
+	}
+}
+
+// The temporary file a killed snapshot left goes before the next one is
+// written, even when that one fails, so it never takes the room it needs.
+func TestDailySnapshotRemovesTempsFirst(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	dir := backupsDir(t, db)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "daily-123.tmp"), []byte("half a copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := db.DailySnapshot(ctx, time.Now(), 1); err == nil {
+		t.Fatal("a snapshot with its context done succeeded")
+	}
+	if got := files(t, dir); len(got) != 0 {
+		t.Errorf("files = %v, want none", got)
 	}
 }
 
