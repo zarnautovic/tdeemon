@@ -23,6 +23,39 @@ var (
 	ErrAliasTaken = errors.New("another food goes by this alias")
 )
 
+// FoodConflictError is a save SaveFood refuses because another of the
+// user's foods is in the way: it has the name and brand (ErrNameTaken), or
+// goes by Alias (ErrAliasTaken). Food is that food, archived perhaps,
+// which a search would not find, so a client can rename or correct it.
+type FoodConflictError struct {
+	// Err is ErrNameTaken or ErrAliasTaken.
+	Err   error
+	Food  food.Food
+	Alias string
+}
+
+func (e *FoodConflictError) Error() string {
+	if e.Alias != "" {
+		return fmt.Sprintf("%v: %q, by food %s %q", e.Err, e.Alias, e.Food.ID, e.Food.Name)
+	}
+	return fmt.Sprintf("%v: food %s %q", e.Err, e.Food.ID, e.Food.Name)
+}
+
+func (e *FoodConflictError) Unwrap() error { return e.Err }
+
+// conflict returns the FoodConflictError of the food with id in the way.
+func conflict(ctx context.Context, tx *sql.Tx, userID uuid.UUID, err error, id, alias string) error {
+	other, perr := uuid.Parse(id)
+	if perr != nil {
+		return fmt.Errorf("food id %q: %w", id, perr)
+	}
+	f, ferr := foodInTx(ctx, tx, userID, other)
+	if ferr != nil {
+		return ferr
+	}
+	return &FoodConflictError{Err: err, Food: f, Alias: alias}
+}
+
 // MaxFoodResults bounds FindFoods.
 const MaxFoodResults = 50
 
@@ -158,7 +191,7 @@ func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, 
 		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
 			uid, nameKey, brandKey, id.String()).Scan(&other)
 		if err == nil {
-			return uuid.Nil(), false, ErrNameTaken
+			return uuid.Nil(), false, conflict(ctx, tx, userID, ErrNameTaken, other, "")
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return uuid.Nil(), false, err
@@ -186,7 +219,7 @@ func checkAliases(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f food.Food
 		err := tx.QueryRowContext(ctx, "SELECT food_id FROM food_aliases WHERE user_id = ? AND alias_key = ? AND food_id <> ?",
 			userID.String(), food.Key(a), f.ID.String()).Scan(&other)
 		if err == nil {
-			return fmt.Errorf("%w: %q", ErrAliasTaken, a)
+			return conflict(ctx, tx, userID, ErrAliasTaken, other, a)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err

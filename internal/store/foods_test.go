@@ -487,3 +487,33 @@ func countRows(t *testing.T, db *store.DB, table string) int {
 	}
 	return n
 }
+
+// A save another food is in the way of names that food, archived or
+// not, so a client can deal with it: a search does not find an archived
+// food.
+func TestSaveFoodNamesTheFoodInTheWay(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	old := saveFood(t, db, ana, bar())
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, old.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	// Its alias, on a new food.
+	other := bar()
+	other.Name, other.Aliases = "Protein bar Cookies", []string{"caramel bar"}
+	_, err := db.SaveFood(t.Context(), ana, testActor, other, t0)
+	var conflict *store.FoodConflictError
+	if !errors.As(err, &conflict) || !errors.Is(err, store.ErrAliasTaken) || conflict.Food.ID != old.ID || conflict.Food.Name != old.Name ||
+		!conflict.Food.Archived || conflict.Alias != "caramel bar" {
+		t.Errorf("a taken alias = %#v, want the archived food in the way", err)
+	}
+	// Its name, on a food renamed.
+	other.Aliases = nil
+	saved := saveFood(t, db, ana, other)
+	saved.Name, saved.Brand = old.Name, old.Brand
+	_, err = db.SaveFood(t.Context(), ana, testActor, saved, t0)
+	if !errors.As(err, &conflict) || !errors.Is(err, store.ErrNameTaken) || conflict.Food.ID != old.ID || conflict.Alias != "" {
+		t.Errorf("a taken name = %#v, want the archived food in the way", err)
+	}
+}

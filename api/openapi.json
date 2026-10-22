@@ -260,6 +260,169 @@
         },
         "type": "object"
       },
+      "FoodBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "description": "Other names the user calls the food by; search finds them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "archived": {
+            "description": "An archived food stays out of a search, and keeps its name and aliases.",
+            "type": "boolean"
+          },
+          "basis": {
+            "description": "What the nutrients are for: 100 g, 100 ml, or a portion.",
+            "enum": [
+              "100g",
+              "100ml",
+              "portion"
+            ],
+            "type": "string"
+          },
+          "brand": {
+            "description": "The same name and brand are the same food.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_use": {
+            "$ref": "#/components/schemas/LastUseBody",
+            "description": "The last time a meal used the food; absent when none has."
+          },
+          "name": {
+            "examples": [
+              "Greek yoghurt 2 %"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "nutrients": {
+            "$ref": "#/components/schemas/FoodNutrientsBody"
+          },
+          "portion_grams": {
+            "description": "The weight of a portion of a food per portion, when known: it can then be logged in grams.",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "servings": {
+            "description": "Named amounts: a piece, a slice.",
+            "items": {
+              "$ref": "#/components/schemas/ServingBody"
+            },
+            "type": "array"
+          },
+          "source": {
+            "description": "Where the values come from: a label is exact, an estimate a judgement.",
+            "enum": [
+              "label",
+              "estimate",
+              "user",
+              "dish"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "archived",
+          "name",
+          "basis",
+          "nutrients",
+          "source"
+        ],
+        "type": "object"
+      },
+      "FoodNutrientsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "alcohol": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "carbs": {
+            "description": "Polyols are part of them, as on an EU label.",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "fat": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "fiber": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "kcal": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "polyols": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "protein": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "salt": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "saturated_fat": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "sugars": {
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "carbs",
+          "fat"
+        ],
+        "type": "object"
+      },
+      "FoodsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "foods": {
+            "items": {
+              "$ref": "#/components/schemas/FoodBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "foods"
+        ],
+        "type": "object"
+      },
       "IngestBody": {
         "additionalProperties": false,
         "properties": {
@@ -447,6 +610,44 @@
           "unit",
           "nutrients",
           "source"
+        ],
+        "type": "object"
+      },
+      "LastUseBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "How much, in unit.",
+            "format": "double",
+            "type": "number"
+          },
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "meal_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/QuantityBody",
+            "description": "How much, as it was given."
+          },
+          "unit": {
+            "enum": [
+              "g",
+              "ml",
+              "portion"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "meal_id",
+          "quantity",
+          "amount",
+          "unit"
         ],
         "type": "object"
       },
@@ -1042,6 +1243,30 @@
         ],
         "type": "object"
       },
+      "ServingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "In the food's unit: grams or ml.",
+            "exclusiveMinimum": 0,
+            "format": "double",
+            "type": "number"
+          },
+          "name": {
+            "examples": [
+              "slice"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "amount"
+        ],
+        "type": "object"
+      },
       "SessionBody": {
         "additionalProperties": false,
         "properties": {
@@ -1197,6 +1422,82 @@
           "nutrients",
           "weight",
           "height"
+        ],
+        "type": "object"
+      },
+      "UpsertFoodInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "description": "Other names the user calls the food by; search finds them.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "basis": {
+            "description": "What the nutrients are for: 100 g, 100 ml, or a portion.",
+            "enum": [
+              "100g",
+              "100ml",
+              "portion"
+            ],
+            "type": "string"
+          },
+          "brand": {
+            "description": "The same name and brand are the same food.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "id": {
+            "description": "The food to correct, by its id; without one, the food of the same name and brand, or a new one.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "examples": [
+              "Greek yoghurt 2 %"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "nutrients": {
+            "$ref": "#/components/schemas/FoodNutrientsBody"
+          },
+          "portion_grams": {
+            "description": "The weight of a portion of a food per portion, when known: it can then be logged in grams.",
+            "format": "double",
+            "minimum": 0,
+            "type": "number"
+          },
+          "servings": {
+            "description": "Named amounts: a piece, a slice.",
+            "items": {
+              "$ref": "#/components/schemas/ServingBody"
+            },
+            "type": "array"
+          },
+          "source": {
+            "description": "Where the values come from: a label is exact, an estimate a judgement.",
+            "enum": [
+              "label",
+              "estimate",
+              "user",
+              "dish"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "basis",
+          "nutrients",
+          "source"
         ],
         "type": "object"
       },
@@ -1836,6 +2137,245 @@
           }
         },
         "summary": "Get a day",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/foods": {
+      "get": {
+        "description": "Your foods whose name, brand or an alias has words starting with each word of the query, in any case and without the diacritics: the name's matches first, then the shorter name. Each has how much a meal had of it last. Archived foods are left out.",
+        "operationId": "find-foods",
+        "parameters": [
+          {
+            "description": "Words the name, the brand or an alias starts with, in any case and without the diacritics.",
+            "explode": false,
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "description": "Words the name, the brand or an alias starts with, in any case and without the diacritics.",
+              "examples": [
+                "greek yog"
+              ],
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          {
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 10,
+              "format": "int64",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoodsOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Find foods",
+        "tags": [
+          "tools"
+        ]
+      },
+      "post": {
+        "description": "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. Saving an archived food brings it back. A name and brand, or an alias, another food has is refused (409), naming that food.",
+        "operationId": "upsert-food",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertFoodInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FoodBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Save a food",
         "tags": [
           "tools"
         ]

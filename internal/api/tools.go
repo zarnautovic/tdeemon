@@ -68,6 +68,24 @@ func (s *sessions) tools() []tool {
 				"what remains, its metrics, its type and where it stands (open, complete or excluded).",
 			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.getDay),
+		newTool("find_foods", readScopes, huma.Operation{
+			OperationID: "find-foods",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/foods",
+			Summary:     "Find foods",
+			Description: "Your foods whose name, brand or an alias has words starting with each word of the query, in any case and without the diacritics: " +
+				"the name's matches first, then the shorter name. Each has how much a meal had of it last. Archived foods are left out.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.findFoods),
+		newTool("upsert_food", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "upsert-food",
+			Method:      http.MethodPost,
+			Path:        Prefix + "/foods",
+			Summary:     "Save a food",
+			Description: "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. " +
+				"Saving an archived food brings it back. A name and brand, or an alias, another food has is refused (409), naming that food.",
+			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
+		}, s.upsertFood),
 	}
 }
 

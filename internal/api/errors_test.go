@@ -208,7 +208,18 @@ func TestHandlersPassOnTheirErrors(t *testing.T) {
 			_, err := s.ingestHAE(asToken(ctx), &ingestHAEInput{RawBody: []byte(body)})
 			return err
 		},
-		"get-me":  func(ctx context.Context) error { _, err := s.getMe(ctx, nil); return err },
+		"get-me": func(ctx context.Context) error { _, err := s.getMe(ctx, nil); return err },
+		"find-foods": func(ctx context.Context) error {
+			_, err := s.findFoods(ctx, &findFoodsInput{Query: "rye", Limit: 10})
+			return err
+		},
+		"upsert-food": func(ctx context.Context) error {
+			in := &upsertFoodInput{}
+			in.Body.Name, in.Body.Basis, in.Body.Source = "Skyr", "100g", "label"
+			in.Body.Nutrients = foodNutrientsBody{Kcal: 63, Protein: 11, Carbs: 4, Fat: 0.2}
+			_, err := s.upsertFood(ctx, in)
+			return err
+		},
 		"get-day": func(ctx context.Context) error { _, err := s.getDay(ctx, &dayInput{Date: "today"}); return err },
 	} {
 		t.Run(op, func(t *testing.T) {

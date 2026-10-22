@@ -158,6 +158,21 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodGet, "/api/v1/days/today", "", []*http.Cookie{session}, nil)
 			in.do(t, http.MethodGet, "/api/v1/days/"+day.DateOf(now).AddDays(-1).String(), "", []*http.Cookie{session}, nil)
 		},
+		"find-foods": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			now := in.clock.Now()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
+			in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", []*http.Cookie{session}, nil)
+		},
+		"upsert-food": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Rolls", "brand": "Bakery", "basis": "100g", "source": "label",
+				"nutrients": {"kcal": 262.5, "protein": 8.75, "carbs": 50, "fat": 2.5, "fiber": 3, "saturated_fat": 0.4, "sugars": 2, "salt": 0.9, "polyols": 0, "alcohol": 0},
+				"servings": [{"name": "roll", "amount": 80}], "aliases": ["morning rolls"], "note": "from the bakery"}`, []*http.Cookie{session}, nil)
+			// A portion of the canteen's, which weighs what it says.
+			in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Canteen goulash", "basis": "portion", "source": "estimate", "portion_grams": 450,
+				"nutrients": {"kcal": 650, "protein": 40, "carbs": 50, "fat": 30}}`, []*http.Cookie{session}, nil)
+		},
 		"get-me": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			saveIsolationPlan(t, in.db, in.user, in.clock.Now())
