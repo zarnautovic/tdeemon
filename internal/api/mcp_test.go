@@ -138,11 +138,15 @@ func TestMCPToolSchemas(t *testing.T) {
 			t.Errorf("%s requires %v, want %v", name, got, want)
 		}
 	}
-	// Every write of the API is safe to send again; a read is too.
-	for name, want := range map[string]bool{"log_metric": true, "delete_meal": true, "log_meal": true, "update_meal": true, "upsert_food": true, "get_day": true} {
+	// A tool is safe to send again but log_meal, whose meal sent without
+	// an id is another.
+	for name, want := range map[string]bool{"log_metric": true, "delete_meal": true, "log_meal": false, "update_meal": true, "upsert_food": true, "get_day": true} {
 		if got := byName[name].Annotations.IdempotentHint; got != want {
 			t.Errorf("%s idempotent = %v, want %v", name, got, want)
 		}
+	}
+	if d := byName["log_meal"].Description; !strings.Contains(d, "Without an id") {
+		t.Errorf("log_meal's description does not say a meal may come without an id: %s", d)
 	}
 }
 

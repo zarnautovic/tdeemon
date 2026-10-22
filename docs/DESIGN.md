@@ -728,7 +728,9 @@ the first spec.
     reads no food and saves none. A client gives the meal's `id` (one
     that cannot make one, a model without a clock or a tool to run code,
     leaves it out, and the server makes one: that meal sent again is
-    another, which the warning of a duplicate tells); when
+    another, which the warning of a duplicate tells, or a 409 when its
+    items carry ids of their own; MCP says such a tool is not safe to
+    send again); when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
     the clock, so a retry has the same one. A new meal's ID must be a
     version 7 ID whose time is near the clock (from a day before to five

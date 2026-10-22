@@ -39,6 +39,15 @@ type tool struct {
 	// destructive says the tool replaces or deletes what is there, which
 	// a client may want the user to confirm.
 	destructive bool
+	// writesAgain says the tool sent again may write again: a meal sent
+	// without an id is another.
+	writesAgain bool
+}
+
+// mayWriteAgain is t, which sent again may write again.
+func (t tool) mayWriteAgain() tool {
+	t.writesAgain = true
+	return t
 }
 
 // destroys is t, which replaces or deletes what is there.
@@ -163,11 +172,12 @@ func (s *sessions) tools() []tool {
 			Summary:       "Log a meal",
 			DefaultStatus: http.StatusCreated,
 			Description: "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). " +
+				"Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so look at get_day before sending it again. " +
 				"An item is a food of the user's by its food_id, or a new food, which is saved, each with a quantity in the food's unit (g or ml), servings or portions; " +
 				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands, " +
 				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
 			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
-		}, s.logMeal).retried(),
+		}, s.logMeal).retried().mayWriteAgain(),
 		newTool("update_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "update-meal",
 			Method:      http.MethodPatch,
