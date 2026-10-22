@@ -135,6 +135,16 @@ for the author and the reviewer.
   parameters and body, from the OpenAPI document, and a call is a
   request of the operation with the caller's principal, so MCP and REST
   cannot drift.
+- **The eval of MCP** (`internal/eval`) has Claude Code log what a user
+  says through `/mcp`, against a seeded tdeemon of one user, and checks
+  the day it leaves, the rounds of tool calls of each message (two for a
+  log, DESIGN.md §5) and the input tokens not read from the cache (the
+  cost target, §6). It spends the Claude account's quota, so it runs
+  only by hand, with `TDEEMON_EVAL=1 go test ./internal/eval -v`, after
+  a change to the tools or the instructions (`mcp_instructions.md`). Its
+  cases (`testdata/cases.json`) are made up, in English and in Croatian;
+  `TDEEMON_EVAL_CASES` names a file of more, real ones, which stay out of
+  git, and `TDEEMON_EVAL_MODEL` another model than `sonnet`.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 

@@ -1,0 +1,324 @@
+[
+  {
+    "name": "foods the user has",
+    "lang": "en",
+    "say": [
+      "For breakfast I had 2 slices of rye bread and 150 g of Greek yoghurt (Dukat)."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 2,
+      "kcal": [
+        290,
+        345
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "a food by its plural",
+    "lang": "en",
+    "say": [
+      "I just had 2 eggs."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        155,
+        190
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "a plain food the user lacks",
+    "lang": "en",
+    "say": [
+      "I ate a banana."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        70,
+        140
+      ],
+      "new_foods": [
+        "banan"
+      ]
+    }
+  },
+  {
+    "name": "a restaurant plate",
+    "lang": "en",
+    "say": [
+      "Lunch at a restaurant: a plate of spaghetti carbonara."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        450,
+        1400
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "an estimate, not logged",
+    "lang": "en",
+    "say": [
+      "Estimate the calories of a croissant, I haven't eaten it."
+    ],
+    "expect": {
+      "meals": 0
+    }
+  },
+  {
+    "name": "a correction",
+    "lang": "en",
+    "say": [
+      "Lunch: 200 g of Greek yoghurt (Dukat).",
+      "Sorry, it was 150 g, not 200."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        100,
+        120
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "a weighing",
+    "lang": "en",
+    "say": [
+      "80.2 this morning on the scale."
+    ],
+    "expect": {
+      "meals": 0,
+      "weight": 80.2
+    }
+  },
+  {
+    "name": "a check-in",
+    "lang": "en",
+    "say": [
+      "Slept badly. Mood about 2 out of 5 today, and I'm hardly hungry."
+    ],
+    "expect": {
+      "meals": 0,
+      "mood": [
+        1,
+        2
+      ],
+      "hunger": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "the status of the day",
+    "lang": "en",
+    "say": [
+      "How am I doing today?"
+    ],
+    "seed_meal": true,
+    "expect": {
+      "meals": 1,
+      "max_rounds": 1
+    }
+  },
+  {
+    "name": "a label in a photo",
+    "lang": "en",
+    "say": [
+      "I ate one of these bars."
+    ],
+    "label": {
+      "name": "Crunchy Protein Bar",
+      "brand": "Fitbite",
+      "kcal": 380,
+      "protein": 30,
+      "carbs": 35,
+      "fat": 13,
+      "portion": 55
+    },
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        190,
+        230
+      ],
+      "new_foods": [
+        "protein"
+      ]
+    }
+  },
+  {
+    "name": "namirnice koje korisnik ima",
+    "lang": "hr",
+    "say": [
+      "Za doručak sam pojeo 2 šnite raženog kruha i 150 g grčkog jogurta (Dukat)."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 2,
+      "kcal": [
+        290,
+        345
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "namirnica u množini",
+    "lang": "hr",
+    "say": [
+      "Upravo sam pojeo 2 jaja."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        155,
+        190
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "obična namirnica koje nema",
+    "lang": "hr",
+    "say": [
+      "Pojeo sam bananu."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        70,
+        140
+      ],
+      "new_foods": [
+        "banan"
+      ]
+    }
+  },
+  {
+    "name": "tanjur u restoranu",
+    "lang": "hr",
+    "say": [
+      "Ručak u restoranu: tanjur špageta carbonara."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        450,
+        1400
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "procjena bez upisa",
+    "lang": "hr",
+    "say": [
+      "Procijeni koliko kalorija ima kroasan, nisam ga pojeo."
+    ],
+    "expect": {
+      "meals": 0
+    }
+  },
+  {
+    "name": "ispravka",
+    "lang": "hr",
+    "say": [
+      "Ručak: 200 g grčkog jogurta (Dukat).",
+      "Ups, bilo je 150 g, ne 200."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        100,
+        120
+      ],
+      "no_new_foods": true
+    }
+  },
+  {
+    "name": "vaganje",
+    "lang": "hr",
+    "say": [
+      "Jutros 80.2 na vagi."
+    ],
+    "expect": {
+      "meals": 0,
+      "weight": 80.2
+    }
+  },
+  {
+    "name": "check-in",
+    "lang": "hr",
+    "say": [
+      "Loše sam spavao. Raspoloženje danas oko 2 od 5, a skoro uopće nisam gladan."
+    ],
+    "expect": {
+      "meals": 0,
+      "mood": [
+        1,
+        2
+      ],
+      "hunger": [
+        1,
+        2
+      ]
+    }
+  },
+  {
+    "name": "stanje dana",
+    "lang": "hr",
+    "say": [
+      "Kako stojim danas?"
+    ],
+    "seed_meal": true,
+    "expect": {
+      "meals": 1,
+      "max_rounds": 1
+    }
+  },
+  {
+    "name": "etiketa na slici",
+    "lang": "hr",
+    "say": [
+      "Pojeo sam jednu ovakvu pločicu."
+    ],
+    "label": {
+      "name": "Crunchy Protein Bar",
+      "brand": "Fitbite",
+      "kcal": 380,
+      "protein": 30,
+      "carbs": 35,
+      "fat": 13,
+      "portion": 55
+    },
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        190,
+        230
+      ],
+      "new_foods": [
+        "protein"
+      ]
+    }
+  }
+]
