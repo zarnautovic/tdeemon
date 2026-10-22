@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/rand/v2"
 	"os"
@@ -34,31 +35,45 @@ var anonymise = flag.Bool("anonymise", false, "write testdata/history.json from 
 // profile, and the manual revisions of the target calibration is held to.
 type history struct {
 	// Today is the day the history was taken, whose day is open.
-	Today   string `json:"today"`
-	Profile struct {
-		Sex       string  `json:"sex"`
-		BirthDate string  `json:"birth_date"`
-		HeightCm  float64 `json:"height_cm"`
-	} `json:"profile"`
-	Phases []struct {
-		Type        string  `json:"type"`
-		Start       string  `json:"start"`
-		End         string  `json:"end,omitempty"`
-		RatePctWeek float64 `json:"rate_pct_week"`
-	} `json:"phases"`
+	Today   string         `json:"today"`
+	Profile historyProfile `json:"profile"`
+	Phases  []historyPhase `json:"phases"`
 	// Targets are the kcal of each target, from the day it took effect;
 	// TrainingWeekdays the plan's, Sunday being 0.
-	Targets []struct {
-		From         string  `json:"from"`
-		TrainingKcal float64 `json:"training_kcal"`
-		RestKcal     float64 `json:"rest_kcal"`
-	} `json:"targets"`
-	TrainingWeekdays []time.Weekday `json:"training_weekdays"`
-	Revisions        []revision     `json:"revisions"`
-	Days             []historyDay   `json:"days"`
+	Targets          []historyTarget `json:"targets"`
+	TrainingWeekdays []time.Weekday  `json:"training_weekdays"`
+	// Limits are the user's limits of data a trusted estimate needs, when
+	// they tightened them, as get_summary judges with them.
+	Limits    *historyLimits `json:"limits,omitempty"`
+	Revisions []revision     `json:"revisions"`
+	Days      []historyDay   `json:"days"`
 	// Anonymise is how the real history is anonymised, which only it
 	// holds: the code is public, so its numbers are not.
 	Anonymise *anonymisation `json:"anonymise,omitempty"`
+}
+
+type historyProfile struct {
+	Sex       string  `json:"sex"`
+	BirthDate string  `json:"birth_date"`
+	HeightCm  float64 `json:"height_cm"`
+}
+
+type historyPhase struct {
+	Type        string  `json:"type"`
+	Start       string  `json:"start"`
+	End         string  `json:"end,omitempty"`
+	RatePctWeek float64 `json:"rate_pct_week"`
+}
+
+type historyTarget struct {
+	From         string  `json:"from"`
+	TrainingKcal float64 `json:"training_kcal"`
+	RestKcal     float64 `json:"rest_kcal"`
+}
+
+type historyLimits struct {
+	LoggedDays float64 `json:"logged_days"`
+	WeighIns   float64 `json:"weigh_ins"`
 }
 
 // anonymisation moves the days by Weeks whole weeks, so weekdays stay; it
@@ -78,10 +93,11 @@ type anonymisation struct {
 }
 
 // An anonymisation moves the days by at least minWeeks, and each kind of
-// value, on the median day, by at least minMoveKg for a weight or lean
-// mass, minMovePoints for body fat, and minMoveShare of it for the
-// intake, steps and active energy: the values are checked, not the
-// parameters, as a scale and a shift may undo each other.
+// value, on all but the tenth of the days that move least, by at least
+// minMoveKg for a weight or lean mass, minMovePoints for body fat, and
+// minMoveShare of it for the intake, steps and active energy: the values
+// are checked, not the parameters, as a scale and a shift may undo each
+// other.
 const (
 	minWeeks      = 52
 	minMoveKg     = 2
@@ -113,18 +129,16 @@ func (a *anonymisation) validate() []string {
 	return bad
 }
 
-// leanOf returns the lean mass of d's weight and body fat, 0 without
-// both: calibration's when the scale gives none.
-func leanOf(d historyDay) float64 {
-	if d.WeightKg <= 0 || d.BodyFatPct <= 0 {
-		return 0
-	}
-	return d.WeightKg * (1 - d.BodyFatPct/100)
+// derivedLean returns the lean mass calibration derives of d's weight and
+// body fat, 0 for none.
+func derivedLean(d historyDay) float64 {
+	kg, _ := leanMass(Day{Status: day.Complete, WeightKg: d.WeightKg, BodyFatPct: d.BodyFatPct})
+	return kg
 }
 
 // stillNear returns the kinds of value the anonymised days anon move from
-// the real days orig by less than the least move, on the median day,
-// never their values.
+// the real days orig by less than the least move, but on the tenth of the
+// days that move least, never their values.
 func stillNear(orig, anon []historyDay) []string {
 	var near []string
 	for _, k := range []struct {
@@ -135,7 +149,7 @@ func stillNear(orig, anon []historyDay) []string {
 	}{
 		{"weight", func(d historyDay) float64 { return d.WeightKg }, minMoveKg, false},
 		{"lean mass", func(d historyDay) float64 { return d.LeanMassKg }, minMoveKg, false},
-		{"lean mass of weight and body fat", leanOf, minMoveKg, false},
+		{"lean mass of weight and body fat", derivedLean, minMoveKg, false},
 		{"body fat", func(d historyDay) float64 { return d.BodyFatPct }, minMovePoints, false},
 		{"intake", func(d historyDay) float64 { return d.Kcal }, minMoveShare, true},
 		{"steps", func(d historyDay) float64 { return d.Steps }, minMoveShare, true},
@@ -155,7 +169,7 @@ func stillNear(orig, anon []historyDay) []string {
 			continue
 		}
 		slices.Sort(moves)
-		if !(moves[len(moves)/2] >= k.least) {
+		if !(moves[len(moves)/10] >= k.least) {
 			near = append(near, k.name)
 		}
 	}
@@ -182,10 +196,14 @@ type revision struct {
 	Note      string  `json:"note,omitempty"`
 }
 
-// actions are the actions a revision may take, a verdict's; noVerdicts the
-// reasons a verdict gives for none.
+// actions are the actions a revision may take, a verdict's, and the way
+// each moves the target's weekly average: down, up, or 0 for as it was;
+// a nil way is any. noVerdicts are the reasons a verdict gives for none.
 var (
-	actions    = []string{ActionHold, ActionRaiseKcal, ActionLowerKcal, ActionRaiseProteinOrKcal, ActionShrinkSurplus, ActionMaintain}
+	actions = map[string]*int{
+		ActionHold: new(0), ActionRaiseKcal: new(1), ActionLowerKcal: new(-1), ActionShrinkSurplus: new(-1),
+		ActionRaiseProteinOrKcal: nil, ActionMaintain: nil,
+	}
 	noVerdicts = []string{ReasonNoPhase, ReasonNoTarget, ReasonNoEstimate, ReasonBeforePhase, ReasonNotTrusted, ReasonNoTDEE}
 )
 
@@ -334,7 +352,8 @@ func tell(private bool, hidden, shown string) string {
 	return shown
 }
 
-// built is a history as calibration takes it.
+// built is a history as calibration takes it, with the params and limits
+// get_summary would judge it with.
 type built struct {
 	today    day.Date
 	days     map[day.Date]Day
@@ -342,36 +361,23 @@ type built struct {
 	targets  []plan.Target
 	training plan.Weekdays
 	pr       profile.Profile
+	params   Params
+	lim      limits.Limits
 }
 
 // build returns the history as calibration takes it, and fails for one
-// that would not hold calibration to anything, or to less than it
-// says: a day with no date or another day's, no phase, phases or targets
-// out of order, a day's status or the profile of no kind, or no
-// training weekdays; no revision, or one of no target.
+// that would not hold calibration to anything, or to less than it says:
+// no today, the days as days fails them, no phase, phases or targets out
+// of order, no training weekday or one twice, a profile not given in full
+// or of no kind, and the revisions as checkRevisions fails them.
 func (h *history) build(r reader) built {
 	r.tb.Helper()
 	if h.Today == "" {
 		r.fail("no today", "no today")
 	}
-	b := built{today: r.date(h.Today)}
+	b := built{today: r.date(h.Today), params: DefaultParams(), lim: limits.UserDefaults()}
 	b.days = h.days(r, b.today)
-	for _, p := range h.Phases {
-		b.phases = append(b.phases, plan.Phase{Type: plan.PhaseType(p.Type), Start: r.date(p.Start), End: r.date(p.End), RatePctWeek: p.RatePctWeek})
-	}
-	if err := plan.ValidateTimeline(b.phases); err != nil || len(b.phases) == 0 {
-		r.fail("the phases: none, or not a timeline", fmt.Sprintf("the phases: %v, %d of them; want one or more in order", err, len(b.phases)))
-	}
-	for _, t := range h.Targets {
-		// Calibration reads only the kcal of a target, for the step.
-		b.targets = append(b.targets, plan.Target{
-			EffectiveFrom: r.date(t.From),
-			Training:      plan.DayTarget{Kcal: t.TrainingKcal}, Rest: plan.DayTarget{Kcal: t.RestKcal},
-		})
-	}
-	if err := plan.ValidateHistory(b.targets); err != nil || len(b.targets) == 0 {
-		r.fail("the targets: none, or not a history", fmt.Sprintf("the targets: %v, %d of them", err, len(b.targets)))
-	}
+	b.phases, b.targets = h.timeline(r)
 	var err error
 	if b.training, err = plan.WeekdaysOf(h.TrainingWeekdays...); err != nil || len(h.TrainingWeekdays) == 0 || b.training.Count() != len(h.TrainingWeekdays) {
 		r.fail("the training weekdays: none, one twice, or of no kind", fmt.Sprintf("the training weekdays %v: %v", h.TrainingWeekdays, err))
@@ -382,14 +388,47 @@ func (h *history) build(r reader) built {
 	if err := b.pr.Validate(b.today); err != nil || b.pr.Sex == "" || b.pr.BirthDate.IsZero() || b.pr.HeightCm == 0 {
 		r.fail("the profile: not all of it, or of no kind", fmt.Sprintf("the profile %+v: %v", b.pr, err))
 	}
+	if l := h.Limits; l != nil {
+		b.lim.LoggedDays, b.lim.WeighIns = l.LoggedDays, l.WeighIns
+		if err := b.lim.Validate(); err != nil {
+			r.fail("the limits are of no kind", fmt.Sprintf("the limits: %v", err))
+		}
+	}
+	b.params.LoggedDays, b.params.WeighIns = b.lim.LoggedDays, b.lim.WeighIns
 	b.checkRevisions(r, h.Revisions)
 	return b
 }
 
+// timeline returns the history's phases and targets, and fails for no
+// phase or target, or either out of order.
+func (h *history) timeline(r reader) ([]plan.Phase, []plan.Target) {
+	r.tb.Helper()
+	var phases []plan.Phase
+	for _, p := range h.Phases {
+		phases = append(phases, plan.Phase{Type: plan.PhaseType(p.Type), Start: r.date(p.Start), End: r.date(p.End), RatePctWeek: p.RatePctWeek})
+	}
+	if err := plan.ValidateTimeline(phases); err != nil || len(phases) == 0 {
+		r.fail("the phases: none, or not a timeline", fmt.Sprintf("the phases: %v, %d of them; want one or more in order", err, len(phases)))
+	}
+	var targets []plan.Target
+	for _, t := range h.Targets {
+		// Calibration reads only the kcal of a target, for the step.
+		targets = append(targets, plan.Target{
+			EffectiveFrom: r.date(t.From),
+			Training:      plan.DayTarget{Kcal: t.TrainingKcal}, Rest: plan.DayTarget{Kcal: t.RestKcal},
+		})
+	}
+	if err := plan.ValidateHistory(targets); err != nil || len(targets) == 0 {
+		r.fail("the targets: none, or not a history", fmt.Sprintf("the targets: %v, %d of them", err, len(targets)))
+	}
+	return phases, targets
+}
+
 // days returns the history's days by date, and fails for a day with no
-// date or another day's, after today, or of a status of no kind or not
-// its own: today is open or excluded, a day before it complete or
-// excluded.
+// date or another day's, after today, of a status of no kind or not its
+// own (today is open or excluded, a day before it complete or excluded),
+// with meals and no kcal or kcal and no meals, with a value under 0, or
+// with body fat of 100 % or more.
 func (h *history) days(r reader, today day.Date) map[day.Date]Day {
 	r.tb.Helper()
 	days := map[day.Date]Day{}
@@ -397,36 +436,40 @@ func (h *history) days(r reader, today day.Date) map[day.Date]Day {
 	for i, d := range h.Days {
 		on := r.date(d.Date)
 		_, dup := days[on]
-		switch {
-		case d.Date == "" || dup:
-			r.fail(fmt.Sprintf("day %d: no date, or another day's", i+1), fmt.Sprintf("day %d: date %q, no date or another day's", i+1, d.Date))
-		case today.Before(on):
-			r.fail(fmt.Sprintf("day %d: after today", i+1), fmt.Sprintf("%s: after today", d.Date))
-		case !slices.Contains(statuses, day.Status(d.Status)) || day.Status(d.Status) != day.Excluded && (day.Status(d.Status) == day.Open) != (on == today):
-			r.fail(fmt.Sprintf("day %d: a status of no kind, or not its own", i+1), fmt.Sprintf("%s: status %q, want one of %v, open only today", d.Date, d.Status, statuses))
-		}
-		days[on] = Day{
+		v := Day{
 			Status: day.Status(d.Status), Meals: d.Meals, Kcal: d.Kcal, WeightKg: d.WeightKg,
 			BodyFatPct: d.BodyFatPct, LeanMassKg: d.LeanMassKg, Steps: d.Steps, ActiveKcal: d.ActiveKcal,
 		}
+		var why string
+		switch {
+		case d.Date == "" || dup:
+			why = "no date, or another day's"
+		case today.Before(on):
+			why = "after today"
+		case !slices.Contains(statuses, v.Status) || v.Status != day.Excluded && (v.Status == day.Open) != (on == today):
+			why = fmt.Sprintf("a status of no kind, or not its own: want one of %v, open only today", statuses)
+		case (v.Meals > 0) != (v.Kcal > 0):
+			why = "meals and no kcal, or kcal and no meals"
+		case slices.ContainsFunc([]float64{float64(v.Meals), v.Kcal, v.WeightKg, v.BodyFatPct, v.LeanMassKg, v.Steps, v.ActiveKcal}, func(x float64) bool { return x < 0 }) || v.BodyFatPct >= 100:
+			why = "a value under 0, or body fat of 100 % or more"
+		}
+		if why != "" {
+			r.fail(fmt.Sprintf("day %d: %s", i+1, why), fmt.Sprintf("day %d, %+v: %s", i+1, d, why))
+		}
+		days[on] = v
 	}
 	return days
 }
 
-// checkRevisions fails for no revision, and for one that would hold
-// calibration to less than it says: one on a day no target took effect
-// after another, revisions out of order, a week after it that ends
-// after today, a TDEE with one bound or bounds out of order, an
-// action of no kind, and neither an action nor the reason there is no
-// verdict.
+// checkRevisions fails for no revision, and for one fault finds wrong.
 func (b built) checkRevisions(r reader, revisions []revision) {
 	r.tb.Helper()
 	if len(revisions) == 0 {
 		r.fail("no revision", "no revision")
 	}
-	revised := map[day.Date]bool{}
-	for _, t := range b.targets[1:] {
-		revised[t.EffectiveFrom] = true
+	revised := map[day.Date]plan.Target{}
+	for i, t := range b.targets[1:] {
+		revised[t.EffectiveFrom] = b.targets[i]
 	}
 	var prev day.Date
 	for i, rv := range revisions {
@@ -439,26 +482,54 @@ func (b built) checkRevisions(r reader, revisions []revision) {
 }
 
 // fault returns what is wrong with the revision rv, the i-th, on the day
-// on, after the one on prev, of the days a target took effect after
-// another; "" for nothing. It names no value of the revision's.
-func (b built) fault(i int, rv revision, on, prev day.Date, revised map[day.Date]bool) string {
+// on, after the one on prev, of the targets each day a target took effect
+// replaced; "" for nothing. It names no value of the revision's: a
+// revision on a day no target took effect after another, within a week
+// of the one before it, or whose week ends after today; a TDEE with one
+// bound, the bounds out of order or under 0; an action or a verdict of no
+// kind, a verdict the revision's own, a verdict without why or why
+// without one, why with a number in it; an action the way the targets
+// moved does not take; and a reason for no verdict of no kind, or beside
+// a verdict.
+func (b built) fault(i int, rv revision, on, prev day.Date, revised map[day.Date]plan.Target) string {
+	replaced, ok := revised[on]
 	switch {
-	case !revised[on]:
+	case !ok:
 		return "no target took effect that day after another"
 	case i > 0 && !prev.AddDays(weekAfter).Before(on):
 		return "within a week of the revision before it, or before it"
 	case b.today.Before(on.AddDays(weekAfter)):
 		return "the week after it ends after today"
-	case (rv.TDEELow > 0) != (rv.TDEEHigh > 0) || rv.TDEELow > rv.TDEEHigh:
-		return "a TDEE with one bound, or the bounds out of order"
-	case !slices.Contains(actions, rv.Action) || rv.Verdict != "" && (!slices.Contains(actions, rv.Verdict) || rv.Verdict == rv.Action):
-		return fmt.Sprintf("an action or a verdict of no kind, or a verdict the revision's own: want one of %v", actions)
-	case (rv.Verdict == "") != (rv.Differs == ""):
-		return "a verdict other than the revision's without why, or why without it"
+	}
+	return b.faultOf(rv, replaced, on)
+}
+
+// faultOf returns what is wrong with what the revision rv on the day on,
+// which replaced the target replaced, says; "" for nothing.
+func (b built) faultOf(rv revision, replaced plan.Target, on day.Date) string {
+	way, known := actions[rv.Action]
+	_, verdict := actions[rv.Verdict]
+	switch {
+	case (rv.TDEELow > 0) != (rv.TDEEHigh > 0) || rv.TDEELow > rv.TDEEHigh || rv.TDEELow < 0:
+		return "a TDEE with one bound, or the bounds out of order or under 0"
+	case !known || rv.Verdict != "" && (!verdict || rv.Verdict == rv.Action):
+		return fmt.Sprintf("an action or a verdict of no kind, or a verdict the revision's own: want one of %v", slices.Sorted(maps.Keys(actions)))
+	case (rv.Verdict == "") != (rv.Differs == "") || strings.ContainsAny(rv.Differs, "0123456789"):
+		return "a verdict other than the revision's without why, why without it, or why with a number"
+	case way != nil && b.way(replaced, on) != *way:
+		return "an action the way the targets moved does not take"
 	case rv.NoVerdict != "" && (rv.Verdict != "" || !slices.Contains(noVerdicts, rv.NoVerdict)):
 		return fmt.Sprintf("a reason for no verdict beside a verdict, or of no kind: want one of %v", noVerdicts)
 	}
 	return ""
+}
+
+// way returns the way the weekly average of the target in force on on
+// moved from replaced's: -1 down, 1 up, 0 as it was.
+func (b built) way(replaced plan.Target, on day.Date) int {
+	now, _ := plan.TargetOn(b.targets, on)
+	n := b.training.Count()
+	return cmp.Compare(now.WeeklyAverage(n).Kcal, replaced.WeeklyAverage(n).Kcal)
 }
 
 // weekAfter is the last day after a revision whose verdict counts as
@@ -469,8 +540,7 @@ const weekAfter = 6
 // judge returns the verdict of the history on the day after last,
 // against the target in force on targetOn.
 func (b built) judge(last, targetOn day.Date) Verdict {
-	p := DefaultParams()
-	e := Calibrate(b.days, b.phases, last, p)
+	e := Calibrate(b.days, b.phases, last, b.params)
 	var ph *plan.Phase
 	if got, ok := plan.PhaseOn(b.phases, last.AddDays(1)); ok {
 		ph = &got
@@ -479,82 +549,72 @@ func (b built) judge(last, targetOn day.Date) Verdict {
 	if got, ok := plan.TargetOn(b.targets, targetOn); ok {
 		tg = &got
 	}
-	return Judge(e, ph, tg, b.training, b.pr, limits.UserDefaults(), p)
+	return Judge(e, ph, tg, b.training, b.pr, b.lim, b.params)
 }
 
-// firstVerdict returns the first verdict within a week of the revision
-// on, from the day it took effect, against the target it replaced, and
-// the day the verdict is for. It reads no day from today on, as they are
-// open: a verdict for today reads the days up to yesterday, as
-// get_summary's does. A verdict after the first day reads days the
-// revision did not have: the week is how long calibration may take to
-// trust what the revision acted on.
-func (b built) firstVerdict(on day.Date) (Verdict, day.Date, bool) {
+// week returns the verdicts within a week of the revision on, from the
+// day it took effect, against the target it replaced. It reads no day
+// from today on, as they are open: a verdict for today reads the days up
+// to yesterday, as get_summary's does. A verdict after the first day
+// reads days the revision did not have: the week is how long calibration
+// may take to trust what the revision acted on.
+func (b built) week(on day.Date) []Verdict {
 	replaced := on.AddDays(-1)
+	var out []Verdict
 	for last := replaced; last.Before(on.AddDays(weekAfter)) && last.Before(b.today); last = last.AddDays(1) {
-		if v := b.judge(last, replaced); v.Rate != RateNone {
-			return v, last.AddDays(1), true
-		}
+		out = append(out, b.judge(last, replaced))
 	}
-	return Verdict{}, day.Date{}, false
+	return out
 }
 
 // checkHistory holds calibration to a history: an estimate that moves
 // little from day to day, an interval that holds the TDEE each revision
 // was made on, and a verdict that takes each revision's action within a
-// week of it, or none for the reason the history gives. It returns each
-// revision's first verdict's action, or "none". A private history is
+// week of it, or the history's in its place, or none for the reason the
+// history gives. It returns each revision's first verdict, as its rate,
+// action, guards and day of the week, or "none". A private history is
 // told without its values or dates, as the test's output may be shared.
 func checkHistory(t *testing.T, h history, private bool) []string {
 	t.Helper()
 	r := reader{t, private}
 	b := h.build(r)
 	b.checkSteady(t, private)
-	p := DefaultParams()
 	var got []string
 	for i, rv := range h.Revisions {
 		on := r.date(rv.Date)
 		name := tell(private, fmt.Sprintf("revision %d", i+1), rv.Date)
-		e := Calibrate(b.days, b.phases, on.AddDays(-1), p)
+		e := Calibrate(b.days, b.phases, on.AddDays(-1), b.params)
 		t.Logf("%s: the estimate the day before%s, trusted %v, doubts %v", name, tell(private, "", fmt.Sprintf(" was %.0f ± %.0f", e.TDEE, e.HalfWidth)), e.Trusted, e.Doubts)
 		if rv.TDEEHigh > 0 && !(e.TDEE-e.HalfWidth <= rv.TDEELow && e.TDEE+e.HalfWidth >= rv.TDEEHigh) {
 			t.Errorf("%s: the interval does not hold the revision's TDEE", name)
 		}
-		v, d, ok := b.firstVerdict(on)
-		switch want := cmp.Or(rv.Verdict, rv.Action); {
-		case ok:
-			t.Logf("%s: the first verdict%s: %s, %s, guards %v", name, tell(private, "", ", for "+d.String()), v.Rate, v.Action, v.Guards)
-			if v.Action != want {
-				t.Errorf("%s: the first verdict is to %s, want %s", name, v.Action, want)
-			}
-			if rv.Verdict != "" {
-				t.Logf("%s: the revision was to %s: %s", name, rv.Action, tell(private, "the history says why they differ", rv.Differs))
-			}
-			got = append(got, v.Action)
-		case rv.NoVerdict == "":
-			t.Errorf("%s: no verdict within a week, and the history gives no reason for none", name)
-		case !b.noVerdict(on, rv.NoVerdict):
-			t.Errorf("%s: no verdict within a week, but not every day's for %s", name, rv.NoVerdict)
-		default:
-			t.Logf("%s: no verdict within a week: %s", name, rv.NoVerdict)
-		}
-		if !ok {
+		week := b.week(on)
+		first := slices.IndexFunc(week, func(v Verdict) bool { return v.Rate != RateNone })
+		if first < 0 {
 			got = append(got, ActionNone)
+			switch {
+			case rv.NoVerdict == "":
+				t.Errorf("%s: no verdict within a week, and the history gives no reason for none", name)
+			case slices.ContainsFunc(week, func(v Verdict) bool { return !slices.Contains(v.Reasons, rv.NoVerdict) }):
+				t.Errorf("%s: no verdict within a week, but not every day's for %s", name, rv.NoVerdict)
+			default:
+				t.Logf("%s: no verdict within a week: %s", name, rv.NoVerdict)
+			}
+			continue
+		}
+		v := week[first]
+		got = append(got, fmt.Sprintf("%s %s %v on day %d", v.Rate, v.Action, v.Guards, first))
+		t.Logf("%s: the first verdict%s: %s, %s, guards %v", name, tell(private, "", ", for "+on.AddDays(first).String()), v.Rate, v.Action, v.Guards)
+		switch want := cmp.Or(rv.Verdict, rv.Action); {
+		case rv.NoVerdict != "":
+			t.Errorf("%s: a verdict within a week, to %s, where the history gives none for %s", name, v.Action, rv.NoVerdict)
+		case v.Action != want:
+			t.Errorf("%s: the first verdict is to %s, want %s", name, v.Action, want)
+		case rv.Verdict != "":
+			t.Logf("%s: the revision was to %s: %s", name, rv.Action, tell(private, "the history says why they differ", rv.Differs))
 		}
 	}
 	return got
-}
-
-// noVerdict reports whether each verdict within a week of the revision on
-// is none for reason.
-func (b built) noVerdict(on day.Date, reason string) bool {
-	replaced := on.AddDays(-1)
-	for last := replaced; last.Before(on.AddDays(weekAfter)); last = last.AddDays(1) {
-		if v := b.judge(last, replaced); v.Rate != RateNone || !slices.Contains(v.Reasons, reason) {
-			return false
-		}
-	}
-	return true
 }
 
 // checkSteady holds calibration to an estimate that moves little from
@@ -564,11 +624,11 @@ func (b built) noVerdict(on day.Date, reason string) bool {
 // bound between them, and calibration is to follow the data.
 func (b built) checkSteady(t *testing.T, private bool) {
 	t.Helper()
-	p := DefaultParams()
+	changes := intakeChanges(b.phases)
 	var prev *Estimate
 	var measured, trusted int
 	for last := b.first(); last.Before(b.today); last = last.AddDays(1) {
-		e := Calibrate(b.days, b.phases, last, p)
+		e := Calibrate(b.days, b.phases, last, b.params)
 		if !e.Measured {
 			continue
 		}
@@ -578,10 +638,10 @@ func (b built) checkSteady(t *testing.T, private bool) {
 		if math.IsNaN(e.TDEE) || math.IsInf(e.TDEE, 0) || math.IsNaN(e.HalfWidth) || math.IsInf(e.HalfWidth, 0) {
 			t.Errorf("%s: an estimate that is no number", on)
 		}
-		// An estimate of another window, as the one from before the
-		// phase gives way to the phase's own once its days are enough:
-		// a jump the design expects.
-		if prev != nil && b.window(*prev) == b.window(e) && !(math.Abs(e.TDEE-prev.TDEE) <= maxDailyChange) {
+		// A window of data since another change of intake, as the
+		// estimate from before the phase gives way to the phase's own once
+		// its days are enough: a jump the design expects.
+		if prev != nil && latestChange(changes, prev.To) == latestChange(changes, e.To) && !(math.Abs(e.TDEE-prev.TDEE) <= maxDailyChange) {
 			t.Errorf("%s: the estimate moved more than %d kcal from the day measured before", on, maxDailyChange)
 		}
 		prev = &e
@@ -590,19 +650,6 @@ func (b built) checkSteady(t *testing.T, private bool) {
 	if trusted == 0 {
 		t.Error("no estimate was trusted")
 	}
-}
-
-// window tells e's window apart from another's: whether it is from
-// before the phase, and the phase it ends in, none being one too.
-func (b built) window(e Estimate) struct {
-	before bool
-	phase  day.Date
-} {
-	ph, _ := plan.PhaseOn(b.phases, e.To)
-	return struct {
-		before bool
-		phase  day.Date
-	}{e.BeforePhase, ph.Start}
 }
 
 // first returns the history's first day.
@@ -639,10 +686,10 @@ func TestCalibrateRealHistory(t *testing.T) {
 }
 
 // TestWriteAnonymisedHistory writes testdata/history.json from the real
-// history, with -anonymise, by the history's own anonymisation. The
-// profile is another, and the revisions keep no TDEE and no note. It
-// writes nothing unless both histories pass checkHistory, and the
-// anonymised one gives each revision the verdict the real one does, or
+// history, with -anonymise, by the history's own anonymisation. It writes
+// nothing unless both histories pass checkHistory, every kind of value
+// moved, and the anonymised one gives each revision the verdict the real
+// one does: its rate, action and guards, on the same day of the week; or
 // none where the real one gives none.
 func TestWriteAnonymisedHistory(t *testing.T) {
 	if !*anonymise {
@@ -660,25 +707,23 @@ func TestWriteAnonymisedHistory(t *testing.T) {
 	if bad := a.validate(); len(bad) > 0 {
 		t.Fatalf("the anonymisation cannot work with %v", bad)
 	}
-	h.Anonymise = nil
 	verdicts := checkHistory(t, h, true)
 	if t.Failed() {
 		t.Fatal("the real history fails checkHistory: calibration.json needs fixing, not the anonymisation")
 	}
-	orig := slices.Clone(h.Days)
-	h.anonymise(reader{t, true}, a)
-	if near := stillNear(orig, h.Days); len(near) > 0 {
+	anon := h.anonymised(reader{t, true}, a)
+	if near := stillNear(h.Days, anon.Days); len(near) > 0 {
 		t.Fatalf("the anonymisation leaves the %v nearly as they are: choose other parameters", near)
 	}
 	// Told as a private history's until written: a history it refuses is
 	// shown nowhere.
-	if got := checkHistory(t, h, true); !slices.Equal(got, verdicts) {
+	if got := checkHistory(t, anon, true); !slices.Equal(got, verdicts) {
 		t.Fatalf("the anonymised history's verdicts are %q, the real one's %q: choose other parameters", got, verdicts)
 	}
 	if t.Failed() {
 		t.Fatal("the anonymised history fails checkHistory: choose other parameters")
 	}
-	out, err := json.MarshalIndent(h, "", "  ")
+	out, err := json.MarshalIndent(anon, "", "  ")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -687,11 +732,11 @@ func TestWriteAnonymisedHistory(t *testing.T) {
 	}
 }
 
-// anonymise takes the real history h to the anonymised one, by a: the
-// dates moved, the values scaled, shifted and given noise, another
-// profile, and revisions without their TDEE or note. It fails as secret
-// does, telling no value.
-func (h *history) anonymise(secret reader, a *anonymisation) {
+// anonymised returns the anonymised history of the real history h, by a:
+// a history of its own, which takes each field of h as anonymised says,
+// so that one it does not copy is left out. It fails as secret does,
+// telling no value.
+func (h *history) anonymised(secret reader, a *anonymisation) history {
 	secret.tb.Helper()
 	r := rand.New(rand.NewPCG(a.Seed, a.Seed+1)) //nolint:gosec // G404: noise for a fixture, no secret
 	move := func(s string) string {
@@ -700,36 +745,40 @@ func (h *history) anonymise(secret reader, a *anonymisation) {
 		}
 		return secret.date(s).AddDays(7 * a.Weeks).String()
 	}
-	h.Today = move(h.Today)
-	h.Profile.Sex, h.Profile.BirthDate, h.Profile.HeightCm = "male", "1990-01-01", 180
-	for i := range h.Phases {
-		h.Phases[i].Start, h.Phases[i].End = move(h.Phases[i].Start), move(h.Phases[i].End)
+	out := history{
+		Today: move(h.Today), Profile: historyProfile{Sex: "male", BirthDate: "1990-01-01", HeightCm: 180},
+		TrainingWeekdays: slices.Clone(h.TrainingWeekdays),
 	}
-	for i := range h.Targets {
-		tg := &h.Targets[i]
-		tg.From = move(tg.From)
+	if h.Limits != nil {
+		out.Limits = &historyLimits{LoggedDays: h.Limits.LoggedDays, WeighIns: h.Limits.WeighIns}
+	}
+	for _, p := range h.Phases {
+		out.Phases = append(out.Phases, historyPhase{Type: p.Type, Start: move(p.Start), End: move(p.End), RatePctWeek: p.RatePctWeek})
+	}
+	for _, t := range h.Targets {
 		// A target the same on both types of day stays so.
-		rest := tg.RestKcal
-		tg.RestKcal = roundTo(rest*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)
-		if tg.TrainingKcal == rest {
-			tg.TrainingKcal = tg.RestKcal
-		} else {
-			tg.TrainingKcal = roundTo(tg.TrainingKcal*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)
+		tg := historyTarget{From: move(t.From), RestKcal: roundTo(t.RestKcal*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)}
+		tg.TrainingKcal = tg.RestKcal
+		if t.TrainingKcal != t.RestKcal {
+			tg.TrainingKcal = roundTo(t.TrainingKcal*a.KcalScale+targetNoise*(2*r.Float64()-1), 0.1)
 		}
+		out.Targets = append(out.Targets, tg)
 	}
-	for i := range h.Days {
-		anonymiseDay(secret, &h.Days[i], a, move, r)
+	for _, d := range h.Days {
+		out.Days = append(out.Days, anonymisedDay(secret, d, a, move, r))
 	}
-	for i := range h.Revisions {
-		rv := &h.Revisions[i]
-		rv.Date, rv.TDEELow, rv.TDEEHigh, rv.Note = move(rv.Date), 0, 0, ""
+	for _, rv := range h.Revisions {
+		out.Revisions = append(out.Revisions, revision{
+			Date: move(rv.Date), Action: rv.Action, Verdict: rv.Verdict, Differs: rv.Differs, NoVerdict: rv.NoVerdict,
+		})
 	}
+	return out
 }
 
 // anonymised says what the anonymisation does with each field of a
-// history. Whatever it does not list would go into the public fixture as
-// it is, so TestAnonymisationCoversEveryField fails for a field added to
-// a history until it is listed here.
+// history. A field it does not list fails
+// TestAnonymisationCoversEveryField, and one the anonymisation does not
+// copy is left out of the public fixture.
 var anonymised = map[string]string{
 	"Today":                "moved",
 	"Profile.Sex":          "another profile's",
@@ -743,12 +792,14 @@ var anonymised = map[string]string{
 	"Targets.TrainingKcal": "scaled, with noise",
 	"Targets.RestKcal":     "scaled, with noise",
 	"TrainingWeekdays":     "kept: the days' types, which the dates keep as they move by weeks",
+	"Limits.LoggedDays":    "kept: the data a trusted estimate needs",
+	"Limits.WeighIns":      "kept: the data a trusted estimate needs",
 	"Revisions.Date":       "moved",
 	"Revisions.TDEELow":    "left out",
 	"Revisions.TDEEHigh":   "left out",
 	"Revisions.Action":     "kept: a verdict's action",
 	"Revisions.Verdict":    "kept: a verdict's action",
-	"Revisions.Differs":    "kept: written for the public fixture",
+	"Revisions.Differs":    "kept: written for the public fixture, with no number",
 	"Revisions.NoVerdict":  "kept: a verdict's reason",
 	"Revisions.Note":       "left out",
 	"Days.Date":            "moved",
@@ -784,7 +835,7 @@ func TestAnonymisationCoversEveryField(t *testing.T) {
 	walk("", reflect.TypeFor[history]())
 	for _, f := range fields {
 		if anonymised[f] == "" {
-			t.Errorf("%s: the anonymisation says nothing of it, so it would go into the public fixture as it is", f)
+			t.Errorf("%s: the anonymisation says nothing of it", f)
 		}
 	}
 	for f := range anonymised {
@@ -794,36 +845,37 @@ func TestAnonymisationCoversEveryField(t *testing.T) {
 	}
 }
 
-// anonymiseDay takes a day of the real history to the anonymised one, and
-// fails for a value the anonymisation takes to 0 or less, which would
-// read as no value. A day's meals move by one at most, and stay one or
-// more.
-func anonymiseDay(secret reader, d *historyDay, a *anonymisation, move func(string) string, r *rand.Rand) {
+// anonymisedDay returns the anonymised day of the real day d, and fails
+// for a value the anonymisation takes to 0 or less, which would read as
+// no value. A day's meals move by one at most, and stay one or more.
+func anonymisedDay(secret reader, d historyDay, a *anonymisation, move func(string) string, r *rand.Rand) historyDay {
 	secret.tb.Helper()
-	d.Date = move(d.Date)
+	out := historyDay{Date: move(d.Date), Status: d.Status}
 	if d.Meals > 0 {
-		d.Meals = max(1, d.Meals+r.IntN(3)-1)
+		out.Meals = max(1, d.Meals+r.IntN(3)-1)
 	}
 	for _, f := range []struct {
-		name string
-		v    *float64
-		to   func(float64) float64
+		name  string
+		real  float64
+		anon  *float64
+		moved func(float64) float64
 	}{
-		{"weight", &d.WeightKg, func(v float64) float64 { return roundTo(v*a.WeightScale+a.WeightShift+0.05*r.NormFloat64(), 20) }},
-		{"lean mass", &d.LeanMassKg, func(v float64) float64 { return roundTo(v*a.WeightScale+a.WeightShift/2+0.05*r.NormFloat64(), 20) }},
-		{"body fat", &d.BodyFatPct, func(v float64) float64 { return roundTo(v+a.BodyFatShift+0.2*r.NormFloat64(), 10) }},
-		{"intake", &d.Kcal, func(v float64) float64 { return roundTo(v*a.KcalScale+30*r.NormFloat64(), 1) }},
-		{"steps", &d.Steps, func(v float64) float64 { return roundTo(v*a.StepsScale*(0.95+0.1*r.Float64()), 1) }},
-		{"active energy", &d.ActiveKcal, func(v float64) float64 { return roundTo(v*a.ActiveScale*(0.9+0.2*r.Float64()), 1) }},
+		{"weight", d.WeightKg, &out.WeightKg, func(v float64) float64 { return roundTo(v*a.WeightScale+a.WeightShift+0.05*r.NormFloat64(), 20) }},
+		{"lean mass", d.LeanMassKg, &out.LeanMassKg, func(v float64) float64 { return roundTo(v*a.WeightScale+a.WeightShift/2+0.05*r.NormFloat64(), 20) }},
+		{"body fat", d.BodyFatPct, &out.BodyFatPct, func(v float64) float64 { return roundTo(v+a.BodyFatShift+0.2*r.NormFloat64(), 10) }},
+		{"intake", d.Kcal, &out.Kcal, func(v float64) float64 { return roundTo(v*a.KcalScale+30*r.NormFloat64(), 1) }},
+		{"steps", d.Steps, &out.Steps, func(v float64) float64 { return roundTo(v*a.StepsScale*(0.95+0.1*r.Float64()), 1) }},
+		{"active energy", d.ActiveKcal, &out.ActiveKcal, func(v float64) float64 { return roundTo(v*a.ActiveScale*(0.9+0.2*r.Float64()), 1) }},
 	} {
-		if *f.v <= 0 {
+		if f.real <= 0 {
 			continue
 		}
-		if *f.v = f.to(*f.v); *f.v <= 0 {
+		if *f.anon = f.moved(f.real); *f.anon <= 0 {
 			msg := "a day's " + f.name + " came to 0 or less: choose other parameters"
 			secret.fail(msg, msg)
 		}
 	}
+	return out
 }
 
 // roundTo rounds v to the nearest 1/per: 20 for twentieths, 1 for whole

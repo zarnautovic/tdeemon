@@ -119,10 +119,11 @@ for the author and the reviewer.
   verdict the real one does, and it passes `checkHistory`; otherwise the
   anonymisation needs other parameters. Until then it tells the
   anonymised history as it tells the real one, without values or
-  dates. A field added to a history needs its line in `anonymised`,
-  which says what the anonymisation does with each:
-  `TestAnonymisationCoversEveryField` fails for one it says nothing of,
-  which would go into the public fixture as it is.
+  dates. The anonymised history is built field by field, so a field
+  added to a history is left out of it until the anonymisation copies
+  it; it needs its line in `anonymised` too, which says what the
+  anonymisation does with each, or `TestAnonymisationCoversEveryField`
+  fails.
 - **Tools** (`tools()` in `internal/api/tools.go`) are operations like
   any other, with their cases in `isolationCases` and `answerCases`;
   `TestToolsAreNamed` lists the tools that exist, by their MCP name
