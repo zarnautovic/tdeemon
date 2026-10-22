@@ -220,9 +220,9 @@ A change is done when:
     *Re-run failed jobs* within 30 days, and only while no newer release
     has run, or its `X.Y` tag would go back: *Re-run all jobs* finds the
     commit released and releases nothing, image included;
-  - once, after the first release with an image: set the package
-    `tdeemon` on ghcr.io to public, and check that it is linked to the
-    repository; a new package is private;
+  - the package `tdeemon` on ghcr.io is linked to this repository and
+    takes its visibility, public: the first image (v0.28.0) was public
+    from the start, so anyone pulls it without credentials;
   - other types (docs, chore, ci, refactor…) make no release;
   - a commit that is already in a release makes no other, so re-running
     the workflow is safe.
