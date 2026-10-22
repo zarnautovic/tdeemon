@@ -44,6 +44,10 @@ rather than log.
   random UUID never used before (a version 4 is fine). The ids are in
   the answer of `log_meal` and in `get_day`. A meal not eaten after all
   is `delete_meal`. Never log the meal again.
+- "Undo" is `undo_last`, under a new `id` each time as for a meal; it
+  takes back the latest change, of any client, and the answer says
+  which. Without an id the server makes one, but then the undo sent
+  again takes back another change.
 
 ## Measurements and the day
 
