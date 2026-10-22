@@ -102,25 +102,76 @@ func TestDailySnapshotHourly(t *testing.T) {
 
 // A snapshot of a time to come, from a clock that was ahead, does not
 // stop the daily ones, nor make one at every check, nor push out the new
-// ones: it goes.
+// one: it stays, uncounted.
 func TestDailySnapshotAfterAClockAhead(t *testing.T) {
 	t.Parallel()
 
 	db := storetest.Open(t)
 	ahead := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
-	if _, err := db.DailySnapshot(t.Context(), ahead, 2); err != nil {
+	if _, err := db.DailySnapshot(t.Context(), ahead, 1); err != nil {
 		t.Fatal(err)
 	}
 	at := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
-	dst, err := db.DailySnapshot(t.Context(), at, 2)
+	dst, err := db.DailySnapshot(t.Context(), at, 1)
 	if dst == "" || err != nil {
 		t.Fatalf("after a clock ahead = %q, %v", dst, err)
 	}
-	if got := files(t, backupsDir(t, db)); !slices.Equal(got, []string{filepath.Base(dst)}) {
-		t.Errorf("files = %v, want only %s", got, filepath.Base(dst))
+	want := []string{filepath.Base(dst), "daily-20270101T000000.000000Z.db"}
+	if got := files(t, backupsDir(t, db)); !slices.Equal(got, want) {
+		t.Errorf("files = %v, want %v", got, want)
 	}
-	if dst, err := db.DailySnapshot(t.Context(), at.Add(time.Hour), 2); dst != "" || err != nil {
+	if dst, err := db.DailySnapshot(t.Context(), at.Add(time.Hour), 1); dst != "" || err != nil {
 		t.Errorf("an hour later = %q, %v", dst, err)
+	}
+}
+
+// A clock behind, as after a restart without the time, takes a snapshot
+// but removes none of the real ones, which it sees as of a time to come.
+func TestDailySnapshotAfterAClockBehind(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	at := time.Date(2026, 10, 22, 3, 0, 0, 0, time.UTC)
+	for d := range 3 {
+		if _, err := db.DailySnapshot(t.Context(), at.AddDate(0, 0, d), 3); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dst, err := db.DailySnapshot(t.Context(), time.Date(1970, 1, 1, 0, 0, 5, 0, time.UTC), 3)
+	if dst == "" || err != nil {
+		t.Fatalf("with a clock behind = %q, %v", dst, err)
+	}
+	if got := files(t, backupsDir(t, db)); len(got) != 4 {
+		t.Errorf("files = %v, want the three real ones and the new", got)
+	}
+}
+
+// A temporary file that does not go stops no snapshot: the snapshot is
+// written, and the error is about the old files, logged as a warning.
+func TestDailySnapshotWithATempThatStays(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	dir := backupsDir(t, db)
+	// A directory with a file in it: os.Remove refuses it.
+	if err := os.MkdirAll(filepath.Join(dir, "daily-123.tmp", "inside"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	dst, err := db.DailySnapshot(t.Context(), time.Now(), 1)
+	if dst == "" || err == nil || !strings.Contains(err.Error(), "removing old daily snapshots") {
+		t.Errorf("DailySnapshot = %q, %v", dst, err)
+	}
+	if err := os.Remove(dst); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	var logs bytes.Buffer
+	wait := db.StartDailySnapshots(ctx, 1, time.Hour, slog.New(slog.NewTextHandler(&logs, nil)))
+	cancel()
+	wait()
+	if out := logs.String(); !strings.Contains(out, "took the daily snapshot") ||
+		!strings.Contains(out, "level=WARN msg=\"removing old daily snapshots failed\"") || strings.Contains(out, "the daily snapshot failed") {
+		t.Errorf("logs = %q", out)
 	}
 }
 
