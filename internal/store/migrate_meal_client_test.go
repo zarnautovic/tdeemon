@@ -6,15 +6,15 @@ import (
 	"testing"
 )
 
-// 0011 rebuilds the meals table for the api client: every meal stays as
+// 0012 rebuilds the meals table for the api client: every meal stays as
 // it was, its items with it, and the items' foreign key to their meal
 // still holds.
 func TestMigrationOfTheMealClientKeepsTheMeals(t *testing.T) {
 	t.Parallel()
 
 	db := openEmpty(t)
-	if err := db.migrate(t.Context(), upTo(t, "0010_plan.sql"), discard()); err != nil {
-		t.Fatalf("migrate to 0010: %v", err)
+	if err := db.migrate(t.Context(), upTo(t, "0011_workout_days.sql"), discard()); err != nil {
+		t.Fatalf("migrate to 0011: %v", err)
 	}
 	const user = "0199f0a0-0000-7000-8000-000000000001"
 	exec := func(q string, args ...any) {
@@ -36,8 +36,8 @@ func TestMigrationOfTheMealClientKeepsTheMeals(t *testing.T) {
 	before := tableRows(t, db, "meals")
 	items := tableRows(t, db, "meal_items")
 
-	if err := db.migrate(t.Context(), upTo(t, "0011_meal_client_api.sql"), discard()); err != nil {
-		t.Fatalf("migrate to 0011: %v", err)
+	if err := db.migrate(t.Context(), upTo(t, "0012_meal_client_api.sql"), discard()); err != nil {
+		t.Fatalf("migrate to 0012: %v", err)
 	}
 	if after := tableRows(t, db, "meals"); !reflect.DeepEqual(after, before) {
 		t.Errorf("meals after the migration:\n%q\nwant\n%q", after, before)
