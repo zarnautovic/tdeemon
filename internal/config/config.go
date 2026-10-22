@@ -9,9 +9,12 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // TZ must resolve even in images without system tzdata.
+
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 )
 
 // Prefix is prepended to the name of every variable Load reads, except TZ.
@@ -56,6 +59,10 @@ type Config struct {
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For names
 	// the client; a request from anywhere else is its own client.
 	TrustedProxies []netip.Prefix
+	// Limits are the instance's limits of a plan, the outer bound of every
+	// user's (docs/limits.md); limits.Instance() unless TDEEMON_LIMIT_*
+	// variables change them.
+	Limits limits.Limits
 }
 
 // OIDC configures sign-in through an OpenID Connect provider such as
@@ -133,6 +140,10 @@ func Load(lookup LookupFunc) (Config, error) {
 		errs = append(errs, err)
 	}
 
+	if cfg.Limits, err = loadLimits(get); err != nil {
+		errs = append(errs, err)
+	}
+
 	return cfg, errors.Join(errs...)
 }
 
@@ -148,6 +159,45 @@ func loadLocation(lookup LookupFunc) (*time.Location, error) {
 		return time.Local, fmt.Errorf("TZ: %w", err)
 	}
 	return loc, nil
+}
+
+// LimitPrefix comes before a limit's name, in upper case, in the name of
+// the variable that sets it: TDEEMON_LIMIT_KCAL_FLOOR_FEMALE.
+const LimitPrefix = "LIMIT_"
+
+// loadLimits reads the instance's limits: the defaults, each changed by
+// its variable, such as TDEEMON_LIMIT_KCAL_FLOOR_FEMALE=1000 for a
+// clinician's patient. The admin may set them within the floor in the
+// code, and tighten the limits whose default is no looser than the
+// user's (limits.ValidateInstance).
+func loadLimits(get func(name, fallback string) string) (limits.Limits, error) {
+	l := limits.Instance()
+	var errs []error
+	for _, f := range limits.Fields() {
+		name := LimitPrefix + strings.ToUpper(f.Name)
+		raw := get(name, "")
+		switch {
+		case raw == "":
+			continue
+		case f.UserOnly:
+			errs = append(errs, fmt.Errorf("%s%s: a user's limit, which only the user sets", Prefix, name))
+			continue
+		}
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s%s %q: want a number", Prefix, name, raw))
+			continue
+		}
+		f.Set(&l, v)
+	}
+	// The values that read are checked too, so every error shows at once.
+	if err := limits.ValidateInstance(l); err != nil {
+		errs = append(errs, fmt.Errorf("%s%s*: %w", Prefix, LimitPrefix, err))
+	}
+	if err := errors.Join(errs...); err != nil {
+		return limits.Instance(), err
+	}
+	return l, nil
 }
 
 // loadOIDC reads the OIDC_* variables: none of them for no provider, or
@@ -254,7 +304,19 @@ func (c Config) LogValue() slog.Value {
 		slog.String("secret_key", "[redacted]"),
 		slog.Any("oidc", c.OIDC),
 		slog.Any("trusted_proxies", c.TrustedProxies),
+		slog.Any("limits", limitsValue(c.Limits)),
 	)
+}
+
+// limitsValue logs the instance's limits by their names.
+func limitsValue(l limits.Limits) slog.Value {
+	var attrs []slog.Attr
+	for _, f := range limits.Fields() {
+		if !f.UserOnly {
+			attrs = append(attrs, slog.Float64(f.Name, f.Get(l)))
+		}
+	}
+	return slog.GroupValue(attrs...)
 }
 
 // LogValue implements slog.LogValuer without the client secret.

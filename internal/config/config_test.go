@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/config"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 )
 
 // env returns a LookupFunc backed by m instead of the process environment,
@@ -335,5 +336,99 @@ func TestLoadTrustedProxies(t *testing.T) {
 				t.Errorf("Load = %v, want an error naming TDEEMON_TRUSTED_PROXIES", err)
 			}
 		})
+	}
+}
+
+func TestLoadLimits(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := config.Load(env(required()))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Limits != limits.Instance() {
+		t.Errorf("Limits = %+v, want the defaults", cfg.Limits)
+	}
+
+	m := required()
+	maps.Copy(m, map[string]string{
+		"TDEEMON_LIMIT_KCAL_FLOOR_FEMALE": "1000", // a clinician's patient
+		"TDEEMON_LIMIT_CUT_RATE":          " -0.8 ",
+		"TDEEMON_LIMIT_INTERVAL_DAYS":     "10",
+	})
+	cfg, err = config.Load(env(m))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := limits.Instance()
+	want.KcalFloorFemale, want.CutRate, want.IntervalDays = 1000, -0.8, 10
+	if cfg.Limits != want {
+		t.Errorf("Limits = %+v, want %+v", cfg.Limits, want)
+	}
+}
+
+func TestLoadLimitsErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, key, value, want string
+	}{
+		{"not a number", "TDEEMON_LIMIT_KCAL_FLOOR_MALE", "1200 kcal", `TDEEMON_LIMIT_KCAL_FLOOR_MALE "1200 kcal": want a number`},
+		{"the code's floor", "TDEEMON_LIMIT_KCAL_FLOOR_MALE", "800", "TDEEMON_LIMIT_*: kcal_floor_male 800: want more than 800"},
+		{"protein under the RDA", "TDEEMON_LIMIT_PROTEIN_FLOOR", "0.5", "protein_floor 0.5 g/kg"},
+		{"a limit the instance only tightens", "TDEEMON_LIMIT_PROTEIN_CEILING", "4", "protein_ceiling 4: the instance may only tighten it"},
+		{"a part of a day", "TDEEMON_LIMIT_FIRST_STEP_DAYS", "14.5", "first_step_days 14.5"},
+		{"no number", "TDEEMON_LIMIT_DRIFT_PCT", "NaN", "drift_pct NaN"},
+		{"a user's limit", "TDEEMON_LIMIT_PROTEIN_FLOOR_GRAMS", "200", "TDEEMON_LIMIT_PROTEIN_FLOOR_GRAMS: a user's limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := required()
+			m[tc.key] = tc.value
+			cfg, err := config.Load(env(m))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load = %v, want an error with %q", err, tc.want)
+			}
+			if cfg.Limits != limits.Instance() {
+				t.Errorf("Limits = %+v, want the defaults with an error", cfg.Limits)
+			}
+		})
+	}
+}
+
+// A value that does not read and one that breaks a rule are reported
+// together.
+func TestLoadLimitsReportsEveryError(t *testing.T) {
+	t.Parallel()
+
+	m := required()
+	m["TDEEMON_LIMIT_CUT_RATE"] = "abc"
+	m["TDEEMON_LIMIT_KCAL_FLOOR_MALE"] = "500"
+	_, err := config.Load(env(m))
+	for _, want := range []string{"TDEEMON_LIMIT_CUT_RATE", "kcal_floor_male 500"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("Load = %v, want it to name %s", err, want)
+		}
+	}
+}
+
+func TestConfigLogValueHasLimits(t *testing.T) {
+	t.Parallel()
+
+	m := required()
+	m["TDEEMON_LIMIT_KCAL_FLOOR_FEMALE"] = "1100"
+	cfg, err := config.Load(env(m))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("starting", "config", cfg)
+	for _, want := range []string{"config.limits.kcal_floor_female=1100", "config.limits.cut_rate=-1"} {
+		if !strings.Contains(buf.String(), want) {
+			t.Errorf("log output is missing %s: %s", want, buf.String())
+		}
+	}
+	if strings.Contains(buf.String(), "protein_floor_grams") {
+		t.Errorf("log output has a user's limit: %s", buf.String())
 	}
 }

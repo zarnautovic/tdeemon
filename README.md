@@ -5,7 +5,9 @@ Self-hosted, AI-first nutrition tracking with an adaptive TDEE.
 Log meals by chat or photo from any AI client (via MCP) or the built-in
 chat; tdeemon does the math, learns your real energy expenditure from
 intake and weight trend, and lets an AI coach adjust your goals — cut,
-maintenance, bulk or recomp — within guardrails you control.
+maintenance, bulk or recomp — within limits enforced in code: you and
+the admin may tighten them, and loosen some within a floor nobody can
+lower.
 
 > **Status: early development.** Only the server skeleton, the database
 > layer, the API contract and an empty web app exist so far.
@@ -98,6 +100,7 @@ All settings come from environment variables:
 | `TDEEMON_OIDC_CLIENT_SECRET` | — | its client secret, for a confidential client |
 | `TDEEMON_OIDC_NAME` | `Single sign-on` | what the sign-in page calls the provider |
 | `TDEEMON_TRUSTED_PROXIES` | — | reverse proxies whose `X-Forwarded-For` names the client, as addresses or CIDR ranges (`10.42.0.0/16, fd00::/8`); set it behind a proxy, or the limits on failed sign-ins count the proxy's address, that is everyone together |
+| `TDEEMON_LIMIT_<NAME>` | the column "Hard limit" of [docs/limits.md](docs/limits.md) | the instance's limits of a plan, such as `TDEEMON_LIMIT_KCAL_FLOOR_FEMALE=1000` for a clinician's patient; the names are in docs/limits.md, "The names of the limits". Never below the floor in the code, and some only tighter |
 | `TZ` | system | default time zone of the instance |
 
 Every invalid or missing variable is reported at startup in one go.
