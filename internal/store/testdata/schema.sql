@@ -59,13 +59,18 @@ CREATE TABLE "events" (
     undone_by TEXT CHECK (undone_by IS NULL OR length(undone_by) = 36),
     -- 1 when undo passed over the event: the entity changed since, or
     -- the change could not be read or put back.
-    stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
+    stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)), undo_request TEXT CHECK (
+    undo_request IS NULL OR length(undo_request) = 36
+),
     PRIMARY KEY (user_id, id)
 ) STRICT;
 
 CREATE INDEX events_user ON events (user_id);
 
 CREATE INDEX events_user_entity ON events (user_id, entity);
+
+CREATE UNIQUE INDEX events_user_undo_request ON events (user_id, undo_request)
+WHERE undo_request IS NOT NULL;
 
 CREATE TABLE food_aliases (
     food_id TEXT NOT NULL,

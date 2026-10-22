@@ -1,0 +1,138 @@
+package api_test
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+	"uuid"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
+)
+
+// undo sends an undo under id, and reads what it took back.
+func undo(t *testing.T, e mealsEnv, id uuid.UUID) (int, string, string) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodPost, "/api/v1/undo", fmt.Sprintf(`{"id": %q}`, id), e.session, nil)
+	var a struct {
+		Undone struct {
+			Action, Entity, Client string
+		} `json:"undone"`
+	}
+	if rec.Code == http.StatusOK {
+		if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+			t.Fatal(err)
+		}
+		return rec.Code, a.Undone.Action + " " + a.Undone.Entity + " " + a.Undone.Client, rec.Body.String()
+	}
+	return rec.Code, "", rec.Body.String()
+}
+
+// undo_last takes back the latest change, through whatever client; sent
+// again under its id, it takes back no other; with nothing left it is a
+// 404.
+func TestUndoLast(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	first, second := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	for _, id := range []string{first, second} {
+		e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	}
+	request := clientid.NewAt(e.now)
+	for _, name := range []string{"an undo", "the undo again"} {
+		if code, got, body := undo(t, e, request); code != http.StatusOK || got != "meal.create "+second+" web" {
+			t.Errorf("%s: %d %s", name, code, body)
+		}
+	}
+	if rec := e.in.do(t, http.MethodGet, "/api/v1/days/today", "", e.session, nil); !strings.Contains(rec.Body.String(), first) || strings.Contains(rec.Body.String(), second) {
+		t.Errorf("the day after the undo: %s", rec.Body.String())
+	}
+	if code, got, body := undo(t, e, clientid.NewAt(e.now)); code != http.StatusOK || got != "meal.create "+first+" web" {
+		t.Errorf("another undo: %d %s", code, body)
+	}
+	// The foods of the meals' fixture, then nothing.
+	for {
+		code, _, body := undo(t, e, clientid.NewAt(e.now))
+		if code == http.StatusNotFound {
+			if !strings.Contains(body, "nothing to undo") {
+				t.Errorf("nothing left: %s", body)
+			}
+			break
+		}
+		if code != http.StatusOK {
+			t.Fatalf("an undo: %d %s", code, body)
+		}
+	}
+}
+
+// A change undo cannot take back is a 409 that says why, and is passed
+// over: sent again under its id, the undo says so again; a new undo goes
+// on to the change before.
+func TestUndoLastConflict(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	upsert := `{"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}`
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/foods", upsert, e.session, nil); rec.Code != http.StatusOK {
+		t.Fatalf("a food: %d %s", rec.Code, rec.Body.String())
+	}
+	// An import corrects the food since.
+	kefir, err := foodNamed(t, e.in.db, e.in.user.ID, "Kefir", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kefir.Note = "the label's"
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, event.Actor{Kind: event.Import, Client: "hae"}, kefir, e.now); err != nil {
+		t.Fatal(err)
+	}
+	request := clientid.NewAt(e.now)
+	for _, want := range []string{"it changed since", "this undo passed over it before"} {
+		if code, _, body := undo(t, e, request); code != http.StatusConflict || !strings.Contains(body, "food.save of "+kefir.ID.String()+" cannot be undone: "+want) {
+			t.Errorf("an undo of the food: %d %s, want 409 saying %q", code, body, want)
+		}
+	}
+	if code, got, body := undo(t, e, clientid.NewAt(e.now)); code != http.StatusOK || strings.Contains(got, kefir.ID.String()) {
+		t.Errorf("a new undo: %d %s, want the change before the food's", code, body)
+	}
+}
+
+// A new undo's id is a version 7 UUID made near the clock.
+func TestUndoLastRefusesItsID(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	for name, tc := range map[string]struct{ id, want string }{
+		"version 4":    {"f47ac10b-58cc-4372-a567-0e02b2c3d479", "not a version 7"},
+		"two days old": {clientid.NewAt(e.now.Add(-48 * time.Hour)).String(), "more than a day before"},
+		"no UUID":      {"undo-1", "id"},
+	} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/undo", fmt.Sprintf(`{"id": %q}`, tc.id), e.session, nil)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), tc.want) {
+			t.Errorf("%s: %d %s, want 422 saying %q", name, rec.Code, rec.Body.String(), tc.want)
+		}
+	}
+}
+
+// undo_last takes back a change made through any client, and says which.
+func TestUndoLastSaysTheClient(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	tok, rec := e.in.createToken(t, e.session[0], `{"name":"Claude","scopes":["tools"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("a token: %d %s", rec.Code, rec.Body.String())
+	}
+	id := meal.NewIDAt(e.now).String()
+	body := fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, nil, bearer(tok.Token)); rec.Code != http.StatusCreated {
+		t.Fatalf("a meal through the API: %d %s", rec.Code, rec.Body.String())
+	}
+	if code, got, body := undo(t, e, clientid.NewAt(e.now)); code != http.StatusOK || got != "meal.create "+id+" api" {
+		t.Errorf("an undo of it: %d %s, want the client api", code, body)
+	}
+}

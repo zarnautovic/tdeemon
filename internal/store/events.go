@@ -13,6 +13,7 @@ import (
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 )
@@ -33,6 +34,9 @@ func undoLeaves() []event.Action {
 
 // ErrNothingToUndo reports that the user has no change left to undo.
 var ErrNothingToUndo = errors.New("nothing to undo")
+
+// ErrUndoID reports the id of a new undo out of form (clientid.Check).
+var ErrUndoID = errors.New("invalid undo id")
 
 // UndoReason says why a change cannot be undone, in words for the user
 // or the model; a client that translates them tells them apart by the
@@ -55,6 +59,9 @@ const (
 	UndoUnreadable UndoReason = "its state cannot be read"
 	// UndoStuck: the state before breaks a rule of a table now.
 	UndoStuck UndoReason = "it cannot be put back"
+	// UndoPassedOver: the same undo, sent before, passed over the change
+	// for one of the reasons above.
+	UndoPassedOver UndoReason = "this undo passed over it before"
 )
 
 // clash is what a way back returns when putting the entity back would
@@ -211,53 +218,117 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 // tries the same change again. With nothing left it returns
 // ErrNothingToUndo.
 func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, error) {
+	e, _, err := db.Undo(ctx, userID, a, uuid.Nil(), now)
+	return e, err
+}
+
+// Undo is UndoLast of an undo under request, the id a client made for it
+// (uuid.Nil: none), so the same undo sent again is known: the change it
+// settled keeps the id, and the undo sent again returns that change, and
+// true, when it was taken back, or an *UndoConflictError when it was
+// passed over, rather than taking back the change before. A request no
+// undo had must be a new id near now (clientid.Check), or ErrUndoID.
+func (db *DB) Undo(ctx context.Context, userID uuid.UUID, a event.Actor, request uuid.UUID, now time.Time) (event.Event, bool, error) {
 	if err := a.Validate(); err != nil {
-		return event.Event{}, fmt.Errorf("invalid actor: %w", err)
+		return event.Event{}, false, fmt.Errorf("invalid actor: %w", err)
 	}
 	var undone event.Event
+	var again bool
 	var conflict *UndoConflictError
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		args := []any{userID.String()}
-		for _, a := range undoLeaves() {
-			args = append(args, string(a))
-		}
-		e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+` FROM events
-			WHERE user_id = ? AND actor = 'user' AND operation NOT IN (?`+strings.Repeat(", ?", len(args)-2)+`)
-				AND undone_by IS NULL AND stale = 0
-			ORDER BY rowid DESC LIMIT 1`, args...))
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNothingToUndo
-		}
-		if err != nil {
+		var settled bool
+		var err error
+		if undone, settled, conflict, err = settledBy(ctx, tx, userID, request, now); err != nil || settled {
+			again = settled && conflict == nil
 			return err
 		}
-		after, c, err := takeBackChecked(ctx, tx, userID, e, now)
-		if err != nil || c != nil {
-			conflict = c
+		undone, conflict, err = undoInTx(ctx, tx, userID, a, now)
+		if err != nil || request == uuid.Nil() {
 			return err
 		}
-		undoID, err := record(ctx, tx, userID, a, event.Undo, e.ID.String(), e.After, after, now)
-		if err != nil {
-			return err
+		// The change the undo settled, taken back or passed over.
+		id := undone.ID
+		if conflict != nil {
+			id = conflict.Event.ID
 		}
-		if _, err := tx.ExecContext(ctx, "UPDATE events SET undone_by = ? WHERE user_id = ? AND id = ?",
-			undoID.String(), userID.String(), e.ID.String()); err != nil {
-			return err
-		}
-		e.UndoneBy = undoID
-		undone = e
-		return nil
+		_, err = tx.ExecContext(ctx, "UPDATE events SET undo_request = ? WHERE user_id = ? AND id = ?",
+			request.String(), userID.String(), id.String())
+		return err
 	})
-	if errors.Is(err, ErrNothingToUndo) {
-		return event.Event{}, err
+	if errors.Is(err, ErrNothingToUndo) || errors.Is(err, ErrUndoID) {
+		return event.Event{}, false, err
 	}
 	if err != nil {
-		return event.Event{}, fmt.Errorf("undo: %w", err)
+		return event.Event{}, false, fmt.Errorf("undo: %w", err)
 	}
 	if conflict != nil {
-		return event.Event{}, conflict
+		return event.Event{}, false, conflict
 	}
-	return undone, nil
+	return undone, again, nil
+}
+
+// lastToUndo returns userID's latest change that undo can take back, or
+// ErrNothingToUndo.
+func lastToUndo(ctx context.Context, tx *sql.Tx, userID uuid.UUID) (event.Event, error) {
+	args := []any{userID.String()}
+	for _, a := range undoLeaves() {
+		args = append(args, string(a))
+	}
+	e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+` FROM events
+		WHERE user_id = ? AND actor = 'user' AND operation NOT IN (?`+strings.Repeat(", ?", len(args)-2)+`)
+			AND undone_by IS NULL AND stale = 0
+		ORDER BY rowid DESC LIMIT 1`, args...))
+	if errors.Is(err, sql.ErrNoRows) {
+		return event.Event{}, ErrNothingToUndo
+	}
+	return e, err
+}
+
+// settledBy returns userID's change the undo under request settled, and
+// whether there is one: with the conflict of one it passed over. A
+// request no undo had must be a new id near now, or ErrUndoID; uuid.Nil
+// is none.
+func settledBy(ctx context.Context, tx *sql.Tx, userID, request uuid.UUID, now time.Time) (event.Event, bool, *UndoConflictError, error) {
+	if request == uuid.Nil() {
+		return event.Event{}, false, nil, nil
+	}
+	e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+" FROM events WHERE user_id = ? AND undo_request = ?",
+		userID.String(), request.String()))
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if err := clientid.Check("undo", request, now); err != nil {
+			return event.Event{}, false, nil, fmt.Errorf("%w: %w", ErrUndoID, err)
+		}
+		return event.Event{}, false, nil, nil
+	case err != nil:
+		return event.Event{}, false, nil, err
+	case e.UndoneBy == uuid.Nil():
+		return event.Event{}, true, &UndoConflictError{Event: e, Reason: UndoPassedOver}, nil
+	}
+	return e, true, nil, nil
+}
+
+// undoInTx takes back userID's latest change in tx, as UndoLast does, and
+// returns it; or the conflict of one it passed over.
+func undoInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, *UndoConflictError, error) {
+	e, err := lastToUndo(ctx, tx, userID)
+	if err != nil {
+		return event.Event{}, nil, err
+	}
+	after, conflict, err := takeBackChecked(ctx, tx, userID, e, now)
+	if err != nil || conflict != nil {
+		return event.Event{}, conflict, err
+	}
+	undoID, err := record(ctx, tx, userID, a, event.Undo, e.ID.String(), e.After, after, now)
+	if err != nil {
+		return event.Event{}, nil, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE events SET undone_by = ? WHERE user_id = ? AND id = ?",
+		undoID.String(), userID.String(), e.ID.String()); err != nil {
+		return event.Event{}, nil, err
+	}
+	e.UndoneBy = undoID
+	return e, nil, nil
 }
 
 // takeBackChecked puts e's entity back when it is as e left it, and

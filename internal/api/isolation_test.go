@@ -14,6 +14,7 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
@@ -541,6 +542,16 @@ func isolateDay(method, path, body string) isolationCase {
 	}
 }
 
+// isolateUndo is undo-last's case: the other takes back their own latest
+// change; the owner's stay as they were.
+func isolateUndo(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := `{"id": "` + clientid.NewAt(e.in.clock.Now()).String() + `"}`
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/undo", body, nil, bearer(e.other.token.Token)); rec.Code != http.StatusOK {
+		t.Errorf("their own undo: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // isolateLogMeal is log-meal's case: the other logs a meal of their own,
 // of their own bread; the owner's meals stay as they were. (TestLogMealIDsArePerUser
 // logs under the owner's meal's id, which this case cannot: its answer
@@ -651,6 +662,7 @@ func isolationCases() map[string]isolationCase {
 		"log-metric":    isolateDay(http.MethodPut, "/metrics/weight", `{"value": 77.3}`),
 		"delete-metric": isolateDay(http.MethodDelete, "/metrics/weight", ""),
 		"check-in":      isolateDay(http.MethodPatch, "", `{"mood": 2, "note": "a quiet day", "training_day": "rest", "excluded_reason": "sick"}`),
+		"undo-last":     isolateUndo,
 		"get-me": read("/api/v1/me", true, func(e isolationEnv) []string {
 			return []string{"Notes of " + e.other.user.Name, fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),

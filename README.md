@@ -302,7 +302,8 @@ corrected; `POST /api/v1/meals`, and `PATCH` and `DELETE` on
 `/api/v1/meals/{id}`, a meal logged, changed or deleted;
 `PUT` and `DELETE` on `/api/v1/days/{date}/metrics/{kind}`, a
 measurement logged or deleted; `PATCH /api/v1/days/{date}`, a
-check-in). Every other
+check-in; `POST /api/v1/undo`, the latest change taken back). Every
+other
 operation is closed to tokens (403), so a token can never create, list
 or revoke tokens, read the session or change a setting. Only
 `Authorization: Bearer tdm_…` carries a token (an empty Bearer is a bad
