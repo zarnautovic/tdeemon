@@ -1,6 +1,45 @@
 {
   "components": {
     "schemas": {
+      "CheckInBody": {
+        "additionalProperties": false,
+        "properties": {
+          "excluded_reason": {
+            "description": "Takes the day out of calibration for this reason (restaurant, sick, forgot to log); empty brings it back.",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "hunger": {
+            "description": "How hungry the user was, 1 (not at all) to 5 (very); 0 clears it.",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "mood": {
+            "description": "The user's mood, 1 (low) to 5 (high); 0 clears it.",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "description": "What the user says of the day; empty clears it.",
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "training_day": {
+            "description": "training or rest sets the day's type, which picks its target; plan leaves it to the training weekdays.",
+            "enum": [
+              "training",
+              "rest",
+              "plan"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateTokenInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -99,6 +138,13 @@
             "description": "Why the user excluded the day.",
             "type": "string"
           },
+          "hunger": {
+            "description": "The check-in's hunger, 1 (not at all) to 5 (very); absent when not said.",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
           "meals": {
             "description": "In the order they were eaten.",
             "items": {
@@ -111,6 +157,17 @@
               "$ref": "#/components/schemas/MetricBody"
             },
             "type": "array"
+          },
+          "mood": {
+            "description": "The check-in's mood, 1 (low) to 5 (high); absent when not said.",
+            "format": "int64",
+            "maximum": 5,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "note": {
+            "description": "What the user said of the day at its check-in.",
+            "type": "string"
           },
           "remaining": {
             "$ref": "#/components/schemas/RemainingBody",
@@ -947,6 +1004,20 @@
         "required": [
           "id",
           "items"
+        ],
+        "type": "object"
+      },
+      "LogMetricInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "description": "In the kind's unit: weight and lean_mass kg, body_fat %, steps a count, active_kcal and basal_kcal kcal, sleep_h hours, rhr bpm, hrv ms, vo2max ml/kg/min, exercise_min minutes.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "value"
         ],
         "type": "object"
       },
@@ -2444,7 +2515,7 @@
     },
     "/api/v1/days/{date}": {
       "get": {
-        "description": "A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its type and where it stands (open, complete or excluded).",
+        "description": "A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).",
         "operationId": "get-day",
         "parameters": [
           {
@@ -2532,6 +2603,418 @@
           }
         },
         "summary": "Get a day",
+        "tags": [
+          "tools"
+        ]
+      },
+      "patch": {
+        "description": "Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why (a restaurant meal they could not weigh, being sick, a day they forgot to log). A day to come takes its type and exclusion, not a mood, hunger or note: send today for the user's day now. One undo takes the whole check-in back. The answer is the day, as get_day gives it.",
+        "operationId": "check-in",
+        "parameters": [
+          {
+            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "examples": [
+                "today"
+              ],
+              "pattern": "^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Check in a day",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/days/{date}/metrics/{kind}": {
+      "delete": {
+        "description": "Deletes a day's measurement of a kind, a wrong one: imports apply to the day again. The answer is the day, as get_day gives it.",
+        "operationId": "delete-metric",
+        "parameters": [
+          {
+            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "examples": [
+                "today"
+              ],
+              "pattern": "^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "weight",
+                "body_fat",
+                "lean_mass",
+                "steps",
+                "active_kcal",
+                "basal_kcal",
+                "sleep_h",
+                "rhr",
+                "hrv",
+                "vo2max",
+                "exercise_min"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Delete a measurement",
+        "tags": [
+          "tools"
+        ]
+      },
+      "put": {
+        "description": "Stores a measurement of a day the user gave (a weighing, the night's sleep), of today or a day before, in the kind's unit: it counts over what an import brings, and replaces what the day held of the kind. The answer is the day, as get_day gives it.",
+        "operationId": "log-metric",
+        "parameters": [
+          {
+            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "examples": [
+                "today"
+              ],
+              "pattern": "^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "weight",
+                "body_fat",
+                "lean_mass",
+                "steps",
+                "active_kcal",
+                "basal_kcal",
+                "sleep_h",
+                "rhr",
+                "hrv",
+                "vo2max",
+                "exercise_min"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogMetricInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DayBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Log a measurement",
         "tags": [
           "tools"
         ]

@@ -377,6 +377,12 @@ func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) 
 			return nil, err
 		}
 		return exclusionOf(ctx, tx, userID, d)
+	case event.DayCheckIn:
+		d, err := entityDay(e.Entity)
+		if err != nil {
+			return nil, err
+		}
+		return checkInOf(ctx, tx, userID, d)
 	case event.MetricsMerge, event.MetricSet, event.MetricDelete:
 		return metricsStateNow(ctx, tx, userID, e)
 	case event.TrainingDay, event.NotesSet:
@@ -396,6 +402,8 @@ func takeBack(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, 
 		return takeBackMeal(ctx, tx, userID, e, now)
 	case event.DayExclude, event.DayInclude:
 		return takeBackDay(ctx, tx, userID, e, now)
+	case event.DayCheckIn:
+		return takeBackCheckIn(ctx, tx, userID, e, now)
 	case event.MetricsMerge, event.MetricSet, event.MetricDelete:
 		return takeBackMetrics(ctx, tx, userID, e, now)
 	case event.TrainingDay, event.NotesSet:

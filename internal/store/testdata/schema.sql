@@ -26,7 +26,7 @@ CREATE TABLE days (
     day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
     -- Why the day is out of calibration; NULL when it is not.
     excluded_reason TEXT CHECK (excluded_reason <> ''),
-    updated_at TEXT NOT NULL, training_day INTEGER CHECK (training_day IN (0, 1)),
+    updated_at TEXT NOT NULL, training_day INTEGER CHECK (training_day IN (0, 1)), mood INTEGER CHECK (mood BETWEEN 1 AND 5), hunger INTEGER CHECK (hunger BETWEEN 1 AND 5), note TEXT CHECK (note <> ''),
     PRIMARY KEY (user_id, day)
 ) STRICT;
 
@@ -44,7 +44,8 @@ CREATE TABLE "events" (
         'food.save', 'food.archive', 'meal.create', 'meal.replace', 'meal.delete',
         'day.exclude', 'day.include', 'metrics.merge', 'metric.set', 'metric.delete', 'undo',
         'profile.set', 'phase.set', 'phase.delete', 'target.set', 'target.delete',
-        'day.training', 'plan.weekdays', 'limits.set', 'notes.set', 'workouts.set'
+        'day.training', 'plan.weekdays', 'limits.set', 'notes.set', 'workouts.set',
+        'day.checkin'
     )),
     -- What changed: a food's or a meal's id, a day, a day and a metric,
     -- a phase's start, a target's first day, "profile", "plan",

@@ -261,7 +261,8 @@ func TestGetDay(t *testing.T) {
 		"metrics": [
 			{"kind": "weight", "value": 81.5, "unit": "kg", "source": "manual"},
 			{"kind": "steps", "value": 6400, "unit": "steps", "source": "import"}
-		]
+		],
+		"mood": 1, "hunger": 3, "note": "Ana's check-in: a long walk"
 	}`, today, now.Format(time.RFC3339), bread.ID, toast, total)
 	for _, path := range []string{"/api/v1/days/today", "/api/v1/days/" + today.String()} {
 		rec := in.do(t, http.MethodGet, path, "", session, nil)

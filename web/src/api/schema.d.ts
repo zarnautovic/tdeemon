@@ -113,12 +113,40 @@ export interface paths {
         };
         /**
          * Get a day
-         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its type and where it stands (open, complete or excluded).
+         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).
          */
         get: operations["get-day"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Check in a day
+         * @description Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why (a restaurant meal they could not weigh, being sick, a day they forgot to log). A day to come takes its type and exclusion, not a mood, hunger or note: send today for the user's day now. One undo takes the whole check-in back. The answer is the day, as get_day gives it.
+         */
+        patch: operations["check-in"];
+        trace?: never;
+    };
+    "/api/v1/days/{date}/metrics/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Log a measurement
+         * @description Stores a measurement of a day the user gave (a weighing, the night's sleep), of today or a day before, in the kind's unit: it counts over what an import brings, and replaces what the day held of the kind. The answer is the day, as get_day gives it.
+         */
+        put: operations["log-metric"];
+        post?: never;
+        /**
+         * Delete a measurement
+         * @description Deletes a day's measurement of a kind, a wrong one: imports apply to the day again. The answer is the day, as get_day gives it.
+         */
+        delete: operations["delete-metric"];
         options?: never;
         head?: never;
         patch?: never;
@@ -408,6 +436,27 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CheckInBody: {
+            /** @description Takes the day out of calibration for this reason (restaurant, sick, forgot to log); empty brings it back. */
+            excluded_reason?: string;
+            /**
+             * Format: int64
+             * @description How hungry the user was, 1 (not at all) to 5 (very); 0 clears it.
+             */
+            hunger?: number;
+            /**
+             * Format: int64
+             * @description The user's mood, 1 (low) to 5 (high); 0 clears it.
+             */
+            mood?: number;
+            /** @description What the user says of the day; empty clears it. */
+            note?: string;
+            /**
+             * @description training or rest sets the day's type, which picks its target; plan leaves it to the training weekdays.
+             * @enum {string}
+             */
+            training_day?: "training" | "rest" | "plan";
+        };
         CreateTokenInputBody: {
             /**
              * @description What to call the token.
@@ -445,9 +494,21 @@ export interface components {
             date: string;
             /** @description Why the user excluded the day. */
             excluded_reason?: string;
+            /**
+             * Format: int64
+             * @description The check-in's hunger, 1 (not at all) to 5 (very); absent when not said.
+             */
+            hunger?: number;
             /** @description In the order they were eaten. */
             meals: components["schemas"]["MealBody"][];
             metrics: components["schemas"]["MetricBody"][];
+            /**
+             * Format: int64
+             * @description The check-in's mood, 1 (low) to 5 (high); absent when not said.
+             */
+            mood?: number;
+            /** @description What the user said of the day at its check-in. */
+            note?: string;
             /** @description What the target leaves after the total; below 0 past it. */
             remaining?: components["schemas"]["RemainingBody"];
             /**
@@ -806,6 +867,13 @@ export interface components {
             id: string;
             items: components["schemas"]["ItemInput"][] | null;
             note?: string;
+        };
+        LogMetricInputBody: {
+            /**
+             * Format: double
+             * @description In the kind's unit: weight and lean_mass kg, body_fat %, steps a count, active_kcal and basal_kcal kcal, sleep_h hours, rhr bpm, hrv ms, vo2max ml/kg/min, exercise_min minutes.
+             */
+            value: number;
         };
         LoginInputBody: {
             /** @description The address the user signs in with; case does not matter. */
@@ -1666,6 +1734,301 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "log-metric": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                date: string;
+                kind: "weight" | "body_fat" | "lean_mass" | "steps" | "active_kcal" | "basal_kcal" | "sleep_h" | "rhr" | "hrv" | "vo2max" | "exercise_min";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogMetricInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-metric": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                date: string;
+                kind: "weight" | "body_fat" | "lean_mass" | "steps" | "active_kcal" | "basal_kcal" | "sleep_h" | "rhr" | "hrv" | "vo2max" | "exercise_min";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DayBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
