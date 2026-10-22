@@ -36,6 +36,8 @@ const usage = `Usage:
   tdeemon user create [flags]       add a user
   tdeemon user set-password [flags] give a user a new password and end
                                     their sessions
+  tdeemon import-history [flags]    import a user's history from the
+                                    predecessor, once
   tdeemon help                      show this help
 
 Flags of user create:
@@ -53,11 +55,21 @@ Flags of user set-password:
   --email ADDRESS    the user's address (required)
   --password-stdin   as for user create
 
-The user commands work on the database of a server that has started at
-least once, which creates and migrates it; the server may be running.
+Flags of import-history:
+  --email ADDRESS    the user's address (required)
+  --health-db PATH   the predecessor's database, health.db (required),
+                     which is only read
+  --dry-run          say what it would import, and write nothing
 
-Configure tdeemon with TDEEMON_* environment variables; the user commands
-read the same ones as the server. See
+An import runs again without changing what it imported: a value merges
+as before, and a meal keeps its id and what it held.
+
+The user and import commands work on the database of a server that has
+started at least once, which creates and migrates it; the server may be
+running.
+
+Configure tdeemon with TDEEMON_* environment variables; the user and import
+commands read the same ones as the server. See
 https://github.com/zarnautovic/tdeemon#configuration
 `
 
@@ -103,6 +115,8 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, in io.Rea
 		return err
 	case "user":
 		return userCommand(ctx, args[1:], lookup, in, out)
+	case "import-history":
+		return importHistory(ctx, args[1:], lookup, out)
 	}
 	return fmt.Errorf("%w: unknown command %q", errUsage, args[0])
 }

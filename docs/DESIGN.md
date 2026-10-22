@@ -587,7 +587,10 @@ the first spec.
 1. **A one-off import of the history** (`tdeemon import-history`):
    - the predecessor's database, an index of the vault's daily notes →
      `days`, `metrics` and `meals` (historic meals become one estimate
-     item each); the daily notes' mood, hunger and status are left out;
+     item each, and a day whose total is more than its meals gets the
+     rest as one estimate more); a day with a remark, or without intake
+     logged, is excluded, as the predecessor's calibration left it out,
+     and the daily notes' mood, hunger and status are left out;
    - the vault's food table note → `foods`;
    - the vault's goals note → `phases`, the `targets` history (from its
      revision log) and `profile_notes`.
