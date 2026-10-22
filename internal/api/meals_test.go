@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -823,5 +824,113 @@ func TestUpdateMealOpsOnOneItemAgain(t *testing.T) {
 	}
 	if got := e.mealOf(t, id).Items; len(got) != 2 || got[0].Name != "Stew" || got[1].Name != "Tea" {
 		t.Errorf("the meal's items = %+v, want the stew and the tea", got)
+	}
+}
+
+// A meal sent without an id, by a client that cannot make one, is logged
+// under one the server makes, eaten now; it is no retry when sent again,
+// which the warning of a duplicate tells.
+func TestLogMealWithoutAnID(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	body := `{"items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`
+	var ids []string
+	for i, warned := range []bool{false, true} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+		var a struct {
+			Meal struct {
+				ID      string    `json:"id"`
+				EatenAt time.Time `json:"eaten_at"`
+			} `json:"meal"`
+		}
+		if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &a) != nil {
+			t.Fatalf("send %d: %d %s", i+1, rec.Code, rec.Body.String())
+		}
+		id, err := uuid.Parse(a.Meal.ID)
+		if at, ok := meal.IDTime(id); err != nil || !ok || !at.Equal(e.now) || !a.Meal.EatenAt.Equal(e.now) {
+			t.Errorf("send %d: the meal %s eaten at %s, want an id made now and eaten now", i+1, a.Meal.ID, a.Meal.EatenAt)
+		}
+		if got := strings.Contains(rec.Body.String(), `"duplicate_meal"`); got != warned {
+			t.Errorf("send %d: a warning of a duplicate %v, want %v: %s", i+1, got, warned, rec.Body.String())
+		}
+		ids = append(ids, a.Meal.ID)
+	}
+	if ids[0] == ids[1] {
+		t.Errorf("both sends under %s, want two meals", ids[0])
+	}
+	// Items of ids of their own make the meal sent again a 409, of those
+	// ids, not another meal; and an empty id is no id left out.
+	withItemID := fmt.Sprintf(`{"items": [{"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}]}`, meal.NewIDAt(e.now))
+	for i, want := range []int{http.StatusCreated, http.StatusConflict} {
+		if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", withItemID, e.session, nil); rec.Code != want {
+			t.Errorf("a meal of an item's id, send %d: %d %s, want %d", i+1, rec.Code, rec.Body.String(), want)
+		}
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"id": "", "items": [{"name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a meal of an empty id: %d %s, want 422", rec.Code, rec.Body.String())
+	}
+}
+
+// A new food sent with a meal under the name and brand of a food the user
+// has logs that food as the user has it, unchanged: a model's guess does
+// not overwrite a label's values. One it cannot take is a 422 naming it.
+func TestLogMealOfAFoodTheUserHas(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	guess := fmt.Sprintf(`{"food": {"name": %q, "basis": "100g", "source": "estimate", "nutrients": {"kcal": 300, "protein": 5, "carbs": 60, "fat": 2}}, "amount": 40, "unit": "g"}`, bread.Name)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+guess+`]}`, e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"food_id":"`+e.bread+`"`) {
+		t.Fatalf("a meal of a guess of the bread: %d %s", rec.Code, rec.Body.String())
+	}
+	if after, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, bread.ID); err != nil || !reflect.DeepEqual(after, bread) {
+		t.Errorf("the bread after a meal of a guess of it = %+v, %v; want it as it was", after, err)
+	}
+	if strings.Contains(rec.Body.String(), `"kcal":120`) {
+		t.Errorf("the item has the guess's values: %s", rec.Body.String())
+	}
+	inML := fmt.Sprintf(`{"items": [{"food": {"name": %q, "basis": "100ml", "source": "estimate", "nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 200, "unit": "ml"}]}`, bread.Name)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", inML, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), bread.Name) {
+		t.Errorf("200 ml of a food by weight: %d %s, want a 422 naming it", rec.Code, rec.Body.String())
+	}
+}
+
+// A new food of the name of the user's food is told to be that food, with
+// no warning of values it was not logged with; a quantity only the user's
+// food takes is taken; an archived one is brought back; and one it does
+// not take is a 422 of the op.
+func TestLogMealOfAFoodTheUserHasSaysSo(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.in.db.SetFoodArchived(t.Context(), e.in.user.ID, isolationActor, bread.ID, true, e.now); err != nil {
+		t.Fatal(err)
+	}
+	// Values that do not add up, and a serving the bread has, the guess not.
+	guess := fmt.Sprintf(`{"items": [{"food": {"name": %q, "basis": "100g", "source": "label", "nutrients": {"kcal": 900, "protein": 5, "carbs": 10, "fat": 2}},
+		"servings": 1, "serving": "slice"}]}`, bread.Name)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", guess, e.session, nil)
+	body := rec.Body.String()
+	if rec.Code != http.StatusCreated || !strings.Contains(body, `"code":"food_kept"`) || strings.Contains(body, `"code":"atwater"`) || !strings.Contains(body, `"food_id":"`+e.bread+`"`) {
+		t.Fatalf("a meal of a guess of the archived bread: %d %s", rec.Code, body)
+	}
+	if after, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, bread.ID); err != nil || after.Archived {
+		t.Errorf("the bread after a meal of it = archived %v, %v; want it back", after.Archived, err)
+	}
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food": {"name": %q, "basis": "100ml", "source": "estimate",
+		"nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 200, "unit": "ml"}}]}`, meal.NewIDAt(e.now), bread.Name)
+	if rec := e.patch(t, id, add); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "op 1: ") || !strings.Contains(rec.Body.String(), bread.Name) {
+		t.Errorf("an add of 200 ml of the bread by weight: %d %s, want a 422 of op 1 naming it", rec.Code, rec.Body.String())
 	}
 }

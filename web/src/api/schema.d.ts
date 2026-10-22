@@ -331,7 +331,7 @@ export interface paths {
         put?: never;
         /**
          * Log a meal
-         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). An item is a food of the user's by its food_id, or a new food, which is saved, each with a quantity in the food's unit (g or ml), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands, and warnings: values that do not add up, or a meal that looks like one logged minutes before.
+         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so look at get_day before sending it again. An item is a food of the user's by its food_id, or a new food, which is saved, each with a quantity in the food's unit (g or ml), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands, and warnings: values that do not add up, or a meal that looks like one logged minutes before.
          */
         post: operations["log-meal"];
         delete?: never;
@@ -443,7 +443,7 @@ export interface paths {
         put?: never;
         /**
          * Undo the latest change
-         * @description Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.
+         * @description Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.
          */
         post: operations["undo-last"];
         delete?: never;
@@ -805,7 +805,7 @@ export interface components {
              * @description How much of the food, in unit: the food's own (g or ml).
              */
             amount?: number;
-            /** @description A new food, saved as it is logged: one of the same name and brand is that food, corrected. */
+            /** @description A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food). */
             food?: components["schemas"]["FoodFields"];
             /**
              * Format: uuid
@@ -882,9 +882,9 @@ export interface components {
             eaten_at?: string;
             /**
              * Format: uuid
-             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry.
+             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own).
              */
-            id: string;
+            id?: string;
             items: components["schemas"]["ItemInput"][] | null;
             note?: string;
         };
@@ -911,6 +911,11 @@ export interface components {
             name: string;
             /** @description What the user wants a coach to keep in mind. */
             notes: string;
+            /**
+             * Format: date-time
+             * @description The time now, on the user's clock: for when a meal was eaten, and for the time of an id a client makes.
+             */
+            now: string;
             /** @description The phase today is in; absent when there is none. */
             phase?: components["schemas"]["PhaseBody"];
             profile: components["schemas"]["MeProfile"];
@@ -1236,9 +1241,9 @@ export interface components {
         UndoInputBody: {
             /**
              * Format: uuid
-             * @description A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change.
+             * @description A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change. Left out (not sent empty) by a client that cannot make one, the server makes one, and the undo sent again takes back another change.
              */
-            id: string;
+            id?: string;
         };
         UndoOutputBody: {
             /** @description The undo was sent before under its id, and this is its answer again: no other change was taken back. To go further back, undo under a new id. */
@@ -1357,7 +1362,7 @@ export interface components {
              * @description What kind of warning it is.
              * @enum {string}
              */
-            code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "duplicate_meal";
+            code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "duplicate_meal" | "food_kept";
             message: string;
         };
         WhoamiOutputBody: {

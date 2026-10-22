@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -23,7 +24,7 @@ type undoneBody struct {
 
 type undoInput struct {
 	Body struct {
-		ID string `json:"id" format:"uuid" doc:"A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change."`
+		ID string `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change. Left out (not sent empty) by a client that cannot make one, the server makes one, and the undo sent again takes back another change."`
 	}
 }
 
@@ -39,9 +40,14 @@ func (s *sessions) undoLast(ctx context.Context, in *undoInput) (*undoOutput, er
 	if err != nil {
 		return nil, err
 	}
-	request, err := uuid.Parse(in.Body.ID)
-	if err != nil {
-		return nil, huma.Error422UnprocessableEntity("the undo's id: " + err.Error())
+	// A client that cannot make an id (a model without a clock) leaves it
+	// out: the server makes one now.
+	request := clientid.NewAt(s.now())
+	if in.Body.ID != "" {
+		var err error
+		if request, err = uuid.Parse(in.Body.ID); err != nil {
+			return nil, huma.Error422UnprocessableEntity("the undo's id: " + err.Error())
+		}
 	}
 	e, again, err := s.db.Undo(ctx, p.User.ID, actorOf(p), request, s.now())
 	var conflict *store.UndoConflictError

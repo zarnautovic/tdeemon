@@ -109,11 +109,13 @@ func insertNewMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Ac
 	if err := checkNotDeleted(ctx, tx, userID, m.ID); err != nil {
 		return meal.Meal{}, err
 	}
-	ids, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
+	ids, kept, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
 	if err != nil {
 		return meal.Meal{}, err
 	}
-	m.Items = itemsOf(m.Items, ids)
+	if m.Items, err = itemsOf(m.Items, ids, kept); err != nil {
+		return meal.Meal{}, err
+	}
 	// The time stored, to the second, so the state recorded is the state
 	// read back.
 	s := mealState{Meal: m, Fingerprint: m.Fingerprint(), CreatedAt: now.UTC().Truncate(time.Second)}
@@ -287,11 +289,13 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 			changeErr = err
 			return err
 		}
-		ids, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
+		ids, kept, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
 		if err != nil {
 			return err
 		}
-		m.Items = itemsOf(m.Items, ids)
+		if m.Items, err = itemsOf(m.Items, ids, kept); err != nil {
+			return err
+		}
 		m.ID = id
 		if err := m.Validate(); err != nil {
 			changeErr = fmt.Errorf("invalid meal: %w", err)
@@ -312,16 +316,42 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 }
 
 // itemsOf returns items with each food id that ids holds as the id the
-// food is stored under.
-func itemsOf(items []meal.Item, ids map[uuid.UUID]uuid.UUID) []meal.Item {
+// food is stored under; an item of a food kept, one the user had, is
+// worked out of it as the user has it, or is a *FoodItemError.
+func itemsOf(items []meal.Item, ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]food.Food) ([]meal.Item, error) {
 	out := slices.Clone(items)
 	for i := range out {
-		if id, ok := ids[out[i].FoodID]; ok {
-			out[i].FoodID = id
+		id, ok := ids[out[i].FoodID]
+		if !ok {
+			continue
 		}
+		out[i].FoodID = id
+		f, had := kept[id]
+		if !had {
+			continue
+		}
+		it, err := meal.FromFood(f, out[i].Quantity, out[i].Note)
+		if err != nil {
+			return nil, &FoodItemError{Food: f, Err: err}
+		}
+		it.ID, it.SentFood = out[i].ID, out[i].SentFood
+		out[i] = it
 	}
-	return out
+	return out, nil
 }
+
+// FoodItemError reports an item of a new food that is the user's Food,
+// by its name and brand, which the item's quantity does not fit.
+type FoodItemError struct {
+	Food food.Food
+	Err  error
+}
+
+func (e *FoodItemError) Error() string {
+	return fmt.Sprintf("the user's food %q, which a new food of its name is: %v", e.Food.Name, e.Err)
+}
+
+func (e *FoodItemError) Unwrap() error { return e.Err }
 
 // replaceInTx writes m in place of the meal of before, and records it as
 // a's event.

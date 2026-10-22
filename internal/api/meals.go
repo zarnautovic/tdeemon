@@ -37,7 +37,7 @@ func clientOf(p auth.Principal) meal.Client {
 type itemInput struct {
 	ID       string      `json:"id,omitempty" format:"uuid" doc:"The client's id for the item; a new one when left out."`
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
-	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved as it is logged: one of the same name and brand is that food, corrected."`
+	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food)."`
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit: the food's own (g or ml)."`
 	Unit     string      `json:"unit,omitempty" enum:"g,ml"`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
@@ -84,7 +84,8 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 		if err != nil {
 			return meal.Item{}, nil, nil, err
 		}
-		nf, it.SentFood, warnings = &f, meal.SentFood(f), meal.CheckNutrients(f.Name, f.Nutrients)
+		// Its warnings come with the food it is (item).
+		nf, it.SentFood = &f, meal.SentFood(f)
 	default:
 		if it, warnings, err = estimateItem(in, q); err != nil {
 			return meal.Item{}, nil, nil, err
@@ -98,29 +99,50 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 	return it, nf, warnings, nil
 }
 
-// item is sent worked out whole: the item of its quantity of the user's
-// food, or of its new food nf as sent, which the store saves with the
-// meal and whose id the item names until then; an estimate is whole as
-// sent.
-func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, nf *food.Food) (meal.Item, error) {
+// warnFoodKept is the warning of a new food that is a food the user has.
+const warnFoodKept = "food_kept"
+
+// item is sent worked out whole, with warnings about the values of its
+// new food: the item of its quantity of the user's food, or of its new
+// food nf, which the store saves with the meal and whose id the item
+// names until then; an estimate is whole as sent. A new food of the name
+// and brand of a food the user has is that food, as the user has it
+// (the store keeps it so in the meal's transaction), which the warning
+// says, rather than the values sent.
+func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, nf *food.Food) (meal.Item, []meal.Warning, error) {
 	var f food.Food
+	var warnings []meal.Warning
 	switch {
 	case nf != nil:
-		f = *nf
+		had, err := s.db.FoodByKey(ctx, p.User.ID, nf.Name, nf.Brand)
+		switch {
+		case err == nil:
+			f = had
+			warnings = []meal.Warning{{Code: warnFoodKept, Message: fmt.Sprintf(
+				"%s is a food the user has, logged with its values, not those sent: upsert_food corrects it", had.Name)}}
+		case errors.Is(err, store.ErrNotFound):
+			f, warnings = *nf, meal.CheckNutrients(nf.Name, nf.Nutrients)
+		default:
+			return meal.Item{}, nil, internalError("reading a food failed", err)
+		}
 	case sent.FoodID != uuid.Nil():
 		var err error
 		if f, err = s.foodOf(ctx, p, sent.FoodID); err != nil {
-			return meal.Item{}, err
+			return meal.Item{}, nil, err
 		}
 	default:
-		return sent, nil
+		return sent, nil, nil
 	}
 	it, err := meal.FromFood(f, sent.Quantity, sent.Note)
 	if err != nil {
-		return meal.Item{}, huma.Error422UnprocessableEntity(oneLine(err))
+		return meal.Item{}, nil, huma.Error422UnprocessableEntity(oneLine(err))
 	}
 	it.ID, it.SentFood = sent.ID, sent.SentFood
-	return it, nil
+	if nf != nil {
+		// The store finds the food the item is by the new food's id.
+		it.FoodID = nf.ID
+	}
+	return it, warnings, nil
 }
 
 // estimateItem is the item of an estimate of a whole plate, with warnings
@@ -175,7 +197,7 @@ func oneLine(err error) string { return strings.ReplaceAll(err.Error(), "\n", ";
 // warningBody is something about a logged meal to look at, usually with
 // the user: the meal is stored anyway.
 type warningBody struct {
-	Code    string `json:"code" enum:"atwater,saturated_fat,sugars,polyols,duplicate_meal" doc:"What kind of warning it is."`
+	Code    string `json:"code" enum:"atwater,saturated_fat,sugars,polyols,duplicate_meal,food_kept" doc:"What kind of warning it is."`
 	Message string `json:"message"`
 }
 
@@ -207,7 +229,7 @@ type logMealInput struct {
 
 // logMealBody is a meal as log_meal takes it.
 type logMealBody struct {
-	ID          string      `json:"id" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry."`
+	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own)."`
 	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When the meal was eaten; the time of the id when left out, so a retry has the same."`
 	Description string      `json:"description,omitempty" maxLength:"200" doc:"What the meal was, in the user's words."`
 	Items       []itemInput `json:"items" minItems:"1" maxItems:"50"`
@@ -239,9 +261,11 @@ func (s *sessions) logMeal(ctx context.Context, in *logMealInput) (*mealOutput, 
 		if err := meal.CheckNewID(m.ID, now); err != nil {
 			return nil, huma.Error422UnprocessableEntity(err.Error())
 		}
-		if m.Items, err = s.items(ctx, p, sent, foods); err != nil {
+		var ws []meal.Warning
+		if m.Items, ws, err = s.items(ctx, p, sent, foods); err != nil {
 			return nil, err
 		}
+		warnings = append(warnings, ws...)
 		if err := m.Validate(); err != nil {
 			return nil, huma.Error422UnprocessableEntity("the meal: " + oneLine(err))
 		}
@@ -270,9 +294,14 @@ func (s *sessions) logMeal(ctx context.Context, in *logMealInput) (*mealOutput, 
 // newMeal is the meal b logs, without its items, and the user's calendar.
 // The meal was eaten at the id's time unless b says when.
 func (s *sessions) newMeal(p auth.Principal, b *logMealBody, now time.Time) (meal.Meal, day.Calendar, error) {
-	id, err := uuid.Parse(b.ID)
-	if err != nil {
-		return meal.Meal{}, day.Calendar{}, huma.Error422UnprocessableEntity("the meal's id: " + err.Error())
+	// A client that cannot make an id (a model without a clock) leaves it
+	// out: the server makes one now.
+	id := meal.NewIDAt(now)
+	if b.ID != "" {
+		var err error
+		if id, err = uuid.Parse(b.ID); err != nil {
+			return meal.Meal{}, day.Calendar{}, huma.Error422UnprocessableEntity("the meal's id: " + err.Error())
+		}
 	}
 	cal, _, err := userDay(p, now)
 	if err != nil {
@@ -306,16 +335,20 @@ func sentItems(in []itemInput) ([]meal.Item, []*food.Food, []meal.Warning, error
 	return items, foods, warnings, nil
 }
 
-// items works out each of sent whole, with its new food in foods.
-func (s *sessions) items(ctx context.Context, p auth.Principal, sent []meal.Item, foods []*food.Food) ([]meal.Item, error) {
+// items works out each of sent whole, with its new food in foods, and the
+// warnings about the new foods' values.
+func (s *sessions) items(ctx context.Context, p auth.Principal, sent []meal.Item, foods []*food.Food) ([]meal.Item, []meal.Warning, error) {
 	items := make([]meal.Item, len(sent))
+	var warnings []meal.Warning
 	for i := range sent {
-		var err error
-		if items[i], err = s.item(ctx, p, sent[i], foods[i]); err != nil {
-			return nil, itemError(i, err)
+		it, ws, err := s.item(ctx, p, sent[i], foods[i])
+		if err != nil {
+			return nil, nil, itemError(i, err)
 		}
+		items[i] = it
+		warnings = append(warnings, ws...)
 	}
-	return items, nil
+	return items, warnings, nil
 }
 
 // newFoods is the new foods of foods, to save with the meal.
@@ -332,10 +365,20 @@ func newFoods(foods []*food.Food) []food.Food {
 // errItemTaken is the 409 of an item under the id of another meal's item.
 var errItemTaken = huma.Error409Conflict("an item's id is another meal's item: a new item takes a new id")
 
+// foodItemError is the 422 of an item of a new food that is a food the
+// user has, whose quantity that food does not take.
+func foodItemError(e *store.FoodItemError) error {
+	return huma.Error422UnprocessableEntity(fmt.Sprintf("a new food named as the user's food %q is that food, as the user has it (upsert_food corrects it), "+
+		"which takes no such quantity: %s; give an amount it takes", e.Food.Name, oneLine(e.Err)))
+}
+
 // createError is the answer to CreateMeal's err.
 func createError(err error) error {
 	var conflict *store.FoodConflictError
+	var fie *store.FoodItemError
 	switch {
+	case errors.As(err, &fie):
+		return foodItemError(fie)
 	case errors.As(err, &conflict):
 		return huma.Error409Conflict(conflictDetail(conflict))
 	case errors.Is(err, store.ErrItemTaken):
@@ -445,9 +488,12 @@ func (s *sessions) updateMeal(ctx context.Context, in *updateMealInput) (*mealOu
 	}, now)
 	var e *huma.ErrorModel
 	var conflict *store.FoodConflictError
+	var fie *store.FoodItemError
 	switch {
 	case errors.As(err, &e):
 		return nil, err
+	case errors.As(err, &fie):
+		return nil, foodItemError(fie)
 	case errors.As(err, &conflict):
 		return nil, huma.Error409Conflict(conflictDetail(conflict))
 	case errors.Is(err, store.ErrNotFound):
@@ -531,11 +577,12 @@ func (s *sessions) opItem(ctx context.Context, p auth.Principal, m *meal.Meal, o
 	if at := opTarget(m, oi); at >= 0 && m.Items[at].SameAs(sent) {
 		return oi, nil, ws, nil
 	}
-	if oi.item, err = s.item(ctx, p, sent, nf); err != nil {
+	it, fws, err := s.item(ctx, p, sent, nf)
+	if err != nil {
 		return oi, nil, nil, err
 	}
-	oi.worked = true
-	return oi, nf, ws, nil
+	oi.item, oi.worked = it, true
+	return oi, nf, append(ws, fws...), nil
 }
 
 // opTarget is the index in m of the item oi is about, or -1 when m has

@@ -39,6 +39,15 @@ type tool struct {
 	// destructive says the tool replaces or deletes what is there, which
 	// a client may want the user to confirm.
 	destructive bool
+	// writesAgain says the tool sent again may write again: a meal sent
+	// without an id is another.
+	writesAgain bool
+}
+
+// mayWriteAgain is t, which sent again may write again.
+func (t tool) mayWriteAgain() tool {
+	t.writesAgain = true
+	return t
 }
 
 // destroys is t, which replaces or deletes what is there.
@@ -123,11 +132,12 @@ func (s *sessions) tools() []tool {
 			Summary:     "Undo the latest change",
 			Description: "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. " +
 				"Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; " +
+				"without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; " +
 				"undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. " +
 				"A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, " +
 				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
-		}, s.undoLast).destroys(),
+		}, s.undoLast).destroys().mayWriteAgain(),
 		newTool("find_foods", readScopes, huma.Operation{
 			OperationID: "find-foods",
 			Method:      http.MethodGet,
@@ -163,11 +173,12 @@ func (s *sessions) tools() []tool {
 			Summary:       "Log a meal",
 			DefaultStatus: http.StatusCreated,
 			Description: "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). " +
+				"Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so look at get_day before sending it again. " +
 				"An item is a food of the user's by its food_id, or a new food, which is saved, each with a quantity in the food's unit (g or ml), servings or portions; " +
 				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands, " +
 				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
 			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
-		}, s.logMeal).retried(),
+		}, s.logMeal).retried().mayWriteAgain(),
 		newTool("update_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "update-meal",
 			Method:      http.MethodPatch,
@@ -299,6 +310,7 @@ type meBody struct {
 	TimeZone         string      `json:"time_zone" example:"Europe/Zagreb"`
 	DayStartHour     int         `json:"day_start_hour" minimum:"0" maximum:"23" doc:"The hour the user's day starts: what comes before it belongs to the day before."`
 	Today            string      `json:"today" format:"date" doc:"The user's day now."`
+	Now              time.Time   `json:"now" doc:"The time now, on the user's clock: for when a meal was eaten, and for the time of an id a client makes."`
 	TodayType        string      `json:"today_type" enum:"training,rest" doc:"Today's type, which picks its target."`
 	TrainingWeekdays []string    `json:"training_weekdays" nullable:"false" enum:"sunday,monday,tuesday,wednesday,thursday,friday,saturday" doc:"The days of the week the plan makes training days."`
 	Profile          MeProfile   `json:"profile"`
@@ -318,7 +330,8 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, today, err := userDay(p, s.now())
+	now := s.now()
+	cal, today, err := userDay(p, now)
 	if err != nil {
 		return nil, internalError("reading the profile failed", err)
 	}
@@ -345,7 +358,7 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	}
 	b := meBody{
 		Name: p.User.Name, Locale: p.User.Locale, TimeZone: p.User.TimeZone, DayStartHour: p.User.DayStartHour,
-		Today: today.String(), TodayType: string(dt), TrainingWeekdays: []string{},
+		Today: today.String(), Now: now.In(cal.Location).Truncate(time.Second), TodayType: string(dt), TrainingWeekdays: []string{},
 		Profile: MeProfile{ProfileBody: newProfileBody(pr)}, Notes: notes,
 		Units: unitsBody{Energy: "kcal", Nutrients: "g", Weight: "kg", Height: "cm"},
 	}

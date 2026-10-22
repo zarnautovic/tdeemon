@@ -188,7 +188,7 @@ func TestGetProfile(t *testing.T) {
 	birth := today.AddDays(-12000 - n)
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
 		"name": "Ana", "locale": "hr", "time_zone": "Europe/Zagreb", "day_start_hour": 4,
-		"today": %[1]q, "today_type": "training", "training_weekdays": ["monday", "wednesday", "friday"],
+		"today": %[1]q, "now": %[6]q, "today_type": "training", "training_weekdays": ["monday", "wednesday", "friday"],
 		"profile": {"sex": "female", "birth_date": %[2]q, "age": %[3]d, "height_cm": %[4]d, "missing": []},
 		"phase": {"type": "cut", "start": %[1]q, "end": %[5]q, "rate_pct_week": -0.5, "goal_weight": 70, "milestone_weight": 75},
 		"target": {
@@ -198,7 +198,7 @@ func TestGetProfile(t *testing.T) {
 		},
 		"notes": "Notes of Ana: no fish, trains at dawn.",
 		"units": {"energy": "kcal", "nutrients": "g", "weight": "kg", "height": "cm"}
-	}`, today, birth, profile.AgeOn(birth, today), 160+n, today.AddDays(83)))
+	}`, today, birth, profile.AgeOn(birth, today), 160+n, today.AddDays(83), zagrebNow(t, now)))
 }
 
 // Before a plan, get_profile says what the profile lacks, and has no
@@ -210,10 +210,10 @@ func TestGetProfileBeforeAPlan(t *testing.T) {
 	rec := in.do(t, http.MethodGet, "/api/v1/me", "", []*http.Cookie{sessionOf(t, in)}, nil)
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
 		"name": "Ana", "locale": "hr", "time_zone": "Europe/Zagreb", "day_start_hour": 4,
-		"today": %q, "today_type": "rest", "training_weekdays": [],
+		"today": %q, "now": %q, "today_type": "rest", "training_weekdays": [],
 		"profile": {"missing": ["sex", "birth_date", "height_cm"]}, "notes": "",
 		"units": {"energy": "kcal", "nutrients": "g", "weight": "kg", "height": "cm"}
-	}`, day.DateOf(in.clock.Now())))
+	}`, day.DateOf(in.clock.Now()), zagrebNow(t, in.clock.Now())))
 }
 
 // get_profile needs someone signed in.
@@ -678,4 +678,15 @@ func TestUpsertFoodArchives(t *testing.T) {
 	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", session, nil); !strings.Contains(rec.Body.String(), `{"foods":[]}`) {
 		t.Errorf("a search after: %s, want nothing", rec.Body.String())
 	}
+}
+
+// zagrebNow is now on the clock of the instance's user, as get_profile
+// gives it.
+func zagrebNow(t *testing.T, now time.Time) string {
+	t.Helper()
+	loc, err := time.LoadLocation("Europe/Zagreb")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return now.In(loc).Format(time.RFC3339)
 }

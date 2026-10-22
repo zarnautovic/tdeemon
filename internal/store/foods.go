@@ -204,26 +204,92 @@ func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 
 // saveNewFoods saves the foods of foods that items name in tx, each as
 // SaveFood does, and returns the id each is stored under by the id it came
-// with: a food of the same name and brand as one the user has is that
-// food. A food no item names (one of an op found done already) is not
-// saved.
-func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item, now time.Time) (map[uuid.UUID]uuid.UUID, error) {
+// with. A food of the same name and brand as one the user has is that
+// food, as the user has it: it is not changed (upsert_food corrects a
+// food), and kept holds it, by its id, for its items to be worked out of.
+// A food no item names (one of an op found done already) is not saved.
+func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item,
+	now time.Time,
+) (ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]food.Food, err error) {
 	named := make(map[uuid.UUID]bool, len(items))
 	for i := range items {
 		named[items[i].FoodID] = true
 	}
-	ids := make(map[uuid.UUID]uuid.UUID, len(foods))
+	ids = make(map[uuid.UUID]uuid.UUID, len(foods))
+	kept = map[uuid.UUID]food.Food{}
 	for i := range foods {
-		if !named[foods[i].ID] {
+		f := &foods[i]
+		if !named[f.ID] {
 			continue
 		}
-		stored, err := saveFoodInTx(ctx, tx, userID, a, foods[i], false, now)
+		target, exists, err := saveTarget(ctx, tx, userID, f.ID, food.Key(f.Name), food.Key(f.Brand), false)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		ids[foods[i].ID] = stored.ID
+		if exists {
+			had, err := keptFood(ctx, tx, userID, a, target, now)
+			if err != nil {
+				return nil, nil, err
+			}
+			ids[f.ID], kept[target] = target, had
+			continue
+		}
+		stored, err := saveFoodInTx(ctx, tx, userID, a, *f, false, now)
+		if err != nil {
+			return nil, nil, err
+		}
+		ids[f.ID] = stored.ID
 	}
-	return ids, nil
+	return ids, kept, nil
+}
+
+// keptFood returns userID's food id, which a new food of its name and
+// brand is, brought back if it was archived: the user eats it again, and
+// a search must find it next time. Bringing it back is a's event.
+func keptFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, id uuid.UUID, now time.Time) (food.Food, error) {
+	had, err := foodInTx(ctx, tx, userID, id)
+	if err != nil || !had.Archived {
+		return had, err
+	}
+	if err := setArchived(ctx, tx, userID, id, false, now); err != nil {
+		return food.Food{}, err
+	}
+	if _, err := record(ctx, tx, userID, a, event.FoodArchive, id.String(), archivedState{true}, archivedState{false}, now); err != nil {
+		return food.Food{}, err
+	}
+	had.Archived = false
+	return had, nil
+}
+
+// FoodByKey returns userID's food of name and brand, compared as SaveFood
+// compares them (food.Key), archived too, or ErrNotFound: the food a new
+// food of that name and brand sent with a meal is.
+func (db *DB) FoodByKey(ctx context.Context, userID uuid.UUID, name, brand string) (food.Food, error) {
+	var f food.Food
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		var id string
+		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ?",
+			userID.String(), food.Key(name), food.Key(brand)).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		fid, err := uuid.Parse(id)
+		if err != nil {
+			return fmt.Errorf("food id %q: %w", id, err)
+		}
+		f, err = foodInTx(ctx, tx, userID, fid)
+		return err
+	})
+	if errors.Is(err, ErrNotFound) {
+		return food.Food{}, err
+	}
+	if err != nil {
+		return food.Food{}, fmt.Errorf("food by key: %w", err)
+	}
+	return f, nil
 }
 
 // validFoods reports the first of foods that breaks the rules.

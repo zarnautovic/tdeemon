@@ -325,16 +325,17 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 	if len(required) > 0 {
 		schema["required"] = required
 	}
-	// A tool that reads changes nothing. Every tool is safe to send again:
-	// a create is under the client's id, any other write replaces what it
-	// names. One that replaces or deletes what is there says so
-	// (tool.destroys).
+	// A tool that reads changes nothing. A tool is safe to send again: a
+	// create is under the client's id, any other write replaces what it
+	// names; but log_meal, whose meal sent without an id is another
+	// (tool.mayWriteAgain). One that replaces or deletes what is there
+	// says so (tool.destroys).
 	readOnly := t.op.Method == http.MethodGet
 	mt.def = &mcp.Tool{
 		Name: t.name, Title: t.op.Summary, Description: t.op.Description, InputSchema: schema,
 		Annotations: &mcp.ToolAnnotations{
 			Title: t.op.Summary, ReadOnlyHint: readOnly, DestructiveHint: new(t.destructive),
-			IdempotentHint: true, OpenWorldHint: new(false),
+			IdempotentHint: !t.writesAgain, OpenWorldHint: new(false),
 		},
 	}
 	return mt, nil

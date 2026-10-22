@@ -177,3 +177,22 @@ func TestUndoLastOfNothingSentAgain(t *testing.T) {
 		t.Errorf("the undo of nothing again: %d %s, want 404", code, body)
 	}
 }
+
+// An undo without an id, from a client that cannot make one, takes back
+// the latest change under one the server makes; sent again, it is
+// another undo, which takes back the change before.
+func TestUndoLastWithoutAnID(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	first, second := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	for _, id := range []string{first, second} {
+		e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	}
+	for _, want := range []string{second, first} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/undo", `{}`, e.session, nil)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) || strings.Contains(rec.Body.String(), "repeated") {
+			t.Errorf("an undo without an id: %d %s, want the create of %s", rec.Code, rec.Body.String(), want)
+		}
+	}
+}

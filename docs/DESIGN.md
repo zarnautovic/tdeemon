@@ -92,7 +92,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
-| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish, later recipe/off), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a whole dish (a canteen meal); "same name + same brand" is the same food, corrected in place |
+| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish, later recipe/off), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a whole dish (a canteen meal); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
 | `food_servings` | food_id, user_id, name, amount | named amounts of a food by weight or volume: "piece" = 60 g of egg, "slice" = 40 g of bread |
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
@@ -133,13 +133,15 @@ time; the code does the arithmetic. A food is one of:
   again, and produces the same kind of food, with `source: recipe`.
 
 The same name and brand (compared without regard to case or runs of
-space) are the same food: saving it again corrects it rather than adding
-a second. An alias leads to one food. Search runs over names, brands and
-aliases through a full-text index that ignores case and diacritics
-("cevapi" finds "Ćevapi") and matches word prefixes: foods whose name
-holds every word first, then name and aliases, then the rest, shorter
-names first, from the user's own foods alone; archived foods stay out
-of it but keep their history.
+space) are the same food: saving it again (`upsert_food`) corrects it
+rather than adding a second, while a new food sent with a meal under
+them is that food as the user has it, unchanged, so a model's guess
+never overwrites a label's values. An alias leads to one food. Search
+runs over names, brands and aliases through a full-text index that
+ignores case and diacritics ("cevapi" finds "Ćevapi") and matches word
+prefixes: foods whose name holds every word first, then name and
+aliases, then the rest, shorter names first, from the user's own foods
+alone; archived foods stay out of it but keep their history.
 
 A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
@@ -177,11 +179,11 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 
 | tool | purpose |
 | --- | --- |
-| `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units |
+| `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units, and the time now on the user's clock (a model has none) |
 | `find_foods(query, limit)` | the foods whose name, brand or an alias has words starting with the query's, without case or diacritics, the name's first; with the last use (the amount as given and in the food's unit) |
-| `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
+| `log_meal(id?, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9), or one the server makes for a client that cannot (a model without a clock: that meal sent again is another); returns breakdown + day status |
 | `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, change the time and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
-| `delete_meal(id)` / `undo_last(id)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
+| `delete_meal(id)` / `undo_last(id?)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9; or one the server makes for a client that cannot, whose undo sent again takes back another) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name or alias another food has is refused naming that food |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
@@ -213,14 +215,16 @@ is known.
 ```
 
 The response holds the stored meal (items with computed macros), the day
-totals against the day-type target, what remains, and `warnings`. Warning
-examples: the stated kcal are more than 15 % (and 10 kcal) off what the
-grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol, with fiber
-and polyols by any of the conventions labels use), saturated fat is
-above total fat, a duplicate of a meal logged minutes ago. A new food is
-saved in the meal's transaction, so a meal refused saves none, and a
-meal sent again saves none: it is told by what was sent (§9) before
-anything of it is read or saved.
+totals against the day-type target, what remains, and `warnings`.
+Warning examples: the stated kcal are more than 15 % (and 10 kcal) off
+what the grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol,
+with fiber and polyols by any of the conventions labels use), saturated
+fat is above total fat, a duplicate of a meal logged minutes ago. A new
+food is saved in the meal's transaction (one of the name and brand of a
+food the user has is that food, unchanged, and the item comes from its
+values, or is a 422 when they do not take its quantity), so a meal
+refused saves none, and a meal sent again saves none: it is told by what
+was sent (§9) before anything of it is read or saved.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
 scripts. A tool is one operation of the API, in the registry
@@ -725,7 +729,12 @@ the first spec.
     food it is stored as, so a retry is the same however that food is
     renamed or corrected since, or whichever of two requests sent at once
     saved it. A retry is known before anything of it is worked out: it
-    reads no food and saves none. A client gives the meal's `id`; when
+    reads no food and saves none. A client gives the meal's `id` (one
+    that cannot make one, a model without a clock or a tool to run code,
+    leaves it out, and the server makes one: that meal sent again is
+    another, which the warning of a duplicate tells, or a 409 when its
+    items carry ids of their own; MCP says such a tool is not safe to
+    send again); when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
     the clock, so a retry has the same one. A new meal's ID must be a
     version 7 ID whose time is near the clock (from a day before to five
@@ -742,7 +751,8 @@ the first spec.
     nothing, other content is a conflict (409). A "replace" whose item
     is as sent already is a retry too. A server-made ID fills in for an
     item logged without one.
-  - An undo carries an ID the client makes too, under the same rules: the
+  - An undo carries an ID the client makes too (or, from a client that
+    cannot, one the server makes), under the same rules: the
     change it settled (taken back, or passed over) keeps it, and an undo
     that found nothing is recorded with it, so the same undo sent again
     answers as before rather than taking back another change.
