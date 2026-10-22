@@ -313,11 +313,15 @@ in `web/`.
 - **Every write of a user's data is an event:** a store method that
   writes takes the `event.Actor` (the user or an import, the client, the
   model) and records an event in the same transaction, with the state
-  before and after, which undo puts back. A write that changes nothing (a
+  before and after, which undo puts back, but for the changes of the
+  plan: those undo leaves are listed in `undoLeaves`, and have no way
+  back. A write that changes nothing (a
   retry, a merge of nothing new) records nothing. A new kind of write
   adds its `event.Action`, the operation to the `events` table's CHECK,
-  its way back to `takeBack` and the reading of its state to `stateNow`
-  (what undo compares with the state the change left). The state an
+  and its way back to `takeBack` and the reading of its state to
+  `stateNow` (what undo compares with the state the change left), or,
+  for a change of the plan, its place in `undoLeaves` and in their empty
+  `case`. The state an
   event records must be what `stateNow` reads back, so the two compare
   alike: read it back in the transaction, or normalise it as the table
   does (-0 to 0, a time to the second in UTC). A way back that clashes

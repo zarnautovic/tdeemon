@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 	"uuid"
 
@@ -15,6 +16,19 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 )
+
+// undoLeaves lists the kinds of events UndoLast passes over, besides an
+// import's: undos themselves, and the changes of the plan. The profile
+// and the user's limits only a web session changes; the phases, the
+// targets and the training weekdays must meet the limits as they are now,
+// and go back as a revert, which limits.Validate checks. stateNow and
+// takeBack have no way back for them.
+func undoLeaves() []event.Action {
+	return []event.Action{
+		event.Undo, event.ProfileSet, event.LimitsSet, event.PhaseSet, event.PhaseDelete,
+		event.TargetSet, event.TargetDelete, event.WeekdaysSet,
+	}
+}
 
 // ErrNothingToUndo reports that the user has no change left to undo.
 var ErrNothingToUndo = errors.New("nothing to undo")
@@ -202,11 +216,14 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 	var undone event.Event
 	var conflict *UndoConflictError
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		args := []any{userID.String()}
+		for _, a := range undoLeaves() {
+			args = append(args, string(a))
+		}
 		e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+` FROM events
-			WHERE user_id = ? AND actor = 'user' AND operation NOT IN ('undo', 'profile.set', 'limits.set', 'phase.set', 'phase.delete',
-					'target.set', 'target.delete', 'plan.weekdays')
+			WHERE user_id = ? AND actor = 'user' AND operation NOT IN (?`+strings.Repeat(", ?", len(args)-2)+`)
 				AND undone_by IS NULL AND stale = 0
-			ORDER BY rowid DESC LIMIT 1`, userID.String()))
+			ORDER BY rowid DESC LIMIT 1`, args...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNothingToUndo
 		}

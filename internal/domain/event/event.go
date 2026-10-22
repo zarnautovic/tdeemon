@@ -68,8 +68,10 @@ const (
 	MetricsMerge Action = "metrics.merge"
 	MetricSet    Action = "metric.set"
 	MetricDelete Action = "metric.delete"
-	// ProfileSet and LimitsSet change what the limits of a plan depend
-	// on: only a web session makes them, and undo leaves them.
+	// The changes of the plan, which undo leaves: the profile and the
+	// limits only a web session changes, and the phases, the targets and
+	// the training weekdays go back as a revert that limits.Validate
+	// checks.
 	ProfileSet   Action = "profile.set"
 	LimitsSet    Action = "limits.set"
 	PhaseSet     Action = "phase.set"
