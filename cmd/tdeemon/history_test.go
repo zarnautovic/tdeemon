@@ -69,6 +69,7 @@ func TestImportHistory(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Imported for ana@example.com, whose days start at 04:00 in Europe/Zagreb: 2 days, 1 metric values, 4 meals, of them 1 rests of a day; 1 days excluded.",
+		"Days excluded from calibration (1):\n  2026-09-02: At a wedding",
 		"Values left out (1):\n  2026-09-01 sleep_h: sleep_h 30: want 0 to 24 h",
 		"Days whose meals have more kcal than the day's total, kept without a rest (1):\n  2026-09-02",
 		"Meals renamed (1):\n  2026-09-02: aaa",
@@ -112,8 +113,9 @@ func TestImportHistoryRefuses(t *testing.T) {
 		usage bool
 		want  string
 	}{
-		{"no flags", nil, true, "--email and --health-db are required"},
-		{"no database of the predecessor's", []string{"--email", "ana@example.com"}, true, "required"},
+		{"no flags", nil, true, "--email is required"},
+		{"nothing to import", []string{"--email", "ana@example.com"}, true, "--health-db, --foods or both"},
+		{"no food table", []string{"--email", "ana@example.com", "--foods", filepath.Join(t.TempDir(), "none.md")}, false, "the food table"},
 		{"an argument", []string{"--email", "ana@example.com", "--health-db", old, "now"}, true, `unexpected argument "now"`},
 		{"an unknown flag", []string{"--vault", "x"}, true, "flag provided but not defined"},
 		{"no user", []string{"--email", "ivo@example.com", "--health-db", old}, false, `no user with the address "ivo@example.com"`},
@@ -135,5 +137,89 @@ func TestImportHistoryRefuses(t *testing.T) {
 	if err := run(t.Context(), []string{"import-history", "--email", "a@example.com", "--health-db", old}, lookup(nil), noInput(), io.Discard, io.Discard); err == nil ||
 		!strings.Contains(err.Error(), "invalid configuration") {
 		t.Errorf("no configuration: %v", err)
+	}
+}
+
+// The food table imports alone, or with the days; a run again keeps the
+// foods.
+func TestImportHistoryFoods(t *testing.T) {
+	t.Parallel()
+
+	env, _ := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
+	var out bytes.Buffer
+	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods}, env, noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Imported foods for ana@example.com: 15 new; 0 kept",
+		"Foods renamed (2):\n  Stew (1/4 of the pot)",
+		"Foods per portion though given by weight or volume, as per 100 they would be no food (1):\n  line 19, Odd (5 g)",
+		"Rows skipped (8):\n  line 18, Broken",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the import said:\n%s\nwant %q in it", out.String(), want)
+		}
+	}
+	out.Reset()
+	if err := run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t), "--dry-run"}, env, noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Would import (a dry run, nothing written) foods for ana@example.com: 0 new; 15 kept") ||
+		!strings.Contains(out.String(), "whose days start at 04:00") {
+		t.Errorf("both, again, dry:\n%s", out.String())
+	}
+}
+
+// A failure after the foods leaves their report, as they stay: here the
+// days fail on a calendar that does not read.
+func TestImportHistoryReportsBeforeAFailure(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), "UPDATE users SET timezone = 'Nowhere/Bogus'"); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
+	var out bytes.Buffer
+	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods, "--health-db", predecessor(t)}, env, noInput(), &out, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "calendar") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 15 new") {
+		t.Errorf("err = %v, said:\n%s", err, out.String())
+	}
+}
+
+// A failure among the foods leaves the report of those written before it.
+func TestImportHistoryReportsFoodsBeforeAFailure(t *testing.T) {
+	t.Parallel()
+
+	env, dbPath := instance(t, nil)
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com", "--timezone", "Europe/Zagreb"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(t.Context(), `CREATE TRIGGER refuse_the_third BEFORE INSERT ON foods
+		WHEN (SELECT count(*) FROM foods) >= 2 BEGIN SELECT RAISE(ABORT, 'refused by the test'); END`); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.Close()
+	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
+	var out bytes.Buffer
+	err = run(t.Context(), []string{"import-history", "--email", "ana@example.com", "--foods", foods}, env, noInput(), &out, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "refused by the test") || !strings.Contains(out.String(), "Imported foods for ana@example.com: 2 new") {
+		t.Errorf("err = %v, said:\n%s", err, out.String())
 	}
 }

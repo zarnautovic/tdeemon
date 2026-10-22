@@ -55,10 +55,12 @@ Flags of user set-password:
   --email ADDRESS    the user's address (required)
   --password-stdin   as for user create
 
-Flags of import-history:
+Flags of import-history (--health-db, --foods or both):
   --email ADDRESS    the user's address (required)
-  --health-db PATH   the predecessor's database, health.db (required),
-                     which is only read
+  --health-db PATH   the predecessor's database, health.db, which is only
+                     read: the days' metrics and meals
+  --foods PATH       the predecessor's food table, Baza-hrane.md: the
+                     foods, each one the user has no food of its name
   --dry-run          say what it would import, and write nothing
 
 An import runs again without changing what it imported: a value merges
