@@ -315,7 +315,8 @@ func saveDaysToRead(t *testing.T, in *instance) {
 }
 
 // get_summary flags a maintenance phase's drift from the trend weight it
-// started with, though it started more than summaryHistory days ago.
+// started with, though it started before the days the summary reads in
+// full.
 func TestGetSummaryDriftOfAnOldPhase(t *testing.T) {
 	t.Parallel()
 

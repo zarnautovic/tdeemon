@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"maps"
 	"math"
+	"slices"
 	"time"
 	"uuid"
 
@@ -56,7 +58,7 @@ type weekBody struct {
 	WeightKg     *float64 `json:"weight_kg,omitempty" doc:"The average weigh-in."`
 	TrendKg      *float64 `json:"trend_kg,omitempty" doc:"The trend weight on the week's last day, for a week with a weigh-in."`
 	Steps        *float64 `json:"steps,omitempty" doc:"The average steps of the days not excluded that have them."`
-	SleepH       *float64 `json:"sleep_h,omitempty" doc:"The average hours of sleep of the days that have them, excluded ones too, as recovery counts them: an excluded day's intake and weight say nothing of the phase, its sleep is still the body's."`
+	SleepH       *float64 `json:"sleep_h,omitempty" doc:"The average hours of sleep of the days that have them, excluded ones too: an excluded day's intake and weight say nothing of the phase, its sleep is still the body's."`
 	TrainingDays int      `json:"training_days" doc:"The days of the training type, as each day's type is."`
 }
 
@@ -90,7 +92,7 @@ type verdictBody struct {
 	GapKcal          float64  `json:"gap_kcal" doc:"The change of the target's weekly average the action asks for, in kcal a day, more than 0 to eat more: a coach's to propose."`
 	StepKcal         float64  `json:"step_kcal" doc:"The step toward it that the autopilot's limits allow."`
 	IntakeKcal       *float64 `json:"intake_kcal,omitempty" doc:"What was eaten on average over the window."`
-	TargetKcal       *float64 `json:"target_kcal,omitempty" doc:"The target's weekly average now: a rate that misses with a target that holds is the intake's."`
+	TargetKcal       *float64 `json:"target_kcal,omitempty" doc:"The target's weekly average now, over the plan's training weekdays: a rate that misses with a target that holds is the intake's."`
 	Flags            []string `json:"flags" nullable:"false" doc:"What to show beside it: underweight, no_height, maintenance_drift, no_steps, no_lean_mass, no_body_fat."`
 }
 
@@ -103,10 +105,9 @@ type recoveryBody struct {
 	Flags         []string `json:"flags" nullable:"false" doc:"What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base)."`
 }
 
-// summaryDay is one of the user's days as the summary reads it: as
-// calibration does, with its protein and its type.
+// summaryDay is what the summary reads of one of the user's days beside
+// what calibration reads: its protein and its type.
 type summaryDay struct {
-	calibration.Day
 	protein float64
 	dayType plan.DayType
 }
@@ -156,7 +157,7 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	v := calibration.Judge(e, ph, t, data.training, pr, data.lim, data.params)
 	b := summaryBody{
 		Date: today.String(), Weeks: []weekBody{}, TDEE: newTDEEBody(e), Verdict: newVerdictBody(v),
-		Recovery: newRecoveryBody(recovery.Of(data.values, today)),
+		Recovery: newRecoveryBody(recovery.Of(data.recoveryValues(today), today)),
 	}
 	if e.TrendKg > 0 {
 		b.Trend = &trendBody{Kg: round2(e.TrendKg), Date: e.TrendDate.String()}
@@ -223,9 +224,8 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 	for d := from; !to.Before(d); d = d.AddDays(1) {
 		_, excluded := exclusions[d]
 		in := intake[d]
-		c := calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d])
-		data.calDays[d] = c
-		data.days[d] = summaryDay{Day: c, protein: in.Protein, dayType: plan.TypeOf(d, data.training, workouts[d], toggleOn(toggles, d))}
+		data.calDays[d] = calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d])
+		data.days[d] = summaryDay{protein: in.Protein, dayType: plan.TypeOf(d, data.training, workouts[d], toggleOn(toggles, d))}
 	}
 	return data, nil
 }
@@ -280,6 +280,15 @@ func (s *sessions) daysBefore(ctx context.Context, userID uuid.UUID, cal day.Cal
 	return out, nil
 }
 
+// recoveryValues returns the days' measurements for recovery: of today,
+// only the sleep, as a night's is dated by the morning it ends, and the
+// rest of an open day may yet change.
+func (data summaryData) recoveryValues(today day.Date) map[day.Date][]metric.Value {
+	out := maps.Clone(data.values)
+	out[today] = slices.DeleteFunc(slices.Clone(out[today]), func(v metric.Value) bool { return v.Kind != metric.Sleep })
+	return out
+}
+
 // calibrationDay is a day as calibration reads it.
 func calibrationDay(status day.Status, in store.Intake, values []metric.Value) calibration.Day {
 	c := calibration.Day{Status: status, Meals: in.Meals, Kcal: in.Kcal}
@@ -308,18 +317,18 @@ func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekB
 	w := weekBody{From: from.String(), To: to.String()}
 	var kcal, protein, weights, steps, sleep []float64
 	for d := from; !to.Before(d); d = d.AddDays(1) {
-		sd := data.days[d]
-		if sd.Logged() {
-			kcal, protein = append(kcal, sd.Kcal), append(protein, sd.protein)
+		c, sd := data.calDays[d], data.days[d]
+		if c.Logged() {
+			kcal, protein = append(kcal, c.Kcal), append(protein, sd.protein)
 		}
 		if sd.dayType == plan.Training {
 			w.TrainingDays++
 		}
-		if sd.Weighed() {
-			weights = append(weights, sd.WeightKg)
+		if c.Weighed() {
+			weights = append(weights, c.WeightKg)
 		}
-		if sd.Stepped() {
-			steps = append(steps, sd.Steps)
+		if c.Stepped() {
+			steps = append(steps, c.Steps)
 		}
 		for _, v := range data.values[d] {
 			if v.Kind == metric.Sleep && v.Value > 0 {
@@ -341,8 +350,8 @@ func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekB
 func (data summaryData) incomplete(from, to day.Date) []string {
 	out := []string{}
 	for d := from; !to.Before(d); d = d.AddDays(1) {
-		sd := data.days[d]
-		if t, ok := plan.DayTargetOn(data.targets, d, sd.dayType); ok && sd.Logged() && sd.Kcal < incompleteShare*t.Kcal {
+		c := data.calDays[d]
+		if t, ok := plan.DayTargetOn(data.targets, d, data.days[d].dayType); ok && c.Logged() && c.Kcal < incompleteShare*t.Kcal {
 			out = append(out, d.String())
 		}
 	}

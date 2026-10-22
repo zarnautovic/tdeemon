@@ -9,7 +9,7 @@ import (
 type Body struct {
 	// StepsRecent is the average steps of the window's last 7 days, and
 	// StepsBefore of the up to 21 days before them in the window; each 0
-	// for too few days with steps, 4 of the 7 and 7 before.
+	// for too few days with steps, 4 of the 7 and 5 before.
 	StepsRecent, StepsBefore float64
 	// LeanMeasured is true when the lean mass was measured enough for a
 	// slope, as the weight is: six times, from the first to the last at

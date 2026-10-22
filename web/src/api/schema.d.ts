@@ -1512,7 +1512,7 @@ export interface components {
             step_kcal: number;
             /**
              * Format: double
-             * @description The target's weekly average now: a rate that misses with a target that holds is the intake's.
+             * @description The target's weekly average now, over the plan's training weekdays: a rate that misses with a target that holds is the intake's.
              */
             target_kcal?: number;
             /**
@@ -1554,7 +1554,7 @@ export interface components {
             protein?: number;
             /**
              * Format: double
-             * @description The average hours of sleep of the days that have them, excluded ones too, as recovery counts them: an excluded day's intake and weight say nothing of the phase, its sleep is still the body's.
+             * @description The average hours of sleep of the days that have them, excluded ones too: an excluded day's intake and weight say nothing of the phase, its sleep is still the body's.
              */
             sleep_h?: number;
             /**
