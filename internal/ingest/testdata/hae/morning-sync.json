@@ -1,0 +1,114 @@
+{
+  "data": {
+    "metrics": [
+      {
+        "name": "step_count",
+        "units": "count",
+        "data": [
+          { "date": "2026-10-20 00:00:00 +0200", "qty": 8650, "source": "Apple Watch|iPhone" },
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 1920, "source": "Apple Watch|iPhone" }
+        ]
+      },
+      {
+        "name": "active_energy",
+        "units": "kJ",
+        "data": [
+          { "date": "2026-10-20 00:00:00 +0200", "qty": 2510.4, "source": "Apple Watch" },
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 418.4, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "basal_energy_burned",
+        "units": "kcal",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 640, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "apple_exercise_time",
+        "units": "min",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 4, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "sleep_analysis",
+        "units": "hr",
+        "data": [
+          {
+            "date": "2026-10-21 00:00:00 +0200",
+            "sleepStart": "2026-10-20 23:20:00 +0200",
+            "sleepEnd": "2026-10-21 06:50:00 +0200",
+            "inBedStart": "2026-10-20 23:05:00 +0200",
+            "inBedEnd": "2026-10-21 07:00:00 +0200",
+            "inBed": 7.9,
+            "asleep": 0,
+            "core": 3.4,
+            "deep": 1.1,
+            "rem": 1.6,
+            "awake": 0.7,
+            "totalSleep": 6.1,
+            "source": "Apple Watch"
+          }
+        ]
+      },
+      {
+        "name": "weight_body_mass",
+        "units": "kg",
+        "data": [
+          { "date": "2026-10-21 07:12:00 +0200", "qty": 78.4, "source": "Scale" }
+        ]
+      },
+      {
+        "name": "body_fat_percentage",
+        "units": "%",
+        "data": [
+          { "date": "2026-10-21 07:12:00 +0200", "qty": 19.5, "source": "Scale" }
+        ]
+      },
+      {
+        "name": "lean_body_mass",
+        "units": "kg",
+        "data": [
+          { "date": "2026-10-21 07:12:00 +0200", "qty": 63.1, "source": "Scale" }
+        ]
+      },
+      {
+        "name": "resting_heart_rate",
+        "units": "count/min",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 59, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "heart_rate_variability",
+        "units": "ms",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 44.5, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "vo2_max",
+        "units": "ml/(kg·min)",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 40.2, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "heart_rate",
+        "units": "count/min",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "Min": 51, "Avg": 66, "Max": 118, "source": "Apple Watch" }
+        ]
+      },
+      {
+        "name": "walking_running_distance",
+        "units": "km",
+        "data": [
+          { "date": "2026-10-21 00:00:00 +0200", "qty": 1.4, "source": "iPhone" }
+        ]
+      }
+    ],
+    "workouts": []
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "data": {
+    "metrics": [
+      {
+        "name": "weight_body_mass",
+        "units": "kg",
+        "data": [
+          { "date": "2026-10-21 19:40:00 +0200", "qty": 79.6, "source": "Scale" }
+        ]
+      },
+      {
+        "name": "body_fat_percentage",
+        "units": "%",
+        "data": [
+          { "date": "2026-10-21 19:40:00 +0200", "qty": 20.4, "source": "Scale" }
+        ]
+      },
+      {
+        "name": "lean_body_mass",
+        "units": "kg",
+        "data": [
+          { "date": "2026-10-21 19:40:00 +0200", "qty": 63.4, "source": "Scale" }
+        ]
+      }
+    ],
+    "workouts": []
+  }
+}
