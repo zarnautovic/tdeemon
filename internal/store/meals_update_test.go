@@ -8,6 +8,7 @@ import (
 	"testing"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/store"
@@ -331,5 +332,38 @@ func TestMealOfAFoodTheUserHas(t *testing.T) {
 	var fie *store.FoodItemError
 	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, other, []food.Food{guess}, t0); !errors.As(err, &fie) || fie.Food.ID != b.ID {
 		t.Errorf("a meal of 50 ml of a food by weight = %v, want a FoodItemError of the user's food", err)
+	}
+}
+
+// An archived food a new food of its name is comes back: the user eats it
+// again, and a search finds it next time. Bringing it back is an event.
+func TestMealOfAnArchivedFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, b.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	guess := food.Food{
+		ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Per100g, Source: food.Estimate,
+		Nutrients: food.Nutrients{Kcal: 400, Protein: 20, Carbs: 40, Fat: 15},
+	}
+	it, err := meal.FromFood(guess, meal.Quantity{Amount: 50, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{it}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{guess}, t0); err != nil {
+		t.Fatal(err)
+	}
+	after, err := db.FoodByID(t.Context(), ana, b.ID)
+	if err != nil || after.Archived {
+		t.Errorf("the bar after a meal of it = archived %v, %v; want it back", after.Archived, err)
+	}
+	es, err := db.Events(t.Context(), ana, 2)
+	if err != nil || len(es) != 2 || es[1].Action != event.FoodArchive || es[1].Entity != b.ID.String() {
+		t.Errorf("the events = %+v, %v; want the bar brought back before the meal", es, err)
 	}
 }

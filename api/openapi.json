@@ -2079,7 +2079,8 @@
               "saturated_fat",
               "sugars",
               "polyols",
-              "duplicate_meal"
+              "duplicate_meal",
+              "food_kept"
             ],
             "type": "string"
           },

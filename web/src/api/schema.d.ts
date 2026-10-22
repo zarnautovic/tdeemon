@@ -1362,7 +1362,7 @@ export interface components {
              * @description What kind of warning it is.
              * @enum {string}
              */
-            code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "duplicate_meal";
+            code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "duplicate_meal" | "food_kept";
             message: string;
         };
         WhoamiOutputBody: {
