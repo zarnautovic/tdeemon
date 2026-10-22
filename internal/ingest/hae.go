@@ -191,6 +191,15 @@ func (c *collector) point(k metric.Kind, conv func(float64) float64, raw json.Ra
 	}
 	v = conv(v)
 	d, at, err := pointDate(pt.Date)
+	if math.IsInf(v, 0) {
+		// No answer could hold it: JSON has no infinity.
+		bad := Rejected{Date: d, Kind: k, Reason: "a value too large to convert"}
+		if err != nil {
+			bad.RawDate = pt.Date
+		}
+		c.bad = append(c.bad, bad)
+		return
+	}
 	if err != nil {
 		c.bad = append(c.bad, Rejected{Kind: k, Value: v, RawDate: pt.Date, Reason: err.Error()})
 		return

@@ -316,6 +316,28 @@ func TestParseHAERefusesAValueAlone(t *testing.T) {
 	}
 }
 
+// A value too large to convert is left out without it, since no answer
+// could hold an infinity.
+func TestParseHAETooLarge(t *testing.T) {
+	t.Parallel()
+
+	r := parseHAE(t, `{"data": {"metrics": [
+		{"name": "apple_exercise_time", "units": "hr", "data": [
+			{"date": "2026-10-21 00:00:00 +0200", "qty": 1e308},
+			{"date": "the 22nd", "qty": 1e308}
+		]}
+	]}}`)
+	if len(r.Rejected) != 2 || len(r.Days) != 0 {
+		t.Fatalf("Result = %+v", r)
+	}
+	if x := r.Rejected[0]; x.Value != 0 || x.Date.String() != "2026-10-21" || x.RawDate != "" {
+		t.Errorf("the dated point = %+v", x)
+	}
+	if x := r.Rejected[1]; x.Value != 0 || !x.Date.IsZero() || x.RawDate != "the 22nd" {
+		t.Errorf("the point whose date does not read = %+v", x)
+	}
+}
+
 // A point left out has its value in the kind's unit.
 func TestParseHAERejectsInTheKindsUnit(t *testing.T) {
 	t.Parallel()

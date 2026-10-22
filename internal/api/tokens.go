@@ -32,6 +32,20 @@ func requireSession(ctx context.Context) (auth.Principal, error) {
 	return p, nil
 }
 
+// requireToken returns the principal of a request made with an API token,
+// for an import: the event log says a device wrote what it wrote, so a
+// person in a browser writes through operations of their own.
+func requireToken(ctx context.Context) (auth.Principal, error) {
+	p, ok := auth.PrincipalFrom(ctx)
+	switch {
+	case !ok:
+		return auth.Principal{}, huma.Error401Unauthorized("not signed in")
+	case p.Via != auth.ViaToken:
+		return auth.Principal{}, huma.Error403Forbidden("this needs an API token, not a web session")
+	}
+	return p, nil
+}
+
 // tokenScopeKey, in an operation's Metadata (see openToTokens), lets API
 // tokens call the operation. An operation without it refuses every token
 // with 403, so a new endpoint is closed to tokens until it names the

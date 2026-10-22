@@ -163,6 +163,136 @@
         },
         "type": "object"
       },
+      "IngestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/IngestDay"
+            },
+            "type": "array"
+          },
+          "ignored": {
+            "description": "Metric names tdeemon does not read.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rejected": {
+            "description": "Values out of their bounds, left out; the others are stored.",
+            "items": {
+              "$ref": "#/components/schemas/IngestRejected"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "days",
+          "rejected",
+          "ignored"
+        ],
+        "type": "object"
+      },
+      "IngestChange": {
+        "additionalProperties": false,
+        "properties": {
+          "before": {
+            "description": "The day's value before, of an import; absent when the day had none.",
+            "format": "double",
+            "type": "number"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "value"
+        ],
+        "type": "object"
+      },
+      "IngestDay": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "description": "The values the day keeps now; a value the day held already, or one a manual value or the day's first weighing keeps out, is not here.",
+            "items": {
+              "$ref": "#/components/schemas/IngestChange"
+            },
+            "type": "array"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "changed"
+        ],
+        "type": "object"
+      },
+      "IngestMetricsInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "description": "The day the values belong to.",
+            "examples": [
+              "2026-10-21"
+            ],
+            "format": "date",
+            "type": "string"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "Values by metric name (docs: DESIGN.md §4): weight (kg), body_fat (%), lean_mass (kg), steps, active_kcal, basal_kcal, sleep_h (hours), rhr (bpm), hrv (ms), vo2max, exercise_min.",
+            "type": "object"
+          }
+        },
+        "required": [
+          "date",
+          "metrics"
+        ],
+        "type": "object"
+      },
+      "IngestRejected": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "description": "Absent when the date itself did not read, or the whole metric was left out.",
+            "format": "date",
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "raw_date": {
+            "description": "The date as the source wrote it, when it did not read.",
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "value",
+          "reason"
+        ],
+        "type": "object"
+      },
       "LimitsBody": {
         "additionalProperties": false,
         "properties": {
@@ -951,6 +1081,212 @@
         "summary": "Get server info",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/api/v1/ingest/hae": {
+      "post": {
+        "description": "For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came; a user's days older than 30 go with their next body.",
+        "operationId": "ingest-hae",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "description": "Health Auto Export's REST API payload, as the app sends it.",
+                "properties": {
+                  "data": {
+                    "properties": {
+                      "metrics": {
+                        "items": {
+                          "properties": {
+                            "data": {
+                              "items": {
+                                "additionalProperties": true,
+                                "description": "A point: date, and qty or, for sleep, its totals.",
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "name": {
+                              "examples": [
+                                "step_count"
+                              ],
+                              "type": "string"
+                            },
+                            "units": {
+                              "examples": [
+                                "count"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "metrics"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Import a Health Auto Export payload",
+        "tags": [
+          "ingest"
+        ]
+      }
+    },
+    "/api/v1/ingest/metrics": {
+      "post": {
+        "description": "The simple form, for a script or another app: an API token with the ingest scope, not a web session. The values merge as an import, as Health Auto Export's do.",
+        "operationId": "ingest-metrics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestMetricsInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Import a day's metrics",
+        "tags": [
+          "ingest"
         ]
       }
     },

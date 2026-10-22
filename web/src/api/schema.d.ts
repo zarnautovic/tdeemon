@@ -124,6 +124,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ingest/hae": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a Health Auto Export payload
+         * @description For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came; a user's days older than 30 go with their next body.
+         */
+        post: operations["ingest-hae"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ingest/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import a day's metrics
+         * @description The simple form, for a script or another app: an API token with the ingest scope, not a web session. The values merge as an import, as Health Auto Export's do.
+         */
+        post: operations["ingest-metrics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/limits": {
         parameters: {
             query?: never;
@@ -292,6 +332,54 @@ export interface components {
              * @example https://example.com/errors/example
              */
             type?: string;
+        };
+        IngestBody: {
+            days: components["schemas"]["IngestDay"][];
+            /** @description Metric names tdeemon does not read. */
+            ignored: string[];
+            /** @description Values out of their bounds, left out; the others are stored. */
+            rejected: components["schemas"]["IngestRejected"][];
+        };
+        IngestChange: {
+            /**
+             * Format: double
+             * @description The day's value before, of an import; absent when the day had none.
+             */
+            before?: number;
+            metric: string;
+            /** Format: double */
+            value: number;
+        };
+        IngestDay: {
+            /** @description The values the day keeps now; a value the day held already, or one a manual value or the day's first weighing keeps out, is not here. */
+            changed: components["schemas"]["IngestChange"][];
+            /** Format: date */
+            date: string;
+        };
+        IngestMetricsInputBody: {
+            /**
+             * Format: date
+             * @description The day the values belong to.
+             * @example 2026-10-21
+             */
+            date: string;
+            /** @description Values by metric name (docs: DESIGN.md §4): weight (kg), body_fat (%), lean_mass (kg), steps, active_kcal, basal_kcal, sleep_h (hours), rhr (bpm), hrv (ms), vo2max, exercise_min. */
+            metrics: {
+                [key: string]: number;
+            };
+        };
+        IngestRejected: {
+            /**
+             * Format: date
+             * @description Absent when the date itself did not read, or the whole metric was left out.
+             */
+            date?: string;
+            metric: string;
+            /** @description The date as the source wrote it, when it did not read. */
+            raw_date?: string;
+            reason: string;
+            /** Format: double */
+            value: number;
         };
         LimitsBody: {
             /** @description A user's limits at the start. */
@@ -761,6 +849,156 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "ingest-hae": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    data: {
+                        metrics: {
+                            data?: {
+                                [key: string]: unknown;
+                            }[];
+                            /** @example step_count */
+                            name?: string;
+                            /** @example count */
+                            units?: string;
+                        }[];
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "ingest-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestMetricsInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

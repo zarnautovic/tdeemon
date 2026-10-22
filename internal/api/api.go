@@ -25,6 +25,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/ingest"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -69,6 +70,8 @@ type Config struct {
 	// Limits are the instance's limits of a plan; limits.Instance() when
 	// zero.
 	Limits limits.Limits
+	// IngestArchive keeps the raw bodies of the ingest; none when nil.
+	IngestArchive *ingest.Archive
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
@@ -253,6 +256,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.register(a)
 	s.registerTokens(a)
 	s.registerPlan(a)
+	s.registerIngest(a)
 	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",
