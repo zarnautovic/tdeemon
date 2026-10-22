@@ -31,17 +31,17 @@ func TestCalibrateExactLine(t *testing.T) {
 
 	days := map[day.Date]Day{}
 	// 0.07 kg a day: 0.49 kg a week, 539 kcal a day under the TDEE.
-	line(days, last, 40, 80, -0.07, 2000)
+	line(days, last, 60, 80, -0.07, 2000)
 	e := Calibrate(days, nil, last, DefaultParams())
 
-	if e.From != last.AddDays(-27) || e.To != last || e.Days != 28 || e.BeforePhase {
-		t.Errorf("window %s to %s, %d days, before the phase %v; want the 28 days to %s", e.From, e.To, e.Days, e.BeforePhase, last)
+	if e.From != last.AddDays(-41) || e.To != last || e.Days != 42 || e.BeforePhase {
+		t.Errorf("window %s to %s, %d days, before the phase %v; want the 42 days to %s", e.From, e.To, e.Days, e.BeforePhase, last)
 	}
 	if !e.Measured || !e.Trusted || len(e.Doubts) != 0 {
 		t.Fatalf("measured %v, trusted %v, doubts %v; want a trusted estimate", e.Measured, e.Trusted, e.Doubts)
 	}
-	if e.LoggedDays != 28 || e.WeighIns != 28 {
-		t.Errorf("%d logged days and %d weigh-ins, want 28 of each", e.LoggedDays, e.WeighIns)
+	if e.LoggedDays != 42 || e.WeighIns != 42 {
+		t.Errorf("%d logged days and %d weigh-ins, want 42 of each", e.LoggedDays, e.WeighIns)
 	}
 	if !near(e.TDEE, 2539, 1e-6) || !near(e.IntakeKcal, 2000, 1e-9) || !near(e.KgPerWeek, -0.49, 1e-9) {
 		t.Errorf("TDEE %v, intake %v, %v kg a week; want 2539, 2000 and -0.49", e.TDEE, e.IntakeKcal, e.KgPerWeek)
@@ -79,22 +79,22 @@ func TestCalibrateCountsTheIntakeOfCompleteLoggedDays(t *testing.T) {
 		name string
 		// day is what the window's fifth day becomes.
 		day Day
-		// wantLogged and wantWeighIns count the window's 28 days.
+		// wantLogged and wantWeighIns count the window's 42 days.
 		wantLogged, wantWeighIns int
 	}{
 		// A day without a meal was not logged: its 0 kcal would lower the
 		// intake, and the TDEE with it.
-		{"a day without a meal is not 0 kcal", Day{Status: day.Complete, WeightKg: 79}, 27, 28},
+		{"a day without a meal is not 0 kcal", Day{Status: day.Complete, WeightKg: 79}, 41, 42},
 		// The user excluded the day, a restaurant: its intake is not to
 		// be trusted, but the weight is still the body's.
-		{"an excluded day's intake", Day{Status: day.Excluded, Meals: 2, Kcal: 6000, WeightKg: 79}, 27, 28},
-		{"an open day's intake", Day{Status: day.Open, Meals: 1, Kcal: 500, WeightKg: 79}, 27, 28},
-		{"a day without a weigh-in", Day{Status: day.Complete, Meals: 1, Kcal: 2000}, 28, 27},
+		{"an excluded day's intake", Day{Status: day.Excluded, Meals: 2, Kcal: 6000, WeightKg: 79}, 41, 42},
+		{"an open day's intake", Day{Status: day.Open, Meals: 1, Kcal: 500, WeightKg: 79}, 41, 42},
+		{"a day without a weigh-in", Day{Status: day.Complete, Meals: 1, Kcal: 2000}, 42, 41},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			days := map[day.Date]Day{}
-			line(days, last, 28, 80, -1.0/28, 2000)
+			line(days, last, 42, 80, -1.0/28, 2000)
 			// The weigh-in on the line, where the case keeps one.
 			if tc.day.WeightKg > 0 {
 				tc.day.WeightKg = days[last.AddDays(-23)].WeightKg
@@ -137,14 +137,14 @@ func TestCalibrateLeavesOutAPhasesFirstDays(t *testing.T) {
 		wantBefore       bool
 		wantTDEE         float64
 	}{
-		{"long under way", 60, 27, 0, false, during},
+		{"long under way", 60, 41, 0, false, during},
 		// The phase's 14th day to last: 17 days, enough.
 		{"its days after the first 14", 30, 16, 0, false, during},
 		{"14 days after the first 14", 27, 13, 0, false, during},
-		// 13 days after its first 14 are too few: the 28 days before it.
-		{"13 days after the first 14", 26, 54, 27, true, before},
-		{"in its first days", 5, 33, 6, true, before},
-		{"starting on last", 0, 28, 1, true, before},
+		// 13 days after its first 14 are too few: the 42 days before it.
+		{"13 days after the first 14", 26, 68, 27, true, before},
+		{"in its first days", 5, 47, 6, true, before},
+		{"starting on last", 0, 42, 1, true, before},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -226,8 +226,8 @@ func TestCalibrateDoubts(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			days := map[day.Date]Day{}
-			line(days, last, 28, 80, -0.05, 2000)
-			for i := range 28 {
+			line(days, last, 42, 80, -0.05, 2000)
+			for i := range 42 {
 				d := days[last.AddDays(-i)]
 				weighIn, meal := tc.keep(i)
 				if !weighIn {
@@ -253,10 +253,10 @@ func TestCalibrateDoubts(t *testing.T) {
 func TestCalibrateDoubtsAWideInterval(t *testing.T) {
 	t.Parallel()
 
-	// Weigh-ins that swing by 2 kg from day to day, about a level weight.
+	// Weigh-ins that swing by 4 kg from day to day, about a level weight.
 	days := map[day.Date]Day{}
-	for i := range 28 {
-		days[last.AddDays(-i)] = Day{Status: day.Complete, Meals: 2, Kcal: 2400, WeightKg: 80 + 2*float64(i%2)}
+	for i := range 42 {
+		days[last.AddDays(-i)] = Day{Status: day.Complete, Meals: 2, Kcal: 2400, WeightKg: 80 + 4*float64(i%2)}
 	}
 	e := Calibrate(days, nil, last, DefaultParams())
 	if !e.Measured || e.Trusted || !slices.Equal(e.Doubts, []string{DoubtWideInterval}) || e.HalfWidth <= 200 {
@@ -319,7 +319,7 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 			var covered, measured int
 			var errSum float64
 			for range runs {
-				e := Calibrate(simulate(r, 28, tdee, tc.logged, tc.weighed, tc.carry), nil, last, DefaultParams())
+				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weighed, tc.carry), nil, last, DefaultParams())
 				if !e.Measured {
 					continue
 				}
@@ -333,8 +333,8 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 				t.Fatalf("%d of %d runs measured", measured, runs)
 			}
 			// An 80 % interval. One that took weigh-ins on following days
-			// for independent would cover 55 to 70 %, and one that did not
-			// raise the autocorrelation of a short series 64 to 76 %.
+			// for independent would cover 39 to 77 %, and one that did not
+			// raise the autocorrelation of a short series 69 to 79 %.
 			if share := float64(covered) / float64(measured); share < 0.75 || share > 0.88 {
 				t.Errorf("the interval covers the TDEE in %.1f %% of the runs, want about 80 %%", 100*share)
 			}

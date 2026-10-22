@@ -70,14 +70,16 @@ type Params struct {
 	WeighIns   float64
 }
 
-// DefaultParams returns the settings of DESIGN.md §7: a window of 28
+// DefaultParams returns the settings of DESIGN.md §7: a window of 42
 // days with at least 14 left after a phase's first 14, a trend that takes
 // a tenth of each weigh-in, and trust at an interval of ±200 kcal or
-// narrower with the data an autopilot step needs (docs/limits.md).
+// narrower with the data an autopilot step needs (docs/limits.md). A
+// window of 28 days swung with water the weight held for weeks, as after
+// a change of training.
 func DefaultParams() Params {
 	l := limits.UserDefaults()
 	return Params{
-		WindowDays: 28, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
+		WindowDays: 42, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
 		TrustedKcal: 200, LoggedDays: l.LoggedDays, WeighIns: l.WeighIns,
 	}
 }
@@ -245,8 +247,8 @@ type fit struct {
 // slope assumes independent residuals, which weigh-ins on following days
 // are not (water and salt carry over), so it is widened by their lag-1
 // autocorrelation, and the independent weigh-ins it counts are fewer.
-// Without that, an 80 % interval covers the TDEE in about 55 to 70 % of
-// the tests' simulated windows, depending on how many days are logged.
+// Without that, an 80 % interval covers the TDEE in 39 to 77 % of the
+// tests' simulated windows, the less the more water carries over.
 func regress(xs, kgs []float64) fit {
 	n := float64(len(xs))
 	mx, mk := mean(xs), mean(kgs)

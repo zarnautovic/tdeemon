@@ -276,8 +276,11 @@ estimates to agree within ±200 kcal.
 
 The replacement:
 
-- **Window:** the 28 days up to yesterday, today not being over
-  (`internal/domain/calibration`).
+- **Window:** the 42 days up to yesterday, today not being over
+  (`internal/domain/calibration`). Over 28 days the estimate swung with
+  water the weight held for weeks, as after a change of training; over
+  42 it kept closer to the past manual revisions and still followed the
+  TDEE as it fell.
 - **Weight trend:** an exponentially smoothed trend weight, which takes a
   tenth of each weigh-in's difference from it. The summary shows it, and
   it is the trend weight the limits read. The slope is a linear
@@ -297,7 +300,7 @@ The replacement:
     (2 + 4ρ) / n. In a simulation, the interval then covers the TDEE in
     about 80 % of the windows, for water that carries over from not at
     all to strongly. One that takes the weigh-ins as independent covers
-    55 to 70 %.
+    39 to 77 %, the less the more water carries over.
   - The intake average's, for the days not logged; none when every day
     is.
 - **Trust:** an estimate is trusted when half its interval is at most
@@ -326,7 +329,7 @@ The replacement:
   - Water/glycogen window: the first 14 days of *every* phase (glycogen
     refills on a bulk start too) are left out. A window needs 14 days of
     the phase after them, so until the phase's 28th day the estimate is
-    the one of the 28 days before the phase started, marked as such,
+    the one of the 42 days before the phase started, marked as such,
     with no verdict on the phase.
   - NEAT guard: steps ±30 % from baseline, in either direction.
   - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss turns a cut
