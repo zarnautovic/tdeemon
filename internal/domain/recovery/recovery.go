@@ -35,8 +35,17 @@ const (
 	baseDays   = 21
 )
 
+// An average needs MinRecentDays of the last 7 days, and MinBaseDays of
+// the 21 before them, as calibration's steps guard does; of fewer it is
+// none, and raises no flag.
+const (
+	MinRecentDays = 4
+	MinBaseDays   = 5
+)
+
 // Recovery is the last 7 days' averages and their bases, 0 for none, and
-// the flags they raise.
+// the flags they raise. A value of 0 or less is none, as no night has no
+// sleep and no heart rests at 0.
 type Recovery struct {
 	SleepH                   float64
 	RestingHR, RestingHRBase float64
@@ -51,6 +60,9 @@ func Of(values map[day.Date][]metric.Value, last day.Date) Recovery {
 	for i := range recentDays + baseDays {
 		recent := i < recentDays
 		for _, v := range values[last.AddDays(-i)] {
+			if v.Value <= 0 {
+				continue
+			}
 			switch v.Kind {
 			case metric.Sleep:
 				if recent {
@@ -65,8 +77,8 @@ func Of(values map[day.Date][]metric.Value, last day.Date) Recovery {
 		}
 	}
 	r := Recovery{
-		SleepH: mean(sleep), RestingHR: mean(rhr), RestingHRBase: mean(rhrBase),
-		HRV: mean(hrv), HRVBase: mean(hrvBase),
+		SleepH: mean(sleep, MinRecentDays), RestingHR: mean(rhr, MinRecentDays), RestingHRBase: mean(rhrBase, MinBaseDays),
+		HRV: mean(hrv, MinRecentDays), HRVBase: mean(hrvBase, MinBaseDays),
 	}
 	r.flag()
 	return r
@@ -93,9 +105,9 @@ func add(recentVs, baseVs []float64, recent bool, v float64) (recentOut, baseOut
 	return recentVs, append(baseVs, v)
 }
 
-// mean returns the average of vs, 0 for none.
-func mean(vs []float64) float64 {
-	if len(vs) == 0 {
+// mean returns the average of vs, 0 for fewer than lowest.
+func mean(vs []float64, lowest int) float64 {
+	if len(vs) < max(1, lowest) {
 		return 0
 	}
 	var sum float64

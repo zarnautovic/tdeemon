@@ -1156,27 +1156,27 @@ export interface components {
             flags: string[];
             /**
              * Format: double
-             * @description The last 7 days' average HRV.
+             * @description The last 7 days' average HRV, of 4 days or more.
              */
             hrv?: number;
             /**
              * Format: double
-             * @description The 21 days' before them.
+             * @description The 21 days' before them, of 5 days or more.
              */
             hrv_base?: number;
             /**
              * Format: double
-             * @description The last 7 days' average resting heart rate.
+             * @description The last 7 days' average resting heart rate, of 4 days or more.
              */
             resting_hr?: number;
             /**
              * Format: double
-             * @description The 21 days' before them.
+             * @description The 21 days' before them, of 5 days or more.
              */
             resting_hr_base?: number;
             /**
              * Format: double
-             * @description The last 7 days' average sleep, in hours.
+             * @description The last 7 days' average sleep, in hours, of 4 days or more.
              */
             sleep_h?: number;
         };
@@ -1289,7 +1289,7 @@ export interface components {
             doubts: string[];
             /**
              * Format: date
-             * @description The window's first day.
+             * @description The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday.
              */
             from: string;
             /**
@@ -1495,7 +1495,7 @@ export interface components {
             intake_kcal?: number;
             /**
              * Format: double
-             * @description The measured rate, in % of the trend weight a week.
+             * @description The measured rate, in % of the trend weight a week, rounded to a hundredth: the rate is judged before it is rounded.
              */
             measured_pct_week?: number;
             /**
@@ -1503,7 +1503,7 @@ export interface components {
              * @enum {string}
              */
             rate: "none" | "on_target" | "below" | "above";
-            /** @description Why there is no verdict: no_phase, no_target, no_estimate, before_phase, not_trusted. */
+            /** @description Why there is no verdict: no_phase, no_target, no_estimate, before_phase, not_trusted, no_tdee (a trusted TDEE of 0 or less, the intake logged short). */
             reasons: string[];
             /**
              * Format: double
@@ -1571,10 +1571,13 @@ export interface components {
             training_days: number;
             /**
              * Format: double
-             * @description The trend weight on the week's last day.
+             * @description The trend weight on the week's last day, for a week with a weigh-in.
              */
             trend_kg?: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description The weigh-ins of the days not excluded, as calibration counts them.
+             */
             weigh_ins: number;
             /**
              * Format: double

@@ -42,10 +42,10 @@ func Trend(days map[day.Date]Day, alpha float64) []Point {
 	return out
 }
 
-// trendAt returns the trend weight of trend, in the order of its dates,
+// TrendAt returns the trend weight of trend, in the order of its dates,
 // on day d, and the day of its last weigh-in up to d; 0 and the zero Date
 // before the first.
-func trendAt(trend []Point, d day.Date) (float64, day.Date) {
+func TrendAt(trend []Point, d day.Date) (float64, day.Date) {
 	i, found := slices.BinarySearchFunc(trend, d, func(pt Point, d day.Date) int { return pt.Date.Compare(d) })
 	if found {
 		i++

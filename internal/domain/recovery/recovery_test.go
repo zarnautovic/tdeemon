@@ -74,3 +74,44 @@ func TestOfNothing(t *testing.T) {
 		t.Errorf("recovery of nothing %+v, want zeros", r)
 	}
 }
+
+func TestOfFewDays(t *testing.T) {
+	t.Parallel()
+
+	// Of 3 of the last 7 days and 4 of the 21 before them: too few.
+	values := map[day.Date][]metric.Value{}
+	for i := range 28 {
+		if i < 7 && i >= MinRecentDays-1 || i >= 7 && i >= 7+MinBaseDays-1 {
+			continue
+		}
+		hr := 50.0
+		if i < 7 {
+			hr = 70
+		}
+		values[last.AddDays(-i)] = []metric.Value{
+			{Kind: metric.Sleep, Value: 5, Source: metric.Import},
+			{Kind: metric.RestingHR, Value: hr, Source: metric.Import},
+		}
+	}
+	if r := Of(values, last); r.SleepH != 0 || r.RestingHR != 0 || r.RestingHRBase != 0 || len(r.Flags) != 0 {
+		t.Errorf("recovery of too few days %+v, want none", r)
+	}
+	// One more of each: enough.
+	values[last.AddDays(-(MinRecentDays - 1))] = values[last]
+	values[last.AddDays(-(7 + MinBaseDays - 1))] = values[last.AddDays(-7)]
+	if r := Of(values, last); r.SleepH != 5 || r.RestingHR != 70 || r.RestingHRBase != 50 || !slices.Equal(r.Flags, []string{FlagShortSleep, FlagHighRestingHR}) {
+		t.Errorf("recovery of enough days %+v", r)
+	}
+}
+
+func TestOfLeavesOutZero(t *testing.T) {
+	t.Parallel()
+
+	// A night of 0 is a watch not worn, not a night without sleep.
+	values := days([3]float64{7.5, 55, 60}, [3]float64{7.5, 55, 60})
+	values[last] = append(values[last], metric.Value{Kind: metric.Sleep, Value: 0, Source: metric.Import})
+	values[last.AddDays(-1)] = []metric.Value{{Kind: metric.Sleep, Value: 0, Source: metric.Import}}
+	if r := Of(values, last); r.SleepH != 7.5 || len(r.Flags) != 0 {
+		t.Errorf("recovery %+v, want 7.5 hours of sleep and no flag", r)
+	}
+}

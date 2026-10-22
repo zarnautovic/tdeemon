@@ -1573,27 +1573,27 @@
             "type": "array"
           },
           "hrv": {
-            "description": "The last 7 days' average HRV.",
+            "description": "The last 7 days' average HRV, of 4 days or more.",
             "format": "double",
             "type": "number"
           },
           "hrv_base": {
-            "description": "The 21 days' before them.",
+            "description": "The 21 days' before them, of 5 days or more.",
             "format": "double",
             "type": "number"
           },
           "resting_hr": {
-            "description": "The last 7 days' average resting heart rate.",
+            "description": "The last 7 days' average resting heart rate, of 4 days or more.",
             "format": "double",
             "type": "number"
           },
           "resting_hr_base": {
-            "description": "The 21 days' before them.",
+            "description": "The 21 days' before them, of 5 days or more.",
             "format": "double",
             "type": "number"
           },
           "sleep_h": {
-            "description": "The last 7 days' average sleep, in hours.",
+            "description": "The last 7 days' average sleep, in hours, of 4 days or more.",
             "format": "double",
             "type": "number"
           }
@@ -1844,7 +1844,7 @@
             "type": "array"
           },
           "from": {
-            "description": "The window's first day.",
+            "description": "The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday.",
             "format": "date",
             "type": "string"
           },
@@ -2282,7 +2282,7 @@
             "type": "number"
           },
           "measured_pct_week": {
-            "description": "The measured rate, in % of the trend weight a week.",
+            "description": "The measured rate, in % of the trend weight a week, rounded to a hundredth: the rate is judged before it is rounded.",
             "format": "double",
             "type": "number"
           },
@@ -2297,7 +2297,7 @@
             "type": "string"
           },
           "reasons": {
-            "description": "Why there is no verdict: no_phase, no_target, no_estimate, before_phase, not_trusted.",
+            "description": "Why there is no verdict: no_phase, no_target, no_estimate, before_phase, not_trusted, no_tdee (a trusted TDEE of 0 or less, the intake logged short).",
             "items": {
               "type": "string"
             },
@@ -2402,11 +2402,12 @@
             "type": "integer"
           },
           "trend_kg": {
-            "description": "The trend weight on the week's last day.",
+            "description": "The trend weight on the week's last day, for a week with a weigh-in.",
             "format": "double",
             "type": "number"
           },
           "weigh_ins": {
+            "description": "The weigh-ins of the days not excluded, as calibration counts them.",
             "format": "int64",
             "type": "integer"
           },

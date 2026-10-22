@@ -296,7 +296,8 @@ the operations open to its scopes: `GET /api/v1/auth/whoami` and
 the tools: those that read with `read` or `tools` (`GET /api/v1/me`,
 the profile and the plan today; `GET /api/v1/days/{date}`, a day,
 `today` or `YYYY-MM-DD`; `GET /api/v1/foods?query=…` and
-`GET /api/v1/foods/{id}`), and those that
+`GET /api/v1/foods/{id}`; `GET /api/v1/summary`, calibration's summary
+of the days up to yesterday), and those that
 write with `tools` alone (`POST /api/v1/foods`, a food saved or
 corrected; `POST /api/v1/meals`, and `PATCH` and `DELETE` on
 `/api/v1/meals/{id}`, a meal logged, changed or deleted;

@@ -216,7 +216,8 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 }
 
 // saveIsolationMetrics gives u a day of metrics, a manual weight and
-// imported steps.
+// imported steps, and a weigh-in of their own two days before, which
+// the summary of the days up to yesterday shows.
 func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
 	if _, err := db.MergeMetrics(t.Context(), u.ID, isolationActor, day.DateOf(now), []metric.Value{
@@ -225,7 +226,16 @@ func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time
 	}, now); err != nil {
 		t.Fatalf("save %s's metrics: %v", u.Name, err)
 	}
+	if _, err := db.MergeMetrics(t.Context(), u.ID, isolationActor, day.DateOf(now).AddDays(-2), []metric.Value{
+		{Kind: metric.Weight, Value: isolationWeight(u), Source: metric.Import},
+	}, now); err != nil {
+		t.Fatalf("save %s's weigh-in: %v", u.Name, err)
+	}
 }
+
+// isolationWeight is u's own weigh-in two days before: the first letter
+// of the name (A, I) sets it apart.
+func isolationWeight(u user.User) float64 { return 80 + float64(u.Name[0]%20)/10 }
 
 // saveIsolationPlan gives u a profile, a phase, a target, training
 // weekdays, limits of their own, a toggle of a day's type, a day of a
@@ -650,7 +660,9 @@ func isolationCases() map[string]isolationCase {
 		}),
 		// The summary holds no text of the user's: the store's queries by
 		// the user keep it theirs.
-		"get-summary": read("/api/v1/summary", true, nil),
+		"get-summary": read("/api/v1/summary", true, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
+		}),
 		"get-day": read("/api/v1/days/today", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s toast"}
 		}),

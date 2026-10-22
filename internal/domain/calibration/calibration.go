@@ -253,7 +253,7 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 		}
 	}
 	trend := Trend(days, p.TrendAlpha)
-	e.TrendKg, e.TrendDate = trendAt(trend, last)
+	e.TrendKg, e.TrendDate = TrendAt(trend, last)
 	if ph, ok := plan.PhaseOn(phases, last.AddDays(1)); ok {
 		e.PhaseStartTrendKg = startTrend(days, trend, ph.Start, last)
 	}
@@ -288,7 +288,7 @@ func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) floa
 	// The phase on today starts on today at the latest, so the day before
 	// it is last at the latest.
 	before := start.AddDays(-1)
-	if kg, on := trendAt(trend, before); kg > 0 && before.DaysSince(on) <= startGap {
+	if kg, on := TrendAt(trend, before); kg > 0 && before.DaysSince(on) <= startGap {
 		return kg
 	}
 	for d := start; !last.Before(d); d = d.AddDays(1) {

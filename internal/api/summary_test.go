@@ -217,3 +217,106 @@ func TestGetSummaryRefuses(t *testing.T) {
 		t.Errorf("no session: %d, want 401", rec.Code)
 	}
 }
+
+// summaryOf returns the summary of in's user, of the query q.
+func summaryOf(t *testing.T, in *instance, q string) summaryAnswer {
+	t.Helper()
+	rec := in.do(t, http.MethodGet, "/api/v1/summary?"+q, "", []*http.Cookie{sessionOf(t, in)}, nil)
+	var b summaryAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	return b
+}
+
+// get_summary reads a day as calibration does: its meals by their day,
+// an excluded day's weigh-in as none, a value of 0 as none.
+func TestGetSummaryReadsTheDays(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	saveSummaryHistory(t, in.db, in.user, in.clock.Now())
+	saveDaysToRead(t, in)
+	b := summaryOf(t, in, "weeks=1")
+	// Six days logged, yesterday with the snack: 2300, 500 and four of
+	// 2000; six weigh-ins; the steps and sleep of six days.
+	w := b.Weeks[0]
+	if w.LoggedDays != 6 || w.Kcal == nil || *w.Kcal != 1800 || w.WeighIns != 6 {
+		t.Errorf("the week %+v: 6 days of 1800 kcal on average, 6 weigh-ins", w)
+	}
+	if w.Steps == nil || *w.Steps != 7000 || w.SleepH == nil || *w.SleepH != 6 || b.Recovery.SleepH == nil || *b.Recovery.SleepH != 6 {
+		t.Errorf("the week %+v, recovery %+v: 7000 steps and 6 hours of sleep, without the zeros", w, b.Recovery)
+	}
+}
+
+// saveDaysToRead adds to saveSummaryHistory's days a snack of 300 kcal
+// yesterday by its day but eaten today by the calendar, a day excluded
+// two days ago, and a night of 0 hours and a day of 0 steps four days
+// ago.
+func saveDaysToRead(t *testing.T, in *instance) {
+	t.Helper()
+	now := in.clock.Now()
+	ctx := t.Context()
+	cal, err := day.NewCalendar(in.user.TimeZone, in.user.DayStartHour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := cal.DayOf(now)
+	// Yesterday's by its day, though eaten after yesterday ended as the
+	// calendar has it now: as after the day's start hour moved earlier.
+	snack, err := meal.Estimate("a late snack", food.Nutrients{Kcal: 300, Protein: 10, Carbs: 40, Fat: 10}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := cal.Start(today).Add(time.Minute)
+	m := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: today.AddDays(-1), Description: "a late snack", Client: meal.ClientMCP, Items: []meal.Item{snack}}
+	if _, _, err := in.db.CreateMeal(ctx, in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.db.ExcludeDay(ctx, in.user.ID, isolationActor, today.AddDays(-2), day.Exclusion{Reason: "a fever"}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.db.MergeMetrics(ctx, in.user.ID, isolationActor, today.AddDays(-4), []metric.Value{
+		{Kind: metric.Sleep, Value: 0, Source: metric.Manual},
+		{Kind: metric.Steps, Value: 0, Source: metric.Manual},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// get_summary flags a maintenance phase's drift from the trend weight it
+// started with, though it started more than summaryHistory days ago.
+func TestGetSummaryDriftOfAnOldPhase(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	ctx := t.Context()
+	today := day.DateOf(now)
+	start := today.AddDays(-250)
+	if err := in.db.SetPhase(ctx, in.user.ID, isolationActor, plan.Phase{Type: plan.Maintain, Start: start}, now); err != nil {
+		t.Fatal(err)
+	}
+	d := plan.DayTarget{Kcal: 2400, Protein: 160, Fat: 70}
+	if err := in.db.SetTarget(ctx, in.user.ID, isolationActor, plan.Target{EffectiveFrom: start, Training: d, Rest: d}, now); err != nil {
+		t.Fatal(err)
+	}
+	// 80 kg up to 191 days ago, then 83, the last weigh-in 8 days ago.
+	for i := 260; i >= 8; i-- {
+		kg := 83.0
+		if i > 190 {
+			kg = 80
+		}
+		if _, err := in.db.MergeMetrics(ctx, in.user.ID, isolationActor, today.AddDays(-i), []metric.Value{{Kind: metric.Weight, Value: kg, Source: metric.Import}}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := summaryOf(t, in, "weeks=1")
+	if !slices.Contains(b.Verdict.Flags, "maintenance_drift") {
+		t.Errorf("flags %v, want maintenance_drift: 83 kg against the 80 the phase started with", b.Verdict.Flags)
+	}
+	// The last week has no weigh-in, so no trend of its own.
+	if b.Weeks[0].TrendKg != nil || b.Trend == nil || b.Trend.Date != today.AddDays(-8).String() {
+		t.Errorf("week %+v, trend %+v: no trend for the week, the trend of 8 days ago", b.Weeks[0], b.Trend)
+	}
+}
