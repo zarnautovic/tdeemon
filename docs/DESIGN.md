@@ -145,7 +145,9 @@ A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
 present; nobody has to enter them. Values are stored as they are and
 rounded only for display (kcal to a whole number, grams to a tenth, salt
-to a hundredth).
+to a hundredth), which the API's answers already are: a total is the
+sum of what was eaten, rounded, and what remains of a target is worked
+out before rounding.
 
 **Metric merge rules** carry over from the predecessor
 (`internal/domain/metric`): a value the user gave (`manual`, from any

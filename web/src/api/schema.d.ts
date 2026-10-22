@@ -341,7 +341,7 @@ export interface components {
             meals: components["schemas"]["MealBody"][];
             metrics: components["schemas"]["MetricBody"][];
             /** @description What the target leaves after the total; below 0 past it. */
-            remaining?: components["schemas"]["DayTargetBody"];
+            remaining?: components["schemas"]["RemainingBody"];
             /**
              * @description A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration.
              * @enum {string}
@@ -724,6 +724,28 @@ export interface components {
             servings?: number;
             /** @enum {string} */
             unit?: "g" | "ml";
+        };
+        RemainingBody: {
+            /**
+             * Format: double
+             * @description The target's grams of carbs less the total's (not what the remaining kcal leave).
+             */
+            carbs: number;
+            /**
+             * Format: double
+             * @description The target's grams of fat less the total's.
+             */
+            fat: number;
+            /**
+             * Format: double
+             * @description The target's kcal less the total's.
+             */
+            kcal: number;
+            /**
+             * Format: double
+             * @description The target's grams of protein less the total's.
+             */
+            protein: number;
         };
         ServerInfo: {
             /**

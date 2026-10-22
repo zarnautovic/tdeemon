@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"math"
 	"time"
 	"uuid"
 
@@ -14,7 +15,9 @@ import (
 )
 
 // nutrientsBody is energy and nutrients: the four every food has, and
-// those a label may add.
+// those a label may add. They are rounded as they are shown
+// (food.Nutrients.Rounded); the store keeps them whole, so the totals
+// are the sums of what was eaten, rounded, not of the rounded items.
 type nutrientsBody struct {
 	Kcal         float64  `json:"kcal"`
 	Protein      float64  `json:"protein"`
@@ -29,6 +32,7 @@ type nutrientsBody struct {
 }
 
 func newNutrientsBody(n food.Nutrients) nutrientsBody {
+	n = n.Rounded()
 	return nutrientsBody{
 		Kcal: n.Kcal, Protein: n.Protein, Carbs: n.Carbs, Fat: n.Fat,
 		Fiber: n.Fiber, SaturatedFat: n.SaturatedFat, Sugars: n.Sugars, Salt: n.Salt, Polyols: n.Polyols, Alcohol: n.Alcohol,
@@ -111,8 +115,17 @@ type dayBody struct {
 	Meals          []mealBody     `json:"meals" nullable:"false" doc:"In the order they were eaten."`
 	Total          nutrientsBody  `json:"total" doc:"What the day's meals add up to."`
 	Target         *dayTargetBody `json:"target,omitempty" doc:"The target of the day's type; absent before the first target."`
-	Remaining      *dayTargetBody `json:"remaining,omitempty" doc:"What the target leaves after the total; below 0 past it."`
+	Remaining      *remainingBody `json:"remaining,omitempty" doc:"What the target leaves after the total; below 0 past it."`
 	Metrics        []metricBody   `json:"metrics" nullable:"false"`
+}
+
+// remainingBody is what a day's target leaves after its total, each part
+// on its own: below 0 past it.
+type remainingBody struct {
+	Kcal    float64 `json:"kcal" doc:"The target's kcal less the total's."`
+	Protein float64 `json:"protein" doc:"The target's grams of protein less the total's."`
+	Fat     float64 `json:"fat" doc:"The target's grams of fat less the total's."`
+	Carbs   float64 `json:"carbs" doc:"The target's grams of carbs less the total's (not what the remaining kcal leave)."`
 }
 
 type dayOutput struct {
@@ -129,7 +142,8 @@ func (s *sessions) getDay(ctx context.Context, in *dayInput) (*dayOutput, error)
 	if err != nil {
 		return nil, err
 	}
-	cal, d, err := s.userDay(p)
+	now := s.now()
+	cal, d, err := userDay(p, now)
 	if err != nil {
 		return nil, internalError("reading the day failed", err)
 	}
@@ -143,7 +157,7 @@ func (s *sessions) getDay(ctx context.Context, in *dayInput) (*dayOutput, error)
 		return nil, internalError("reading the day failed", err)
 	}
 	excluded := b.ExcludedReason != ""
-	b.Status = string(cal.StatusOf(d, s.now(), excluded))
+	b.Status = string(cal.StatusOf(d, now, excluded))
 	return &dayOutput{CacheControl: "no-store", Body: b}, nil
 }
 
@@ -183,9 +197,10 @@ func (s *sessions) readDay(ctx context.Context, userID uuid.UUID, d day.Date) (d
 	if t, ok := plan.DayTargetOn(targets, d, dt); ok {
 		target := newDayTargetBody(t)
 		b.Target = &target
-		b.Remaining = &dayTargetBody{
-			Kcal: target.Kcal - total.Kcal, Protein: target.Protein - total.Protein,
-			Fat: target.Fat - total.Fat, Carbs: target.Carbs - total.Carbs,
+		// From the values as they are, rounded once.
+		b.Remaining = &remainingBody{
+			Kcal: math.Round(t.Kcal - total.Kcal), Protein: roundGrams(t.Protein - total.Protein),
+			Fat: roundGrams(t.Fat - total.Fat), Carbs: roundGrams(max(t.Carbs(), 0) - total.Carbs),
 		}
 	}
 	return b, nil

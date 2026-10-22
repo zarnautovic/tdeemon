@@ -113,7 +113,7 @@
             "type": "array"
           },
           "remaining": {
-            "$ref": "#/components/schemas/DayTargetBody",
+            "$ref": "#/components/schemas/RemainingBody",
             "description": "What the target leaves after the total; below 0 past it."
           },
           "status": {
@@ -984,6 +984,38 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "RemainingBody": {
+        "additionalProperties": false,
+        "properties": {
+          "carbs": {
+            "description": "The target's grams of carbs less the total's (not what the remaining kcal leave).",
+            "format": "double",
+            "type": "number"
+          },
+          "fat": {
+            "description": "The target's grams of fat less the total's.",
+            "format": "double",
+            "type": "number"
+          },
+          "kcal": {
+            "description": "The target's kcal less the total's.",
+            "format": "double",
+            "type": "number"
+          },
+          "protein": {
+            "description": "The target's grams of protein less the total's.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "fat",
+          "carbs"
+        ],
         "type": "object"
       },
       "ServerInfo": {

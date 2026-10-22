@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -98,16 +100,21 @@ func requireUser(ctx context.Context) (auth.Principal, error) {
 	return p, nil
 }
 
-// userDay is the user's calendar and the day it is now.
-func (s *sessions) userDay(p auth.Principal) (day.Calendar, day.Date, error) {
+// userDay is the user's calendar and the day it is at now.
+func userDay(p auth.Principal, now time.Time) (day.Calendar, day.Date, error) {
 	c, err := day.NewCalendar(p.User.TimeZone, p.User.DayStartHour)
 	if err != nil {
 		return day.Calendar{}, day.Date{}, fmt.Errorf("the user's calendar: %w", err)
 	}
-	return c, c.DayOf(s.now()), nil
+	return c, c.DayOf(now), nil
 }
 
-// dayTargetBody is a target for one type of day.
+// roundGrams rounds grams as they are shown, to a tenth
+// (food.Nutrients.Rounded).
+func roundGrams(v float64) float64 { return math.Round(v*10) / 10 }
+
+// dayTargetBody is a target for one type of day, rounded as it is shown:
+// kcal to a whole number, grams to a tenth.
 type dayTargetBody struct {
 	Kcal    float64 `json:"kcal" doc:"Energy, in kcal."`
 	Protein float64 `json:"protein" doc:"Grams of protein."`
@@ -116,7 +123,7 @@ type dayTargetBody struct {
 }
 
 func newDayTargetBody(t plan.DayTarget) dayTargetBody {
-	return dayTargetBody{Kcal: t.Kcal, Protein: t.Protein, Fat: t.Fat, Carbs: max(t.Carbs(), 0)}
+	return dayTargetBody{Kcal: math.Round(t.Kcal), Protein: roundGrams(t.Protein), Fat: roundGrams(t.Fat), Carbs: roundGrams(max(t.Carbs(), 0))}
 }
 
 // targetBody is the targets in force from a day on.
@@ -185,7 +192,7 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, today, err := s.userDay(p)
+	_, today, err := userDay(p, s.now())
 	if err != nil {
 		return nil, internalError("reading the profile failed", err)
 	}

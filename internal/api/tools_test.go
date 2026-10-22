@@ -233,9 +233,10 @@ func TestGetDay(t *testing.T) {
 	saveIsolationPlan(t, in.db, in.user, now)
 	today := day.DateOf(now)
 
-	// Two slices of bread (80 g) and an estimate.
-	toast := `{"kcal": 207.2, "protein": 6.8, "carbs": 38.4, "fat": 2.64, "fiber": 4.8}`
-	total := `{"kcal": 387.2, "protein": 12.8, "carbs": 58.4, "fat": 10.64, "fiber": 4.8}`
+	// Two slices of bread (80 g) and an estimate, rounded as they are
+	// shown: kcal to a whole number, grams to a tenth.
+	toast := `{"kcal": 207, "protein": 6.8, "carbs": 38.4, "fat": 2.6, "fiber": 4.8}`
+	total := `{"kcal": 387, "protein": 12.8, "carbs": 58.4, "fat": 10.6, "fiber": 4.8}`
 	todays := fmt.Sprintf(`{
 		"date": %[1]q, "status": "open", "type": "training", "training_toggle": true,
 		"meals": [{
@@ -250,7 +251,7 @@ func TestGetDay(t *testing.T) {
 		}],
 		"total": %[5]s,
 		"target": {"kcal": 2100, "protein": 150, "fat": 60, "carbs": 240},
-		"remaining": {"kcal": 1712.8, "protein": 137.2, "fat": 49.36, "carbs": 181.6},
+		"remaining": {"kcal": 1713, "protein": 137.2, "fat": 49.4, "carbs": 181.6},
 		"metrics": [
 			{"kind": "weight", "value": 81.5, "unit": "kg", "source": "manual"},
 			{"kind": "steps", "value": 6400, "unit": "steps", "source": "import"}
@@ -323,7 +324,7 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 	ctx := t.Context()
 	tg := plan.Target{
 		EffectiveFrom: today.AddDays(-7),
-		Training:      plan.DayTarget{Kcal: 2300, Protein: 160, Fat: 70},
+		Training:      plan.DayTarget{Kcal: 2300.4, Protein: 160.04, Fat: 70.06},
 		Rest:          plan.DayTarget{Kcal: 1800, Protein: 150, Fat: 60},
 	}
 	if err := in.db.SetTarget(ctx, in.user.ID, isolationActor, tg, now); err != nil {
@@ -341,29 +342,42 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 	if err := in.db.SetTrainingDay(ctx, in.user.ID, isolationActor, today.AddDays(1), new(true), now); err != nil {
 		t.Fatalf("SetTrainingDay: %v", err)
 	}
-	training := `{"kcal": 2300, "protein": 160, "fat": 70, "carbs": 257.5}`
+	// Shown rounded: kcal to a whole number, grams to a tenth.
+	training := `{"kcal": 2300, "protein": 160, "fat": 70.1, "carbs": 257.4}`
 	rest := `{"kcal": 1800, "protein": 150, "fat": 60, "carbs": 165}`
+	// Tuesday's fry-up goes past the rest day's target: what remains is
+	// below 0 there.
+	fryUp, err := meal.Estimate("Fry-up", food.Nutrients{Kcal: 1900, Protein: 50, Carbs: 150, Fat: 120}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuesday := today.AddDays(-1)
+	m := meal.Meal{ID: uuid.NewV7(), EatenAt: now.Add(-24 * time.Hour), Day: tuesday, Description: "Breakfast", Client: meal.ClientWeb, Items: []meal.Item{fryUp}}
+	if _, _, err := in.db.CreateMeal(ctx, in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatalf("CreateMeal: %v", err)
+	}
+	none := `"meals": [], "total": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0}`
 	for _, tc := range []struct {
-		date        day.Date
-		typ, target string
-		toggle      string
+		date                   day.Date
+		typ, target, remaining string
+		toggle, meals          string
 	}{
-		{today.AddDays(-2), "training", training, ""}, // Monday
-		{today.AddDays(-1), "rest", rest, ""},         // Tuesday
-		{today, "rest", rest, `"training_toggle": false,`},
-		{today.AddDays(1), "training", training, `"training_toggle": true,`},
+		{today.AddDays(-2), "training", training, training, "", none}, // Monday
+		{tuesday, "rest", rest, `{"kcal": -100, "protein": 100, "fat": -60, "carbs": 15}`, "", `"meals": "*",
+			"total": {"kcal": 1900, "protein": 50, "carbs": 150, "fat": 120}`},
+		{today, "rest", rest, rest, `"training_toggle": false,`, none},
+		{today.AddDays(1), "training", training, training, `"training_toggle": true,`, none},
 	} {
 		rec := in.do(t, http.MethodGet, "/api/v1/days/"+tc.date.String(), "", session, nil)
 		checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
-			"date": %q, "status": "*", "type": %q, %s
-			"meals": [], "total": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0},
-			"target": %[4]s, "remaining": %[4]s, "metrics": []
-		}`, tc.date, tc.typ, tc.toggle, tc.target))
+			"date": %q, "status": "*", "type": %q, %s %s,
+			"target": %s, "remaining": %s, "metrics": []
+		}`, tc.date, tc.typ, tc.toggle, tc.meals, tc.target, tc.remaining))
 	}
 	rec := in.do(t, http.MethodGet, "/api/v1/me", "", session, nil)
 	want := `"today_type":"rest"`
 	if !strings.Contains(rec.Body.String(), want) ||
-		!strings.Contains(rec.Body.String(), `"training":{"kcal":2300,"protein":160,"fat":70,"carbs":257.5},"rest":{"kcal":1800,`) {
+		!strings.Contains(rec.Body.String(), `"training":{"kcal":2300,"protein":160,"fat":70.1,"carbs":257.4},"rest":{"kcal":1800,`) {
 		t.Errorf("get_profile: %s, want a rest day today and both targets", rec.Body.String())
 	}
 }
