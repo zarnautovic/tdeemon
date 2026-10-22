@@ -58,6 +58,11 @@ for the author and the reviewer.
   (`storetest.Open`), and every migration from an empty database.
 - **HTTP and MCP handlers:** integration tests through the handler, with a
   real store behind it.
+  An answer's type writes its fields out: huma describes no field of an
+  unexported embedded struct, so the OpenAPI document, and the
+  TypeScript types made from it, would leave them out.
+  `TestAnswersMatchTheDocument` holds answers to the document
+  (`checkBody`).
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 

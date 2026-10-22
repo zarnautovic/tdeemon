@@ -176,10 +176,19 @@ type createTokenInput struct {
 
 type createTokenOutput struct {
 	CacheControl string `header:"Cache-Control" doc:"no-store"`
-	Body         struct {
-		tokenBody
-		Token string `json:"token" example:"tdm_…" doc:"The token itself. It is shown only now; tdeemon keeps only its hash."`
-	}
+	Body         createdTokenBody
+}
+
+// createdTokenBody is tokenBody with the token itself. Its fields are
+// written out: huma describes no field of an unexported embedded struct,
+// and the OpenAPI document must say all the answer holds.
+type createdTokenBody struct {
+	ID         string     `json:"id" format:"uuid" doc:"The token's handle; revoke it by this."`
+	Name       string     `json:"name" doc:"What the user calls the token."`
+	Scopes     []string   `json:"scopes" enum:"ingest,tools,read" doc:"What the token may do."`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty" doc:"Absent: a new token is unused."`
+	Token      string     `json:"token" example:"tdm_…" doc:"The token itself. It is shown only now; tdeemon keeps only its hash."`
 }
 
 type revokeTokenInput struct {
@@ -293,10 +302,10 @@ func (s *sessions) createToken(ctx context.Context, in *createTokenInput) (*crea
 		return nil, huma.Error500InternalServerError("creating the token failed")
 	}
 	s.logger.InfoContext(ctx, "created an API token", "user_id", p.User.ID.String(), "token_id", t.ID.String(), "scopes", t.Scopes)
-	out := &createTokenOutput{CacheControl: "no-store"}
-	out.Body.tokenBody = newTokenBody(t)
-	out.Body.Token = token
-	return out, nil
+	b := newTokenBody(t)
+	return &createTokenOutput{CacheControl: "no-store", Body: createdTokenBody{
+		ID: b.ID, Name: b.Name, Scopes: b.Scopes, CreatedAt: b.CreatedAt, LastUsedAt: b.LastUsedAt, Token: token,
+	}}, nil
 }
 
 func (s *sessions) revokeToken(ctx context.Context, in *revokeTokenInput) (*struct{}, error) {

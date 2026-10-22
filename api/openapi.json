@@ -38,9 +38,42 @@
         ],
         "type": "object"
       },
-      "CreateTokenOutputBody": {
+      "CreatedTokenBody": {
         "additionalProperties": false,
         "properties": {
+          "created_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "The token's handle; revoke it by this.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "last_used_at": {
+            "description": "Absent: a new token is unused.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "name": {
+            "description": "What the user calls the token.",
+            "type": "string"
+          },
+          "scopes": {
+            "description": "What the token may do.",
+            "items": {
+              "enum": [
+                "ingest",
+                "tools",
+                "read"
+              ],
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "token": {
             "description": "The token itself. It is shown only now; tdeemon keeps only its hash.",
             "examples": [
@@ -50,6 +83,10 @@
           }
         },
         "required": [
+          "id",
+          "name",
+          "scopes",
+          "created_at",
           "token"
         ],
         "type": "object"
@@ -850,7 +887,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateTokenOutputBody"
+                  "$ref": "#/components/schemas/CreatedTokenBody"
                 }
               }
             },
