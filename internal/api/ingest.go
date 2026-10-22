@@ -57,14 +57,40 @@ type ingestOutput struct {
 	Body ingestBody
 }
 
+// haePayloadSchema describes the body of ingest-hae for the document: huma
+// gives a raw body a string's schema, and ParseHAE, not huma, reads it.
+var haePayloadSchema = &huma.Schema{
+	Type:        "object",
+	Description: "Health Auto Export's REST API payload, as the app sends it.",
+	Required:    []string{"data"},
+	Properties: map[string]*huma.Schema{
+		"data": {
+			Type:     "object",
+			Required: []string{"metrics"},
+			Properties: map[string]*huma.Schema{
+				"metrics": {Type: "array", Items: &huma.Schema{
+					Type: "object",
+					Properties: map[string]*huma.Schema{
+						"name":  {Type: "string", Examples: []any{"step_count"}},
+						"units": {Type: "string", Examples: []any{"count"}},
+						"data": {Type: "array", Items: &huma.Schema{
+							Type: "object", AdditionalProperties: true, Description: "A point: date, and qty or, for sleep, its totals.",
+						}},
+					},
+				}},
+			},
+		},
+	},
+}
+
 func (s *sessions) registerIngest(a huma.API) {
 	huma.Register(a, huma.Operation{
 		OperationID: "ingest-hae",
 		Method:      http.MethodPost,
 		Path:        Prefix + "/ingest/hae",
 		Summary:     "Import a Health Auto Export payload",
-		Description: "For the REST API automation of Health Auto Export: an API token with the ingest scope. Each value belongs to the calendar date of its point; " +
-			"the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The raw body is archived for 30 days.",
+		Description: "For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; " +
+			"the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came, for 30 days.",
 		Tags:         []string{"ingest"},
 		MaxBodyBytes: maxIngestBytes,
 		// HAE's JSON, which ParseHAE reads: huma would take a raw body for
@@ -73,12 +99,13 @@ func (s *sessions) registerIngest(a huma.API) {
 		Errors:           []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity},
 		Metadata:         openToTokens(auth.ScopeIngest),
 	}, s.ingestHAE)
+	a.OpenAPI().Paths[Prefix+"/ingest/hae"].Post.RequestBody.Content["application/json"].Schema = haePayloadSchema
 	huma.Register(a, huma.Operation{
 		OperationID:  "ingest-metrics",
 		Method:       http.MethodPost,
 		Path:         Prefix + "/ingest/metrics",
 		Summary:      "Import a day's metrics",
-		Description:  "The simple form, for a script or another app: an API token with the ingest scope. The values merge as an import, as Health Auto Export's do.",
+		Description:  "The simple form, for a script or another app: an API token with the ingest scope, not a web session. The values merge as an import, as Health Auto Export's do.",
 		Tags:         []string{"ingest"},
 		MaxBodyBytes: maxIngestBytes,
 		Errors:       []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity},
@@ -87,9 +114,9 @@ func (s *sessions) registerIngest(a huma.API) {
 }
 
 func (s *sessions) ingestHAE(ctx context.Context, in *ingestHAEInput) (*ingestOutput, error) {
-	p, ok := auth.PrincipalFrom(ctx)
-	if !ok {
-		return nil, huma.Error401Unauthorized("not signed in")
+	p, err := requireToken(ctx)
+	if err != nil {
+		return nil, err
 	}
 	s.archive(ctx, p, "hae", in.RawBody)
 	r, err := ingest.ParseHAE(in.RawBody)
@@ -102,11 +129,12 @@ func (s *sessions) ingestHAE(ctx context.Context, in *ingestHAEInput) (*ingestOu
 }
 
 func (s *sessions) ingestMetrics(ctx context.Context, in *ingestMetricsInput) (*ingestOutput, error) {
-	p, ok := auth.PrincipalFrom(ctx)
-	if !ok {
-		return nil, huma.Error401Unauthorized("not signed in")
+	p, err := requireToken(ctx)
+	if err != nil {
+		return nil, err
 	}
-	// A date and a map of numbers always marshal.
+	// The body as huma read it: one it refused is not archived. A date and
+	// a map of numbers always marshal.
 	raw, _ := json.Marshal(in.Body)
 	s.archive(ctx, p, "metrics", raw)
 	r, err := ingest.FromDays(map[string]map[string]float64{in.Body.Date: in.Body.Metrics})

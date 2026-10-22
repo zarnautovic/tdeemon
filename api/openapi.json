@@ -1086,15 +1086,55 @@
     },
     "/api/v1/ingest/hae": {
       "post": {
-        "description": "For the REST API automation of Health Auto Export: an API token with the ingest scope. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The raw body is archived for 30 days.",
+        "description": "For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came, for 30 days.",
         "operationId": "ingest-hae",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "contentMediaType": "application/octet-stream",
-                "format": "binary",
-                "type": "string"
+                "description": "Health Auto Export's REST API payload, as the app sends it.",
+                "properties": {
+                  "data": {
+                    "properties": {
+                      "metrics": {
+                        "items": {
+                          "properties": {
+                            "data": {
+                              "items": {
+                                "additionalProperties": true,
+                                "description": "A point: date, and qty or, for sleep, its totals.",
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "name": {
+                              "examples": [
+                                "step_count"
+                              ],
+                              "type": "string"
+                            },
+                            "units": {
+                              "examples": [
+                                "count"
+                              ],
+                              "type": "string"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "required": [
+                      "metrics"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "data"
+                ],
+                "type": "object"
               }
             }
           },
@@ -1170,7 +1210,7 @@
     },
     "/api/v1/ingest/metrics": {
       "post": {
-        "description": "The simple form, for a script or another app: an API token with the ingest scope. The values merge as an import, as Health Auto Export's do.",
+        "description": "The simple form, for a script or another app: an API token with the ingest scope, not a web session. The values merge as an import, as Health Auto Export's do.",
         "operationId": "ingest-metrics",
         "requestBody": {
           "content": {

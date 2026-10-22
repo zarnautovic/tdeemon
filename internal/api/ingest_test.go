@@ -169,26 +169,66 @@ func TestIngestRefuses(t *testing.T) {
 
 	in := newInstance(t, "http://localhost", "")
 	tok := ingestToken(t, in, `"ingest"`)
+	const hae, metrics = "/api/v1/ingest/hae", "/api/v1/ingest/metrics"
+	simple := `{"date": "2026-10-21", "metrics": {"steps": 1}}`
+	session := []*http.Cookie{sessionOf(t, in)}
 	for _, tc := range []struct {
-		name, body string
-		header     map[string]string
-		code       int
+		name, path, body string
+		header           map[string]string
+		cookies          []*http.Cookie
+		code             int
 	}{
-		{"not HAE's shape", `{"data": {"workouts": []}}`, tok, http.StatusUnprocessableEntity},
-		{"not JSON", `steps=4000`, tok, http.StatusUnprocessableEntity},
-		{"a token without the ingest scope", haeBody, ingestToken(t, in, `"read","tools"`), http.StatusForbidden},
-		{"no one", haeBody, nil, http.StatusUnauthorized},
-		{"more than 10 MB", `{"data": {"metrics": [], "pad": "` + strings.Repeat("x", 10<<20) + `"}}`, tok, http.StatusRequestEntityTooLarge},
+		{"not HAE's shape", hae, `{"data": {"workouts": []}}`, tok, nil, http.StatusUnprocessableEntity},
+		{"not JSON", hae, `steps=4000`, tok, nil, http.StatusUnprocessableEntity},
+		{"a token without the ingest scope", hae, haeBody, ingestToken(t, in, `"read","tools"`), nil, http.StatusForbidden},
+		{"a web session", hae, haeBody, nil, session, http.StatusForbidden},
+		{"a web session, the simple form", metrics, simple, nil, session, http.StatusForbidden},
+		{"no one", hae, haeBody, nil, nil, http.StatusUnauthorized},
+		{"10 MB", hae, `{"data": {"metrics": [], "pad": "` + strings.Repeat("x", 10<<20) + `"}}`, tok, nil, http.StatusRequestEntityTooLarge},
+		{"10 MB, the simple form", metrics, simple + strings.Repeat(" ", 10<<20), tok, nil, http.StatusRequestEntityTooLarge},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", tc.body, nil, tc.header); rec.Code != tc.code {
+			if rec := in.do(t, http.MethodPost, tc.path, tc.body, tc.cookies, tc.header); rec.Code != tc.code {
 				t.Errorf("POST = %d %s, want %d", rec.Code, rec.Body.String()[:min(200, rec.Body.Len())], tc.code)
 			}
 		})
 	}
 	if ms, _ := in.db.Metrics(t.Context(), in.user.ID, day.Date{Year: 2026, Month: 10, Day: 1}, day.Date{Year: 2026, Month: 10, Day: 31}); len(ms) != 0 {
 		t.Errorf("a refused ingest stored %+v", ms)
+	}
+}
+
+// A body just under 10 MB, a first export of months, is taken.
+func TestIngestTakesNineMB(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	pad := strings.Repeat(" ", 10<<20-1<<10)
+	for path, body := range map[string]string{
+		"/api/v1/ingest/hae":     haeBody + pad,
+		"/api/v1/ingest/metrics": `{"date": "2026-10-21", "metrics": {"steps": 1}}` + pad,
+	} {
+		if rec := in.do(t, http.MethodPost, path, body, nil, tok); rec.Code != http.StatusOK {
+			t.Errorf("POST %s = %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// A value no answer could hold, after its conversion, is left out, and
+// the answer is still JSON.
+func TestIngestHAETooLarge(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", `{"data": {"metrics": [
+		{"name": "apple_exercise_time", "units": "hr", "data": [{"date": "2026-10-21 00:00:00 +0200", "qty": 1e308}]}
+	]}}`, nil, tok)
+	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
+	if rec.Code != http.StatusOK || len(got.Rejected) != 1 || got.Rejected[0].Metric != "exercise_min" {
+		t.Errorf("POST = %d %s", rec.Code, rec.Body.String())
 	}
 }
 

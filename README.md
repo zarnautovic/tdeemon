@@ -338,15 +338,21 @@ curl -H 'Authorization: Bearer tdm_…' -H 'Content-Type: application/json' \
   https://tdeemon.example.com/api/v1/ingest/metrics
 ```
 
-The raw bodies are kept, compressed, in `TDEEMON_DATA_DIR/ingest/` for 30
-days, outside the database and its backups.
+Both routes take an API token, not a web session: what they write is
+recorded as an import. The bodies are kept, compressed, in
+`TDEEMON_DATA_DIR/ingest/<user>/<day>/`, outside the database and its
+backups: Health Auto Export's as they came, even one that does not
+read, and the simple form's as read. A user's days older than 30 go
+when their next body arrives.
 
 ## Data
 
 tdeemon keeps everything in one SQLite file, `TDEEMON_DATA_DIR/tdeemon.db`,
 which it creates readable by its owner only, and applies database
-migrations at startup. Before it migrates a database that already has
-data, it saves a snapshot to
+migrations at startup. The bodies of imports are kept apart, for 30
+days, in `TDEEMON_DATA_DIR/ingest/` (see
+[Import from Apple Health](#import-from-apple-health)). Before it
+migrates a database that already has data, it saves a snapshot to
 `TDEEMON_DATA_DIR/backups/pre-migrate-<version>-<time>.db`. It keeps the
 newest snapshot of each schema version, for the three newest versions.
 

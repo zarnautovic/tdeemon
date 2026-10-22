@@ -135,7 +135,7 @@ export interface paths {
         put?: never;
         /**
          * Import a Health Auto Export payload
-         * @description For the REST API automation of Health Auto Export: an API token with the ingest scope. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The raw body is archived for 30 days.
+         * @description For the REST API automation of Health Auto Export: an API token with the ingest scope, not a web session. Each value belongs to the calendar date of its point; the merge keeps a manual value, the day's first weighing and the larger of a running total (DESIGN.md §4). The body is archived as it came, for 30 days.
          */
         post: operations["ingest-hae"];
         delete?: never;
@@ -155,7 +155,7 @@ export interface paths {
         put?: never;
         /**
          * Import a day's metrics
-         * @description The simple form, for a script or another app: an API token with the ingest scope. The values merge as an import, as Health Auto Export's do.
+         * @description The simple form, for a script or another app: an API token with the ingest scope, not a web session. The values merge as an import, as Health Auto Export's do.
          */
         post: operations["ingest-metrics"];
         delete?: never;
@@ -876,7 +876,19 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": string;
+                "application/json": {
+                    data: {
+                        metrics: {
+                            data?: {
+                                [key: string]: unknown;
+                            }[];
+                            /** @example step_count */
+                            name?: string;
+                            /** @example count */
+                            units?: string;
+                        }[];
+                    };
+                };
             };
         };
         responses: {
