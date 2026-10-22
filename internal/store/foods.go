@@ -12,6 +12,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
 // Why a food cannot be saved as asked.
@@ -150,38 +151,10 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 	if err := a.Validate(); err != nil {
 		return food.Food{}, fmt.Errorf("invalid actor: %w", err)
 	}
-	nameKey, brandKey := food.Key(f.Name), food.Key(f.Brand)
 	var stored food.Food
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		target, exists, err := saveTarget(ctx, tx, userID, f.ID, nameKey, brandKey, correcting)
-		if err != nil {
-			return err
-		}
-		f.ID = target
-		if err := checkAliases(ctx, tx, userID, f); err != nil {
-			return err
-		}
-		var before *food.Food
-		if exists {
-			old, err := foodInTx(ctx, tx, userID, f.ID)
-			if err != nil {
-				return err
-			}
-			before = &old
-			err = updateFood(ctx, tx, userID, f, nameKey, brandKey, now)
-			if err != nil {
-				return err
-			}
-		} else if err := insertFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
-			return err
-		}
-		if err := replaceFoodChildren(ctx, tx, userID, f); err != nil {
-			return err
-		}
-		if stored, err = foodInTx(ctx, tx, userID, f.ID); err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.FoodSave, f.ID.String(), before, stored, now)
+		var err error
+		stored, err = saveFoodInTx(ctx, tx, userID, a, f, correcting, now)
 		return err
 	})
 	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
@@ -191,6 +164,76 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 		return food.Food{}, fmt.Errorf("save food: %w", err)
 	}
 	return stored, nil
+}
+
+// saveFoodInTx saves f in tx as SaveFood does (CorrectFood when
+// correcting) and returns it as stored. f and a are valid.
+func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, f food.Food, correcting bool, now time.Time) (food.Food, error) {
+	nameKey, brandKey := food.Key(f.Name), food.Key(f.Brand)
+	target, exists, err := saveTarget(ctx, tx, userID, f.ID, nameKey, brandKey, correcting)
+	if err != nil {
+		return food.Food{}, err
+	}
+	f.ID = target
+	if err := checkAliases(ctx, tx, userID, f); err != nil {
+		return food.Food{}, err
+	}
+	var before *food.Food
+	if exists {
+		old, err := foodInTx(ctx, tx, userID, f.ID)
+		if err != nil {
+			return food.Food{}, err
+		}
+		before = &old
+		if err := updateFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
+			return food.Food{}, err
+		}
+	} else if err := insertFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
+		return food.Food{}, err
+	}
+	if err := replaceFoodChildren(ctx, tx, userID, f); err != nil {
+		return food.Food{}, err
+	}
+	stored, err := foodInTx(ctx, tx, userID, f.ID)
+	if err != nil {
+		return food.Food{}, err
+	}
+	_, err = record(ctx, tx, userID, a, event.FoodSave, f.ID.String(), before, stored, now)
+	return stored, err
+}
+
+// saveNewFoods saves the foods of foods that items name in tx, each as
+// SaveFood does, and returns the id each is stored under by the id it came
+// with: a food of the same name and brand as one the user has is that
+// food. A food no item names (one of an op found done already) is not
+// saved.
+func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item, now time.Time) (map[uuid.UUID]uuid.UUID, error) {
+	named := make(map[uuid.UUID]bool, len(items))
+	for i := range items {
+		named[items[i].FoodID] = true
+	}
+	ids := make(map[uuid.UUID]uuid.UUID, len(foods))
+	for i := range foods {
+		if !named[foods[i].ID] {
+			continue
+		}
+		stored, err := saveFoodInTx(ctx, tx, userID, a, foods[i], false, now)
+		if err != nil {
+			return nil, err
+		}
+		ids[foods[i].ID] = stored.ID
+	}
+	return ids, nil
+}
+
+// validFoods reports the first of foods that breaks the rules.
+func validFoods(foods []food.Food) error {
+	for i := range foods {
+		if err := foods[i].Validate(); err != nil {
+			return fmt.Errorf("invalid food: %w", err)
+		}
+	}
+	return nil
 }
 
 // saveTarget returns the id SaveFood writes to and whether that row

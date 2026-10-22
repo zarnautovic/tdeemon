@@ -24,6 +24,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
 // document is the API's description: the operations by the route they
@@ -171,6 +172,24 @@ func answerCases() map[string]answerCase {
 			now := in.clock.Now()
 			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
 			in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", []*http.Cookie{session}, nil)
+		},
+		"log-meal": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			// With a warning, a new food and a food by id.
+			e := mealsEnv{in: in, session: []*http.Cookie{session}, now: in.clock.Now(), bread: saveIsolationFoods(t, in.db, in.user, in.clock.Now()).ID.String()}
+			in.do(t, http.MethodPost, "/api/v1/meals", e.lunch(meal.NewIDAt(e.now).String()), e.session, nil)
+			in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"id": %q, "items": [{"name": "Burger", "nutrients": {"kcal": 300, "protein": 30, "carbs": 50, "fat": 30}}]}`,
+				meal.NewIDAt(e.now)), e.session, nil)
+		},
+		"update-meal": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
+			in.do(t, http.MethodPatch, "/api/v1/meals/"+id.String(), `{"note": "with tea", "ops": [{"op": "add", "item": {"id": "`+meal.NewIDAt(in.clock.Now()).String()+`", "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}}]}`, []*http.Cookie{session}, nil)
+		},
+		"delete-meal": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
+			in.do(t, http.MethodDelete, "/api/v1/meals/"+id.String(), "", []*http.Cookie{session}, nil)
 		},
 		"get-food": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

@@ -2,6 +2,7 @@ package meal
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -338,5 +339,137 @@ func TestMealValidateItemIDs(t *testing.T) {
 	b.ID = a.ID
 	if err := meal(t, at, a, b).Validate(); err == nil || !strings.Contains(err.Error(), "given twice") {
 		t.Errorf("an item id twice = %v", err)
+	}
+}
+
+// A meal's fingerprint is stored with it: the same meal keeps the same
+// one from one version of the code to the next, or its retries would be
+// taken for other meals.
+func TestFingerprintStays(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
+	e, m := egg(), milk()
+	e.ID = uuid.MustParse("0199f0a0-0000-7000-8000-0000000000e1")
+	m.ID = uuid.MustParse("0199f0a0-0000-7000-8000-0000000000e2")
+	est, _ := Estimate("Cake", food.Nutrients{Kcal: 300, Protein: 5, Carbs: 40, Fat: 14, Sugars: new(20.0)}, "")
+	x := meal(t, at, item(t, e, Quantity{Servings: 2, Serving: "piece"}), item(t, m, Quantity{Amount: 200, Unit: "ml"}), est)
+	x.Description, x.Note = "Breakfast", "at home"
+	if got, want := x.Fingerprint(), "1a3794a8dadefc55b12c9215a914dc9ecbdc82f2359787eb484bc3cc8f1a743e"; got != want {
+		t.Errorf("Fingerprint = %s, want %s as before", got, want)
+	}
+}
+
+// SentFood tells a new food by every field a client sends, and not by
+// its id.
+func TestSentFood(t *testing.T) {
+	t.Parallel()
+
+	base := func() food.Food {
+		f := egg()
+		f.Brand, f.Note, f.Aliases = "Farm", "free range", []string{"hen's egg"}
+		f.Nutrients.Sugars = new(0.4)
+		return f
+	}
+	d := SentFood(base())
+	if !sentFoodForm.MatchString(d) {
+		t.Fatalf("SentFood = %q, want 64 hex digits", d)
+	}
+	if f := base(); func() bool { f.ID = uuid.NewV7(); return SentFood(f) != d }() {
+		t.Error("another id changed SentFood")
+	}
+	// Servings and aliases are sets: in another order, the same food.
+	two := base()
+	two.Servings = []food.Serving{{Name: "piece", Amount: 60}, {Name: "half", Amount: 30}}
+	two.Aliases = []string{"hen's egg", "egg"}
+	swapped := two
+	swapped.Servings = []food.Serving{two.Servings[1], two.Servings[0]}
+	swapped.Aliases = []string{"egg", "hen's egg"}
+	if SentFood(swapped) != SentFood(two) {
+		t.Error("servings and aliases in another order changed SentFood")
+	}
+	SentFood(two)
+	if two.Servings[0].Name != "piece" || two.Aliases[0] != "hen's egg" {
+		t.Errorf("SentFood changed the food's order: %+v, %v", two.Servings, two.Aliases)
+	}
+	for name, change := range map[string]func(*food.Food){
+		"a name":               func(f *food.Food) { f.Name = "Duck egg" },
+		"a brand":              func(f *food.Food) { f.Brand = "" },
+		"a basis":              func(f *food.Food) { f.Basis = food.Per100ml },
+		"a source":             func(f *food.Food) { f.Source = food.User },
+		"a note":               func(f *food.Food) { f.Note = "" },
+		"portion grams":        func(f *food.Food) { f.PortionGrams = 60 },
+		"kcal":                 func(f *food.Food) { f.Nutrients.Kcal++ },
+		"protein":              func(f *food.Food) { f.Nutrients.Protein++ },
+		"carbs":                func(f *food.Food) { f.Nutrients.Carbs++ },
+		"fat":                  func(f *food.Food) { f.Nutrients.Fat++ },
+		"sugars not known":     func(f *food.Food) { f.Nutrients.Sugars = nil },
+		"salt":                 func(f *food.Food) { f.Nutrients.Salt = new(0.0) },
+		"an alias":             func(f *food.Food) { f.Aliases = append(f.Aliases, "egg") },
+		"no alias":             func(f *food.Food) { f.Aliases = nil },
+		"a serving's name":     func(f *food.Food) { f.Servings[0].Name = "Piece" },
+		"a serving's amount":   func(f *food.Food) { f.Servings[0].Amount++ },
+		"no serving":           func(f *food.Food) { f.Servings = nil },
+		"a name moved to note": func(f *food.Food) { f.Name, f.Note = "Egg\" \"free range", "" },
+	} {
+		f := base()
+		f.Servings = slices.Clone(f.Servings)
+		change(&f)
+		if SentFood(f) == d {
+			t.Errorf("%s left SentFood as it was", name)
+		}
+	}
+}
+
+// An item of a new food is told by the food as sent: neither the id it is
+// stored under nor a correction since makes it another, and it is never
+// the same as an item of a food of the user's.
+func TestItemOfASentFood(t *testing.T) {
+	t.Parallel()
+
+	f := egg()
+	stored := item(t, f, Quantity{Amount: 50, Unit: "g"})
+	stored.SentFood = SentFood(f)
+	sent := Item{Quantity: Quantity{Amount: 50, Unit: "g"}, SentFood: SentFood(f)}
+	if !stored.SameAs(sent) {
+		t.Error("the item as stored is not the item as sent")
+	}
+	f.Name, f.Nutrients.Kcal, f.ID = "Hen's egg", 150, uuid.NewV7()
+	corrected := item(t, f, Quantity{Amount: 50, Unit: "g"})
+	corrected.SentFood = stored.SentFood
+	if !stored.SameAs(corrected) {
+		t.Error("an item of the food corrected and stored under another id is another")
+	}
+	byID := stored
+	byID.SentFood = ""
+	if stored.SameAs(byID) {
+		t.Error("an item of a new food is the same as one of the user's food")
+	}
+	other := sent
+	other.SentFood = SentFood(milk())
+	if stored.SameAs(other) {
+		t.Error("an item of another new food is the same")
+	}
+}
+
+func TestMealValidateSentFood(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
+	it := item(t, egg(), Quantity{Amount: 50, Unit: "g"})
+	it.SentFood = SentFood(egg())
+	if err := meal(t, at, it).Validate(); err != nil {
+		t.Errorf("an item of a new food: %v", err)
+	}
+	for name, change := range map[string]func(*Item){
+		"no food saved": func(i *Item) { i.FoodID = uuid.Nil() },
+		"short":         func(i *Item) { i.SentFood = i.SentFood[:63] },
+		"upper case":    func(i *Item) { i.SentFood = strings.ToUpper(i.SentFood) },
+	} {
+		bad := it
+		change(&bad)
+		if err := meal(t, at, bad).Validate(); err == nil || !strings.Contains(err.Error(), "the food sent") {
+			t.Errorf("%s: Validate = %v", name, err)
+		}
 	}
 }

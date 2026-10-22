@@ -41,6 +41,8 @@ type party struct {
 	spare   createdToken
 	// bread is their food with a serving and an alias.
 	bread food.Food
+	// meal is their lunch's id.
+	meal uuid.UUID
 }
 
 // tokenName is the name of the party's token, which only they may see.
@@ -92,7 +94,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
 		p.bread = saveIsolationFoods(t, in.db, p.user, now)
-		saveIsolationMeals(t, in.db, p.user, p.bread, now)
+		p.meal = saveIsolationMeals(t, in.db, p.user, p.bread, now)
 		saveIsolationMetrics(t, in.db, p.user, now)
 		saveIsolationPlan(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
@@ -188,8 +190,8 @@ func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) 
 }
 
 // saveIsolationMeals gives u a meal of bread and a one-off estimate, and
-// an excluded day, their text u's own.
-func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food, now time.Time) {
+// an excluded day, their text u's own, and returns the meal's id.
+func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food, now time.Time) uuid.UUID {
 	t.Helper()
 	toast, err := meal.FromFood(bread, meal.Quantity{Servings: 2, Serving: "slice"}, u.Name+"'s toast")
 	if err != nil {
@@ -200,7 +202,7 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 		t.Fatal(err)
 	}
 	m := meal.Meal{
-		ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: u.Name + "'s lunch", Client: meal.ClientMCP,
+		ID: meal.NewIDAt(now), EatenAt: now, Day: day.DateOf(now), Description: u.Name + "'s lunch", Client: meal.ClientMCP,
 		Items: []meal.Item{toast, soup},
 	}
 	if _, _, err := db.CreateMeal(t.Context(), u.ID, isolationActor, m, now); err != nil {
@@ -209,6 +211,7 @@ func saveIsolationMeals(t *testing.T, db *store.DB, u user.User, bread food.Food
 	if err := db.ExcludeDay(t.Context(), u.ID, isolationActor, day.DateOf(now).AddDays(-1), day.Exclusion{Reason: u.Name + "'s birthday dinner"}, now); err != nil {
 		t.Fatalf("exclude %s's day: %v", u.Name, err)
 	}
+	return m.ID
 }
 
 // saveIsolationMetrics gives u a day of metrics, a manual weight and
@@ -504,6 +507,36 @@ func ingestCase(path string, body func(today string) string) isolationCase {
 	}
 }
 
+// isolateMeal is the case of the operation that changes a meal (update-
+// meal, delete-meal): the owner's meal answers the other as one that does
+// not exist; their own they change.
+func isolateMeal(method, body string) isolationCase {
+	return func(t *testing.T, e isolationEnv) {
+		t.Helper()
+		theirs := e.in.do(t, method, "/api/v1/meals/"+e.owner.meal.String(), body, nil, bearer(e.other.token.Token))
+		none := e.in.do(t, method, "/api/v1/meals/"+uuid.NewV7().String(), body, nil, bearer(e.other.token.Token))
+		if theirs.Code != http.StatusNotFound || theirs.Body.String() != none.Body.String() {
+			t.Errorf("the owner's meal: %d %s; one that does not exist: %d %s; want the same 404", theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
+		}
+		if own := e.in.do(t, method, "/api/v1/meals/"+e.other.meal.String(), body, nil, bearer(e.other.token.Token)); own.Code != http.StatusOK {
+			t.Errorf("their own meal: %d %s", own.Code, own.Body.String())
+		}
+	}
+}
+
+// isolateLogMeal is log-meal's case: the other logs a meal of their own,
+// of their own bread; the owner's meals stay as they were. (TestLogMealIDsArePerUser
+// logs under the owner's meal's id, which this case cannot: its answer
+// would show it.)
+func isolateLogMeal(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := fmt.Sprintf(`{"id": %q, "description": "%s's dinner", "items": [{"food_id": %q, "servings": 1, "serving": "slice"}]}`,
+		meal.NewIDAt(e.in.clock.Now()), e.other.user.Name, e.other.bread.ID)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, nil, bearer(e.other.token.Token)); rec.Code != http.StatusCreated {
+		t.Errorf("the other's meal: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // isolateGetFood is get-food's case: the owner's food answers the other
 // as one that does not exist; their own they get.
 func isolateGetFood(t *testing.T, e isolationEnv) {
@@ -595,6 +628,9 @@ func isolationCases() map[string]isolationCase {
 		}),
 		"upsert-food": isolateUpsertFood,
 		"get-food":    isolateGetFood,
+		"log-meal":    isolateLogMeal,
+		"update-meal": isolateMeal(http.MethodPatch, `{"note": "seen"}`),
+		"delete-meal": isolateMeal(http.MethodDelete, ""),
 		"get-me": read("/api/v1/me", true, func(e isolationEnv) []string {
 			return []string{"Notes of " + e.other.user.Name, fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),

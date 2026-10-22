@@ -189,7 +189,9 @@ CREATE TABLE meal_items (
     alcohol REAL CHECK (alcohol >= 0),
     -- As foods.source, the planned recipe and off included.
     source TEXT NOT NULL CHECK (source IN ('label', 'estimate', 'user', 'dish', 'recipe', 'off')),
-    note TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '', sent_food TEXT CHECK (
+    sent_food IS NULL OR (length(sent_food) = 64 AND food_id IS NOT NULL)
+),
     PRIMARY KEY (user_id, id),
     FOREIGN KEY (user_id, meal_id) REFERENCES meals (user_id, id) ON DELETE CASCADE,
     -- Foods are archived, never deleted, while an item uses them.
@@ -200,7 +202,7 @@ CREATE UNIQUE INDEX meal_items_meal_position ON meal_items (user_id, meal_id, po
 
 CREATE INDEX meal_items_user_food ON meal_items (user_id, food_id);
 
-CREATE TABLE meals (
+CREATE TABLE "meals" (
     -- A UUIDv7 the client chose, so a retry of the same meal is one meal.
     -- Ids are per user, as for foods.
     id TEXT NOT NULL CHECK (length(id) = 36),
@@ -212,7 +214,7 @@ CREATE TABLE meals (
     -- The logical day (day.Calendar.DayOf), YYYY-MM-DD.
     day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
     description TEXT NOT NULL DEFAULT '',
-    client TEXT NOT NULL CHECK (client IN ('mcp', 'chat', 'web', 'telegram', 'import')),
+    client TEXT NOT NULL CHECK (client IN ('mcp', 'chat', 'web', 'telegram', 'import', 'api')),
     note TEXT NOT NULL DEFAULT '',
     -- meal.Meal.Fingerprint of what the client sent to create the meal:
     -- the same id with another fingerprint is another meal, not a retry.

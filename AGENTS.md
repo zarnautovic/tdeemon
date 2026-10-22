@@ -14,8 +14,9 @@ API. It is early: the skeleton, the database layer, users, sign-in
 meals, metrics and the plan (profile, phases, targets, limits) in the
 domain and the database with an event log and undo, the API for the
 profile and the limits, the tool registry with `get_profile`,
-`get_day`, `find_foods`, `get_food` and `upsert_food`, the API contract
-and an empty web app exist.
+`get_day`, `find_foods`, `get_food`, `upsert_food`, `log_meal`,
+`update_meal` and `delete_meal`, the API contract and an empty web app
+exist.
 
 | Path | What |
 | --- | --- |

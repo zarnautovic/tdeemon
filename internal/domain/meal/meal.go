@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -76,6 +78,11 @@ type Item struct {
 	// Source is the food's source, or food.Estimate for a one-off.
 	Source food.Source
 	Note   string
+	// SentFood is SentFood of the new food a client sent with the item,
+	// when it sent one rather than a food of the user's: the item is told
+	// by it, not by FoodID, so a retry is known however the food is
+	// stored, renamed or corrected since.
+	SentFood string
 }
 
 // FromFood returns the item for quantity q of food f.
@@ -228,6 +235,9 @@ const (
 	ClientWeb      Client = "web"
 	ClientTelegram Client = "telegram"
 	ClientImport   Client = "import"
+	// ClientAPI is the API with a token: a script's, or an agent's
+	// before MCP names itself.
+	ClientAPI Client = "api"
 )
 
 // Meal is a meal as stored.
@@ -262,9 +272,9 @@ func (m Meal) Validate() error {
 		errs = append(errs, fmt.Errorf("day %s: want a year from %d to %d", m.Day, MinYear, MaxYear))
 	}
 	switch m.Client {
-	case ClientMCP, ClientChat, ClientWeb, ClientTelegram, ClientImport:
+	case ClientMCP, ClientChat, ClientWeb, ClientTelegram, ClientImport, ClientAPI:
 	default:
-		errs = append(errs, fmt.Errorf("client %q: want mcp, chat, web, telegram or import", m.Client))
+		errs = append(errs, fmt.Errorf("client %q: want mcp, chat, web, telegram, import or api", m.Client))
 	}
 	errs = append(errs, text.Check("description", m.Description, MaxNameLen, false), validateNote(m.Note))
 	switch {
@@ -273,15 +283,26 @@ func (m Meal) Validate() error {
 	case len(m.Items) > MaxItems:
 		errs = append(errs, fmt.Errorf("%d items, want at most %d", len(m.Items), MaxItems))
 	}
+	errs = append(errs, validateItems(m.Items)...)
+	return errors.Join(errs...)
+}
+
+// validateItems reports an item id given twice and a SentFood out of form.
+func validateItems(items []Item) []error {
+	var errs []error
 	seen := map[uuid.UUID]bool{}
-	for i := range m.Items {
-		if id := m.Items[i].ID; id != uuid.Nil() && seen[id] {
+	for i := range items {
+		it := &items[i]
+		if id := it.ID; id != uuid.Nil() && seen[id] {
 			errs = append(errs, fmt.Errorf("item id %s is given twice", id))
 		} else {
 			seen[id] = true
 		}
+		if it.SentFood != "" && (it.FoodID == uuid.Nil() || !sentFoodForm.MatchString(it.SentFood)) {
+			errs = append(errs, fmt.Errorf("item %d: the food sent %q: want a digest of 64 hex digits, with the food saved", i+1, it.SentFood))
+		}
 	}
-	return errors.Join(errs...)
+	return errs
 }
 
 // Fingerprint returns a digest of what a client said the meal is: when
@@ -302,25 +323,70 @@ func (m Meal) Fingerprint() string {
 	// so no two meals write the same text.
 	lines := []string{fmt.Sprintf("%q %q %q %d", m.EatenAt.UTC().Truncate(time.Second).Format(time.RFC3339), m.Description, m.Note, len(m.Items))}
 	for i := range m.Items {
-		it := &m.Items[i]
-		q := it.Quantity
-		line := []string{fmt.Sprintf("%s %v %q %v %q %v %q", it.FoodID, q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Note)}
-		if it.FoodID == uuid.Nil() {
-			n := it.Nutrients
-			line = append(line, fmt.Sprintf("%q %v %v %v %v", it.Name, n.Kcal, n.Protein, n.Carbs, n.Fat))
-			for _, v := range []*float64{n.Fiber, n.SaturatedFat, n.Sugars, n.Salt, n.Polyols, n.Alcohol} {
-				if v == nil {
-					line = append(line, "-")
-				} else {
-					line = append(line, fmt.Sprint(*v))
-				}
-			}
-		}
-		lines = append(lines, strings.Join(line, " "))
+		lines = append(lines, m.Items[i].sent())
 	}
 	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
 	return hex.EncodeToString(sum[:])
 }
+
+// sent is what a client sent for the item, as Fingerprint writes it: the
+// food (the user's, by its id, or a new one, by SentFood) and the
+// quantity, or an estimate's name and values, and the note.
+func (it Item) sent() string {
+	q := it.Quantity
+	what := it.FoodID.String()
+	if it.SentFood != "" {
+		what = "sent " + it.SentFood
+	}
+	line := fmt.Sprintf("%s %v %q %v %q %v %q", what, q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Note)
+	if it.FoodID == uuid.Nil() && it.SentFood == "" {
+		line += fmt.Sprintf(" %q %s", it.Name, nutrientsText(it.Nutrients))
+	}
+	return line
+}
+
+// nutrientsText is n as sent writes it: each value in its shortest exact
+// form, "-" for an optional one not given.
+func nutrientsText(n food.Nutrients) string {
+	line := []string{fmt.Sprintf("%v %v %v %v", n.Kcal, n.Protein, n.Carbs, n.Fat)}
+	for _, v := range []*float64{n.Fiber, n.SaturatedFat, n.Sugars, n.Salt, n.Polyols, n.Alcohol} {
+		if v == nil {
+			line = append(line, "-")
+		} else {
+			line = append(line, fmt.Sprint(*v))
+		}
+	}
+	return strings.Join(line, " ")
+}
+
+// sentFoodForm is the form of a SentFood digest.
+var sentFoodForm = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// SentFood returns a digest of new food f as a client sent it, its id
+// left out: every field in a fixed order, each quoted or in its shortest
+// exact form, so no two foods write the same text. Its servings and
+// aliases are sets: in any order, the same digest.
+func SentFood(f food.Food) string {
+	servings := slices.Clone(f.Servings)
+	// A food names each serving once.
+	slices.SortFunc(servings, func(a, b food.Serving) int { return strings.Compare(a.Name, b.Name) })
+	lines := []string{
+		fmt.Sprintf("%q %q %q %q %q %v", f.Name, f.Brand, f.Basis, f.Source, f.Note, f.PortionGrams),
+		nutrientsText(f.Nutrients),
+		fmt.Sprintf("%q", slices.Sorted(slices.Values(f.Aliases))),
+	}
+	for _, sv := range servings {
+		lines = append(lines, fmt.Sprintf("%q %v", sv.Name, sv.Amount))
+	}
+	sum := sha256.Sum256([]byte(strings.Join(lines, "\n")))
+	return hex.EncodeToString(sum[:])
+}
+
+// SameAs reports whether it and other are what a client sent alike: the
+// same food (the user's, or a new one as sent) and quantity, or
+// estimate, and note, whatever their ids or a food corrected since. An op
+// of an item the meal has already as it was sent is a retry.
+func (it Item) SameAs(other Item) bool { return it.sent() == other.sent() }
 
 // Total returns the nutrients of every item of m.
 func (m Meal) Total() food.Nutrients {

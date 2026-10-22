@@ -180,8 +180,8 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units |
 | `find_foods(query, limit)` | the foods whose name, brand or an alias has words starting with the query's, without case or diacritics, the name's first; with the last use (the amount as given and in the food's unit) |
 | `log_meal(id, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9); returns breakdown + day status |
-| `update_meal(meal_id, ops[])` | add/replace/remove items, change time; returns breakdown + day status |
-| `delete_meal(meal_id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
+| `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, change the time and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
+| `delete_meal(id)` / `undo_last()` | `undo_last` takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name or alias another food has is refused naming that food |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
@@ -207,7 +207,7 @@ is known.
 { "food_id": "0199…", "portions": 0.5 }                      // half a canteen portion
 { "food": { "name": "Greek yoghurt 2 %", "basis": "100g", "source": "label",
             "kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2.0 },
-  "amount": 200, "unit": "g" }                               // a new food, saved as it is logged
+  "amount": 200, "unit": "g" }                               // a new food, saved with the meal
 { "name": "Restaurant pasta", "kcal": 850, "protein": 32,
   "carbs": 105, "fat": 30 }                                  // a one-off estimate of a whole plate
 ```
@@ -217,7 +217,10 @@ totals against the day-type target, what remains, and `warnings`. Warning
 examples: the stated kcal are more than 15 % (and 10 kcal) off what the
 grams give by the Atwater factors (4P + 4C + 9F + 7 alcohol, with fiber
 and polyols by any of the conventions labels use), saturated fat is
-above total fat, a duplicate of a meal logged minutes ago.
+above total fat, a duplicate of a meal logged minutes ago. A new food is
+saved in the meal's transaction, so a meal refused saves none, and a
+meal sent again saves none: it is told by what was sent (§9) before
+anything of it is read or saved.
 
 REST under `/api/v1` mirrors the same operations for the web UI and
 scripts. A tool is one operation of the API, in the registry
@@ -232,7 +235,13 @@ takes its `date` as optional, `today` when left out); `find_foods` is
 archived too; and `upsert_food` is `POST /api/v1/foods`, which corrects
 a food by an id it has (404 for another) or by its name and brand, and
 names the food in the way of a name or an alias (409), archived or not,
-which a search would not find but `get_food` gives.
+which a search would not find but `get_food` gives. `log_meal` is
+`POST /api/v1/meals` (201, or 200 for a retry), `update_meal` is
+`PATCH /api/v1/meals/{id}` (ops: add, replace, remove an item; an item
+no op touches keeps what it brought when logged), and `delete_meal` is
+`DELETE /api/v1/meals/{id}`; each answers where the meal's day stands.
+A meal logged with a token is the client `api`'s until MCP names
+itself.
 
 ## 6. AI layer
 
@@ -562,10 +571,16 @@ the first spec.
   - "The same" is what the client said (a meal's `Fingerprint`: the time
     to the second, text, foods and quantities in order, an estimate's
     values), not what the server worked out, so a retry after a food was
-    corrected is still a retry. A client gives the meal's `id`; when
+    corrected is still a retry. A new food sent with an item is told by
+    the food as sent (`meal.SentFood`, kept with the item), not by the
+    food it is stored as, so a retry is the same however that food is
+    renamed or corrected since, or whichever of two requests sent at once
+    saved it. A retry is known before anything of it is worked out: it
+    reads no food and saves none. A client gives the meal's `id`; when
     `log_meal` leaves out `eaten_at`, the time comes from that UUIDv7, not
     the clock, so a retry has the same one. A new meal's ID must be a
-    version 7 ID whose time is near the clock, so a model cannot reuse
+    version 7 ID whose time is near the clock (from a day before to five
+    minutes after: a day of an offline client), so a model cannot reuse
     yesterday's meal ID or make one up; an ID already stored goes to the
     fingerprint instead, so an offline queue's late retry still finds its
     meal.
@@ -573,9 +588,11 @@ the first spec.
     of the create (an offline queue that lost the answer) returns the
     meal as it is now.
   - An item keeps its ID across edits; a new item may carry the
-    client's, and an "add" of an item the meal already has under that ID
-    is a retry: the same content changes nothing, other content is a
-    conflict (409). A server-made ID fills in for an item without one.
+    client's, and an "add" (which must carry one) of an item the meal
+    already has under that ID is a retry: the same content changes
+    nothing, other content is a conflict (409). A "replace" whose item
+    is as sent already is a retry too. A server-made ID fills in for an
+    item logged without one.
   - A deleted meal's ID stays a tombstone in the event log: a late retry
     of its create (or of a create that was undone) is refused as
     deleted (409) rather than bringing the meal back.

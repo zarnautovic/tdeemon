@@ -6,6 +6,7 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -32,6 +33,15 @@ type tool struct {
 	op huma.Operation
 	// register adds op, with its handler, to an API.
 	register func(huma.API, huma.Operation)
+	// retryOK says a create sent again answers 200 with what it created
+	// (201) the first time.
+	retryOK bool
+}
+
+// retried is t, whose create sent again answers 200, as the first time.
+func (t tool) retried() tool {
+	t.retryOK = true
+	return t
 }
 
 // newTool is the tool name, the operation op with handler, open to tokens
@@ -96,6 +106,38 @@ func (s *sessions) tools() []tool {
 				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.upsertFood),
+		newTool("log_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID:   "log-meal",
+			Method:        http.MethodPost,
+			Path:          Prefix + "/meals",
+			Summary:       "Log a meal",
+			DefaultStatus: http.StatusCreated,
+			Description: "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). " +
+				"An item is a food of the user's by its food_id, or a new food, which is saved, each with a quantity in the food's unit (g or ml), servings or portions; " +
+				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands, " +
+				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
+			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
+		}, s.logMeal).retried(),
+		newTool("update_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "update-meal",
+			Method:      http.MethodPatch,
+			Path:        Prefix + "/meals/{id}",
+			Summary:     "Change a meal",
+			Description: "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. " +
+				"An item no op touches keeps what it brought when logged, though its food was corrected since. " +
+				"An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. " +
+				"A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. " +
+				"A remove of an item no longer there changes nothing.",
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
+		}, s.updateMeal),
+		newTool("delete_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "delete-meal",
+			Method:      http.MethodDelete,
+			Path:        Prefix + "/meals/{id}",
+			Summary:     "Delete a meal",
+			Description: "Deletes a meal, and says where its day stands without it. Its id stays the deleted meal's: a meal logged under it again is refused (409).",
+			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
+		}, s.deleteMeal),
 	}
 }
 
@@ -115,6 +157,12 @@ func registerTools(a huma.API, ts []tool) {
 		md[toolKey] = t.name
 		op.Metadata = md
 		t.register(a, op)
+		if t.retryOK {
+			// The document lists the 200 of a retry, with the 201's answer.
+			registered := a.OpenAPI().Paths[op.Path].Post
+			created := registered.Responses[strconv.Itoa(http.StatusCreated)]
+			registered.Responses[strconv.Itoa(http.StatusOK)] = &huma.Response{Description: "The same sent again: a retry.", Content: created.Content}
+		}
 	}
 }
 

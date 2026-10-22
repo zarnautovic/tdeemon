@@ -292,6 +292,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/meals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Log a meal
+         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). An item is a food of the user's by its food_id, or a new food, which is saved, each with a quantity in the food's unit (g or ml), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands, and warnings: values that do not add up, or a meal that looks like one logged minutes before.
+         */
+        post: operations["log-meal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a meal
+         * @description Deletes a meal, and says where its day stands without it. Its id stays the deleted meal's: a meal logged under it again is refused (409).
+         */
+        delete: operations["delete-meal"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a meal
+         * @description Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. An item no op touches keeps what it brought when logged, though its food was corrected since. An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. A remove of an item no longer there changes nothing.
+         */
+        patch: operations["update-meal"];
+        trace?: never;
+    };
     "/api/v1/profile": {
         parameters: {
             query?: never;
@@ -423,6 +467,30 @@ export interface components {
              */
             type: "training" | "rest";
         };
+        DaySummary: {
+            /** Format: date */
+            date: string;
+            /** @description Why the user excluded the day. */
+            excluded_reason?: string;
+            /** @description What the target leaves after the total; below 0 past it. */
+            remaining?: components["schemas"]["RemainingBody"];
+            /**
+             * @description A day is open until its end, then complete; excluded is the user's choice, which drops it from calibration.
+             * @enum {string}
+             */
+            status: "open" | "complete" | "excluded";
+            /** @description The target of the day's type; absent before the first target. */
+            target?: components["schemas"]["DayTargetBody"];
+            /** @description What the day's meals add up to. */
+            total: components["schemas"]["NutrientsBody"];
+            /** @description The check-in's choice of the day's type; absent when the plan's training weekdays decide. */
+            training_toggle?: boolean;
+            /**
+             * @description The day's type, which picks its target.
+             * @enum {string}
+             */
+            type: "training" | "rest";
+        };
         DayTargetBody: {
             /**
              * Format: double
@@ -444,6 +512,10 @@ export interface components {
              * @description Grams of protein.
              */
             protein: number;
+        };
+        DeleteMealOutputBody: {
+            /** @description The meal's day, without the meal. */
+            day: components["schemas"]["DaySummary"];
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -502,6 +574,33 @@ export interface components {
             id: string;
             /** @description The last time a meal used the food; absent when none has. */
             last_use?: components["schemas"]["LastUseBody"];
+            /** @example Greek yoghurt 2 % */
+            name: string;
+            note?: string;
+            nutrients: components["schemas"]["FoodNutrientsBody"];
+            /**
+             * Format: double
+             * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
+             */
+            portion_grams?: number;
+            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
+            servings?: components["schemas"]["ServingBody"][];
+            /**
+             * @description Where the values come from: a label is exact, an estimate a judgement.
+             * @enum {string}
+             */
+            source: "label" | "estimate" | "user" | "dish";
+        };
+        FoodFields: {
+            /** @description Other names the user calls the food by; search finds them. */
+            aliases?: string[];
+            /**
+             * @description What the nutrients are for: 100 g, 100 ml, or a portion.
+             * @enum {string}
+             */
+            basis: "100g" | "100ml" | "portion";
+            /** @description The same name and brand are the same food. */
+            brand?: string;
             /** @example Greek yoghurt 2 % */
             name: string;
             note?: string;
@@ -619,6 +718,44 @@ export interface components {
             /** @enum {string} */
             unit: "g" | "ml" | "portion";
         };
+        ItemInput: {
+            /**
+             * Format: double
+             * @description How much of the food, in unit: the food's own (g or ml).
+             */
+            amount?: number;
+            /** @description A new food, saved as it is logged: one of the same name and brand is that food, corrected. */
+            food?: components["schemas"]["FoodFields"];
+            /**
+             * Format: uuid
+             * @description A food of the user's, from find_foods.
+             */
+            food_id?: string;
+            /**
+             * Format: uuid
+             * @description The client's id for the item; a new one when left out.
+             */
+            id?: string;
+            /** @description A one-off estimate of a whole plate: its name, with its nutrients. */
+            name?: string;
+            note?: string;
+            /** @description The estimate's values, for the whole plate. */
+            nutrients?: components["schemas"]["FoodNutrientsBody"];
+            /**
+             * Format: double
+             * @description How many portions of a food per portion.
+             */
+            portions?: number;
+            /** @description A serving the food names: a slice, a piece. */
+            serving?: string;
+            /**
+             * Format: double
+             * @description How many of the food's serving.
+             */
+            servings?: number;
+            /** @enum {string} */
+            unit?: "g" | "ml";
+        };
         LastUseBody: {
             /**
              * Format: double
@@ -653,6 +790,22 @@ export interface components {
             };
             /** @description The limits a lower value loosens (floors, the fastest loss, the waits); a higher value loosens the others. */
             looser_below: string[];
+        };
+        LogMealBody: {
+            /** @description What the meal was, in the user's words. */
+            description?: string;
+            /**
+             * Format: date-time
+             * @description When the meal was eaten; the time of the id when left out, so a retry has the same.
+             */
+            eaten_at?: string;
+            /**
+             * Format: uuid
+             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry.
+             */
+            id: string;
+            items: components["schemas"]["ItemInput"][] | null;
+            note?: string;
         };
         LoginInputBody: {
             /** @description The address the user signs in with; case does not matter. */
@@ -715,12 +868,18 @@ export interface components {
              */
             sex?: "male" | "female";
         };
+        MealAnswerBody: {
+            /** @description The meal's day, with the meal. */
+            day: components["schemas"]["DaySummary"];
+            meal: components["schemas"]["MealBody"];
+            warnings: components["schemas"]["WarningBody"][];
+        };
         MealBody: {
             /**
-             * @description What the meal was logged through.
+             * @description What the meal was logged through: api is the API with a token.
              * @enum {string}
              */
-            client: "mcp" | "chat" | "web" | "telegram" | "import";
+            client: "mcp" | "chat" | "web" | "telegram" | "import" | "api";
             description: string;
             /** Format: date-time */
             eaten_at: string;
@@ -729,6 +888,20 @@ export interface components {
             items: components["schemas"]["ItemBody"][];
             note?: string;
             total: components["schemas"]["NutrientsBody"];
+        };
+        MealOp: {
+            /** @description The item to add, or to put in the place of item_id. */
+            item?: components["schemas"]["ItemInput"];
+            /**
+             * Format: uuid
+             * @description The item to replace or remove.
+             */
+            item_id?: string;
+            /**
+             * @description add an item; replace item_id with item; remove item_id.
+             * @enum {string}
+             */
+            op: "add" | "replace" | "remove";
         };
         MethodsBody: {
             /** @description The OpenID Connect provider, when the instance has one. */
@@ -988,6 +1161,17 @@ export interface components {
              */
             weight: "kg";
         };
+        UpdateMealBody: {
+            description?: string;
+            /**
+             * Format: date-time
+             * @description When the meal was eaten, which may move it to another day.
+             */
+            eaten_at?: string;
+            note?: string;
+            /** @description The changes of the items, in order. */
+            ops?: components["schemas"]["MealOp"][];
+        };
         UpsertFoodInputBody: {
             /** @description Other names the user calls the food by; search finds them. */
             aliases?: string[];
@@ -1052,6 +1236,14 @@ export interface components {
              * @example Europe/Zagreb
              */
             timezone: string;
+        };
+        WarningBody: {
+            /**
+             * @description What kind of warning it is.
+             * @enum {string}
+             */
+            code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "duplicate_meal";
+            message: string;
         };
         WhoamiOutputBody: {
             /** @description What the token may do (via token). */
@@ -2356,6 +2548,330 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "log-meal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogMealBody"];
+            };
+        };
+        responses: {
+            /** @description The same sent again: a retry. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MealAnswerBody"];
+                };
+            };
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MealAnswerBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "delete-meal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteMealOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "update-meal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMealBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MealAnswerBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
