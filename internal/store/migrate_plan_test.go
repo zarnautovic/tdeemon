@@ -63,6 +63,9 @@ func TestMigrationOfThePlanKeepsTheEvents(t *testing.T) {
 			VALUES (?, ?, '2026-10-21T08:00:00Z', 'user', 'mcp', 'a model', ?, ?, nullif(?, ''), ?, nullif(?, ''), 1)`,
 			e.id, user, e.op, e.entity, e.before, e.after, e.undoneBy)
 	}
+	// Rowids with gaps, as deletes leave them: a copy without them would
+	// number the rows 1, 2, 3.
+	exec("UPDATE events SET rowid = rowid * 10 + 7")
 	before := eventRows(t, db)
 
 	if err := db.migrate(t.Context(), upTo(t, "0010_plan.sql"), discard()); err != nil {

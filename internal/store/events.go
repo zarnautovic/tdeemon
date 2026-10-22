@@ -38,8 +38,6 @@ const (
 	// UndoUnreadable: the change's entity or a state of it does not
 	// decode.
 	UndoUnreadable UndoReason = "its state cannot be read"
-	// UndoOverlap: putting a phase back would overlap one set since.
-	UndoOverlap UndoReason = "another phase set since would overlap it"
 	// UndoStuck: the state before breaks a rule of a table now.
 	UndoStuck UndoReason = "it cannot be put back"
 )
@@ -181,8 +179,11 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 }
 
 // UndoLast takes back userID's latest change that is not undone yet (an
-// import's writes, undos themselves, and changes of the profile and the
-// limits, which only a web session makes, are skipped), records the undo as
+// import's writes and undos themselves are skipped, and so are changes of
+// the plan: the profile and the limits, which only a web session makes,
+// and the phases, the targets and the training weekdays, which must meet
+// the limits as they are now and go back as a new change of the plan, a
+// revert, which limits.Validate checks), records the undo as
 // an event of a's, and returns the event it took back, marked undone.
 // Undoing again takes back the change before: undo walks back, it does
 // not redo. When the entity is no longer as the change left it (an import
@@ -202,7 +203,8 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 	var conflict *UndoConflictError
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+` FROM events
-			WHERE user_id = ? AND actor = 'user' AND operation NOT IN ('undo', 'profile.set', 'limits.set')
+			WHERE user_id = ? AND actor = 'user' AND operation NOT IN ('undo', 'profile.set', 'limits.set', 'phase.set', 'phase.delete',
+					'target.set', 'target.delete', 'plan.weekdays')
 				AND undone_by IS NULL AND stale = 0
 			ORDER BY rowid DESC LIMIT 1`, userID.String()))
 		if errors.Is(err, sql.ErrNoRows) {
@@ -359,10 +361,10 @@ func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) 
 		return exclusionOf(ctx, tx, userID, d)
 	case event.MetricsMerge, event.MetricSet, event.MetricDelete:
 		return metricsStateNow(ctx, tx, userID, e)
-	case event.PhaseSet, event.PhaseDelete, event.TargetSet, event.TargetDelete,
-		event.TrainingDay, event.WeekdaysSet, event.NotesSet:
+	case event.TrainingDay, event.NotesSet:
 		return planStateNow(ctx, tx, userID, e)
-	case event.ProfileSet, event.LimitsSet, event.Undo: // UndoLast never takes them back
+	case event.ProfileSet, event.LimitsSet, event.PhaseSet, event.PhaseDelete, event.TargetSet, event.TargetDelete,
+		event.WeekdaysSet, event.Undo: // UndoLast never takes them back
 	}
 	return nil, fmt.Errorf("no state for %q", e.Action)
 }
@@ -378,10 +380,10 @@ func takeBack(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, 
 		return takeBackDay(ctx, tx, userID, e, now)
 	case event.MetricsMerge, event.MetricSet, event.MetricDelete:
 		return takeBackMetrics(ctx, tx, userID, e, now)
-	case event.PhaseSet, event.PhaseDelete, event.TargetSet, event.TargetDelete,
-		event.TrainingDay, event.WeekdaysSet, event.NotesSet:
+	case event.TrainingDay, event.NotesSet:
 		return takeBackPlan(ctx, tx, userID, e, now)
-	case event.ProfileSet, event.LimitsSet, event.Undo:
+	case event.ProfileSet, event.LimitsSet, event.PhaseSet, event.PhaseDelete, event.TargetSet, event.TargetDelete,
+		event.WeekdaysSet, event.Undo:
 	}
 	return fmt.Errorf("no way to take back %q", e.Action)
 }

@@ -184,7 +184,7 @@ func TestPhases(t *testing.T) {
 	}
 }
 
-func TestDeleteAndUndoPhases(t *testing.T) {
+func TestDeletePhases(t *testing.T) {
 	t.Parallel()
 
 	db, ana, ivo := withTwoUsers(t)
@@ -216,44 +216,18 @@ func TestDeleteAndUndoPhases(t *testing.T) {
 	if err := db.DeletePhase(t.Context(), ivo, testActor, first.Start, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Ivo deleting Ana's phase = %v, want ErrNotFound", err)
 	}
-
-	// Undo walks back: the delete, the edit, the break's set and the
-	// first's.
-	for _, want := range [][]plan.Phase{{edited, brk, bulk}, {first, brk, bulk}, {first, bulk}, {bulk}} {
-		undo(t, db, ana)
-		if got, _ := db.Phases(t.Context(), ana); !reflect.DeepEqual(got, want) {
-			t.Errorf("after an undo = %+v, want %+v", got, want)
-		}
-	}
 }
 
-// Putting a phase back that a phase set since would overlap is a clash:
-// the undo passes over it.
-func TestUndoAPhaseThatWouldOverlap(t *testing.T) {
+// A stored phase that breaks a rule of its shape is no overlap.
+func TestATimelineWithAPhaseOfTheWrongShape(t *testing.T) {
 	t.Parallel()
 
 	db, ana, _ := withTwoUsers(t)
-	if err := db.SetPhase(t.Context(), ana, testActor, cut(t, "2026-09-07", "2026-10-31", -0.5), t0); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.SetPhase(t.Context(), ana, testActor, cut(t, "2026-09-07", "2026-10-15", -0.5), t0); err != nil {
-		t.Fatal(err)
-	}
-	// An import's phase after the shorter end, which undo leaves.
-	if err := db.SetPhase(t.Context(), ana, importer, plan.Phase{Type: plan.Maintain, Start: date(t, "2026-10-20")}, t0); err != nil {
-		t.Fatal(err)
-	}
-	var conflict *store.UndoConflictError
-	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Reason != store.UndoOverlap {
-		t.Fatalf("undo = %v, want an UndoConflictError: %s", err, store.UndoOverlap)
-	}
-	if got, _ := db.Phases(t.Context(), ana); len(got) != 2 || got[0].End != date(t, "2026-10-15") {
-		t.Errorf("Phases = %+v, want them as they were", got)
-	}
-	// The set before it left the phase as the change passed over left
-	// it, which undo cannot put back either.
-	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Reason != store.UndoChanged {
-		t.Errorf("the next undo = %v, want %s", err, store.UndoChanged)
+	exec(t, db, `INSERT INTO phases (user_id, start, type, rate_pct_week, updated_at) VALUES (?, '2026-09-07', 'cut', 0.5, ?)`,
+		ana.String(), t0.Format(time.RFC3339))
+	err := db.SetPhase(t.Context(), ana, testActor, cut(t, "2027-01-04", "", -0.5), t0)
+	if err == nil || errors.Is(err, store.ErrPhaseOverlap) || !strings.Contains(err.Error(), "the stored phase from 2026-09-07") {
+		t.Errorf("SetPhase beside a stored phase of the wrong shape = %v", err)
 	}
 }
 
@@ -298,38 +272,6 @@ func TestTargets(t *testing.T) {
 	}
 	if err := db.DeleteTarget(t.Context(), ana, testActor, first.EffectiveFrom, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("a second delete = %v", err)
-	}
-}
-
-func TestUndoTargets(t *testing.T) {
-	t.Parallel()
-
-	db, ana, _ := withTwoUsers(t)
-	first := plan.Target{EffectiveFrom: date(t, "2026-09-07"), Training: dayTarget(2600, 170, 75), Rest: dayTarget(2200, 160, 70)}
-	second := first.ShiftKcal(-100)
-	second.EffectiveFrom = date(t, "2026-10-05")
-	edited := second.ShiftKcal(-50)
-	for _, tg := range []plan.Target{second, first, edited} {
-		if err := db.SetTarget(t.Context(), ana, testActor, tg, t0); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := db.DeleteTarget(t.Context(), ana, testActor, first.EffectiveFrom, t0); err != nil {
-		t.Fatal(err)
-	}
-	// Undo: the delete, the edit, the first, the second.
-	undo(t, db, ana)
-	if got, _ := db.Targets(t.Context(), ana); len(got) != 2 || got[0] != first {
-		t.Errorf("after undoing the delete = %+v", got)
-	}
-	undo(t, db, ana)
-	if got, _ := db.Targets(t.Context(), ana); got[1] != second {
-		t.Errorf("after undoing the edit = %+v", got)
-	}
-	undo(t, db, ana)
-	undo(t, db, ana)
-	if got, _ := db.Targets(t.Context(), ana); got != nil {
-		t.Errorf("after undoing both = %+v", got)
 	}
 }
 
@@ -422,10 +364,6 @@ func TestTrainingWeekdays(t *testing.T) {
 	if err := db.SetTrainingWeekdays(t.Context(), ana, testActor, plan.Weekdays(1<<7), t0); err == nil || !strings.Contains(err.Error(), "invalid training weekdays") {
 		t.Errorf("a bit that is no day = %v", err)
 	}
-	undo(t, db, ana)
-	if got, _ := db.TrainingWeekdays(t.Context(), ana); got != 0 {
-		t.Errorf("after the undo = %v", got)
-	}
 }
 
 func TestUserLimits(t *testing.T) {
@@ -442,6 +380,13 @@ func TestUserLimits(t *testing.T) {
 	}
 	if got, _ := db.UserLimits(t.Context(), ana); got != l {
 		t.Errorf("UserLimits = %+v, want %+v", got, l)
+	}
+	// Only the limits off their defaults are stored, so the others follow
+	// a default a later release changes.
+	var stored string
+	if err := db.Read().QueryRowContext(t.Context(), "SELECT limits FROM plan_settings WHERE user_id = ?", ana.String()).Scan(&stored); err != nil ||
+		stored != `{"cut_rate":-0.4,"drift_pct":20,"protein_floor_grams":150}` {
+		t.Errorf("the stored limits = %s, %v", stored, err)
 	}
 	if got, _ := db.UserLimits(t.Context(), ivo); got != limits.UserDefaults() {
 		t.Errorf("Ivo's = %+v", got)
@@ -460,7 +405,13 @@ func TestUserLimits(t *testing.T) {
 	if got, _ := db.TrainingWeekdays(t.Context(), ana); got != 1 {
 		t.Errorf("TrainingWeekdays after the limits = %v, want 1", got)
 	}
+}
 
+func TestSetUserLimitsRefuses(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	l := limits.UserDefaults()
 	beyond := l
 	beyond.KcalFloorFemale = 1100
 	if err := db.SetUserLimits(t.Context(), ana, testActor, beyond, limits.Instance(), t0); !errors.Is(err, store.ErrLimitsBeyond) ||
@@ -542,33 +493,10 @@ func TestUndoOfEveryPlanKindThatDoesNotDecode(t *testing.T) {
 		entity = "UPDATE events SET entity = ? WHERE id = ?"
 	)
 	d := day.DateOf(t0)
-	target := plan.Target{EffectiveFrom: d, Training: dayTarget(2400, 170, 70), Rest: dayTarget(2400, 170, 70)}
 	for _, tc := range []struct {
 		name, update, value string
 		write               func(t *testing.T, db *store.DB, userID uuid.UUID) error
 	}{
-		{"phase set", before, `{"type": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
-			t.Helper()
-			if err := db.SetPhase(t.Context(), userID, testActor, cut(t, "2026-10-26", "", -0.5), t0); err != nil {
-				return err
-			}
-			return db.SetPhase(t.Context(), userID, testActor, cut(t, "2026-10-26", "", -0.6), t0)
-		}},
-		{"phase of no day", entity, "not a day", func(t *testing.T, db *store.DB, userID uuid.UUID) error {
-			t.Helper()
-			return db.SetPhase(t.Context(), userID, testActor, cut(t, "2026-10-26", "", -0.5), t0)
-		}},
-		{"target set", before, `{"training": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
-			t.Helper()
-			if err := db.SetTarget(t.Context(), userID, testActor, target, t0); err != nil {
-				return err
-			}
-			return db.SetTarget(t.Context(), userID, testActor, target.ShiftKcal(100), t0)
-		}},
-		{"target of no day", entity, "not a day", func(t *testing.T, db *store.DB, userID uuid.UUID) error {
-			t.Helper()
-			return db.SetTarget(t.Context(), userID, testActor, target, t0)
-		}},
 		{"training day", before, `{"training_day": "yes"}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
 			t.Helper()
 			if err := db.SetTrainingDay(t.Context(), userID, testActor, d, new(true), t0); err != nil {
@@ -579,10 +507,6 @@ func TestUndoOfEveryPlanKindThatDoesNotDecode(t *testing.T) {
 		{"training day of no day", entity, "not a day", func(t *testing.T, db *store.DB, userID uuid.UUID) error {
 			t.Helper()
 			return db.SetTrainingDay(t.Context(), userID, testActor, d, new(true), t0)
-		}},
-		{"training weekdays", before, `{"training_weekdays": "x"}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
-			t.Helper()
-			return db.SetTrainingWeekdays(t.Context(), userID, testActor, 3, t0)
 		}},
 		{"notes", before, `{"notes": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
 			t.Helper()
@@ -622,23 +546,61 @@ func TestUndoOfEveryPlanKindThatDoesNotDecode(t *testing.T) {
 }
 
 // A change of the plan an import wrote over since is not taken back.
-func TestUndoOfThePlanAfterAnImport(t *testing.T) {
+func TestUndoOfAToggleAfterAnImport(t *testing.T) {
 	t.Parallel()
 
 	db, ana, _ := withTwoUsers(t)
-	tg := plan.Target{EffectiveFrom: day.DateOf(t0), Training: dayTarget(2400, 170, 70), Rest: dayTarget(2400, 170, 70)}
-	if err := db.SetTarget(t.Context(), ana, testActor, tg, t0); err != nil {
+	d := day.DateOf(t0)
+	if err := db.SetTrainingDay(t.Context(), ana, testActor, d, new(true), t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.SetTarget(t.Context(), ana, importer, tg.ShiftKcal(-200), t0); err != nil {
+	if err := db.SetTrainingDay(t.Context(), ana, importer, d, new(false), t0); err != nil {
 		t.Fatal(err)
 	}
 	var conflict *store.UndoConflictError
 	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) || conflict.Reason != store.UndoChanged {
 		t.Fatalf("undo = %v, want %s", err, store.UndoChanged)
 	}
-	if got, _ := db.Targets(t.Context(), ana); got[0].Rest.Kcal != 2200 {
-		t.Errorf("Targets = %+v, want the import's", got)
+	if got, _ := db.TrainingDayToggles(t.Context(), ana, d, d); got[d] {
+		t.Errorf("toggles = %v, want the import's", got)
+	}
+}
+
+// Undo leaves the plan: its changes must meet the limits as they are now,
+// and go back as a change of the plan that Validate checks, not by undo
+// through a tool. It takes back what came before them.
+func TestUndoLeavesThePlan(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	tg := plan.Target{EffectiveFrom: d, Training: dayTarget(2400, 170, 70), Rest: dayTarget(2400, 160, 70)}
+	p := cut(t, "2026-10-26", "", -0.5)
+	for _, w := range []func() error{
+		func() error { return db.SetProfileNotes(t.Context(), ana, testActor, "No fish.", t0) },
+		func() error { return db.SetPhase(t.Context(), ana, testActor, p, t0) },
+		func() error { return db.SetPhase(t.Context(), ana, testActor, cut(t, "2026-11-30", "", -0.4), t0) },
+		func() error { return db.DeletePhase(t.Context(), ana, testActor, date(t, "2026-11-30"), t0) },
+		func() error { return db.SetTarget(t.Context(), ana, testActor, tg, t0) },
+		func() error { return db.SetTarget(t.Context(), ana, testActor, tg.ShiftKcal(100).ShiftKcal(-50), t0) },
+		func() error { return db.DeleteTarget(t.Context(), ana, testActor, d, t0) },
+		func() error { return db.SetTrainingWeekdays(t.Context(), ana, testActor, 3, t0) },
+	} {
+		if err := w(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if e := undo(t, db, ana); e.Action != event.NotesSet {
+		t.Errorf("undo took back %s, want the notes", e.Action)
+	}
+	if got, _ := db.Phases(t.Context(), ana); len(got) != 1 || got[0] != p {
+		t.Errorf("Phases = %+v, want them as they were", got)
+	}
+	if got, _ := db.Targets(t.Context(), ana); got != nil {
+		t.Errorf("Targets = %+v, want none", got)
+	}
+	if got, _ := db.TrainingWeekdays(t.Context(), ana); got != 3 {
+		t.Errorf("TrainingWeekdays = %v", got)
 	}
 }
 
@@ -742,12 +704,6 @@ func TestPlanDeletesAreTheUsers(t *testing.T) {
 	}
 	if got, _ := db.Targets(t.Context(), ivo); len(got) != 1 {
 		t.Errorf("Ivo's targets after Ana's delete = %+v", got)
-	}
-	// And undo puts back Ana's alone.
-	undo(t, db, ana)
-	undo(t, db, ana)
-	if got, _ := db.Phases(t.Context(), ana); len(got) != 1 {
-		t.Errorf("Ana's phases after the undos = %+v", got)
 	}
 }
 

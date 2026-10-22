@@ -319,11 +319,18 @@ func (db *DB) SetPhase(ctx context.Context, userID uuid.UUID, a event.Actor, p p
 	return nil
 }
 
-// checkTimeline reports ErrPhaseOverlap when userID's phases overlap.
+// checkTimeline reports ErrPhaseOverlap when userID's phases overlap. A
+// stored phase that breaks a rule of its shape is an error of its own,
+// not an overlap.
 func checkTimeline(ctx context.Context, tx *sql.Tx, userID uuid.UUID) error {
 	ps, err := phasesIn(ctx, tx, userID)
 	if err != nil {
 		return err
+	}
+	for _, p := range ps {
+		if err := p.Validate(); err != nil {
+			return fmt.Errorf("the stored phase from %s: %w", p.Start, err)
+		}
 	}
 	if err := plan.ValidateTimeline(ps); err != nil {
 		return fmt.Errorf("%w: %w", ErrPhaseOverlap, err)
@@ -356,30 +363,6 @@ func (db *DB) DeletePhase(ctx context.Context, userID uuid.UUID, a event.Actor, 
 	}
 	if err != nil {
 		return fmt.Errorf("delete phase: %w", err)
-	}
-	return nil
-}
-
-// takeBackPhase puts the phase of e back as it was, which clashes with a
-// phase that came since and overlaps it.
-func takeBackPhase(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
-	start, err := entityDay(e.Entity)
-	if err != nil {
-		return err
-	}
-	var s *phaseState
-	if e.Before != nil {
-		if err := decode(e.Before, &s); err != nil {
-			return err
-		}
-	}
-	if err := putPhase(ctx, tx, userID, start, s, now); err != nil {
-		return err
-	}
-	if err := checkTimeline(ctx, tx, userID); errors.Is(err, ErrPhaseOverlap) {
-		return clash{UndoOverlap}
-	} else if err != nil {
-		return err
 	}
 	return nil
 }
@@ -543,20 +526,6 @@ func (db *DB) DeleteTarget(ctx context.Context, userID uuid.UUID, a event.Actor,
 		return fmt.Errorf("delete target: %w", err)
 	}
 	return nil
-}
-
-func takeBackTarget(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
-	from, err := entityDay(e.Entity)
-	if err != nil {
-		return err
-	}
-	var s *targetState
-	if e.Before != nil {
-		if err := decode(e.Before, &s); err != nil {
-			return err
-		}
-	}
-	return putTarget(ctx, tx, userID, from, s, now)
 }
 
 // trainingDayState is the state of a day's toggle of its type: nil when
@@ -723,22 +692,21 @@ func (db *DB) SetTrainingWeekdays(ctx context.Context, userID uuid.UUID, a event
 	return nil
 }
 
-func takeBackWeekdays(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
-	var s weekdaysState
-	if err := decode(e.Before, &s); err != nil {
-		return err
-	}
-	return putWeekdays(ctx, tx, userID, s.TrainingWeekdays, now)
-}
-
-// limitsState is the state of a user's limits: every limit by its name,
-// or nil for the defaults, which the user never changed.
+// limitsState is the state of a user's limits: each limit that is not at
+// its default, by its name, or nil for none. A limit at its default
+// follows the default as a later release changes it.
 type limitsState map[string]float64
 
 func limitsStateOf(l limits.Limits) limitsState {
-	s := limitsState{}
+	var s limitsState
+	def := limits.UserDefaults()
 	for _, f := range limits.Fields() {
-		s[f.Name] = f.Get(l) + 0
+		if v := f.Get(l); v != f.Get(def) {
+			if s == nil {
+				s = limitsState{}
+			}
+			s[f.Name] = v + 0
+		}
 	}
 	return s
 }
@@ -919,41 +887,23 @@ func takeBackNotes(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Ev
 }
 
 // planStateNow returns the state of the plan's entity of e now, as e's
-// kind of event records it.
+// kind of event records it: of the plan's kinds, undo takes back only
+// the notes and a day's toggle (UndoLast).
 func planStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) (any, error) {
-	switch e.Action {
-	case event.WeekdaysSet:
-		return weekdaysOf(ctx, tx, userID)
-	case event.NotesSet:
+	if e.Action == event.NotesSet {
 		return notesOf(ctx, tx, userID)
-	default:
 	}
 	d, err := entityDay(e.Entity)
 	if err != nil {
 		return nil, err
-	}
-	switch e.Action {
-	case event.PhaseSet, event.PhaseDelete:
-		return phaseOf(ctx, tx, userID, d)
-	case event.TargetSet, event.TargetDelete:
-		return targetOf(ctx, tx, userID, d)
-	default:
 	}
 	return trainingDayOf(ctx, tx, userID, d)
 }
 
 // takeBackPlan puts the plan's entity of e back as it was before e.
 func takeBackPlan(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
-	switch e.Action {
-	case event.WeekdaysSet:
-		return takeBackWeekdays(ctx, tx, userID, e, now)
-	case event.NotesSet:
+	if e.Action == event.NotesSet {
 		return takeBackNotes(ctx, tx, userID, e, now)
-	case event.PhaseSet, event.PhaseDelete:
-		return takeBackPhase(ctx, tx, userID, e, now)
-	case event.TargetSet, event.TargetDelete:
-		return takeBackTarget(ctx, tx, userID, e, now)
-	default:
 	}
 	return takeBackTrainingDay(ctx, tx, userID, e, now)
 }
