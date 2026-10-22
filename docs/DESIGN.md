@@ -459,10 +459,13 @@ the first spec.
 ## 9. Ingest, notifications, ops
 
 - **Ingest:**
-  - `POST /ingest/hae` is the Health Auto Export payload; `POST
-    /ingest/metrics` takes `{date, metrics}`.
+  - `POST /api/v1/ingest/hae` is the Health Auto Export payload; `POST
+    /api/v1/ingest/metrics` takes `{date, metrics}` (`internal/ingest`).
   - Both use a per-user `ingest` token, and the raw payloads are
-    archived.
+    archived for 30 days in the data directory.
+  - A value belongs to the calendar date of its point, as HAE writes it;
+    the day keeps its earliest weighing, with body fat and lean mass from
+    the same weighing, and each value is checked on its own.
   - Caveat: HAE is iOS-only and its automated export is a paid tier.
     Native HealthKit is the long-term answer (§11).
 - **Morning summary:** a deterministic template (sleep, yesterday vs

@@ -486,6 +486,19 @@ func read(path string, withToken bool, shows func(e isolationEnv) []string) isol
 	}
 }
 
+// ingestCase is the case of an import: the other's token sends body, for
+// today, to path.
+//
+//nolint:thelper // A case is a test, not a helper: a failure should point into it.
+func ingestCase(path string, body func(today string) string) isolationCase {
+	return func(t *testing.T, e isolationEnv) {
+		rec := e.in.do(t, http.MethodPost, path, body(day.DateOf(e.in.clock.Now()).String()), nil, bearer(e.other.token.Token))
+		if rec.Code != http.StatusOK {
+			t.Errorf("the other's import to %s: %d %s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 // isolationCases has one case for every operation in the OpenAPI
 // document. TestIsolation checks after each that no answer showed the
 // owner's values, that the case got a 2xx from its operation, that the
@@ -556,6 +569,12 @@ func isolationCases() map[string]isolationCase {
 				t.Errorf("the other's limits: %d %s", rec.Code, rec.Body.String())
 			}
 		},
+		"ingest-hae": ingestCase("/api/v1/ingest/hae", func(today string) string {
+			return `{"data": {"metrics": [{"name": "step_count", "units": "count", "data": [{"date": "` + today + ` 00:00:00 +0000", "qty": 99999}]}]}}`
+		}),
+		"ingest-metrics": ingestCase("/api/v1/ingest/metrics", func(today string) string {
+			return `{"date": "` + today + `", "metrics": {"steps": 99999, "weight": 70.5}}`
+		}),
 		"revoke-token": func(t *testing.T, e isolationEnv) {
 			theirs := e.in.do(t, http.MethodDelete, "/api/v1/tokens/"+e.owner.token.ID, "", []*http.Cookie{e.other.session}, nil)
 			none := e.in.do(t, http.MethodDelete, "/api/v1/tokens/"+uuid.NewV7().String(), "", []*http.Cookie{e.other.session}, nil)

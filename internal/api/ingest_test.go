@@ -1,0 +1,240 @@
+package api_test
+
+import (
+	"log/slog"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/zarnautovic/tdeemon/internal/api"
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/ingest"
+)
+
+// The values below are made up.
+
+const haeBody = `{"data": {"metrics": [
+	{"name": "step_count", "units": "count", "data": [{"date": "2026-10-20 00:00:00 +0200", "qty": 7300}, {"date": "yesterday", "qty": 1}]},
+	{"name": "weight_body_mass", "units": "kg", "data": [{"date": "2026-10-21 07:10:00 +0200", "qty": 77.7}]},
+	{"name": "sleep_analysis", "units": "hr", "data": [{"date": "2026-10-21 06:30:00 +0200", "totalSleep": 26}]},
+	{"name": "walking_running_distance", "units": "km", "data": []}
+]}}`
+
+// ingestToken returns a token of in's user with scopes.
+func ingestToken(t *testing.T, in *instance, scopes string) map[string]string {
+	t.Helper()
+	tok, rec := in.createToken(t, sessionOf(t, in), `{"name":"phone","scopes":[`+scopes+`]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create token: %d %s", rec.Code, rec.Body.String())
+	}
+	return bearer(tok.Token)
+}
+
+type ingestResponse struct {
+	Days []struct {
+		Date    string `json:"date"`
+		Changed []struct {
+			Metric string   `json:"metric"`
+			Value  float64  `json:"value"`
+			Before *float64 `json:"before"`
+		} `json:"changed"`
+	} `json:"days"`
+	Rejected []struct {
+		Date, Metric, Reason string
+		RawDate              string `json:"raw_date"`
+		Value                float64
+	} `json:"rejected"`
+	Ignored []string `json:"ignored"`
+}
+
+// checkRejected checks what TestIngestHAE's body leaves out: a point
+// whose date does not read, with that date, and a sleep out of bounds.
+func checkRejected(t *testing.T, got ingestResponse) {
+	t.Helper()
+	if len(got.Rejected) != 2 {
+		t.Fatalf("rejected = %+v, want two", got.Rejected)
+	}
+	if r := got.Rejected[0]; r.Metric != "steps" || r.RawDate != "yesterday" || r.Date != "" {
+		t.Errorf("the bad date = %+v", r)
+	}
+	if r := got.Rejected[1]; r.Metric != "sleep_h" || r.Date != "2026-10-21" || r.RawDate != "" || !strings.Contains(r.Reason, "0 to 24") {
+		t.Errorf("the bad sleep = %+v", r)
+	}
+}
+
+func TestIngestHAE(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, tok)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST = %d %s", rec.Code, rec.Body.String())
+	}
+	checkBody(t, "ingest-hae", http.StatusOK, rec.Body.Bytes())
+	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
+	if len(got.Days) != 2 || got.Days[0].Date != "2026-10-20" || got.Days[0].Changed[0].Metric != "steps" || got.Days[0].Changed[0].Value != 7300 ||
+		got.Days[1].Changed[0].Metric != "weight" {
+		t.Errorf("days = %+v", got.Days)
+	}
+	checkRejected(t, got)
+	if strings.Join(got.Ignored, ",") != "walking_running_distance" {
+		t.Errorf("ignored = %v", got.Ignored)
+	}
+}
+
+// What an import stores is the import's, and a sync sent again changes
+// nothing.
+func TestIngestHAEStores(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, tok)
+	ms, err := in.db.Metrics(t.Context(), in.user.ID, day.Date{Year: 2026, Month: 10, Day: 20}, day.Date{Year: 2026, Month: 10, Day: 21})
+	if err != nil || len(ms) != 2 {
+		t.Fatalf("Metrics = %+v, %v", ms, err)
+	}
+	es, err := in.db.Events(t.Context(), in.user.ID, 10)
+	if err != nil || len(es) == 0 || es[0].Actor != (event.Actor{Kind: event.Import, Client: "hae"}) {
+		t.Errorf("events = %+v, %v; want the import's", es, err)
+	}
+
+	// The same sync again changes nothing, and says so.
+	rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, tok)
+	got := decodeJSON[ingestResponse](t, rec.Body.Bytes())
+	if rec.Code != http.StatusOK || len(got.Days) != 2 || len(got.Days[0].Changed) != 0 || len(got.Days[1].Changed) != 0 {
+		t.Errorf("the same sync again = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// An import does not change a value the user gave, and says what it
+// changed of an import before.
+func TestIngestMetrics(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	d := day.Date{Year: 2026, Month: 10, Day: 21}
+	if _, err := in.db.SetMetric(t.Context(), in.user.ID, event.Actor{Kind: event.User, Client: "web"}, d,
+		metric.Value{Kind: metric.Weight, Value: 80, Source: metric.Manual}, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	tok := ingestToken(t, in, `"ingest"`)
+	post := func(body string) (int, ingestResponse, string) {
+		t.Helper()
+		rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", body, nil, tok)
+		var got ingestResponse
+		if rec.Code == http.StatusOK {
+			checkBody(t, "ingest-metrics", http.StatusOK, rec.Body.Bytes())
+			got = decodeJSON[ingestResponse](t, rec.Body.Bytes())
+		}
+		return rec.Code, got, rec.Body.String()
+	}
+	code, got, body := post(`{"date": "2026-10-21", "metrics": {"weight": 79, "steps": 4000, "mood": 3}}`)
+	if code != http.StatusOK || len(got.Days) != 1 || len(got.Days[0].Changed) != 1 || got.Days[0].Changed[0].Metric != "steps" ||
+		got.Days[0].Changed[0].Before != nil || strings.Join(got.Ignored, ",") != "mood" {
+		t.Errorf("POST = %d %s", code, body)
+	}
+	code, got, body = post(`{"date": "2026-10-21", "metrics": {"steps": 6000}}`)
+	if code != http.StatusOK || got.Days[0].Changed[0].Before == nil || *got.Days[0].Changed[0].Before != 4000 || got.Days[0].Changed[0].Value != 6000 {
+		t.Errorf("a larger total = %d %s", code, body)
+	}
+	v, _ := in.db.Metrics(t.Context(), in.user.ID, d, d)
+	if !slices.Contains(v[d], metric.Value{Kind: metric.Weight, Value: 80, Source: metric.Manual}) {
+		t.Errorf("the day = %+v, want the manual weight kept", v[d])
+	}
+}
+
+func TestIngestMetricsRefuses(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	for _, bad := range []string{`{"date": "21.10.2026.", "metrics": {}}`, `{"metrics": {"steps": 1}}`, `{"date": "2026-10-21", "metrics": {"steps": "many"}}`} {
+		if rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", bad, nil, tok); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("POST %s = %d %s, want 422", bad, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestIngestRefuses(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	tok := ingestToken(t, in, `"ingest"`)
+	for _, tc := range []struct {
+		name, body string
+		header     map[string]string
+		code       int
+	}{
+		{"not HAE's shape", `{"data": {"workouts": []}}`, tok, http.StatusUnprocessableEntity},
+		{"not JSON", `steps=4000`, tok, http.StatusUnprocessableEntity},
+		{"a token without the ingest scope", haeBody, ingestToken(t, in, `"read","tools"`), http.StatusForbidden},
+		{"no one", haeBody, nil, http.StatusUnauthorized},
+		{"more than 10 MB", `{"data": {"metrics": [], "pad": "` + strings.Repeat("x", 10<<20) + `"}}`, tok, http.StatusRequestEntityTooLarge},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if rec := in.do(t, http.MethodPost, "/api/v1/ingest/hae", tc.body, nil, tc.header); rec.Code != tc.code {
+				t.Errorf("POST = %d %s, want %d", rec.Code, rec.Body.String()[:min(200, rec.Body.Len())], tc.code)
+			}
+		})
+	}
+	if ms, _ := in.db.Metrics(t.Context(), in.user.ID, day.Date{Year: 2026, Month: 10, Day: 1}, day.Date{Year: 2026, Month: 10, Day: 31}); len(ms) != 0 {
+		t.Errorf("a refused ingest stored %+v", ms)
+	}
+}
+
+// The raw body goes to the user's archive, even one that does not read.
+func TestIngestArchives(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	dir := t.TempDir()
+	base, _ := url.Parse("http://localhost")
+	h, err := api.NewHandler(api.Config{
+		Info: testInfo, DB: in.db, BaseURL: base, Logger: slog.New(slog.DiscardHandler), Now: in.clock.Now,
+		IngestArchive: &ingest.Archive{Dir: dir, Keep: 30 * 24 * time.Hour, Now: in.clock.Now},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.h = h
+	tok := ingestToken(t, in, `"ingest"`)
+	in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, tok)
+	in.do(t, http.MethodPost, "/api/v1/ingest/hae", `{"not": "hae"}`, nil, tok)
+	in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date": "2026-10-21", "metrics": {"steps": 1}}`, nil, tok)
+	files, err := filepath.Glob(filepath.Join(dir, in.user.ID.String(), in.clock.Now().UTC().Format("2006-01-02"), "*.json.gz"))
+	if err != nil || len(files) != 3 {
+		t.Fatalf("archived %v, %v; want 3 bodies", files, err)
+	}
+	var hae, metrics int
+	for _, f := range files {
+		switch {
+		case strings.HasSuffix(f, "-hae.json.gz"):
+			hae++
+		case strings.HasSuffix(f, "-metrics.json.gz"):
+			metrics++
+		}
+	}
+	if hae != 2 || metrics != 1 {
+		t.Errorf("archived %d of HAE and %d of the simple form", hae, metrics)
+	}
+	// An archive that cannot be written does not stop the import.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, []byte("a file where the archive was"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if rec := in.do(t, http.MethodPost, "/api/v1/ingest/metrics", `{"date": "2026-10-22", "metrics": {"steps": 2}}`, nil, tok); rec.Code != http.StatusOK {
+		t.Errorf("POST with a broken archive = %d %s", rec.Code, rec.Body.String())
+	}
+}

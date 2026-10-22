@@ -17,9 +17,11 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/config"
+	"github.com/zarnautovic/tdeemon/internal/ingest"
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/webui"
@@ -154,6 +156,8 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		// The limits on failed sign-ins count the client behind these.
 		TrustedProxies: cfg.TrustedProxies,
 		Limits:         cfg.Limits,
+		// The raw bodies devices send, kept for 30 days.
+		IngestArchive: &ingest.Archive{Dir: filepath.Join(cfg.DataDir, "ingest"), Keep: 30 * 24 * time.Hour},
 	})
 	if err != nil {
 		return fmt.Errorf("api: %w", err)

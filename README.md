@@ -287,14 +287,59 @@ curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/
 
 `GET /api/v1/tokens` lists them (name, scopes, when last used) and
 `DELETE /api/v1/tokens/{id}` revokes one at once. A token reaches only
-the operations open to its scopes (today `GET /api/v1/auth/whoami` and
-`GET /api/v1/info`, with any scope); every other operation is closed to
+the operations open to its scopes (`GET /api/v1/auth/whoami` and
+`GET /api/v1/info` with any scope, the imports below with `ingest`);
+every other operation is closed to
 tokens (403), so a token can never create, list or revoke tokens, read
 the session or change a setting. Only `Authorization: Bearer tdm_…`
 carries a token (an empty Bearer is a bad one): another header, such as
 a reverse proxy's Basic credentials or the ID token an authenticating
 proxy passes on as a Bearer, leaves the request to its session cookie.
 The web app's settings page comes with the web UI.
+
+### Import from Apple Health
+
+[Health Auto Export](https://www.healthexportapp.com) (iOS, its REST
+API automation is a paid feature) sends the phone's and the watch's
+metrics to tdeemon:
+
+- **URL:** `https://tdeemon.example.com/api/v1/ingest/hae`, method POST,
+  format JSON;
+- **header:** `Authorization: Bearer tdm_…`, a token with the `ingest`
+  scope;
+- **metrics:** step count, active energy, basal energy burned, Apple
+  exercise time, sleep analysis, weight, body fat percentage, lean body
+  mass, resting heart rate, heart rate variability and VO2 max. Others
+  are skipped, and the answer names them; workouts are not imported;
+- **Summarize Data:** on, with the time grouping by day, and a date
+  range that starts at midnight (such as today, or since the last sync
+  from a whole day): a day's total is then whole, and only grows from
+  sync to sync. Sleep comes as nights; a sleep stage of an export that
+  is not summarized is left out, and the answer says to turn it on.
+
+A value belongs to the calendar date of its point, the parts of a day's
+total add up, the longest sleep is the night, and the day keeps its
+earliest weighing, with body fat and lean mass from the same weighing.
+A metric in a unit tdeemon does not take for it (stones, seconds of
+exercise) is left out rather than read wrong.
+
+The values merge as an import: a value you entered stays, the day's
+first weighing stays, and a running total only grows, so a sync of part
+of the day undoes nothing. A value out of its bounds is left out, and
+the answer says why. A body may be up to 10 MB; split a large first
+export by date range in the app.
+
+`POST /api/v1/ingest/metrics` takes the same from a script, one day at a
+time:
+
+```sh
+curl -H 'Authorization: Bearer tdm_…' -H 'Content-Type: application/json' \
+  -d '{"date": "2026-10-21", "metrics": {"weight": 80.2, "steps": 9000}}' \
+  https://tdeemon.example.com/api/v1/ingest/metrics
+```
+
+The raw bodies are kept, compressed, in `TDEEMON_DATA_DIR/ingest/` for 30
+days, outside the database and its backups.
 
 ## Data
 
