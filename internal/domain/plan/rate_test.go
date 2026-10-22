@@ -59,3 +59,16 @@ func TestImpliedRate(t *testing.T) {
 		})
 	}
 }
+
+func TestKcalPerDay(t *testing.T) {
+	t.Parallel()
+
+	// 0.5 % a week of 80 kg is 0.4 kg, 3080 kcal, 440 a day; the inverse
+	// of ImpliedRate.
+	if got := KcalPerDay(-0.5, 80); !near(got, -440) {
+		t.Errorf("KcalPerDay(-0.5, 80) = %v, want -440", got)
+	}
+	if got := ImpliedRate(2600+KcalPerDay(-0.5, 80), 2600, 80); !near(got, -0.5) {
+		t.Errorf("ImpliedRate of KcalPerDay = %v, want -0.5", got)
+	}
+}

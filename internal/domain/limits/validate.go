@@ -189,8 +189,9 @@ type State struct {
 	Target       *plan.Target
 	TrainingDays plan.Weekdays
 	// TDEE is the measured TDEE, and TDEETrusted whether calibration
-	// trusts it enough for a verdict; only then does a target's implied
-	// rate count.
+	// trusts it: one from before the current phase may be, a TDEE all the
+	// same, though it gives no verdict on the phase. Only a trusted one
+	// makes a target's implied rate count.
 	TDEE        float64
 	TDEETrusted bool
 	// LeanMassKg is the fat-free mass, 0 when unknown, and ActiveKcal the
@@ -248,10 +249,10 @@ func Validate(c Change, s State, lv Levels) Result {
 	return v.r
 }
 
-// epsilon keeps the error of float arithmetic from breaking a limit a
+// Epsilon keeps the error of float arithmetic from breaking a limit a
 // value meets: 59.94 kg at 180 cm is a BMI of 18.5, which float
-// arithmetic puts a hair under it.
-const epsilon = 1e-9
+// arithmetic puts a hair under it. Calibration's bounds take it too.
+const Epsilon = 1e-9
 
 // validator holds what one run of Validate works with.
 type validator struct {
@@ -375,7 +376,7 @@ func (v *validator) phase() {
 		{RuleUnderweightGoal, p.GoalWeight, oldWeight(old, func(p *plan.Phase) *float64 { return p.GoalWeight })},
 		{RuleUnderweightMilestone, p.MilestoneWeight, oldWeight(old, func(p *plan.Phase) *float64 { return p.MilestoneWeight })},
 	} {
-		if w.now != nil && (w.was == nil || *w.now != *w.was) && *w.now < floor-epsilon {
+		if w.now != nil && (w.was == nil || *w.now != *w.was) && *w.now < floor-Epsilon {
 			v.violate(Violation{Rule: w.rule, Limit: floor, Proposed: *w.now, Level: LevelCode})
 		}
 	}
@@ -425,7 +426,31 @@ func (v *validator) underweight(rate, was float64) {
 
 // underweightNow reports whether the trend weight now is below a BMI of
 // UnderweightBMI.
-func (v *validator) underweightNow() bool { return v.bmiNow < UnderweightBMI-epsilon }
+func (v *validator) underweightNow() bool { return Underweight(v.bmiNow) }
+
+// Underweight reports whether bmi is below UnderweightBMI, past the error
+// of float arithmetic.
+func Underweight(bmi float64) bool { return bmi < UnderweightBMI-Epsilon }
+
+// LossUnderWay reports whether the plan s holds loses weight: its phase's
+// rate is a loss, or its target implies one with a TDEE calibration
+// trusts, at the trend weight now, past the error of float arithmetic: a
+// target set to the TDEE is no loss. It reads the phase, the target, the
+// training weekdays, the TDEE and the trend weight of s, nothing else.
+func LossUnderWay(s State) bool {
+	if s.Phase != nil && s.Phase.RatePctWeek < 0 {
+		return true
+	}
+	return s.TDEETrusted && s.TDEE > 0 && s.Target != nil &&
+		plan.ImpliedRate(s.Target.WeeklyAverage(s.TrainingDays.Count()).Kcal, s.TDEE, s.TrendKg) < -Epsilon
+}
+
+// UnderweightLoss reports whether s holds a loss under way below a BMI of
+// UnderweightBMI, by the trend weight now: no step deepens it, and the
+// autopilot proposes maintenance (docs/limits.md). The profile must give
+// the height. It reads the profile and what LossUnderWay reads, not the
+// day.
+func UnderweightLoss(s State) bool { return Underweight(s.Profile.BMI(s.TrendKg)) && LossUnderWay(s) }
 
 // target returns the target as the change leaves it, nil when there is
 // none.
@@ -564,7 +589,7 @@ func (v *validator) impliedRate(t plan.Target, training plan.Weekdays) float64 {
 // of UnderweightBMI.
 func (v *validator) autopilot() {
 	a := v.s.Autopilot
-	if v.underweightNow() && v.lossUnderWay() {
+	if UnderweightLoss(v.s) {
 		v.violate(Violation{Rule: RuleUnderweightLoss, Limit: UnderweightBMI, Proposed: v.bmiNow, Level: LevelCode})
 	}
 	if !v.isStep() {
@@ -573,8 +598,7 @@ func (v *validator) autopilot() {
 		n := v.s.TrainingDays.Count()
 		before := v.s.Target.WeeklyAverage(n).Kcal
 		delta := v.c.Target.WeeklyAverage(n).Kcal - before
-		step := func(l Limits) float64 { return math.Min(l.StepKcal, l.StepPct/100*before) }
-		v.hold(bound{rule: RuleStep, user: step(v.user), instance: step(v.instance)}, math.Abs(delta), nil)
+		v.hold(bound{rule: RuleStep, user: v.user.Step(before), instance: v.instance.Step(before)}, math.Abs(delta), nil)
 		if v.c.By == ByAutopilot {
 			v.drift(delta)
 		}
@@ -614,15 +638,6 @@ func (v *validator) drift(delta float64) {
 	v.hold(bound{rule: RuleDrift, user: v.user.DriftPct, instance: v.instance.DriftPct}, pct(a.DriftKcal+delta), &was)
 }
 
-// lossUnderWay reports whether the plan before the change loses weight:
-// a phase with a loss, or a target whose implied rate is one.
-func (v *validator) lossUnderWay() bool {
-	if v.s.Phase != nil && v.s.Phase.RatePctWeek < 0 {
-		return true
-	}
-	return v.s.TDEETrusted && v.s.TDEE > 0 && v.s.Target != nil && v.impliedRate(*v.s.Target, v.s.TrainingDays) < 0
-}
-
 // warn adds the warnings of the target the change leaves.
 func (v *validator) warn() {
 	bmr := v.s.Profile.BMR(v.trend, v.s.Today)
@@ -660,7 +675,7 @@ type bound struct {
 // cut at 1.5 kg a week, or 1.6 g/kg of a reference mass turned into
 // grams and back, comes a hair past it.
 func (b bound) breaks(x, limit float64, exclusive bool) bool {
-	tol := epsilon * math.Max(1, math.Abs(limit))
+	tol := Epsilon * math.Max(1, math.Abs(limit))
 	switch {
 	case b.floor && exclusive:
 		return x <= limit+tol
