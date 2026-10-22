@@ -43,11 +43,11 @@
             "inBedEnd": "2026-10-21 07:00:00 +0200",
             "inBed": 7.9,
             "asleep": 0,
-            "core": 3.9,
+            "core": 3.4,
             "deep": 1.1,
-            "rem": 1.8,
+            "rem": 1.6,
             "awake": 0.7,
-            "totalSleep": 6.8,
+            "totalSleep": 6.1,
             "source": "Apple Watch"
           }
         ]

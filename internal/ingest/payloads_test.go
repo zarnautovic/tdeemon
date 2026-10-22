@@ -112,9 +112,9 @@ func TestPayloadsRead(t *testing.T) {
 	}
 }
 
-// A morning's sync: yesterday whole and today so far, a night, a
-// weighing on a scale that gives body fat and lean mass, and metrics
-// tdeemon does not read.
+// A morning's sync: yesterday whole and today so far, a night the watch
+// has not all handed over yet, a weighing on a scale that gives body fat
+// and lean mass, and metrics tdeemon does not read.
 func TestPayloadMorningSync(t *testing.T) {
 	t.Parallel()
 
@@ -134,7 +134,7 @@ func TestPayloadMorningSync(t *testing.T) {
 		{"2026-10-21", metric.ActiveKcal, 100},
 		{"2026-10-21", metric.BasalKcal, 640},
 		{"2026-10-21", metric.ExerciseMin, 4},
-		{"2026-10-21", metric.Sleep, 6.8}, // the total, not the time in bed
+		{"2026-10-21", metric.Sleep, 6.1}, // the total so far, not the time in bed
 		{"2026-10-21", metric.Weight, 78.4},
 		{"2026-10-21", metric.BodyFat, 19.5},
 		{"2026-10-21", metric.LeanMass, 63.1},

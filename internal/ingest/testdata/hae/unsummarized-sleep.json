@@ -15,8 +15,7 @@
         "units": "count",
         "data": [
           { "date": "2026-10-22 06:00:00 +0200", "qty": 120, "source": "iPhone" },
-          { "date": "2026-10-22 06:00:00 +0200", "qty": 45, "source": "Apple Watch" },
-          { "date": "2026-10-22 07:00:00 +0200", "qty": 145, "source": "iPhone" }
+          { "date": "2026-10-22 07:00:00 +0200", "qty": 190, "source": "iPhone" }
         ]
       }
     ],

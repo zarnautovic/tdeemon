@@ -374,7 +374,7 @@ func TestIngestHAESyncs(t *testing.T) {
 			"2026-10-21": {"active_kcal", "basal_kcal", "body_fat", "exercise_min", "lean_mass", "rhr", "sleep_h", "steps", "vo2max", "weight"},
 		}},
 		{"evening-weighing.json", map[string][]string{"2026-10-21": {}}},
-		{"evening-sync.json", map[string][]string{"2026-10-21": {"active_kcal", "basal_kcal", "exercise_min", "rhr", "steps"}}},
+		{"evening-sync.json", map[string][]string{"2026-10-21": {"active_kcal", "basal_kcal", "exercise_min", "rhr", "sleep_h", "steps"}}},
 		{"evening-sync.json", map[string][]string{"2026-10-21": {}}},
 		{"morning-sync.json", map[string][]string{"2026-10-20": {}, "2026-10-21": {"rhr"}}},
 	} {
@@ -434,7 +434,8 @@ func TestIngestHAEUnsummarizedSleep(t *testing.T) {
 		got.Rejected[0].RawDate != "2026-10-22 01:10:00 +0200" {
 		t.Errorf("POST = %d %s", rec.Code, rec.Body.String())
 	}
-	if changed, ok := changedOn(got, "2026-10-22"); !ok || !slices.Equal(changed, []string{"steps"}) || got.Days[0].Changed[0].Value != 310 {
-		t.Errorf("the day = %+v, want the steps added up", got.Days)
+	if len(got.Days) != 1 || got.Days[0].Date != "2026-10-22" || len(got.Days[0].Changed) != 1 ||
+		got.Days[0].Changed[0].Metric != "steps" || got.Days[0].Changed[0].Value != 310 {
+		t.Errorf("days = %+v, want 2026-10-22 with the steps added up", got.Days)
 	}
 }
