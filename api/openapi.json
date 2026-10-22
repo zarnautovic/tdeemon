@@ -51,7 +51,7 @@
             "type": "string"
           },
           "last_used_at": {
-            "description": "Absent: a new token is unused.",
+            "description": "When it was last used, to the hour or so; absent until then.",
             "format": "date-time",
             "type": "string"
           },
@@ -83,11 +83,11 @@
           }
         },
         "required": [
+          "token",
           "id",
           "name",
           "scopes",
-          "created_at",
-          "token"
+          "created_at"
         ],
         "type": "object"
       },

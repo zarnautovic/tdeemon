@@ -191,7 +191,7 @@ export interface components {
             id: string;
             /**
              * Format: date-time
-             * @description Absent: a new token is unused.
+             * @description When it was last used, to the hour or so; absent until then.
              */
             last_used_at?: string;
             /** @description What the user calls the token. */
