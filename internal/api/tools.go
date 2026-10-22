@@ -36,6 +36,15 @@ type tool struct {
 	// retryOK says a create sent again answers 200 with what it created
 	// (201) the first time.
 	retryOK bool
+	// destructive says the tool replaces or deletes what is there, which
+	// a client may want the user to confirm.
+	destructive bool
+}
+
+// destroys is t, which replaces or deletes what is there.
+func (t tool) destroys() tool {
+	t.destructive = true
+	return t
 }
 
 // retried is t, whose create sent again answers 200, as the first time.
@@ -86,7 +95,7 @@ func (s *sessions) tools() []tool {
 			Description: "Stores a measurement of a day the user gave (a weighing, the night's sleep), of today or a day before, in the kind's unit: " +
 				"it counts over what an import brings, and replaces what the day held of the kind. The answer is the day, as get_day gives it.",
 			Errors: []int{http.StatusUnauthorized},
-		}, s.logMetric),
+		}, s.logMetric).destroys(),
 		newTool("delete_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "delete-metric",
 			Method:      http.MethodDelete,
@@ -94,7 +103,7 @@ func (s *sessions) tools() []tool {
 			Summary:     "Delete a measurement",
 			Description: "Deletes a day's measurement of a kind, a wrong one: imports apply to the day again. The answer is the day, as get_day gives it.",
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
-		}, s.deleteMetric),
+		}, s.deleteMetric).destroys(),
 		newTool("checkin", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "check-in",
 			Method:      http.MethodPatch,
@@ -106,7 +115,7 @@ func (s *sessions) tools() []tool {
 				"send today for the user's day now. One undo takes the whole check-in back. " +
 				"The answer is the day, as get_day gives it.",
 			Errors: []int{http.StatusUnauthorized},
-		}, s.checkIn),
+		}, s.checkIn).destroys(),
 		newTool("find_foods", readScopes, huma.Operation{
 			OperationID: "find-foods",
 			Method:      http.MethodGet,
@@ -134,7 +143,7 @@ func (s *sessions) tools() []tool {
 				"without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. " +
 				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
-		}, s.upsertFood),
+		}, s.upsertFood).destroys(),
 		newTool("log_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID:   "log-meal",
 			Method:        http.MethodPost,
@@ -158,7 +167,7 @@ func (s *sessions) tools() []tool {
 				"A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. " +
 				"A remove of an item no longer there changes nothing.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
-		}, s.updateMeal),
+		}, s.updateMeal).destroys(),
 		newTool("delete_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "delete-meal",
 			Method:      http.MethodDelete,
@@ -166,7 +175,7 @@ func (s *sessions) tools() []tool {
 			Summary:     "Delete a meal",
 			Description: "Deletes a meal, and says where its day stands without it. Its id stays the deleted meal's: a meal logged under it again is refused (409).",
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
-		}, s.deleteMeal),
+		}, s.deleteMeal).destroys(),
 	}
 }
 

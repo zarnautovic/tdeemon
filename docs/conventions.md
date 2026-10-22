@@ -105,6 +105,11 @@ for the author and the reviewer.
   (DESIGN.md §5), and `TestToolsTakeReadAndToolsTokens` holds a tool that
   reads to the `read` and `tools` scopes, and one that writes to `tools`
   alone. A tool names its scopes (`newTool`), or cannot be registered.
+  MCP serves every tool at `/mcp` through its operation
+  (`internal/api/mcp.go`): its input schema is the operation's
+  parameters and body, from the OpenAPI document, and a call is a
+  request of the operation with the caller's principal, so MCP and REST
+  cannot drift.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 
@@ -440,7 +445,10 @@ in `web/`.
     a `user_id` column (`internal/store/migrations/README.md`);
   - routes outside the OpenAPI document are not covered: the OpenID
     Connect browser flow has its own tests (`internal/api/oidc_test.go`),
-    and MCP needs its own list of cases over the tool registry.
+    and MCP has its own list, `mcpIsolationCases`: each tool called as
+    the other party, a user and an admin, through MCP.
+    `TestMCPIsolationCoversEveryTool` fails for a tool MCP serves without
+    a case.
 
 ### Tests
 

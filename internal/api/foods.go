@@ -19,8 +19,11 @@ import (
 // actorOf is who writes for the request of p: the user, through the web
 // app with a session, or through the API with a token.
 func actorOf(p auth.Principal) event.Actor {
-	if p.Via == auth.ViaSession {
+	switch {
+	case p.Via == auth.ViaSession:
 		return webActor
+	case p.Client == auth.ClientMCP:
+		return event.Actor{Kind: event.User, Client: auth.ClientMCP}
 	}
 	return event.Actor{Kind: event.User, Client: "api"}
 }
