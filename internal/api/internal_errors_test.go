@@ -199,6 +199,16 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			}, inside: "refused by the test",
 		},
 		{
+			op: "ingest-strong", method: http.MethodPost, path: "/api/v1/ingest/strong",
+			body:      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift,1,120,3,0\n",
+			withToken: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.failWrites(t, "INSERT", "workout_days")
+				return ""
+			}, inside: "refused by the test",
+		},
+		{
 			name: "find-foods, the foods", op: "find-foods", method: http.MethodGet, path: "/api/v1/foods?query=rye", signedIn: true,
 			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
 				t.Helper()
@@ -233,6 +243,17 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				in.failWrites(t, "INSERT", "foods")
 				return ""
 			}, inside: "refused by the test",
+		},
+		{
+			name: "ingest-strong, the user's calendar",
+			op:   "ingest-strong", method: http.MethodPost, path: "/api/v1/ingest/strong",
+			body:      "Date,Workout Name,Duration,Exercise Name,Set Order,Weight,Reps,Seconds\n2026-10-21 06:55:30,Day B,58m,Deadlift,1,120,3,0\n",
+			withToken: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "UPDATE users SET timezone = 'Nowhere/Bogus'")
+				return ""
+			}, inside: "Nowhere/Bogus",
 		},
 		{
 			op: "get-limits", method: http.MethodGet, path: "/api/v1/limits", signedIn: true,

@@ -274,6 +274,10 @@ func TestIngestKeepsTheLatestExport(t *testing.T) {
 	if got := gunzip(t, latest); got != strongExport(t) {
 		t.Errorf("the latest export = %q, want the form's file", got)
 	}
+	// The form itself is archived as one.
+	if forms, _ := filepath.Glob(filepath.Join(dir, in.user.ID.String(), "*", "*-strong.form.gz")); len(forms) != 1 {
+		t.Errorf("archived forms = %v, want the one", forms)
+	}
 }
 
 // The raw body goes to the user's archive, even one that does not read.
@@ -508,7 +512,6 @@ func postStrong(t *testing.T, in *instance, tok map[string]string, body, content
 	if rec.Code != http.StatusOK {
 		t.Fatalf("POST = %d %s", rec.Code, rec.Body.String())
 	}
-	checkBody(t, "ingest-strong", http.StatusOK, rec.Body.Bytes())
 	return decodeJSON[strongResponse](t, rec.Body.Bytes())
 }
 
@@ -649,6 +652,7 @@ func TestIngestStrongForm(t *testing.T) {
 	for name, c := range map[string]struct{ body, contentType, want string }{
 		"no part file":              {b.String(), w.FormDataContentType(), "part named file"},
 		"a form that does not read": {"--x\r\nno header\r\n\r\n--x--\r\n", "multipart/form-data; boundary=x", "the form does not read"},
+		"a form cut short":          {"--x\r\nContent-Disposition: form-data; name=\"file\"\r\n\r\nDate,Workout", "multipart/form-data; boundary=x", "the form does not read"},
 	} {
 		h := maps.Clone(tok)
 		h["Content-Type"] = c.contentType

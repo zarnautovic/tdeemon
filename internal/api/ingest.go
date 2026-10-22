@@ -84,15 +84,21 @@ func (in *ingestStrongInput) Resolve(ctx huma.Context) []error {
 	return nil
 }
 
+// isForm reports whether contentType is a form's; one that does not read
+// is no form either.
+func isForm(contentType string) (bool, string) {
+	media, params, _ := mime.ParseMediaType(contentType)
+	return media == "multipart/form-data", params["boundary"]
+}
+
 // strongCSV returns the export in body: the part named file of a form,
 // or else body itself.
 func strongCSV(contentType string, body []byte) ([]byte, error) {
-	// A content type that does not read is no form either.
-	media, params, _ := mime.ParseMediaType(contentType)
-	if media != "multipart/form-data" {
+	form, boundary := isForm(contentType)
+	if !form {
 		return body, nil
 	}
-	r := multipart.NewReader(bytes.NewReader(body), params["boundary"])
+	r := multipart.NewReader(bytes.NewReader(body), boundary)
 	for {
 		part, err := r.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -189,8 +195,11 @@ func (s *sessions) registerIngest(a huma.API) {
 		Tags:            []string{"ingest"},
 		MaxBodyBytes:    maxIngestBytes,
 		BodyReadTimeout: ingestReadTimeout,
-		Errors:          []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity},
-		Metadata:        openToTokens(auth.ScopeIngest),
+		// A CSV or a form of any content type, as a Shortcut sends it,
+		// which strongCSV and ParseStrong read: huma checks nothing of it.
+		SkipValidateBody: true,
+		Errors:           []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity},
+		Metadata:         openToTokens(auth.ScopeIngest),
 	}, s.ingestStrong)
 }
 
@@ -199,7 +208,11 @@ func (s *sessions) ingestStrong(ctx context.Context, in *ingestStrongInput) (*st
 	if err != nil {
 		return nil, err
 	}
-	s.archive(ctx, p, "strong.csv", in.RawBody)
+	name := "strong.csv"
+	if form, _ := isForm(in.contentType); form {
+		name = "strong.form"
+	}
+	s.archive(ctx, p, name, in.RawBody)
 	export, err := strongCSV(in.contentType, in.RawBody)
 	if err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())

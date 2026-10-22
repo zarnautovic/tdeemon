@@ -64,7 +64,20 @@ func (a *Archive) SaveLatest(userID uuid.UUID, name string, body []byte) error {
 	if err := os.Rename(tmp, filepath.Join(userDir, "latest-"+name+".gz")); err != nil {
 		return errors.Join(fmt.Errorf("archive: %w", err), os.Remove(tmp))
 	}
+	// The rename lasts once the directory does.
+	if err := syncDir(userDir); err != nil {
+		return fmt.Errorf("archive: %w", err)
+	}
 	return nil
+}
+
+func syncDir(dir string) (err error) {
+	d, err := os.Open(dir) //nolint:gosec // G304: the archive's own directory
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, d.Close()) }()
+	return d.Sync()
 }
 
 func writeGzip(name string, body []byte) (err error) {
@@ -77,7 +90,11 @@ func writeGzip(name string, body []byte) (err error) {
 	if _, err := zw.Write(body); err != nil {
 		return err
 	}
-	return zw.Close()
+	if err := zw.Close(); err != nil {
+		return err
+	}
+	// On disk before the file is named or counted on.
+	return f.Sync()
 }
 
 // prune removes the days of userDir older than Keep at t. A directory
