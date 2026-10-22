@@ -160,7 +160,7 @@ func (s *sessions) archive(ctx context.Context, p auth.Principal, source string,
 		return
 	}
 	if err := s.ingestArchive.Save(p.User.ID, source, body); err != nil {
-		s.logger.ErrorContext(ctx, "archiving an ingest failed", "error", err)
+		s.logger.ErrorContext(ctx, "archiving an ingest failed", "user_id", p.User.ID.String(), "error", err)
 	}
 }
 

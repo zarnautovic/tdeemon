@@ -336,7 +336,9 @@ in `web/`.
     What answers before an operation runs (the session and token
     lookups) or outside one (OpenID Connect's browser flow, and the
     session a sign-in starts, which the two share) logs its failures
-    itself and answers with a bare problem.
+    itself and answers with a bare problem; so does a failure an
+    operation handles and goes on from (an ingest's archive), with the
+    user.
 - **`context.Context`** is the first parameter of anything that queries
   the database, talks to the network or waits on other goroutines, and is
   never stored in a struct. File system calls take none, as `os` has no

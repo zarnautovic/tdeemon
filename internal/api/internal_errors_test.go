@@ -50,6 +50,38 @@ func (in *instance) logRecords(t *testing.T) []logRecord {
 	return out
 }
 
+// checkLogged fails unless the log has a record that is want but for its
+// error.
+func (in *instance) checkLogged(t *testing.T, want logRecord) {
+	t.Helper()
+	for _, r := range in.logRecords(t) {
+		want.Error = r.Error
+		if r == want {
+			return
+		}
+	}
+	t.Errorf("the log has no %+v:\n%s", want, in.logs.String())
+}
+
+// checkLoggedOnce fails unless the log has one record whose error says
+// secret, and it is want but for the error's text.
+func (in *instance) checkLoggedOnce(t *testing.T, secret string, want logRecord) {
+	t.Helper()
+	var logged []logRecord
+	for _, r := range in.logRecords(t) {
+		if strings.Contains(r.Error, secret) {
+			logged = append(logged, r)
+		}
+	}
+	if len(logged) != 1 {
+		t.Fatalf("the log has the failure %d times, want once:\n%s", len(logged), in.logs.String())
+	}
+	want.Error = logged[0].Error
+	if logged[0] != want {
+		t.Errorf("logged %+v, want %+v", logged[0], want)
+	}
+}
+
 // An operation that fails inside the server answers 500 with no word of
 // what failed, which could name a file, a query or a user; the log has
 // it, once, with the request it came from.
@@ -58,11 +90,13 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 
 	for _, tc := range []struct {
 		name, op, method, path, body string
-		signedIn                     bool
-		// breakIt makes the operation fail; secret is what the failure
+		// signedIn sends the request with a session, withToken with an
+		// API token of the ingest scope.
+		signedIn, withToken bool
+		// breakIt makes the operation fail; inside is what the failure
 		// says, which the answer must not.
 		breakIt func(t *testing.T, in *instance, session *http.Cookie) string
-		secret  string
+		inside  string
 	}{
 		{
 			op: "login", method: http.MethodPost, path: "/api/v1/auth/login", body: `{"email":"ana@example.com","password":"` + password + `"}`,
@@ -70,7 +104,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.exec(t, "ALTER TABLE users RENAME COLUMN password_hash TO gone")
 				return ""
-			}, secret: "password_hash",
+			}, inside: "password_hash",
 		},
 		{
 			op: "logout", method: http.MethodPost, path: "/api/v1/auth/logout", signedIn: true,
@@ -78,7 +112,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.failWrites(t, "DELETE", "sessions")
 				return ""
-			}, secret: "refused by the test",
+			}, inside: "refused by the test",
 		},
 		{
 			op: "list-tokens", method: http.MethodGet, path: "/api/v1/tokens", signedIn: true,
@@ -86,7 +120,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.exec(t, "ALTER TABLE api_tokens RENAME TO gone")
 				return ""
-			}, secret: "no such table",
+			}, inside: "no such table",
 		},
 		{
 			op: "create-token", method: http.MethodPost, path: "/api/v1/tokens", body: `{"name":"phone","scopes":["read"]}`, signedIn: true,
@@ -94,7 +128,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.failWrites(t, "INSERT", "api_tokens")
 				return ""
-			}, secret: "refused by the test",
+			}, inside: "refused by the test",
 		},
 		{
 			op: "revoke-token", method: http.MethodDelete, signedIn: true,
@@ -106,7 +140,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				}
 				in.failWrites(t, "DELETE", "api_tokens")
 				return "/api/v1/tokens/" + created.ID
-			}, secret: "refused by the test",
+			}, inside: "refused by the test",
 		},
 		{
 			op: "get-profile", method: http.MethodGet, path: "/api/v1/profile", signedIn: true,
@@ -114,7 +148,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.exec(t, "ALTER TABLE users RENAME COLUMN height_cm TO gone")
 				return ""
-			}, secret: "height_cm",
+			}, inside: "height_cm",
 		},
 		{
 			op: "set-profile", method: http.MethodPut, path: "/api/v1/profile", body: `{"sex":"female","birth_date":"1990-06-15","height_cm":168.5}`, signedIn: true,
@@ -122,7 +156,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.failWrites(t, "INSERT", "events")
 				return ""
-			}, secret: "refused by the test",
+			}, inside: "refused by the test",
 		},
 		{
 			name: "set-profile, the user's calendar",
@@ -131,7 +165,25 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.exec(t, "UPDATE users SET timezone = 'Nowhere/Bogus'")
 				return ""
-			}, secret: "Nowhere/Bogus",
+			}, inside: "Nowhere/Bogus",
+		},
+		{
+			op: "ingest-metrics", method: http.MethodPost, path: "/api/v1/ingest/metrics", body: `{"date":"2026-10-21","metrics":{"weight":77.7}}`, withToken: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.exec(t, "ALTER TABLE metrics RENAME TO gone")
+				return ""
+			}, inside: "no such table: metrics",
+		},
+		{
+			op: "ingest-hae", method: http.MethodPost, path: "/api/v1/ingest/hae",
+			body:      `{"data":{"metrics":[{"name":"step_count","units":"count","data":[{"date":"2026-10-20 00:00:00 +0200","qty":7300}]}]}}`,
+			withToken: true,
+			breakIt: func(t *testing.T, in *instance, _ *http.Cookie) string {
+				t.Helper()
+				in.failWrites(t, "INSERT", "metrics")
+				return ""
+			}, inside: "refused by the test",
 		},
 		{
 			op: "get-limits", method: http.MethodGet, path: "/api/v1/limits", signedIn: true,
@@ -139,7 +191,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.exec(t, "ALTER TABLE plan_settings RENAME TO gone")
 				return ""
-			}, secret: "plan_settings",
+			}, inside: "plan_settings",
 		},
 		{
 			op: "set-limits", method: http.MethodPut, path: "/api/v1/limits", body: `{"limits":{"cut_rate":-0.5}}`, signedIn: true,
@@ -147,7 +199,7 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 				t.Helper()
 				in.failWrites(t, "INSERT", "events")
 				return ""
-			}, secret: "refused by the test",
+			}, inside: "refused by the test",
 		},
 	} {
 		name := tc.op
@@ -166,7 +218,11 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			if p := tc.breakIt(t, in, session); p != "" {
 				path = p
 			}
-			rec := in.do(t, tc.method, path, tc.body, cookies, nil)
+			var header map[string]string
+			if tc.withToken {
+				header = ingestToken(t, in, `"ingest"`)
+			}
+			rec := in.do(t, tc.method, path, tc.body, cookies, header)
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("%d %s, want 500", rec.Code, rec.Body.String())
 			}
@@ -174,26 +230,15 @@ func TestInternalErrorsStayInTheLog(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
 				t.Fatalf("decode %s: %v", rec.Body.String(), err)
 			}
-			if _, ok := problem["errors"]; ok || strings.Contains(rec.Body.String(), tc.secret) {
+			if _, ok := problem["errors"]; ok || strings.Contains(rec.Body.String(), tc.inside) {
 				t.Errorf("the answer %s tells what failed inside", rec.Body.String())
 			}
 
-			var logged []logRecord
-			for _, r := range in.logRecords(t) {
-				if strings.Contains(r.Error, tc.secret) {
-					logged = append(logged, r)
-				}
-			}
-			if len(logged) != 1 {
-				t.Fatalf("the log has the failure %d times, want once:\n%s", len(logged), in.logs.String())
-			}
-			want := logRecord{Level: "ERROR", Msg: "an API operation failed", Error: logged[0].Error, OperationID: tc.op, Method: tc.method, Path: path}
-			if tc.signedIn {
+			want := logRecord{Level: "ERROR", Msg: "an API operation failed", OperationID: tc.op, Method: tc.method, Path: path}
+			if tc.signedIn || tc.withToken {
 				want.UserID = in.user.ID.String()
 			}
-			if logged[0] != want {
-				t.Errorf("logged %+v, want %+v", logged[0], want)
-			}
+			in.checkLoggedOnce(t, tc.inside, want)
 		})
 	}
 }

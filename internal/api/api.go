@@ -298,8 +298,9 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 // (RejectUnknownQueryParameters), the 403 gateTokens answers a token an
 // operation not open to every token does not let in (which also covers a
 // browser's cross-origin request: no operation open to every token is
-// anything but a read), and for a body huma's 400 (not JSON), 408 (too
-// slow), 413 (too large) and 415 (not JSON's content type).
+// anything but a read), and for a body huma's 400 (none, or not JSON),
+// 408 (too slow), 413 (too large) and, when huma reads the body, 415 (not
+// JSON's content type).
 //
 // huma lists 500 for every operation that lists its errors; one that
 // lists none has a default response instead, which covers these too.
@@ -313,8 +314,13 @@ func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
 		codes = append(codes, http.StatusForbidden)
 	}
 	if op.RequestBody != nil {
-		codes = append(codes, http.StatusBadRequest, http.StatusRequestTimeout,
-			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
+		codes = append(codes, http.StatusBadRequest, http.StatusRequestTimeout, http.StatusRequestEntityTooLarge)
+		// huma refuses a body it reads that is not JSON's content type;
+		// one it does not (SkipValidateBody) the operation reads, and
+		// refuses its own way.
+		if !op.SkipValidateBody {
+			codes = append(codes, http.StatusUnsupportedMediaType)
+		}
 	}
 	for _, code := range codes {
 		// A response the operation describes itself (its own headers or

@@ -1319,16 +1319,6 @@
             },
             "description": "Request Entity Too Large"
           },
-          "415": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Unsupported Media Type"
-          },
           "422": {
             "content": {
               "application/problem+json": {
