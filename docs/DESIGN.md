@@ -185,7 +185,7 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `checkin(date?, mood?, hunger?, note?, training_day?)` | |
 | `get_summary(window?)` | weekly averages, weight trend, measured TDEE, calibration verdict, recovery flags |
 | `get_history(window, granularity)` | coaching: compact day/week table across all metrics (§8) |
-| `get_plan()` | phases, target history **with outcomes**, autopilot bounds, guardrails, pending proposals |
+| `get_plan()` | phases, target history **with outcomes**, the limits, pending proposals |
 | `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/profile/notes + preview; applies nothing |
 | `apply_proposal(id)` / `reject_proposal(id)` / `revert(id)` | **apply only after explicit user consent**; recorded with actor and rationale |
 | `update_profile_notes(...)` | preferences and life context the coach should remember |
@@ -312,8 +312,8 @@ Claude/ChatGPT subscription.
 
 | layer | who | how often | may change |
 | --- | --- | --- | --- |
-| **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot) | on request, e.g. monthly | phase timeline, target rate, goal/milestone weight, protein g/kg, day-type split, autopilot bounds (within the limits), profile notes, later the training program; a change of the user's limits or profile only as a proposal a web session applies |
-| **Autopilot** | server, deterministic | weekly check-in | kcal within the plan's bounds, from the calibration verdict (§7) |
+| **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot) | on request, e.g. monthly | phase timeline, target rate, goal/milestone weight, protein g/kg, day-type split, profile notes, later the training program; a change of the user's limits or profile only as a proposal a web session applies |
+| **Autopilot** | server, deterministic | weekly check-in | kcal within the user's limits of step and drift, from the calibration verdict (§7) |
 | **Logging** | any client, `fast` model | many times a day | meals, metrics, check-ins — never the plan |
 
 ### Proposals, not direct writes
@@ -333,9 +333,9 @@ Claude/ChatGPT subscription.
 ### Autonomy, per user
 
 - `propose` (default): the autopilot and the coach only propose.
-- `autopilot`: weekly adjustments within the plan's bounds, which lie
-  within the limits' step and drift, apply automatically and are
-  reported; past the drift limit, the autopilot proposes instead.
+- `autopilot`: weekly adjustments within the user's limits of step and
+  drift ([limits.md](limits.md)) apply automatically and are reported;
+  past the drift limit, the autopilot proposes instead.
 - A plan change never applies without consent.
 
 ### Guardrails live in code, not in prompts
@@ -389,7 +389,8 @@ it read while researching. So limits are enforced by the server.
   models don't.
 - **Three levels.**
   - A floor in the code that nobody can lower, the admin included: never
-    800 kcal a day or less, never less than 0.8 g/kg of protein, no plan
+    800 kcal a day or less, never less than 0.8 g/kg of protein, never a
+    rate faster than a loss of 1.5 % or a gain of 1 % a week, no plan
     for someone under 18, no change that starts or deepens a loss below
     a BMI of 18.5 (a first kcal target before calibration trusts the
     TDEE is not judged, [limits.md](limits.md)), and no goal or milestone

@@ -55,6 +55,11 @@ func TestValidate(t *testing.T) {
 		{"a protein range upside down", func(l *Limits) { l.ProteinCeiling = 1.5 }, "protein_floor 1.6: want at most protein_ceiling 1.5"},
 		{"negative grams", func(l *Limits) { l.ProteinFloorGrams = -1 }, "protein_floor_grams -1"},
 		{"800 kcal for a man", func(l *Limits) { l.KcalFloorMale = 800 }, "kcal_floor_male 800: want more than 800"},
+		{"a cut past the code's loss", func(l *Limits) { l.CutRate = -1.6 }, "cut_rate -1.6: want at least -1.5, the floor in the code"},
+		{"an obese cut past it", func(l *Limits) { l.CutRateObese = -1.51 }, "cut_rate_obese -1.51"},
+		{"a recomp losing past it", func(l *Limits) { l.RecompMin = -2 }, "recomp_min -2: want at least -1.5"},
+		{"a bulk past the code's gain", func(l *Limits) { l.BulkRate = 1.1 }, "bulk_rate 1.1: want at most 1, the ceiling in the code"},
+		{"a recomp gaining past it", func(l *Limits) { l.RecompMax = 1.01 }, "recomp_max 1.01"},
 		{"800 kcal for a woman", func(l *Limits) { l.KcalFloorFemale = 800 }, "kcal_floor_female 800"},
 		{"a share over 100", func(l *Limits) { l.FatFloorPct = 101 }, "fat_floor_pct 101: want 0 to 100 %"},
 		{"a negative share", func(l *Limits) { l.StepPct = -1 }, "step_pct -1"},
@@ -84,6 +89,10 @@ func TestValidate(t *testing.T) {
 	// The edges are allowed.
 	l := UserDefaults()
 	l.KcalFloorMale, l.ProteinFloor, l.FatFloorPct, l.LoggedDays, l.CutRate, l.BulkRate = 801, 0.8, 100, 7, 0, 0
+	if err := l.Validate(); err != nil {
+		t.Errorf("Validate at the edges = %v", err)
+	}
+	l.CutRate, l.CutRateObese, l.RecompMin, l.BulkRate, l.RecompMax = CodeLossRate, CodeLossRate, CodeLossRate, CodeGainRate, CodeGainRate
 	if err := l.Validate(); err != nil {
 		t.Errorf("Validate at the edges = %v", err)
 	}

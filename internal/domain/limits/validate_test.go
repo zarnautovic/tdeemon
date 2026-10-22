@@ -144,6 +144,11 @@ func TestValidatePhaseRate(t *testing.T) {
 		{"a cut past the user's limit", nil, Change{Phase: phase(t, plan.Cut, start, -0.8)}, nil, []string{"cut_rate user"}},
 		{"a cut just past it", nil, Change{Phase: phase(t, plan.Cut, start, -0.71)}, nil, []string{"cut_rate user"}},
 		{"a cut past the instance's", nil, Change{Phase: phase(t, plan.Cut, start, -1.1)}, nil, []string{"cut_rate instance"}},
+		// No configuration allows a rate past the code's.
+		{"a cut past the code's loss", nil, Change{Phase: phase(t, plan.Cut, start, -1.6)}, nil, []string{"cut_rate code"}},
+		{"a bulk past the code's gain", nil, Change{Phase: phase(t, plan.Bulk, start, 1.1)}, nil, []string{"bulk_rate code"}},
+		{"a recomp losing past it", nil, Change{Phase: phase(t, plan.Recomp, start, -1.6)}, nil, []string{"recomp_rate code"}},
+		{"a recomp gaining past it", nil, Change{Phase: phase(t, plan.Recomp, start, 1.1)}, nil, []string{"recomp_rate code"}},
 		{"a cut the user loosened", nil, Change{Phase: phase(t, plan.Cut, start, -0.9)}, func(lv *Levels) { lv.User.CutRate = -1.0 }, nil},
 		{
 			"a user's limit past the instance's holds no more", nil,
@@ -334,6 +339,10 @@ func TestValidateImplied(t *testing.T) {
 		{"a loss before calibration trusts the TDEE", func(s *State) { trusted(s); s.TDEETrusted = false }, Change{Target: unsplit(1900, 170, 60)}, nil, nil},
 		{"a gain past the user's limit", trusted, Change{Target: unsplit(2900, 170, 75)}, nil, []string{"implied_gain_rate user"}},
 		{"a gain past the instance's", trusted, Change{Target: unsplit(3100, 170, 75)}, nil, []string{"implied_gain_rate instance"}},
+		// 1000 kcal a day over is 0.91 kg a week, 1.14 % of 80 kg.
+		{"a gain past the code's", trusted, Change{Target: unsplit(3600, 170, 85)}, nil, []string{"implied_gain_rate code"}},
+		// 1500 kcal a day under 3200 is 1.36 kg a week, 1.70 % of 80 kg.
+		{"a loss past the code's", func(s *State) { trusted(s); s.TDEE = 3200 }, Change{Target: unsplit(1700, 140, 40)}, nil, []string{"implied_loss_rate code"}},
 		// Maintenance at 2650 kcal with a TDEE of 2600 passes.
 		{
 			"a slow gain in maintenance", func(s *State) { trusted(s); s.Phase = phase(t, plan.Maintain, "2026-09-07", 0) },

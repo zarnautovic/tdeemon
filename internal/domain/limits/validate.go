@@ -394,12 +394,12 @@ func (v *validator) rate(p plan.Phase, old *float64) {
 	r := p.RatePctWeek
 	switch p.Type {
 	case plan.Cut:
-		v.hold(bound{rule: RuleCutRate, floor: true, user: v.cutRate(v.user), instance: v.cutRate(v.instance)}, r, old)
+		v.hold(bound{rule: RuleCutRate, floor: true, user: v.cutRate(v.user), instance: v.cutRate(v.instance), code: CodeLossRate, hasCode: true}, r, old)
 	case plan.Bulk:
-		v.hold(bound{rule: RuleBulkRate, user: v.user.BulkRate, instance: v.instance.BulkRate}, r, old)
+		v.hold(bound{rule: RuleBulkRate, user: v.user.BulkRate, instance: v.instance.BulkRate, code: CodeGainRate, hasCode: true}, r, old)
 	case plan.Recomp:
-		v.hold(bound{rule: RuleRecompRate, floor: true, user: v.user.RecompMin, instance: v.instance.RecompMin}, r, old)
-		v.hold(bound{rule: RuleRecompRate, user: v.user.RecompMax, instance: v.instance.RecompMax}, r, old)
+		v.hold(bound{rule: RuleRecompRate, floor: true, user: v.user.RecompMin, instance: v.instance.RecompMin, code: CodeLossRate, hasCode: true}, r, old)
+		v.hold(bound{rule: RuleRecompRate, user: v.user.RecompMax, instance: v.instance.RecompMax, code: CodeGainRate, hasCode: true}, r, old)
 	case plan.Maintain:
 	}
 	if r < 0 {
@@ -527,11 +527,11 @@ func (v *validator) implied() {
 	}
 	switch {
 	case now < 0:
-		v.hold(bound{rule: RuleImpliedLossRate, floor: true, user: v.cutRate(v.user), instance: v.cutRate(v.instance)}, now, old)
+		v.hold(bound{rule: RuleImpliedLossRate, floor: true, user: v.cutRate(v.user), instance: v.cutRate(v.instance), code: CodeLossRate, hasCode: true}, now, old)
 		v.hold(bound{rule: RuleImpliedLossKgWeek, floor: true, user: -v.user.LossKgWeek, instance: -v.instance.LossKgWeek},
 			plan.KgPerWeek(now, v.trend), scaled(old, func(o float64) float64 { return plan.KgPerWeek(o, v.trend) }))
 	case now > 0:
-		v.hold(bound{rule: RuleImpliedGainRate, user: v.user.BulkRate, instance: v.instance.BulkRate}, now, old)
+		v.hold(bound{rule: RuleImpliedGainRate, user: v.user.BulkRate, instance: v.instance.BulkRate, code: CodeGainRate, hasCode: true}, now, old)
 	}
 	was := 0.0
 	if old != nil {

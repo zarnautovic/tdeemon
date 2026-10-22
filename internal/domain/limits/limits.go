@@ -21,6 +21,11 @@ const (
 	// CodeProteinFloor is the least protein, in g/kg of the reference
 	// mass: the RDA (IOM 2005).
 	CodeProteinFloor = 0.8
+	// CodeLossRate and CodeGainRate bound every rate, in % of the trend
+	// weight a week: a phase's and the one a kcal target implies, on every
+	// level, so no configuration allows a plan past them (a convention).
+	CodeLossRate = -1.5
+	CodeGainRate = 1.0
 	// MinAge is the age, in years, a plan needs.
 	MinAge = 18
 	// UnderweightBMI is the BMI, by the trend weight now, below which no
@@ -190,6 +195,18 @@ func (l Limits) Validate() error {
 	}
 	check(l.CutRate <= 0, "cut_rate %v: want a loss, 0 or less", l.CutRate)
 	check(l.CutRateObese <= 0, "cut_rate_obese %v: want a loss, 0 or less", l.CutRateObese)
+	for _, r := range []struct {
+		name string
+		v    float64
+	}{{"cut_rate", l.CutRate}, {"cut_rate_obese", l.CutRateObese}, {"recomp_min", l.RecompMin}} {
+		check(r.v >= CodeLossRate, "%s %v: want at least %v, the floor in the code", r.name, r.v, CodeLossRate)
+	}
+	for _, r := range []struct {
+		name string
+		v    float64
+	}{{"bulk_rate", l.BulkRate}, {"recomp_max", l.RecompMax}} {
+		check(r.v <= CodeGainRate, "%s %v: want at most %v, the ceiling in the code", r.name, r.v, CodeGainRate)
+	}
 	check(l.LossKgWeek >= 0, "loss_kg_week %v: want 0 or more", l.LossKgWeek)
 	check(l.BulkRate >= 0, "bulk_rate %v: want a gain, 0 or more", l.BulkRate)
 	check(l.RecompMin <= l.RecompMax, "recomp_min %v: want at most recomp_max %v", l.RecompMin, l.RecompMax)

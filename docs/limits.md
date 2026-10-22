@@ -17,6 +17,10 @@ page changes with it.
 1. **A floor in the code** that nobody can lower, the admin included:
    - never 800 kcal a day or less;
    - never less than 0.8 g of protein per kg of the reference mass;
+   - never a rate faster than a loss of 1.5 % or a gain of 1 % of the
+     trend weight a week: a phase's, or the one a kcal target implies (a
+     convention, so no configuration allows a plan past the literature's
+     ranges by far);
    - no plan for someone under 18;
    - no change that starts or deepens a loss of weight below a BMI of
      18.5, by the trend weight now (a cut, a recomp below 0, a kcal
