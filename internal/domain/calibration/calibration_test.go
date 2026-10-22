@@ -176,21 +176,22 @@ func TestCalibrateWithoutEnoughDaysOfAPhase(t *testing.T) {
 	}{
 		// Nothing logged before the phase: no estimate from before it.
 		{"nothing before it", []plan.Phase{{Type: plan.Cut, Start: start, RatePctWeek: -0.5}}, map[day.Date]Day{}},
-		// The phase before started 10 days earlier: its own first days
-		// leave nothing.
+		// A diet break of 10 days before it, and nothing logged before the
+		// break: neither the break nor the time before it gives one.
 		{"a short phase before it", []plan.Phase{
 			{Type: plan.Maintain, Start: start.AddDays(-10)},
 			{Type: plan.Cut, Start: start, RatePctWeek: -0.5},
 		}, func() map[day.Date]Day {
 			days := map[day.Date]Day{}
-			line(days, last, 60, 80, 0, 2400)
+			line(days, last, 15, 80, 0, 2400)
 			return days
 		}()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			e := Calibrate(tc.days, tc.phases, last, DefaultParams())
-			if e.Measured || e.Trusted || e.BeforePhase || !slices.Contains(e.Doubts, DoubtFewDays) {
+			// Only the doubt the days to come settle, not more weigh-ins.
+			if e.Measured || e.Trusted || e.BeforePhase || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
 				t.Errorf("measured %v, trusted %v, before the phase %v, doubts %v; want no estimate for few days",
 					e.Measured, e.Trusted, e.BeforePhase, e.Doubts)
 			}
@@ -222,6 +223,11 @@ func TestCalibrateDoubts(t *testing.T) {
 		{"2 weigh-ins", func(i int) (bool, bool) { return i < 2, true }, false, []string{DoubtFewWeighIns}},
 		{"1 logged day", func(i int) (bool, bool) { return true, i == 0 }, false, []string{DoubtFewLoggedDays}},
 		{"nothing", func(int) (bool, bool) { return false, false }, false, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
+		// 3.5 weigh-ins a week on average, but none in the last 3 weeks:
+		// the slope says little of the weight now.
+		{"no weigh-in in the last 3 weeks", func(i int) (bool, bool) { return i >= 21, true }, true, []string{DoubtFewWeighIns}},
+		{"nothing logged in the last week", func(i int) (bool, bool) { return true, i >= 7 }, true, []string{DoubtFewLoggedDays}},
+		{"2 weigh-ins in the last week", func(i int) (bool, bool) { return i >= 7 || i < 2, true }, true, []string{DoubtFewWeighIns}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -275,20 +281,22 @@ func TestCalibrateDoubtsAWideInterval(t *testing.T) {
 // intake about 2100 kcal, 400 more at the weekend, the body's mass moving
 // by the energy balance, and weigh-ins that swing about it by water, 0.4
 // kg on average, carry of which carries over to the next day. Each day is
-// logged with the chance logged and weighed with the chance weighed.
-func simulate(r *rand.Rand, n int, tdee, logged, weighed, carry float64) map[day.Date]Day {
+// logged with the chance logged, a weekend never when weekdays, and
+// weighed with the chance weighed.
+func simulate(r *rand.Rand, n int, tdee, logged float64, weekdays bool, weighed, carry float64) map[day.Date]Day {
 	days := map[day.Date]Day{}
 	mass, water := 85.0, 0.0
 	for i := range n {
 		d := last.AddDays(i - n + 1)
 		intake := 2100 + 250*r.NormFloat64()
-		if wd := d.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		weekend := d.Weekday() == time.Saturday || d.Weekday() == time.Sunday
+		if weekend {
 			intake += 400
 		}
 		mass += (intake - tdee) / plan.KcalPerKg
 		water = carry*water + 0.4*math.Sqrt(1-carry*carry)*r.NormFloat64()
 		v := Day{Status: day.Complete}
-		if r.Float64() < logged {
+		if r.Float64() < logged && (!weekdays || !weekend) {
 			v.Meals, v.Kcal = 3, intake
 		}
 		if r.Float64() < weighed {
@@ -303,14 +311,25 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		name                   string
-		logged, weighed, carry float64
+		name            string
+		logged          float64
+		weekdays        bool
+		weighed, carry  float64
+		least, most     float64
+		biasOf, biasPad float64
 	}{
-		{"every day", 1, 1, 0.5},
-		{"most days", 0.85, 0.8, 0.5},
-		{"some days", 0.6, 0.5, 0.5},
-		{"no water carried over", 0.85, 0.8, 0},
-		{"most water carried over", 0.85, 0.8, 0.85},
+		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25},
+		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25},
+		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25},
+		// Days missing at random: the intake's error takes them to differ
+		// together, so the interval covers more than 80 %.
+		{"most days", 0.85, false, 0.8, 0.5, 0.75, 0.95, 0, 25},
+		{"some days", 0.6, false, 0.5, 0.5, 0.75, 1, 0, 25},
+		// Weekends never logged, 400 kcal over the weekdays: the TDEE is
+		// 2 × 400 / 7 = 114 kcal low. No interval can know that; this one
+		// still covers the TDEE in about 61 % of the windows, where one
+		// that took the days not logged for a random sample covered 41 %.
+		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -319,7 +338,7 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 			var covered, measured int
 			var errSum float64
 			for range runs {
-				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weighed, tc.carry), nil, last, DefaultParams())
+				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), nil, last, DefaultParams())
 				if !e.Measured {
 					continue
 				}
@@ -332,16 +351,115 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 			if measured < runs*9/10 {
 				t.Fatalf("%d of %d runs measured", measured, runs)
 			}
-			// An 80 % interval. One that took weigh-ins on following days
-			// for independent would cover 39 to 77 %, and one that did not
-			// raise the autocorrelation of a short series 69 to 79 %.
-			if share := float64(covered) / float64(measured); share < 0.75 || share > 0.88 {
-				t.Errorf("the interval covers the TDEE in %.1f %% of the runs, want about 80 %%", 100*share)
+			// An 80 % interval. With every day logged, one that took
+			// weigh-ins on following days for independent would cover 39
+			// to 77 %, and one that did not raise the autocorrelation of a
+			// short series 69 to 79 %.
+			if share := float64(covered) / float64(measured); share < tc.least || share > tc.most {
+				t.Errorf("the interval covers the TDEE in %.1f %% of the runs, want %.0f to %.0f %%", 100*share, 100*tc.least, 100*tc.most)
 			}
-			if bias := errSum / float64(measured); math.Abs(bias) > 25 {
-				t.Errorf("the estimate is %+.0f kcal off on average, want about 0", bias)
+			if bias := errSum / float64(measured); math.Abs(bias-tc.biasOf) > tc.biasPad {
+				t.Errorf("the estimate is %+.0f kcal off on average, want %+.0f", bias, tc.biasOf)
 			}
 		})
+	}
+}
+
+func TestCalibrateLooksPastAShortPhase(t *testing.T) {
+	t.Parallel()
+
+	// A long cut, a diet break of 7 days that ended 10 days ago, and the
+	// cut again: neither the break nor the cut since has days enough, so
+	// the estimate is the cut's before the break.
+	breakStart := last.AddDays(-16)
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: last.AddDays(-200), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: breakStart, End: breakStart.AddDays(6)},
+		{Type: plan.Cut, Start: breakStart.AddDays(7), RatePctWeek: -0.5},
+	}
+	days := map[day.Date]Day{}
+	line(days, breakStart.AddDays(-1), 80, 90, -0.05, 2000)
+	line(days, last, 17, 88, 0, 2700)
+	e := Calibrate(days, phases, last, DefaultParams())
+	if !e.BeforePhase || e.To != breakStart.AddDays(-1) || e.From != breakStart.AddDays(-42) {
+		t.Errorf("window %s to %s, before the phase %v; want the 42 days before %s", e.From, e.To, e.BeforePhase, breakStart)
+	}
+	if !e.Measured || !near(e.TDEE, 2000+0.05*plan.KcalPerKg, 1e-6) {
+		t.Errorf("measured %v, TDEE %v; want the cut's, %v", e.Measured, e.TDEE, 2000+0.05*plan.KcalPerKg)
+	}
+	// The trend weight is the one now, not the window's.
+	trend := Trend(days, DefaultParams().TrendAlpha)
+	if now := trend[len(trend)-1]; now.Date != last || e.TrendKg != now.Kg {
+		t.Errorf("trend weight %v, want the one on %s, %v", e.TrendKg, now.Date, now.Kg)
+	}
+}
+
+func TestCalibrateTakesAPhasesEndForAChange(t *testing.T) {
+	t.Parallel()
+
+	// A cut that ended 6 days ago, with no phase after it: eating at
+	// maintenance since refilled 1 kg of glycogen and water, which the
+	// estimate must not count as fat.
+	end := last.AddDays(-6)
+	phases := []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-200), End: end, RatePctWeek: -0.5}}
+	days := map[day.Date]Day{}
+	line(days, end, 80, 90, -0.05, 2000)
+	line(days, last, 6, 88.75, 0, 2800)
+	e := Calibrate(days, phases, last, DefaultParams())
+	if !e.BeforePhase || e.To != end || !near(e.TDEE, 2000+0.05*plan.KcalPerKg, 1e-6) {
+		t.Errorf("window %s to %s, before the phase %v, TDEE %v; want the cut's to its end, %v",
+			e.From, e.To, e.BeforePhase, e.TDEE, 2000+0.05*plan.KcalPerKg)
+	}
+}
+
+func TestCalibrateLeavesOutValuesThatAreNoNumber(t *testing.T) {
+	t.Parallel()
+
+	days := map[day.Date]Day{}
+	line(days, last, 42, 80, -0.05, 2000)
+	for i, d := range map[int]Day{
+		3: {Status: day.Complete, Meals: 1, Kcal: math.NaN(), WeightKg: days[last.AddDays(-3)].WeightKg},
+		4: {Status: day.Complete, Meals: 1, Kcal: math.Inf(1), WeightKg: days[last.AddDays(-4)].WeightKg},
+		5: {Status: day.Complete, Meals: 1, Kcal: 2000, WeightKg: math.Inf(1)},
+		6: {Status: day.Complete, Meals: 1, Kcal: 2000, WeightKg: math.NaN()},
+	} {
+		days[last.AddDays(-i)] = d
+	}
+	e := Calibrate(days, nil, last, DefaultParams())
+	if e.LoggedDays != 40 || e.WeighIns != 40 {
+		t.Errorf("%d logged days and %d weigh-ins, want 40 of each", e.LoggedDays, e.WeighIns)
+	}
+	if !e.Trusted || !near(e.TDEE, 2385, 1e-6) || !finite(e.TrendKg) {
+		t.Errorf("trusted %v, TDEE %v, trend %v; want a trusted 2385 and a trend that is a number", e.Trusted, e.TDEE, e.TrendKg)
+	}
+}
+
+func TestCalibrateWidensWithTheDaysNotLogged(t *testing.T) {
+	t.Parallel()
+
+	// A level weight and 1800 or 2200 kcal on the days logged: the
+	// interval is the intake's alone, the spread of a day times the share
+	// of the days not logged.
+	var widths []float64
+	for _, logged := range []int{7, 6, 5, 4} {
+		days := map[day.Date]Day{}
+		for i := range 42 {
+			d := Day{Status: day.Complete, WeightKg: 80}
+			if i%7 < logged {
+				d.Meals, d.Kcal = 1, 1800+400*float64(i%2)
+			}
+			days[last.AddDays(-i)] = d
+		}
+		e := Calibrate(days, nil, last, DefaultParams())
+		widths = append(widths, e.HalfWidth)
+	}
+	if widths[0] != 0 || !slices.IsSorted(widths) || widths[1] == widths[2] {
+		t.Errorf("half the interval with 7 to 4 days a week logged: %v; want 0, then wider", widths)
+	}
+	// With 4 of 7 logged, 3/7 of a day's spread of about 200 kcal, times
+	// the bound: about 110.
+	if !near(widths[3], 110, 10) {
+		t.Errorf("half the interval with 4 days a week logged: %v, want about 110", widths[3])
 	}
 }
 
@@ -355,14 +473,15 @@ func TestTrend(t *testing.T) {
 		d.AddDays(1): {WeightKg: 82},
 		d.AddDays(2): {Status: day.Complete, Meals: 1, Kcal: 2000},
 	}
-	want := []Point{{d, 80}, {d.AddDays(1), 81}, {d.AddDays(3), 79.5}}
+	// The gap of 2 days before the last weigh-in takes 1 − 0.5² of it.
+	want := []Point{{d, 80}, {d.AddDays(1), 81}, {d.AddDays(3), 78.75}}
 	if got := Trend(days, 0.5); !slices.Equal(got, want) {
 		t.Errorf("Trend = %v, want %v", got, want)
 	}
 	for _, tc := range []struct {
 		on   day.Date
 		want float64
-	}{{d.AddDays(-1), 0}, {d, 80}, {d.AddDays(2), 81}, {last, 79.5}} {
+	}{{d.AddDays(-1), 0}, {d, 80}, {d.AddDays(2), 81}, {last, 78.75}} {
 		if got := trendOn(days, tc.on, 0.5); got != tc.want {
 			t.Errorf("trendOn(%s) = %v, want %v", tc.on, got, tc.want)
 		}
@@ -375,11 +494,12 @@ func TestTrend(t *testing.T) {
 func TestTQuantile(t *testing.T) {
 	t.Parallel()
 
+	// Student's t at 0.9, from its tables.
 	for _, tc := range []struct {
 		df   int
 		want float64
-	}{{1, 3.078}, {10, 1.372}, {30, 1.310}, {31, tNormal}, {1000, tNormal}} {
-		if got := tQuantile(tc.df); got != tc.want {
+	}{{1, 3.078}, {10, 1.372}, {30, 1.310}, {31, 1.309}, {40, 1.303}, {60, 1.296}, {120, 1.289}, {100000, tNormal}} {
+		if got := tQuantile(tc.df); !near(got, tc.want, 0.001) {
 			t.Errorf("tQuantile(%d) = %v, want %v", tc.df, got, tc.want)
 		}
 	}

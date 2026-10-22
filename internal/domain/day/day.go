@@ -151,7 +151,8 @@ func (c Calendar) End(d Date) time.Time { return c.Start(d.AddDays(1)) }
 type Status string
 
 // Statuses. A day is open until its end, then complete; excluded is the
-// user's choice, kept with a reason, and drops the day from calibration.
+// user's choice, kept with a reason, and drops the day's intake from
+// calibration (its weigh-in counts).
 const (
 	Open     Status = "open"
 	Complete Status = "complete"
@@ -161,8 +162,9 @@ const (
 // MaxReasonLen bounds an exclusion's reason, in characters.
 const MaxReasonLen = 200
 
-// Exclusion is why the user took a day out of calibration: a restaurant
-// meal they could not weigh, being sick, a day they forgot to log.
+// Exclusion is why the user took a day's intake out of calibration: a
+// restaurant meal they could not weigh, being sick, a day they forgot to
+// log.
 type Exclusion struct {
 	Reason string
 }

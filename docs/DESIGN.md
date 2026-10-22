@@ -99,7 +99,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import), note, fingerprint | the fingerprint of the create, for idempotent retries (§9) |
 | `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
-| `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
+| `days` | user_id, day, excluded_reason?, training_day?, mood, hunger, note | check-in; open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day's intake from calibration (restaurant, sick, forgot to log), and keeps its weigh-in (§7); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
 | `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
 | `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
 | `plan_settings` | user_id, training_weekdays, limits?; later autonomy (propose/autopilot) and check-in weekday | the training weekdays give each day its type ahead of time (§7); the user's limits are a JSON object of their names ([limits.md](limits.md)) holding only those off their defaults, so a limit at its default follows a later release's default, and change only from a web session, never through tools (§8) |
@@ -282,15 +282,22 @@ The replacement:
   42 it kept closer to the past manual revisions and still followed the
   TDEE as it fell.
 - **Weight trend:** an exponentially smoothed trend weight, which takes a
-  tenth of each weigh-in's difference from it. The summary shows it, and
-  it is the trend weight the limits read. The slope is a linear
+  tenth a day of each weigh-in's difference from it: after a gap of n
+  days, 1 − 0.9ⁿ, so after weeks without weighing it follows the weight
+  again at once. The summary shows it, and it is the trend weight the
+  limits read, the one on the last day asked for. The slope is a linear
   regression of the weigh-ins in the window, not of the trend, which
   lags behind (about 9 days, at a tenth). A day without a weigh-in is
   simply missing.
 - **Intake:** the average over the window's `complete`, non-`excluded`
   days with at least one meal. A day without a meal was not logged: its
-  intake is unknown, not 0. An excluded day's weigh-in still counts, as
-  the day's energy stays in the weight whatever was logged.
+  intake is unknown, not 0. An excluded day's weigh-in still counts: it
+  is one weigh-in more, and the body's weight whatever was logged.
+- **Days not logged** are taken to be like the logged ones, give or take
+  the spread of a day. A day left out for being unlike them, as a big
+  day one does not log or excludes, biases the TDEE low by what it would
+  have added; no interval can tell, so logging an estimate of such a
+  day is better than leaving it out.
 - **TDEE** = intake − slope × 7700 / 7, with an 80 % interval from two
   errors:
   - The slope's, widened by the autocorrelation of the residuals.
@@ -301,16 +308,24 @@ The replacement:
     about 80 % of the windows, for water that carries over from not at
     all to strongly. One that takes the weigh-ins as independent covers
     39 to 77 %, the less the more water carries over.
-  - The intake average's, for the days not logged; none when every day
-    is.
+  - The intake average's, for the days not logged: they are taken to
+    differ from the logged ones together, as the weekends of someone who
+    logs only on weekdays would, so the error is a day's spread times
+    the share of days not logged, and none when every day is. Weekends
+    never logged and 400 kcal higher bias the TDEE 114 kcal low; the
+    interval still covers it in about 61 % of the simulated windows,
+    where one that took the days not logged for a random sample covers
+    41 %.
 - **Trust:** an estimate is trusted when half its interval is at most
-  200 kcal, and the window has, on average, the data an autopilot step
-  needs: 4 logged days and 3 weigh-ins a week
-  ([limits.md](limits.md)). The 200 kcal are a first value, to be
+  200 kcal, and the window has the data an autopilot step needs, 4
+  logged days and 3 weigh-ins a week ([limits.md](limits.md)), on
+  average and in its last 7 days: a slope that ends weeks before its
+  last day says little of the weight now. The 200 kcal are a first value, to be
   checked against real data. With fewer than 3 weigh-ins, 2 logged
   days, or 14 days, there is no estimate. Either way, the doubts say what
   is missing: `few_days`, `few_weigh_ins`, `few_logged_days`,
-  `wide_interval`.
+  `wide_interval`. Too few days is the only doubt of a window that has
+  them, as only the days to come settle it.
 - **Verdict:** a recommendation appears only when the interval is narrow
   enough. Otherwise the summary shows the estimate with its uncertainty,
   not just "calibrating".
@@ -327,10 +342,12 @@ The replacement:
     summary when the trend strays 3 % from the phase's start).
 - **Guards, by phase type:**
   - Water/glycogen window: the first 14 days of *every* phase (glycogen
-    refills on a bulk start too) are left out. A window needs 14 days of
-    the phase after them, so until the phase's 28th day the estimate is
-    the one of the 42 days before the phase started, marked as such,
-    with no verdict on the phase.
+    refills on a bulk start too), and of the days after a phase's
+    planned end when no phase follows, are left out. A window needs 14
+    days of the phase after them, so until the phase's 28th day the
+    estimate is the latest one from before the phase, marked as such,
+    with no verdict on the phase. It goes back past a phase too short to
+    give one, as a diet break.
   - NEAT guard: steps ±30 % from baseline, in either direction.
   - Lean-mass guard (cut/recomp): ≥ 0.5 kg/week lean loss turns a cut
     into "raise protein/calories".
