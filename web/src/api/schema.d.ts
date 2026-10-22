@@ -123,7 +123,7 @@ export interface paths {
         head?: never;
         /**
          * Check in a day
-         * @description Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why (a restaurant meal they could not weigh, being sick, a day they forgot to log). One undo takes the whole check-in back. The answer is the day, as get_day gives it.
+         * @description Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why (a restaurant meal they could not weigh, being sick, a day they forgot to log). A day to come takes its type and exclusion, not a mood, hunger or note: send today for the user's day now. One undo takes the whole check-in back. The answer is the day, as get_day gives it.
          */
         patch: operations["check-in"];
         trace?: never;

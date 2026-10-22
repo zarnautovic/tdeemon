@@ -133,6 +133,13 @@ func (s *sessions) checkIn(ctx context.Context, in *checkInInput) (*dayChangeOut
 	if err := checkCheckIn(b); err != nil {
 		return nil, err
 	}
+	// A day to come takes its type and its exclusion, planned; what the
+	// user feels is of a day begun, so a date sent for it is not taken.
+	if _, today, err := userDay(p, now); err != nil {
+		return nil, internalError("checking in failed", err)
+	} else if today.Before(d) && (b.Mood != nil || b.Hunger != nil || b.Note != nil) {
+		return nil, huma.Error422UnprocessableEntity("the date: " + d.String() + " is a day to come; a mood, hunger or note is of today or a day before")
+	}
 	// The change is made to the day as it is when it is stored, so
 	// check-ins sent at once each keep what they say.
 	if _, err := s.db.CheckIn(ctx, p.User.ID, actorOf(p), d, func(c store.DayCheckIn) store.DayCheckIn {

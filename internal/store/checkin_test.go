@@ -148,3 +148,17 @@ func TestDayExclusionRecordedByACheckIn(t *testing.T) {
 		}
 	}
 }
+
+// A check-in that changes nothing writes nothing: no empty row of a day.
+func TestCheckInOfNothing(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	if _, err := db.CheckIn(t.Context(), ana, testActor, checkInDay, func(c store.DayCheckIn) store.DayCheckIn { return c }, t0); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := db.Read().QueryRowContext(t.Context(), "SELECT count(*) FROM days WHERE user_id = ?", ana.String()).Scan(&n); err != nil || n != 0 {
+		t.Errorf("days after a check-in of nothing = %d, %v; want none", n, err)
+	}
+}

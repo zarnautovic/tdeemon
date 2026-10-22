@@ -185,8 +185,8 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name or alias another food has is refused naming that food |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
-| `log_metric(metric, value, date?)` / `delete_metric(metric, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
-| `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); one event, so one undo takes it back; answers the day |
+| `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
+| `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
 | `get_summary(window?)` | weekly averages, weight trend, measured TDEE, calibration verdict, recovery flags |
 | `get_history(window, granularity)` | coaching: compact day/week table across all metrics (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits, pending proposals |

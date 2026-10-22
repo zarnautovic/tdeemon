@@ -198,3 +198,23 @@ func TestCheckInRefuses(t *testing.T) {
 		t.Errorf("the day after the refusals: %+v", a)
 	}
 }
+
+// A check-in of a day to come takes its type and its exclusion (a rest
+// day ahead, a restaurant booked), not what the user feels: a mood, a
+// hunger or a note sent for tomorrow is a 422, not a day mixed up.
+func TestCheckInOfADayToCome(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	tomorrow := "/api/v1/days/" + day.DateOf(in.clock.Now()).AddDays(1).String()
+	for _, body := range []string{`{"mood": 3}`, `{"hunger": 4}`, `{"note": "slept badly"}`} {
+		if code, _, got := changeDay(t, in, session, http.MethodPatch, tomorrow, body); code != http.StatusUnprocessableEntity || !strings.Contains(got, "a day to come") {
+			t.Errorf("%s of tomorrow: %d %s, want 422", body, code, got)
+		}
+	}
+	if code, a, body := changeDay(t, in, session, http.MethodPatch, tomorrow, `{"training_day": "rest", "excluded_reason": "wedding"}`); code != http.StatusOK ||
+		a.view() != (checkInView{status: "excluded", reason: "wedding", dayType: "rest", toggle: "false"}) {
+		t.Errorf("tomorrow's type and exclusion: %d %s", code, body)
+	}
+}

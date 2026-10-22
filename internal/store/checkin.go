@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 	"uuid"
 
@@ -52,8 +53,8 @@ func (db *DB) CheckInOf(ctx context.Context, userID uuid.UUID, d day.Date) (DayC
 // of it, and returns it as stored. change gets the day as it is in the
 // transaction that stores its answer, so check-ins sent at once each
 // change the other's result. The change is recorded as a's one event,
-// undone at once; a change that leaves the day as it was records nothing
-// (record).
+// undone at once; a change that leaves the day as it was writes and
+// records nothing.
 func (db *DB) CheckIn(ctx context.Context, userID uuid.UUID, a event.Actor, d day.Date,
 	change func(DayCheckIn) DayCheckIn, now time.Time,
 ) (DayCheckIn, error) {
@@ -72,6 +73,10 @@ func (db *DB) CheckIn(ctx context.Context, userID uuid.UUID, a event.Actor, d da
 		after = change(before)
 		if err := after.validate(); err != nil {
 			return fmt.Errorf("invalid check-in: %w", err)
+		}
+		// Nothing changed would only add an empty row, or touch one.
+		if reflect.DeepEqual(after, before) {
+			return nil
 		}
 		if err := putCheckIn(ctx, tx, userID, d, after, now); err != nil {
 			return err
