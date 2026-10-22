@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"log/slog"
@@ -37,6 +38,38 @@ type instance struct {
 	db    *store.DB
 	clock *clock
 	user  user.User
+	// logs is what the handler logged, as JSON lines.
+	logs *lockedBuffer
+
+	mu sync.Mutex
+	// succeeded are the operations whose success do checked against the
+	// document.
+	succeeded map[string]bool
+}
+
+// checked reports whether do checked a success of the operation op.
+func (in *instance) checked(op string) bool {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.succeeded[op]
+}
+
+// lockedBuffer is a bytes.Buffer that parallel requests can log into.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // newInstance starts a handler for baseURL over a database with one user,
@@ -57,11 +90,12 @@ func newInstance(t *testing.T, baseURL, hash string) *instance {
 	if err != nil {
 		t.Fatalf("parse %s: %v", baseURL, err)
 	}
-	h, err := api.NewHandler(api.Config{Info: testInfo, DB: db, BaseURL: base, Logger: slog.New(slog.DiscardHandler), Now: c.Now})
+	logs := &lockedBuffer{}
+	h, err := api.NewHandler(api.Config{Info: testInfo, DB: db, BaseURL: base, Logger: slog.New(slog.NewJSONHandler(logs, nil)), Now: c.Now})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
-	return &instance{h: h, db: db, clock: c, user: u}
+	return &instance{h: h, db: db, clock: c, user: u, logs: logs}
 }
 
 // passwordHash hashes password, the password of the test user.
@@ -98,8 +132,23 @@ func (in *instance) do(t *testing.T, method, path, body string, cookies []*http.
 		}
 		req.Header.Set(k, v)
 	}
+	return in.serve(t, req)
+}
+
+// serve answers req, and checks that the answer is one the document
+// describes.
+func (in *instance) serve(t *testing.T, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
 	rec := httptest.NewRecorder()
 	in.h.ServeHTTP(rec, req)
+	if op := checkAnswer(t, req, rec); op != "" && rec.Code >= 200 && rec.Code <= 299 {
+		in.mu.Lock()
+		if in.succeeded == nil {
+			in.succeeded = map[string]bool{}
+		}
+		in.succeeded[op] = true
+		in.mu.Unlock()
+	}
 	return rec
 }
 

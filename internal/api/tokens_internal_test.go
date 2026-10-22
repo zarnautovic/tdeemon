@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,7 +20,7 @@ func TestGateTokensChecksTheScope(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
-	a := newAPI(mux)
+	a := newAPI(mux, slog.New(slog.DiscardHandler))
 	huma.Register(a, huma.Operation{
 		OperationID: "ingest", Method: http.MethodPost, Path: "/ingest", DefaultStatus: http.StatusNoContent,
 		Metadata: openToTokens(auth.ScopeIngest),
@@ -54,7 +55,7 @@ func TestGateTokensEmptyScopeOpensNothing(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
-	a := newAPI(mux)
+	a := newAPI(mux, slog.New(slog.DiscardHandler))
 	huma.Register(a, huma.Operation{
 		OperationID: "empty", Method: http.MethodGet, Path: "/empty", DefaultStatus: http.StatusNoContent,
 		Metadata: openToTokens(""),

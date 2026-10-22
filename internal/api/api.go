@@ -106,7 +106,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 	if cfg.App != nil {
 		mux.Handle("GET /", cfg.App)
 	}
-	a := newAPI(mux)
+	a := newAPI(mux, cfg.Logger)
 	register(a, cfg.Info, s, o)
 	if o != nil {
 		o.register(mux)
@@ -201,10 +201,15 @@ func writeProblem(w http.ResponseWriter, status int, detail string) {
 // trailing newline, exactly as committed in api/openapi.json and served at
 // /api/v1/openapi.json. It does not depend on the running server.
 func Spec() ([]byte, error) {
-	a := newAPI(http.NewServeMux())
-	// The operations' handlers never run here, so they need no database.
+	return marshalSpec(specAPI())
+}
+
+// specAPI returns the API with every operation registered, for its
+// description only: the handlers never run, so they need no database.
+func specAPI() huma.API {
+	a := newAPI(http.NewServeMux(), slog.New(slog.DiscardHandler))
 	register(a, ServerInfo{}, &sessions{}, nil)
-	return marshalSpec(a)
+	return a
 }
 
 func marshalSpec(a huma.API) ([]byte, error) {
@@ -215,7 +220,7 @@ func marshalSpec(a huma.API) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-func newAPI(mux *http.ServeMux) huma.API {
+func newAPI(mux *http.ServeMux, logger *slog.Logger) huma.API {
 	cfg := huma.DefaultConfig("tdeemon API", Version)
 	// NewHandler serves the document itself.
 	cfg.OpenAPIPath = ""
@@ -228,7 +233,8 @@ func newAPI(mux *http.ServeMux) huma.API {
 	cfg.CreateHooks = nil
 	// A misspelled query parameter is an error, not silently ignored.
 	cfg.RejectUnknownQueryParameters = true
-	cfg.Transformers = append(cfg.Transformers, dropErrorValues)
+	cfg.Transformers = append(cfg.Transformers, dropErrorValues, hideInternalErrors(logger))
+	cfg.OnAddOperation = append(cfg.OnAddOperation, documentRequestErrors)
 	a := humago.New(mux, cfg)
 	// Before any operation registers: huma fixes an operation's
 	// middlewares when it registers.
@@ -249,6 +255,72 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 		}
 	}
 	return v, nil
+}
+
+// documentRequestErrors lists in an operation's responses the problems
+// huma answers before the handler runs, which it does not list itself:
+// 422 for an unknown query parameter (RejectUnknownQueryParameters), and
+// for a body 400 (not JSON), 408 (too slow), 413 (too large) and 415 (not
+// JSON's content type).
+//
+// huma lists 500 for every operation that lists its errors; one that
+// lists none has a default response instead, which covers these too.
+func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
+	problem := op.Responses[strconv.Itoa(http.StatusInternalServerError)]
+	if problem == nil {
+		return
+	}
+	codes := []int{http.StatusUnprocessableEntity}
+	if op.RequestBody != nil {
+		codes = append(codes, http.StatusBadRequest, http.StatusRequestTimeout,
+			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
+	}
+	for _, code := range codes {
+		op.Responses[strconv.Itoa(code)] = &huma.Response{Description: http.StatusText(code), Content: problem.Content}
+	}
+}
+
+// hideInternalErrors keeps what failed inside the server out of a 5xx
+// answer and logs it instead, once, with the request it came from. huma
+// answers a handler's error with its text in the answer's errors, and that
+// text can name a file, a query or a user; so a handler returns the error
+// (plain, or as a 500's detail) and does not log it itself. A 5xx without
+// details (the server is busy) is no failure, and is not logged. A client
+// that went away logs at debug level: it says nothing about the server,
+// and a client can do it at will.
+func hideInternalErrors(logger *slog.Logger) huma.Transformer {
+	return func(ctx huma.Context, _ string, v any) (any, error) {
+		e, ok := v.(*huma.ErrorModel)
+		if !ok || e.Status < http.StatusInternalServerError || len(e.Errors) == 0 {
+			return v, nil
+		}
+		r, _ := humago.Unwrap(ctx)
+		logInternalError(r, logger, ctx.Operation(), e)
+		e.Errors = nil
+		return e, nil
+	}
+}
+
+// logInternalError logs the details of e, the answer of op to r.
+func logInternalError(r *http.Request, logger *slog.Logger, op *huma.Operation, e *huma.ErrorModel) {
+	msgs := make([]string, 0, len(e.Errors))
+	for _, d := range e.Errors {
+		if d != nil {
+			msgs = append(msgs, d.Message)
+		}
+	}
+	level := slog.LevelError
+	if r.Context().Err() != nil {
+		level = slog.LevelDebug
+	}
+	attrs := []any{
+		"status", e.Status, "error", strings.Join(msgs, "; "),
+		"operation_id", op.OperationID, "method", r.Method, "path", r.URL.Path,
+	}
+	if p, ok := auth.PrincipalFrom(r.Context()); ok {
+		attrs = append(attrs, "user_id", p.User.ID.String())
+	}
+	logger.Log(r.Context(), level, "an API operation failed", attrs...)
 }
 
 // register adds every API operation to a.
