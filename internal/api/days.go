@@ -35,16 +35,25 @@ func newNutrientsBody(n food.Nutrients) nutrientsBody {
 	}
 }
 
+// quantityBody is how much of a food was eaten, as it was given: an
+// amount in its unit, a number of a named serving, or a number of
+// portions.
+type quantityBody struct {
+	Amount   float64 `json:"amount,omitempty"`
+	Unit     string  `json:"unit,omitempty" enum:"g,ml"`
+	Servings float64 `json:"servings,omitempty" doc:"How many of serving."`
+	Serving  string  `json:"serving,omitempty" doc:"The named serving: a slice, a piece."`
+	Portions float64 `json:"portions,omitempty"`
+}
+
 // itemBody is one thing eaten, as it was logged.
 type itemBody struct {
-	ID       string  `json:"id" format:"uuid"`
-	FoodID   *string `json:"food_id,omitempty" format:"uuid" doc:"The food it came from; absent for a one-off estimate."`
-	Name     string  `json:"name" doc:"The food's name when the item was logged, or the estimate's."`
-	Amount   float64 `json:"amount" doc:"How much, in unit."`
-	Unit     string  `json:"unit" enum:"g,ml,portion"`
-	Servings float64 `json:"servings,omitempty" doc:"How many of serving were eaten, when the quantity was given so."`
-	Serving  string  `json:"serving,omitempty" doc:"The named serving: a slice, a piece."`
-	Portions float64 `json:"portions,omitempty" doc:"How many portions, when the quantity was given so."`
+	ID       string       `json:"id" format:"uuid"`
+	FoodID   *string      `json:"food_id,omitempty" format:"uuid" doc:"The food it came from; absent for a one-off estimate."`
+	Name     string       `json:"name" doc:"The food's name when the item was logged, or the estimate's."`
+	Quantity quantityBody `json:"quantity" doc:"How much, as it was given."`
+	Amount   float64      `json:"amount" doc:"How much, in unit: what the nutrients are for."`
+	Unit     string       `json:"unit" enum:"g,ml,portion"`
 	// Nutrients are the item's own, for its amount.
 	Nutrients nutrientsBody `json:"nutrients"`
 	Source    string        `json:"source" enum:"label,estimate,user,dish"`
@@ -71,7 +80,10 @@ func newMealBody(m *meal.Meal) mealBody {
 		it := &m.Items[i]
 		ib := itemBody{
 			ID: it.ID.String(), Name: it.Name, Amount: it.Amount, Unit: it.Unit,
-			Servings: it.Quantity.Servings, Serving: it.Quantity.Serving, Portions: it.Quantity.Portions,
+			Quantity: quantityBody{
+				Amount: it.Quantity.Amount, Unit: it.Quantity.Unit,
+				Servings: it.Quantity.Servings, Serving: it.Quantity.Serving, Portions: it.Quantity.Portions,
+			},
 			Nutrients: newNutrientsBody(it.Nutrients), Source: string(it.Source), Note: it.Note,
 		}
 		if it.FoodID != uuid.Nil() {

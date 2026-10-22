@@ -394,7 +394,7 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "description": "How much, in unit.",
+            "description": "How much, in unit: what the nutrients are for.",
             "format": "double",
             "type": "number"
           },
@@ -417,19 +417,9 @@
           "nutrients": {
             "$ref": "#/components/schemas/NutrientsBody"
           },
-          "portions": {
-            "description": "How many portions, when the quantity was given so.",
-            "format": "double",
-            "type": "number"
-          },
-          "serving": {
-            "description": "The named serving: a slice, a piece.",
-            "type": "string"
-          },
-          "servings": {
-            "description": "How many of serving were eaten, when the quantity was given so.",
-            "format": "double",
-            "type": "number"
+          "quantity": {
+            "$ref": "#/components/schemas/QuantityBody",
+            "description": "How much, as it was given."
           },
           "source": {
             "enum": [
@@ -452,6 +442,7 @@
         "required": [
           "id",
           "name",
+          "quantity",
           "amount",
           "unit",
           "nutrients",
@@ -959,6 +950,36 @@
             "enum": [
               "male",
               "female"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "QuantityBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "format": "double",
+            "type": "number"
+          },
+          "portions": {
+            "format": "double",
+            "type": "number"
+          },
+          "serving": {
+            "description": "The named serving: a slice, a piece.",
+            "type": "string"
+          },
+          "servings": {
+            "description": "How many of serving.",
+            "format": "double",
+            "type": "number"
+          },
+          "unit": {
+            "enum": [
+              "g",
+              "ml"
             ],
             "type": "string"
           }

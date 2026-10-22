@@ -222,7 +222,8 @@ MCP runs a tool through that operation, so the validation, the token
 check and the answers are REST's. A tool that reads takes a token with
 the `read` or the `tools` scope. So far: `get_profile` is
 `GET /api/v1/me`, and `get_day` is `GET /api/v1/days/{date}`, a date or
-`today`, the user's day now.
+`today`, the user's day now; MCP takes its `date` as optional, `today`
+when left out.
 
 ## 6. AI layer
 

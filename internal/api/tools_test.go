@@ -10,9 +10,12 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 )
@@ -238,9 +241,9 @@ func TestGetDay(t *testing.T) {
 		"meals": [{
 			"id": "*", "eaten_at": %[2]q, "description": "Ana's lunch", "client": "mcp",
 			"items": [
-				{"id": "*", "food_id": %[3]q, "name": "Ana's rye bread", "amount": 80, "unit": "g",
-				 "servings": 2, "serving": "slice", "nutrients": %[4]s, "source": "user", "note": "Ana's toast"},
-				{"id": "*", "name": "Ana's canteen soup", "amount": 1, "unit": "portion", "portions": 1,
+				{"id": "*", "food_id": %[3]q, "name": "Ana's rye bread", "quantity": {"servings": 2, "serving": "slice"},
+				 "amount": 80, "unit": "g", "nutrients": %[4]s, "source": "user", "note": "Ana's toast"},
+				{"id": "*", "name": "Ana's canteen soup", "quantity": {"portions": 1}, "amount": 1, "unit": "portion",
 				 "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}, "source": "estimate"}
 			],
 			"total": %[5]s
@@ -288,5 +291,107 @@ func TestGetDayRefuses(t *testing.T) {
 	}
 	if rec := in.do(t, http.MethodGet, "/api/v1/days/today", "", nil, nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("no one: %d %s, want 401", rec.Code, rec.Body.String())
+	}
+}
+
+// Today is the user's day: at 03:30 in Zagreb, with the day starting at
+// 04:00, it is still the day before by the calendar.
+func TestToolsTodayIsTheUsers(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	in.clock.Set(time.Date(2026, 10, 21, 1, 30, 0, 0, time.UTC))
+	if rec := in.do(t, http.MethodGet, "/api/v1/me", "", session, nil); !strings.Contains(rec.Body.String(), `"today":"2026-10-20"`) {
+		t.Errorf("get_profile: %s, want today 2026-10-20", rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/days/today", "", session, nil); !strings.Contains(rec.Body.String(), `"date":"2026-10-20"`) {
+		t.Errorf("get_day: %s, want 2026-10-20", rec.Body.String())
+	}
+}
+
+// A day's target is its type's: a rest day's on a rest day, a training
+// day's on a training day, and the check-in's toggle has the last word
+// on the type.
+func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	now := in.clock.Now() // a Wednesday
+	today := day.DateOf(now)
+	ctx := t.Context()
+	tg := plan.Target{
+		EffectiveFrom: today.AddDays(-7),
+		Training:      plan.DayTarget{Kcal: 2300, Protein: 160, Fat: 70},
+		Rest:          plan.DayTarget{Kcal: 1800, Protein: 150, Fat: 60},
+	}
+	if err := in.db.SetTarget(ctx, in.user.ID, isolationActor, tg, now); err != nil {
+		t.Fatalf("SetTarget: %v", err)
+	}
+	// Monday, Wednesday and Friday train.
+	if err := in.db.SetTrainingWeekdays(ctx, in.user.ID, isolationActor, plan.Weekdays(0b0101010), now); err != nil {
+		t.Fatalf("SetTrainingWeekdays: %v", err)
+	}
+	// Today, a training weekday, the check-in makes a rest day; Thursday,
+	// a rest weekday, a training day.
+	if err := in.db.SetTrainingDay(ctx, in.user.ID, isolationActor, today, new(false), now); err != nil {
+		t.Fatalf("SetTrainingDay: %v", err)
+	}
+	if err := in.db.SetTrainingDay(ctx, in.user.ID, isolationActor, today.AddDays(1), new(true), now); err != nil {
+		t.Fatalf("SetTrainingDay: %v", err)
+	}
+	training := `{"kcal": 2300, "protein": 160, "fat": 70, "carbs": 257.5}`
+	rest := `{"kcal": 1800, "protein": 150, "fat": 60, "carbs": 165}`
+	for _, tc := range []struct {
+		date        day.Date
+		typ, target string
+		toggle      string
+	}{
+		{today.AddDays(-2), "training", training, ""}, // Monday
+		{today.AddDays(-1), "rest", rest, ""},         // Tuesday
+		{today, "rest", rest, `"training_toggle": false,`},
+		{today.AddDays(1), "training", training, `"training_toggle": true,`},
+	} {
+		rec := in.do(t, http.MethodGet, "/api/v1/days/"+tc.date.String(), "", session, nil)
+		checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
+			"date": %q, "status": "*", "type": %q, %s
+			"meals": [], "total": {"kcal": 0, "protein": 0, "carbs": 0, "fat": 0},
+			"target": %[4]s, "remaining": %[4]s, "metrics": []
+		}`, tc.date, tc.typ, tc.toggle, tc.target))
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/me", "", session, nil)
+	want := `"today_type":"rest"`
+	if !strings.Contains(rec.Body.String(), want) ||
+		!strings.Contains(rec.Body.String(), `"training":{"kcal":2300,"protein":160,"fat":70,"carbs":257.5},"rest":{"kcal":1800,`) {
+		t.Errorf("get_profile: %s, want a rest day today and both targets", rec.Body.String())
+	}
+}
+
+// An item keeps its quantity as it was given: grams of a food per portion
+// come back as the grams, next to the portions they are.
+func TestGetDayKeepsTheQuantityAsGiven(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	stew := food.Food{
+		ID: uuid.NewV7(), Name: "Canteen stew", Basis: food.PerPortion, Source: food.Estimate,
+		Nutrients: food.Nutrients{Kcal: 780, Protein: 38, Carbs: 85, Fat: 28}, PortionGrams: 450,
+	}
+	if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, stew, now); err != nil {
+		t.Fatalf("SaveFood: %v", err)
+	}
+	half, err := meal.FromFood(stew, meal.Quantity{Amount: 225, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := meal.Meal{ID: uuid.NewV7(), EatenAt: now, Day: day.DateOf(now), Description: "Lunch", Client: meal.ClientWeb, Items: []meal.Item{half}}
+	if _, _, err := in.db.CreateMeal(t.Context(), in.user.ID, isolationActor, m, now); err != nil {
+		t.Fatalf("CreateMeal: %v", err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/days/today", "", []*http.Cookie{sessionOf(t, in)}, nil)
+	if !strings.Contains(rec.Body.String(), `"quantity":{"amount":225,"unit":"g"},"amount":0.5,"unit":"portion"`) {
+		t.Errorf("%s, want 225 g given, half a portion", rec.Body.String())
 	}
 }

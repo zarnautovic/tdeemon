@@ -473,7 +473,7 @@ export interface components {
         ItemBody: {
             /**
              * Format: double
-             * @description How much, in unit.
+             * @description How much, in unit: what the nutrients are for.
              */
             amount: number;
             /**
@@ -487,18 +487,8 @@ export interface components {
             name: string;
             note?: string;
             nutrients: components["schemas"]["NutrientsBody"];
-            /**
-             * Format: double
-             * @description How many portions, when the quantity was given so.
-             */
-            portions?: number;
-            /** @description The named serving: a slice, a piece. */
-            serving?: string;
-            /**
-             * Format: double
-             * @description How many of serving were eaten, when the quantity was given so.
-             */
-            servings?: number;
+            /** @description How much, as it was given. */
+            quantity: components["schemas"]["QuantityBody"];
             /** @enum {string} */
             source: "label" | "estimate" | "user" | "dish";
             /** @enum {string} */
@@ -719,6 +709,21 @@ export interface components {
              * @enum {string}
              */
             sex?: "male" | "female";
+        };
+        QuantityBody: {
+            /** Format: double */
+            amount?: number;
+            /** Format: double */
+            portions?: number;
+            /** @description The named serving: a slice, a piece. */
+            serving?: string;
+            /**
+             * Format: double
+             * @description How many of serving.
+             */
+            servings?: number;
+            /** @enum {string} */
+            unit?: "g" | "ml";
         };
         ServerInfo: {
             /**

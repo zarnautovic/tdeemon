@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"uuid"
@@ -21,6 +22,9 @@ import (
 type tool struct {
 	// name is the tool's name in MCP, as DESIGN.md §5 lists them.
 	name string
+	// scopes are those of the API tokens that may call it (readScopes for
+	// a tool that only reads, the tools scope alone for one that writes).
+	scopes []auth.Scope
 	// op is its operation; registerTools opens it to tokens and marks it
 	// a tool.
 	op huma.Operation
@@ -28,10 +32,15 @@ type tool struct {
 	register func(huma.API, huma.Operation)
 }
 
-// newTool is the tool name, the operation op with handler.
-func newTool[I, O any](name string, op huma.Operation, handler func(context.Context, *I) (*O, error)) tool {
-	return tool{name: name, op: op, register: func(a huma.API, op huma.Operation) { huma.Register(a, op, handler) }}
+// newTool is the tool name, the operation op with handler, open to tokens
+// with any of scopes.
+func newTool[I, O any](name string, scopes []auth.Scope, op huma.Operation, handler func(context.Context, *I) (*O, error)) tool {
+	return tool{name: name, scopes: scopes, op: op, register: func(a huma.API, op huma.Operation) { huma.Register(a, op, handler) }}
 }
+
+// readScopes open a tool that only reads to tokens that may read or use
+// the tools.
+var readScopes = []auth.Scope{auth.ScopeRead, auth.ScopeTools}
 
 // toolKey, in an operation's Metadata, names the tool the operation is.
 const toolKey = "tool"
@@ -39,7 +48,7 @@ const toolKey = "tool"
 // tools is the registry: every tool of the API.
 func (s *sessions) tools() []tool {
 	return []tool{
-		newTool("get_profile", huma.Operation{
+		newTool("get_profile", readScopes, huma.Operation{
 			OperationID: "get-me",
 			Method:      http.MethodGet,
 			Path:        Prefix + "/me",
@@ -48,7 +57,7 @@ func (s *sessions) tools() []tool {
 				"today's type, the training weekdays, your notes for a coach, and the units every amount is in.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.getMe),
-		newTool("get_day", huma.Operation{
+		newTool("get_day", readScopes, huma.Operation{
 			OperationID: "get-day",
 			Method:      http.MethodGet,
 			Path:        Prefix + "/days/{date}",
@@ -60,16 +69,21 @@ func (s *sessions) tools() []tool {
 	}
 }
 
-// registerTools adds every tool to a. A tool reads, so far: a token with
-// the read scope or the tools scope may call it.
-func (s *sessions) registerTools(a huma.API) {
-	ts := s.tools()
+// registerTools adds the tools ts to a: each operation marked as its tool,
+// and open to its scopes, which a tool must name.
+func registerTools(a huma.API, ts []tool) {
 	for i := range ts {
 		t := &ts[i]
+		if len(t.scopes) == 0 {
+			panic("api: tool " + t.name + " names no scopes")
+		}
 		op := t.op
 		op.Tags = append(op.Tags, "tools")
-		op.Metadata = openToTokens(auth.ScopeRead, auth.ScopeTools)
-		op.Metadata[toolKey] = t.name
+		md := map[string]any{}
+		maps.Copy(md, op.Metadata)
+		maps.Copy(md, openToTokens(t.scopes...))
+		md[toolKey] = t.name
+		op.Metadata = md
 		t.register(a, op)
 	}
 }

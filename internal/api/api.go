@@ -412,7 +412,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.registerTokens(a)
 	s.registerPlan(a)
 	s.registerIngest(a)
-	s.registerTools(a)
+	registerTools(a, s.tools())
 	registerMethods(a, o)
 	huma.Register(a, huma.Operation{
 		OperationID: "get-info",
