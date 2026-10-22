@@ -20,6 +20,10 @@ import (
 // Prefix is prepended to the name of every variable Load reads, except TZ.
 const Prefix = "TDEEMON_"
 
+// MaxBackupKeep is the most daily snapshots TDEEMON_BACKUP_KEEP keeps: a
+// year, each a copy of the whole database.
+const MaxBackupKeep = 366
+
 // MinSecretKeyLen is the minimum length of the secret key in bytes.
 const MinSecretKeyLen = 32
 
@@ -47,6 +51,9 @@ type Config struct {
 	SecretKey []byte
 	// DataDir holds the database, backups and upload archives.
 	DataDir string
+	// BackupKeep is how many daily snapshots of the database are kept in
+	// DataDir/backups; 0 takes none.
+	BackupKeep int
 	// LogLevel is the minimum level that gets logged.
 	LogLevel slog.Level
 	// LogFormat is the log encoding.
@@ -126,25 +133,31 @@ func Load(lookup LookupFunc) (Config, error) {
 		errs = append(errs, fmt.Errorf("%sLOG_FORMAT %q: want json or text", Prefix, cfg.LogFormat))
 	}
 
-	oidc, err := loadOIDC(get)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	cfg.OIDC = oidc
-
-	if cfg.TrustedProxies, err = parseTrustedProxies(get("TRUSTED_PROXIES", "")); err != nil {
-		errs = append(errs, err)
-	}
-
-	if cfg.Location, err = loadLocation(lookup); err != nil {
-		errs = append(errs, err)
-	}
-
-	if cfg.Limits, err = loadLimits(get); err != nil {
-		errs = append(errs, err)
+	// Each loader sets its part of cfg; errors.Join drops the nil ones.
+	for _, load := range []func() error{
+		func() (err error) { cfg.OIDC, err = loadOIDC(get); return err },
+		func() (err error) {
+			cfg.TrustedProxies, err = parseTrustedProxies(get("TRUSTED_PROXIES", ""))
+			return err
+		},
+		func() (err error) { cfg.Location, err = loadLocation(lookup); return err },
+		func() (err error) { cfg.Limits, err = loadLimits(get); return err },
+		func() (err error) { cfg.BackupKeep, err = loadBackupKeep(get); return err },
+	} {
+		errs = append(errs, load())
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// loadBackupKeep reads how many daily snapshots to keep, 7 unless set.
+func loadBackupKeep(get func(name, fallback string) string) (int, error) {
+	raw := get("BACKUP_KEEP", "7")
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 || n > MaxBackupKeep {
+		return 0, fmt.Errorf("%sBACKUP_KEEP %q: want a number of daily snapshots from 0 (none) to %d", Prefix, raw, MaxBackupKeep)
+	}
+	return n, nil
 }
 
 // loadLocation reads TZ, the instance's default time zone; time.Local
@@ -298,6 +311,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("listen", c.Listen),
 		slog.String("base_url", baseURL),
 		slog.String("data_dir", c.DataDir),
+		slog.Int("backup_keep", c.BackupKeep),
 		slog.String("log_level", c.LogLevel.String()),
 		slog.String("log_format", string(c.LogFormat)),
 		slog.String("tz", tz),

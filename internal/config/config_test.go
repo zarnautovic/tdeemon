@@ -56,6 +56,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Location != time.Local {
 		t.Errorf("Location = %v, want time.Local", cfg.Location)
 	}
+	if cfg.BackupKeep != 7 {
+		t.Errorf("BackupKeep = %d, want 7", cfg.BackupKeep)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -68,6 +71,7 @@ func TestLoadOverrides(t *testing.T) {
 	vars["TDEEMON_LOG_LEVEL"] = "DEBUG"
 	vars["TDEEMON_LOG_FORMAT"] = "Text"
 	vars["TZ"] = "Europe/Zagreb"
+	vars["TDEEMON_BACKUP_KEEP"] = "0"
 
 	cfg, err := config.Load(env(vars))
 	if err != nil {
@@ -91,6 +95,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if got := cfg.Location.String(); got != "Europe/Zagreb" {
 		t.Errorf("Location = %q, want Europe/Zagreb", got)
+	}
+	if cfg.BackupKeep != 0 {
+		t.Errorf("BackupKeep = %d, want 0", cfg.BackupKeep)
 	}
 }
 
@@ -159,6 +166,21 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"TDEEMON_LOG_FORMAT"},
 		},
 		{
+			name: "backups kept, not a number",
+			set:  map[string]string{"TDEEMON_BACKUP_KEEP": "a week"},
+			want: []string{"TDEEMON_BACKUP_KEEP \"a week\""},
+		},
+		{
+			name: "backups kept, fewer than none",
+			set:  map[string]string{"TDEEMON_BACKUP_KEEP": "-1"},
+			want: []string{"TDEEMON_BACKUP_KEEP"},
+		},
+		{
+			name: "backups kept, more than a year",
+			set:  map[string]string{"TDEEMON_BACKUP_KEEP": "367"},
+			want: []string{"TDEEMON_BACKUP_KEEP", "0 (none) to 366"},
+		},
+		{
 			name: "unknown time zone",
 			set:  map[string]string{"TZ": "Mars/Olympus_Mons"},
 			want: []string{"TZ:"},
@@ -208,6 +230,9 @@ func TestConfigLogValueRedactsSecret(t *testing.T) {
 	}
 	if !strings.Contains(out, "config.base_url=https://tdeemon.example.com") {
 		t.Errorf("log output is missing the base URL: %s", out)
+	}
+	if !strings.Contains(out, "config.backup_keep=7") {
+		t.Errorf("log output is missing the backups kept: %s", out)
 	}
 }
 

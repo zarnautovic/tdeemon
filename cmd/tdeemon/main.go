@@ -160,6 +160,14 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 	if err := db.Migrate(ctx, logger); err != nil {
 		return fmt.Errorf("database: %w", err)
 	}
+	// The daily snapshots stop before the database closes: the defers run
+	// in reverse, cancel, then wait, then Close.
+	snapshots, stopSnapshots := context.WithCancel(ctx)
+	if cfg.BackupKeep > 0 {
+		wait := db.StartDailySnapshots(snapshots, cfg.BackupKeep, time.Hour, logger)
+		defer wait()
+	}
+	defer stopSnapshots()
 
 	app, embedded, err := webui.New()
 	if err != nil {
