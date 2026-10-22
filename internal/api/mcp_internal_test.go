@@ -43,9 +43,14 @@ func TestMCPToolOfABadDocument(t *testing.T) {
 func TestMCPCallThatPanics(t *testing.T) {
 	t.Parallel()
 
-	m := &mcpServer{routes: http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }), logger: slog.New(slog.DiscardHandler)}
+	var log strings.Builder
+	m := &mcpServer{routes: http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }), logger: slog.New(slog.NewTextHandler(&log, nil))}
 	tl := &mcpTool{tool: tool{name: "a_tool", op: huma.Operation{Method: http.MethodGet, Path: "/x"}}}
 	if res := m.call(t.Context(), auth.Principal{}, tl, nil); !res.IsError {
 		t.Errorf("a call that panics = %+v, want an error of the tool", res)
+	}
+	// The log says where, as net/http's does for a panic of a request.
+	if !strings.Contains(log.String(), "boom") || !strings.Contains(log.String(), "goroutine") {
+		t.Errorf("the log of the panic: %s", log.String())
 	}
 }

@@ -10,6 +10,8 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -121,7 +123,7 @@ func (m *mcpServer) call(ctx context.Context, p auth.Principal, t *mcpTool, args
 	// recovers no panic: one would take the server down.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logger.ErrorContext(ctx, "a tool panicked", "tool", t.tool.name, "panic", v)
+			m.logger.ErrorContext(ctx, "a tool panicked", "tool", t.tool.name, "panic", v, "stack", string(debug.Stack()))
 			res = toolError("the tool failed")
 		}
 	}()
@@ -176,8 +178,12 @@ func (t *mcpTool) request(ctx context.Context, args json.RawMessage) (*http.Requ
 	}
 	// A day left out is today (DESIGN.md §5).
 	path = strings.Replace(path, "{date}", "today", 1)
-	if strings.Contains(path, "{") {
-		return nil, fmt.Errorf("%s needs %s", t.tool.name, strings.Join(slices.Sorted(maps.Keys(t.params)), ", "))
+	if missing := pathParam.FindAllStringSubmatch(path, -1); len(missing) > 0 {
+		names := make([]string, len(missing))
+		for i, m := range missing {
+			names[i] = m[1]
+		}
+		return nil, fmt.Errorf("%s needs %s", t.tool.name, strings.Join(names, ", "))
 	}
 	target := path
 	if len(query) > 0 {
@@ -223,6 +229,10 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 			return "", nil, nil, fmt.Errorf("%s: %w", name, err)
 		}
 		if where == "path" {
+			// An empty one is left out too: no path takes it.
+			if v == "" {
+				continue
+			}
 			path = strings.Replace(path, "{"+name+"}", url.PathEscape(v), 1)
 		} else {
 			query.Set(name, v)
@@ -230,6 +240,9 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 	}
 	return path, query, body, nil
 }
+
+// pathParam is a parameter of an operation's path, not filled in.
+var pathParam = regexp.MustCompile(`\{([a-z_]+)\}`)
 
 // paramValue is the text of a parameter's value: a string as it is, a
 // number or a boolean as JSON writes it.

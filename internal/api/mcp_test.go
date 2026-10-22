@@ -171,9 +171,12 @@ func TestMCPCallsATool(t *testing.T) {
 	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": 5}); isErr {
 		t.Errorf("find_foods with a number in the query: %s", text)
 	}
-	// An argument of null is one left out, as a model may send it.
-	if text, isErr := callTool(t, cs, "get_day", map[string]any{"date": nil}); isErr || !strings.Contains(text, id) {
-		t.Errorf("get_day of a null date: %v %s", isErr, text)
+	// An argument of null, or a parameter of "", is one left out, as a
+	// model may send it.
+	for _, date := range []any{nil, ""} {
+		if text, isErr := callTool(t, cs, "get_day", map[string]any{"date": date}); isErr || !strings.Contains(text, id) {
+			t.Errorf("get_day of the date %#v: %v %s", date, isErr, text)
+		}
 	}
 	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": nil}); isErr {
 		t.Errorf("find_foods of a null limit: %s", text)
@@ -195,6 +198,8 @@ func TestMCPToolErrors(t *testing.T) {
 		{"log_meal", map[string]any{"id": "not-an-id", "items": []any{}}, "id"},
 		{"get_food", map[string]any{"id": "0199f0a0-0000-7000-8000-000000000001", "color": "red"}, `no argument "color"`},
 		{"get_food", nil, "get_food needs id"},
+		{"get_food", map[string]any{"id": ""}, "get_food needs id"},
+		{"delete_metric", map[string]any{"date": "today"}, "delete_metric needs kind"},
 		{"get_food", map[string]any{"id": []any{1}}, "id: want a string"},
 		{"get_day", map[string]any{"date": "yesterday"}, "date"},
 	} {
