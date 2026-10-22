@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -283,5 +284,49 @@ func TestMCPBehindALocalProxy(t *testing.T) {
 	defer func() { _ = res.Body.Close() }()
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("initialize through a local proxy: %d", res.StatusCode)
+	}
+}
+
+// The server gives every client its policy of logging, short, and naming
+// only tools it serves and their arguments.
+func TestMCPInstructions(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
+	got := cs.InitializeResult().Instructions
+	if !strings.Contains(got, "`log_meal`") || !strings.Contains(got, "never add up") {
+		t.Fatalf("instructions = %q", got)
+	}
+	// About 1k tokens: the cost of a log is under 10k (DESIGN.md §6).
+	if len(got) > 4000 {
+		t.Errorf("the instructions are %d bytes, want at most 4000", len(got))
+	}
+	res, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	known := map[string]bool{}
+	for _, tl := range res.Tools {
+		known[tl.Name] = true
+		schema, _ := tl.InputSchema.(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		for name := range props {
+			known[name] = true
+		}
+		// The arguments of an item, a meal's own.
+		if items, ok := props["items"].(map[string]any); ok {
+			item, _ := items["items"].(map[string]any)
+			itemProps, _ := item["properties"].(map[string]any)
+			for name := range itemProps {
+				known[name] = true
+			}
+		}
+	}
+	known["item_id"] = true // an op's, in update_meal's ops
+	for _, m := range regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(got, -1) {
+		if !known[m[1]] {
+			t.Errorf("the instructions name %q, which is no tool nor argument of one", m[1])
+		}
 	}
 }
