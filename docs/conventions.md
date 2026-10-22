@@ -69,7 +69,8 @@ for the author and the reviewer.
   `answerCases`. The problems answered before a handler runs, huma's
   (an unknown query parameter, a body that is not JSON, too large or
   too slow) and the server's (a bad API token, an address that sent too
-  many), are listed for every operation (`documentRequestErrors`).
+  many, a token the operation does not let in), are listed for every
+  operation (`documentRequestErrors`).
   What an answer's type may hold, so the document and the TypeScript
   types say what comes:
   - its body is a struct, never a bare slice, whose top level no tag
@@ -329,7 +330,9 @@ in `web/`.
     and logs them once, with the operation, the method, the path and
     the user, at the level of the error (`logLevel`: debug for a client
     that went away). A plain error is logged the same way, at error
-    level. A 5xx without details (the server is busy) is not logged.
+    level; a body that did not come whole, which huma answers with a
+    500 before any handler, at debug level (`recordBodyErrors`). A 5xx
+    without details (the server is busy) is not logged.
     What answers before an operation runs (the session and token
     lookups) or outside one (OpenID Connect's browser flow, and the
     session a sign-in starts, which the two share) logs its failures

@@ -216,3 +216,23 @@ func TestDocumentRequestErrorsKeepsAnOperationsOwn(t *testing.T) {
 		t.Error("no 401 added")
 	}
 }
+
+// An operation that is not open to every API token lists the 403
+// gateTokens answers a token it does not let in; one open to any token
+// has no 403 to list.
+func TestDocumentRequestErrorsListTheTokensGate(t *testing.T) {
+	t.Parallel()
+
+	a := newAPI(http.NewServeMux(), slog.New(slog.DiscardHandler))
+	for path, open := range map[string]map[string]any{"/ingest": openToTokens(auth.ScopeIngest), "/any": openToAnyToken(), "/closed": nil} {
+		huma.Register(a, huma.Operation{
+			OperationID: strings.TrimPrefix(path, "/"), Method: http.MethodGet, Path: path, Metadata: open,
+			Errors: []int{http.StatusNotFound},
+		}, func(context.Context, *struct{}) (*struct{}, error) { return nil, nil }) //nolint:nilnil // no output
+	}
+	for path, want := range map[string]bool{"/ingest": true, "/closed": true, "/any": false} {
+		if _, got := a.OpenAPI().Paths[path].Get.Responses["403"]; got != want {
+			t.Errorf("%s lists 403: %v, want %v", path, got, want)
+		}
+	}
+}

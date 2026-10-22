@@ -5,10 +5,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
 )
 
 // exec runs stmt on the instance's database, to break it for a test.
@@ -216,6 +218,27 @@ func TestGoneSignInLogsAtDebug(t *testing.T) {
 		}
 	}
 	if rec.Code != http.StatusInternalServerError || len(failed) != 1 || failed[0].Level != "DEBUG" || !strings.Contains(failed[0].Error, "context canceled") {
+		t.Errorf("%d %s, logged %+v; want a 500 logged once at debug level", rec.Code, rec.Body.String(), failed)
+	}
+}
+
+// A body cut short, which huma answers with a 500 before any handler or
+// limit runs, is logged at debug level: anyone can send one at will, and
+// it says nothing about the server.
+func TestCutBodiesLogAtDebug(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", passwordHash(t))
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/v1/auth/login", iotest.ErrReader(io.ErrUnexpectedEOF))
+	r.Header.Set("Content-Type", "application/json")
+	rec := in.serve(t, r)
+	var failed []logRecord
+	for _, l := range in.logRecords(t) {
+		if l.Msg == "an API operation failed" {
+			failed = append(failed, l)
+		}
+	}
+	if rec.Code != http.StatusInternalServerError || len(failed) != 1 || failed[0].Level != "DEBUG" {
 		t.Errorf("%d %s, logged %+v; want a 500 logged once at debug level", rec.Code, rec.Body.String(), failed)
 	}
 }

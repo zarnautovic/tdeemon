@@ -134,7 +134,40 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		writeProblem(w, http.StatusForbidden, "cross-origin request refused")
 	}))
 	cl := &clients{trusted: cfg.TrustedProxies, logger: cfg.Logger}
-	return securityHeaders(s.secure, cl.resolve(cop.Handler(s.authenticate(withAPIErrors(mux))))), nil
+	return securityHeaders(s.secure, cl.resolve(cop.Handler(s.authenticate(recordBodyErrors(withAPIErrors(mux)))))), nil
+}
+
+// bodyErrorKey is the key of a request's bodyError in its context.
+type bodyErrorKey struct{}
+
+// bodyError is what reading a request's body failed with, if it did.
+type bodyError struct{ err error }
+
+// recordBodyErrors keeps, in the request's context, what reading its body
+// failed with. huma answers a body cut short with a 500 whose detail has
+// only the error's text, and the log must tell the client's doing from
+// the server's (logInternalError).
+func recordBodyErrors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		be := &bodyError{}
+		r = r.WithContext(context.WithValue(r.Context(), bodyErrorKey{}, be))
+		r.Body = recordingBody{ReadCloser: r.Body, into: be}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// recordingBody is a request's body that records a failed read.
+type recordingBody struct {
+	io.ReadCloser
+	into *bodyError
+}
+
+func (b recordingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		b.into.err = err
+	}
+	return n, err
 }
 
 // apiMethods are the methods withAPIErrors probes for an Allow header.
@@ -262,10 +295,11 @@ func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 // answered before the handler runs, which huma does not list itself: the
 // server's 401 for a bad API token and 429 for an address that sent too
 // many (authenticateToken), huma's 422 for an unknown query parameter
-// (RejectUnknownQueryParameters), and for a body huma's 400 (not JSON),
-// 408 (too slow), 413 (too large) and 415 (not JSON's content type). The
-// 403 for a browser's cross-origin request every operation that is not a
-// read lists already.
+// (RejectUnknownQueryParameters), the 403 gateTokens answers a token an
+// operation not open to every token does not let in (which also covers a
+// browser's cross-origin request: no operation open to every token is
+// anything but a read), and for a body huma's 400 (not JSON), 408 (too
+// slow), 413 (too large) and 415 (not JSON's content type).
 //
 // huma lists 500 for every operation that lists its errors; one that
 // lists none has a default response instead, which covers these too.
@@ -275,6 +309,9 @@ func documentRequestErrors(_ *huma.OpenAPI, op *huma.Operation) {
 		return
 	}
 	codes := []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusUnprocessableEntity}
+	if scope, _ := op.Metadata[tokenScopeKey].(auth.Scope); scope != anyScope {
+		codes = append(codes, http.StatusForbidden)
+	}
 	if op.RequestBody != nil {
 		codes = append(codes, http.StatusBadRequest, http.StatusRequestTimeout,
 			http.StatusRequestEntityTooLarge, http.StatusUnsupportedMediaType)
@@ -326,7 +363,8 @@ func hideInternalErrors(logger *slog.Logger) huma.Transformer {
 
 // logInternalError logs the details of e, the answer of op to r, at the
 // level of its worst error (logLevel); a detail that carries no error (a
-// handler's plain error), or no detail at all, is a failure.
+// handler's plain error), or no detail at all, is a failure. A body that
+// did not come whole (recordBodyErrors) is the client's doing.
 func logInternalError(r *http.Request, logger *slog.Logger, op *huma.Operation, e *huma.ErrorModel) {
 	msgs := make([]string, 0, len(e.Errors))
 	level := slog.LevelDebug
@@ -343,6 +381,11 @@ func logInternalError(r *http.Request, logger *slog.Logger, op *huma.Operation, 
 	}
 	if len(msgs) == 0 {
 		level = slog.LevelError
+	}
+	if be, ok := r.Context().Value(bodyErrorKey{}).(*bodyError); ok && be.err != nil {
+		// The body never came whole, which huma answers before any
+		// handler or limit runs: the client's doing, as anyone can.
+		level = slog.LevelDebug
 	}
 	attrs := []any{
 		"status", e.Status, "error", strings.Join(msgs, "; "),

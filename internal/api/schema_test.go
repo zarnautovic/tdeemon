@@ -457,6 +457,12 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 			t.Fatalf("no 429 after %d bad tokens: %d", i, rec.Code)
 		}
 	}
+	// A token that may only read, which the operations not open to it
+	// refuse.
+	reader, rec := in.createToken(t, session, `{"name":"reader","scopes":["read"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create a token: %d %s", rec.Code, rec.Body.String())
+	}
 	type problem struct {
 		name string
 		req  *http.Request
@@ -492,6 +498,9 @@ func TestRequestProblemsAreDocumented(t *testing.T) {
 					"Authorization": "Bearer " + auth.TokenPrefix + "bogus", "RemoteAddr": flooding,
 				}), http.StatusTooManyRequests},
 			}
+			// Its answer depends on the operation; serve holds it to the
+			// document.
+			in.serve(t, request(t, op, "", nil, map[string]string{"Authorization": "Bearer " + reader.Token, "RemoteAddr": fmt.Sprintf("192.0.2.%d:1234", 100+i)}))
 			if op.Method != http.MethodGet {
 				problems = append(problems, problem{"a cross-origin request", request(t, op, "", nil, map[string]string{"Sec-Fetch-Site": "cross-site"}), http.StatusForbidden})
 			}
