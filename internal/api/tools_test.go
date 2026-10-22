@@ -53,7 +53,7 @@ func TestToolsAreNamed(t *testing.T) {
 		}
 	}
 	for name, op := range map[string]string{
-		"get_profile": "get-me", "get_day": "get-day", "find_foods": "find-foods", "get_food": "get-food", "upsert_food": "upsert-food",
+		"get_profile": "get-me", "get_day": "get-day", "get_summary": "get-summary", "find_foods": "find-foods", "get_food": "get-food", "upsert_food": "upsert-food",
 		"log_meal": "log-meal", "update_meal": "update-meal", "delete_meal": "delete-meal",
 		"log_metric": "log-metric", "delete_metric": "delete-metric", "checkin": "check-in",
 	} {

@@ -388,6 +388,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the summary
+         * @description Calibration's summary of the days up to yesterday: the weekly averages, the trend weight, the measured TDEE with its interval and doubts, the verdict on the phase with its guards and flags, the recovery, and the days possibly not all logged. The server computes it: explain it, do not compute it again.
+         */
+        get: operations["get-summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tokens": {
         parameters: {
             query?: never;
@@ -1131,6 +1151,35 @@ export interface components {
             /** @enum {string} */
             unit?: "g" | "ml";
         };
+        RecoveryBody: {
+            /** @description What falls short: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base). */
+            flags: string[];
+            /**
+             * Format: double
+             * @description The last 7 days' average HRV.
+             */
+            hrv?: number;
+            /**
+             * Format: double
+             * @description The 21 days' before them.
+             */
+            hrv_base?: number;
+            /**
+             * Format: double
+             * @description The last 7 days' average resting heart rate.
+             */
+            resting_hr?: number;
+            /**
+             * Format: double
+             * @description The 21 days' before them.
+             */
+            resting_hr_base?: number;
+            /**
+             * Format: double
+             * @description The last 7 days' average sleep, in hours.
+             */
+            sleep_h?: number;
+        };
         RemainingBody: {
             /**
              * Format: double
@@ -1206,6 +1255,22 @@ export interface components {
              */
             workouts: number;
         };
+        SummaryBody: {
+            /**
+             * Format: date
+             * @description Today, the user's day now. The summary is of the days up to yesterday; today is open.
+             */
+            date: string;
+            /** @description Complete days of the weeks whose meals come under half their target: possibly not all logged. The user may log the rest, or exclude the day. */
+            incomplete_days: string[];
+            recovery: components["schemas"]["RecoveryBody"];
+            tdee: components["schemas"]["TdeeBody"];
+            /** @description The trend weight; absent before the first weigh-in. */
+            trend?: components["schemas"]["TrendBody"];
+            verdict: components["schemas"]["VerdictBody"];
+            /** @description The last weeks up to yesterday, each of 7 days, the latest last. */
+            weeks: components["schemas"]["WeekBody"][];
+        };
         TargetBody: {
             /**
              * Format: date
@@ -1216,6 +1281,45 @@ export interface components {
             rest: components["schemas"]["DayTargetBody"];
             /** @description On a training day. */
             training: components["schemas"]["DayTargetBody"];
+        };
+        TdeeBody: {
+            /** @description The estimate is of the days before the current phase, whose own are too few yet: no verdict on the phase. */
+            before_phase: boolean;
+            /** @description Why the estimate is missing or not trusted: few_days, few_weigh_ins, few_logged_days, wide_interval. */
+            doubts: string[];
+            /**
+             * Format: date
+             * @description The window's first day.
+             */
+            from: string;
+            /**
+             * Format: double
+             * @description Half its 80 % interval.
+             */
+            half_width?: number;
+            /**
+             * Format: double
+             * @description The measured TDEE, in kcal a day.
+             */
+            kcal?: number;
+            /**
+             * Format: double
+             * @description The weight's slope over the window, a minus being a loss.
+             */
+            kg_per_week?: number;
+            /** Format: int64 */
+            logged_days: number;
+            /** @description Whether the window held enough for an estimate; doubts say what is missing. */
+            measured: boolean;
+            /**
+             * Format: date
+             * @description The window's last day.
+             */
+            to: string;
+            /** @description Whether its interval and data are enough for a verdict. */
+            trusted: boolean;
+            /** Format: int64 */
+            weigh_ins: number;
         };
         TokenBody: {
             /** Format: date-time */
@@ -1237,6 +1341,18 @@ export interface components {
         };
         TokensOutputBody: {
             tokens: components["schemas"]["TokenBody"][];
+        };
+        TrendBody: {
+            /**
+             * Format: date
+             * @description The day of the last weigh-in it took: a trend weeks old is not the weight now.
+             */
+            date: string;
+            /**
+             * Format: double
+             * @description The trend weight: smoothed, without the day-to-day swing of water.
+             */
+            kg: number;
         };
         UndoInputBody: {
             /**
@@ -1357,6 +1473,59 @@ export interface components {
              */
             timezone: string;
         };
+        VerdictBody: {
+            /**
+             * @description What the verdict proposes; nothing applies it.
+             * @enum {string}
+             */
+            action: "none" | "hold" | "raise_kcal" | "lower_kcal" | "raise_protein_or_kcal" | "shrink_surplus" | "maintain";
+            /** @description What to show beside it: underweight, no_height, maintenance_drift, no_steps, no_lean_mass, no_body_fat. */
+            flags: string[];
+            /**
+             * Format: double
+             * @description The change of the target's weekly average the action asks for, in kcal a day, more than 0 to eat more: a coach's to propose.
+             */
+            gap_kcal: number;
+            /** @description The guards that turned or held the action: underweight, lean_mass, fat_gain, activity. */
+            guards: string[];
+            /**
+             * Format: double
+             * @description What was eaten on average over the window.
+             */
+            intake_kcal?: number;
+            /**
+             * Format: double
+             * @description The measured rate, in % of the trend weight a week.
+             */
+            measured_pct_week?: number;
+            /**
+             * @description The measured rate against the phase's target: below is a faster loss or a slower gain than planned.
+             * @enum {string}
+             */
+            rate: "none" | "on_target" | "below" | "above";
+            /** @description Why there is no verdict: no_phase, no_target, no_estimate, before_phase, not_trusted. */
+            reasons: string[];
+            /**
+             * Format: double
+             * @description The step toward it that the autopilot's limits allow.
+             */
+            step_kcal: number;
+            /**
+             * Format: double
+             * @description The target's weekly average now: a rate that misses with a target that holds is the intake's.
+             */
+            target_kcal?: number;
+            /**
+             * Format: double
+             * @description The phase's target rate.
+             */
+            target_pct_week?: number;
+            /**
+             * Format: double
+             * @description How far apart they may be.
+             */
+            tolerance_pct_week?: number;
+        };
         WarningBody: {
             /**
              * @description What kind of warning it is.
@@ -1364,6 +1533,54 @@ export interface components {
              */
             code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "duplicate_meal" | "food_kept";
             message: string;
+        };
+        WeekBody: {
+            /** Format: date */
+            from: string;
+            /**
+             * Format: double
+             * @description The average intake of the logged days.
+             */
+            kcal?: number;
+            /**
+             * Format: int64
+             * @description The complete days with a meal, not excluded.
+             */
+            logged_days: number;
+            /**
+             * Format: double
+             * @description The average grams of protein of the logged days.
+             */
+            protein?: number;
+            /**
+             * Format: double
+             * @description The average hours of sleep of the days that have them.
+             */
+            sleep_h?: number;
+            /**
+             * Format: double
+             * @description The average steps of the days that have them.
+             */
+            steps?: number;
+            /** Format: date */
+            to: string;
+            /**
+             * Format: int64
+             * @description The days of the training type, as each day's type is.
+             */
+            training_days: number;
+            /**
+             * Format: double
+             * @description The trend weight on the week's last day.
+             */
+            trend_kg?: number;
+            /** Format: int64 */
+            weigh_ins: number;
+            /**
+             * Format: double
+             * @description The average weigh-in.
+             */
+            weight_kg?: number;
         };
         WhoamiOutputBody: {
             /** @description What the token may do (via token). */
@@ -3459,6 +3676,75 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-summary": {
+        parameters: {
+            query?: {
+                /** @description How many weeks, up to yesterday, the weekly averages cover. */
+                weeks?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SummaryBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

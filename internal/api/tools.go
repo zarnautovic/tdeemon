@@ -96,6 +96,16 @@ func (s *sessions) tools() []tool {
 				"what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).",
 			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.getDay),
+		newTool("get_summary", readScopes, huma.Operation{
+			OperationID: "get-summary",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/summary",
+			Summary:     "Get the summary",
+			Description: "Calibration's summary of the days up to yesterday: the weekly averages, the trend weight, the measured TDEE with its interval " +
+				"and doubts, the verdict on the phase with its guards and flags, the recovery, and the days possibly not all logged. " +
+				"The server computes it: explain it, do not compute it again.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.getSummary),
 		newTool("log_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "log-metric",
 			Method:      http.MethodPut,
