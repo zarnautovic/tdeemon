@@ -55,7 +55,9 @@ for the author and the reviewer.
 
 - **Domain logic:** unit tests, table-driven.
 - **The store:** integration tests against a real SQLite file
-  (`storetest.Open`), and every migration from an empty database.
+  (`storetest.Open`: each test gets its own copy of a database migrated
+  once per test binary, as migrating takes seconds under `-race`), and
+  every migration from an empty database.
 - **HTTP and MCP handlers:** integration tests through the handler, with a
   real store behind it.
   Every answer a test gets through the instance's `do` or `serve` is
