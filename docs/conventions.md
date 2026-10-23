@@ -132,9 +132,12 @@ for the author and the reviewer.
   alone. A tool names its scopes (`newTool`), or cannot be registered.
   MCP serves every tool at `/mcp` through its operation
   (`internal/api/mcp.go`): its input schema is the operation's
-  parameters and body, from the OpenAPI document, and a call is a
-  request of the operation with the caller's principal, so MCP and REST
-  cannot drift.
+  parameters and body, from the OpenAPI document, less what a model
+  does not need (DESIGN.md §6), and a call is a request of the
+  operation with the caller's principal, so MCP and REST cannot drift.
+  The tools and the instructions keep to a budget in bytes
+  (`TestMCPFitsItsBudget`): a change past it says why, with the eval
+  run again.
 - **The eval of MCP** (`internal/eval`) has Claude Code log what a user
   says through `/mcp`, against a seeded tdeemon of one user, and checks
   what each case leaves (its meals, foods, metrics and changes), the

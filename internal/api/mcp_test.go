@@ -149,7 +149,7 @@ func TestMCPToolSchemas(t *testing.T) {
 			t.Errorf("%s idempotent = %v, want %v", name, got, want)
 		}
 	}
-	if d := byName["log_meal"].Description; !strings.Contains(d, "Without an id") {
+	if d := byName["log_meal"].Description; !strings.Contains(d, "without an id") {
 		t.Errorf("log_meal's description does not say a meal may come without an id: %s", d)
 	}
 }
@@ -198,6 +198,74 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 	}
 	if enums == 0 {
 		t.Error("no schema has an enum")
+	}
+}
+
+// TestMCPFitsItsBudget holds the tools and the instructions, which a
+// model is sent with each request, to a budget in bytes: ~6k tokens, as
+// the eval measures them (DESIGN.md §6). A change that grows them past it
+// needs a reason, and the eval run again.
+func TestMCPFitsItsBudget(t *testing.T) {
+	t.Parallel()
+
+	const budget = 13500
+	in, session := signedIn(t)
+	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
+	res, err := cs.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := len(cs.InitializeResult().Instructions)
+	for _, tl := range res.Tools {
+		b, err := json.Marshal(tl.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		size += len(tl.Name) + len(tl.Description) + len(b)
+	}
+	if size > budget {
+		t.Errorf("the tools and the instructions are %d bytes, want at most %d", size, budget)
+	}
+}
+
+// TestMCPSchemasSayOnce holds a schema two tools take to the tool it is
+// of: log_meal's new food is upsert_food's, update_meal's item
+// log_meal's, each said in a word where the other tool takes it.
+func TestMCPSchemasSayOnce(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	res, err := mcpSession(t, in, mcpToken(t, in, session, `"tools"`)).ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := map[string]map[string]any{}
+	for _, tl := range res.Tools {
+		byName[tl.Name], _ = tl.InputSchema.(map[string]any)
+	}
+	at := func(v any, path ...string) map[string]any {
+		for _, p := range path {
+			m, _ := v.(map[string]any)
+			v = m[p]
+		}
+		m, _ := v.(map[string]any)
+		return m
+	}
+	item := at(byName["log_meal"], "properties", "items", "items")
+	if at(item, "properties", "food_id") == nil {
+		t.Errorf("log_meal's item is not in full: %v", item)
+	}
+	for _, tc := range []struct {
+		name, of string
+		schema   map[string]any
+	}{
+		{"log_meal's new food", "upsert_food", at(item, "properties", "food")},
+		{"update_meal's item", "log_meal", at(byName["update_meal"], "properties", "ops", "items", "properties", "item")},
+	} {
+		d, _ := tc.schema["description"].(string)
+		if tc.schema["properties"] != nil || tc.schema["type"] != "object" || !strings.Contains(d, tc.of) {
+			t.Errorf("%s = %v, want an object said to be %s's", tc.name, tc.schema, tc.of)
+		}
 	}
 }
 

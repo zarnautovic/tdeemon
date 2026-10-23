@@ -83,8 +83,8 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodGet,
 			Path:        Prefix + "/me",
 			Summary:     "Get your profile and plan today",
-			Description: "Who you are and what you aim for today: the profile, the phase today is in, the targets in force by type of day, " +
-				"today's type, the training weekdays, your notes for a coach, and the units every amount is in.",
+			Description: "Who the user is and aims for: the profile, today's phase, the targets by type of day, today's type, " +
+				"the training weekdays, the notes for a coach, the units, and the time now.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.getMe),
 		newTool("get_day", readScopes, huma.Operation{
@@ -92,18 +92,16 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodGet,
 			Path:        Prefix + "/days/{date}",
 			Summary:     "Get a day",
-			Description: "A day of yours: its meals with what each item brought, the total against the target of the day's type, " +
-				"what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).",
-			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+			Description: "A day: its meals and items, the total against its target, what remains, its metrics, check-in, type and status.",
+			Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.getDay),
 		newTool("get_summary", readScopes, huma.Operation{
 			OperationID: "get-summary",
 			Method:      http.MethodGet,
 			Path:        Prefix + "/summary",
 			Summary:     "Get the summary",
-			Description: "Calibration's summary of the days up to yesterday: the weekly averages, the trend weight, the measured TDEE with its interval " +
-				"and doubts, the verdict on the phase with its guards and flags, the recovery, and the days possibly not all logged. " +
-				"The server computes it: explain it, do not compute it again.",
+			Description: "Calibration's summary up to yesterday: weekly averages, the trend weight, the measured TDEE with its interval, " +
+				"the phase's verdict, recovery, and days maybe not all logged. Explain it; do not compute it again.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.getSummary),
 		newTool("log_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -111,8 +109,8 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPut,
 			Path:        Prefix + "/days/{date}/metrics/{kind}",
 			Summary:     "Log a measurement",
-			Description: "Stores a measurement of a day the user gave (a weighing, the night's sleep), of today or a day before, in the kind's unit: " +
-				"it counts over what an import brings, and replaces what the day held of the kind. The answer is the day, as get_day gives it.",
+			Description: "Stores a measurement the user gives, of today or a day before, in the kind's unit; " +
+				"it replaces the day's value of the kind and counts over imports. Answers the day.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.logMetric).destroys(),
 		newTool("delete_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -120,7 +118,7 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodDelete,
 			Path:        Prefix + "/days/{date}/metrics/{kind}",
 			Summary:     "Delete a measurement",
-			Description: "Deletes a day's measurement of a kind, a wrong one: imports apply to the day again. The answer is the day, as get_day gives it.",
+			Description: "Deletes a wrong measurement of a day; imports apply to it again. Answers the day.",
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
 		}, s.deleteMetric).destroys(),
 		newTool("checkin", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -128,11 +126,8 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPatch,
 			Path:        Prefix + "/days/{date}",
 			Summary:     "Check in a day",
-			Description: "Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, " +
-				"the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why " +
-				"(a restaurant meal they could not weigh, being sick, a day they forgot to log). A day to come takes its type and exclusion, not a mood, hunger or note: " +
-				"send today for the user's day now. One undo takes the whole check-in back. " +
-				"The answer is the day, as get_day gives it.",
+			Description: "Sets what the user says of a day, the fields given only: mood and hunger (1 to 5), a note, the day's type, " +
+				"and whether it is out of calibration and why. A day to come takes its type and exclusion only. Answers the day.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.checkIn).destroys(),
 		newTool("undo_last", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -140,12 +135,9 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPost,
 			Path:        Prefix + "/undo",
 			Summary:     "Undo the latest change",
-			Description: "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. " +
-				"Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; " +
-				"without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; " +
-				"undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. " +
-				"A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, " +
-				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
+			Description: "Takes back the latest change not undone, of any client: a meal, a food, a measurement, a check-in; not the plan nor an import. " +
+				"Each undo takes a new id; the same id again answers as before. A change that cannot be taken back is a 409 saying why, " +
+				"and the next undo goes past it. Answers what was taken back.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.undoLast).destroys().mayWriteAgain(),
 		newTool("find_foods", readScopes, huma.Operation{
@@ -153,9 +145,8 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodGet,
 			Path:        Prefix + "/foods",
 			Summary:     "Find foods",
-			Description: "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: " +
-				"the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. " +
-				"Each has how much a meal had of it last. Archived foods are left out.",
+			Description: "The user's foods whose name, brand or an alias has words starting with a query's, in any case, without diacritics, " +
+				"the name's matches first. One query a food, a meal's at once: each food says which queries found it, and its last use.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.findFoods),
 		newTool("get_food", readScopes, huma.Operation{
@@ -163,7 +154,7 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodGet,
 			Path:        Prefix + "/foods/{id}",
 			Summary:     "Get a food",
-			Description: "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+			Description: "A food by its id, archived too.",
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
 		}, s.getFood),
 		newTool("upsert_food", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -171,10 +162,8 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPost,
 			Path:        Prefix + "/foods",
 			Summary:     "Save a food",
-			Description: "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. " +
-				"A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, " +
-				"without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. " +
-				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
+			Description: "Saves a food, or corrects one: by its id, or else its name and brand; else a new one. A save replaces the whole food, " +
+				"so a field left out is cleared: correct from what find_foods gave. A name or alias another food has is a 409 naming it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.upsertFood).destroys(),
 		newTool("log_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -183,11 +172,9 @@ func (s *sessions) tools() []tool {
 			Path:          Prefix + "/meals",
 			Summary:       "Log a meal",
 			DefaultStatus: http.StatusCreated,
-			Description: "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). " +
-				"Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. " +
-				"An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; " +
-				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), " +
-				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
+			Description: "Logs a meal of items: a food of the user's by food_id, a new food (saved), or an estimate of a whole plate. " +
+				"The same meal sent again under its id is a retry; without an id the server makes one, and a meal sent again is another. " +
+				"Answers the meal with each item's values, where its day stands, and warnings.",
 			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
 		}, s.logMeal).retried().mayWriteAgain(),
 		newTool("update_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -195,11 +182,9 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPatch,
 			Path:        Prefix + "/meals/{id}",
 			Summary:     "Change a meal",
-			Description: "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. " +
-				"An item no op touches keeps what it brought when logged, though its food was corrected since. " +
-				"An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. " +
-				"A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. " +
-				"A remove of an item no longer there changes nothing.",
+			Description: "Changes a meal: its time, its words, and its items by ops in order (add, replace, remove). " +
+				"An item no op touches keeps its values. An add under an item id the meal has is a retry when the same, a 409 when not. " +
+				"Answers as log_meal does.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.updateMeal).destroys(),
 		newTool("delete_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -207,7 +192,7 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodDelete,
 			Path:        Prefix + "/meals/{id}",
 			Summary:     "Delete a meal",
-			Description: "Deletes a meal, and says where its day stands without it. Its id stays the deleted meal's: a meal logged under it again is refused (409).",
+			Description: "Deletes a meal and answers its day without it; its id cannot be logged again.",
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
 		}, s.deleteMeal).destroys(),
 	}

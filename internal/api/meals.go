@@ -35,16 +35,16 @@ func clientOf(p auth.Principal) meal.Client {
 // user's by its id, or a new food, with how much; or a one-off estimate
 // of a whole plate.
 type itemInput struct {
-	ID       string      `json:"id,omitempty" format:"uuid" doc:"The client's id for the item; a new one when left out."`
+	ID       string      `json:"id,omitempty" format:"uuid" doc:"The item's id; made when left out."`
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
-	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food)."`
+	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved; one of the name and brand of the user's food is that food, unchanged."`
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit."`
-	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out for a food of the user's (food_id), its g or ml; a new food's amount and a food per portion need it."`
+	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
-	Serving  string      `json:"serving,omitempty" doc:"A serving the food names: a slice, a piece."`
-	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"How many portions of a food per portion."`
+	Serving  string      `json:"serving,omitempty" doc:"A serving the food names."`
+	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"Portions of a food per portion."`
 	// Name and Nutrients make an estimate.
-	Name      string             `json:"name,omitempty" maxLength:"200" doc:"A one-off estimate of a whole plate: its name, with its nutrients."`
+	Name      string             `json:"name,omitempty" maxLength:"200" doc:"A whole plate's estimate: its name, with nutrients."`
 	Nutrients *foodNutrientsBody `json:"nutrients,omitempty" doc:"The estimate's values, for the whole plate."`
 	Note      string             `json:"note,omitempty" maxLength:"2000"`
 }
@@ -233,10 +233,10 @@ type logMealInput struct {
 
 // logMealBody is a meal as log_meal takes it.
 type logMealBody struct {
-	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own)."`
-	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When the meal was eaten; the time of the id when left out, so a retry has the same."`
+	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 made now (a day back to five minutes ahead): the meal sent again under it is a retry. Left out (not empty), the server makes one, and a meal sent again is another."`
+	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When eaten; left out, the time of the id."`
 	Description string      `json:"description,omitempty" maxLength:"200" doc:"What the meal was, in the user's words."`
-	Items       []itemInput `json:"items" minItems:"1" maxItems:"50"`
+	Items       []itemInput `json:"items" nullable:"false" minItems:"1" maxItems:"50"`
 	Note        string      `json:"note,omitempty" maxLength:"2000"`
 }
 

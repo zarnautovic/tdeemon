@@ -160,7 +160,7 @@ type dayOutput struct {
 }
 
 type dayInput struct {
-	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour."`
+	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"YYYY-MM-DD, or today: the user's day now."`
 }
 
 func (s *sessions) getDay(ctx context.Context, in *dayInput) (*dayOutput, error) {

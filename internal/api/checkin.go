@@ -47,15 +47,15 @@ func (s *sessions) changedDay(ctx context.Context, p auth.Principal, d day.Date,
 }
 
 type metricInput struct {
-	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour."`
+	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"YYYY-MM-DD, or today: the user's day now."`
 	Kind string `path:"kind" enum:"weight,body_fat,lean_mass,steps,active_kcal,basal_kcal,sleep_h,rhr,hrv,vo2max,exercise_min"`
 }
 
 type logMetricInput struct {
-	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour."`
+	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"YYYY-MM-DD, or today: the user's day now."`
 	Kind string `path:"kind" enum:"weight,body_fat,lean_mass,steps,active_kcal,basal_kcal,sleep_h,rhr,hrv,vo2max,exercise_min"`
 	Body struct {
-		Value float64 `json:"value" doc:"In the kind's unit: weight and lean_mass kg, body_fat %, steps a count, active_kcal and basal_kcal kcal, sleep_h hours, rhr bpm, hrv ms, vo2max ml/kg/min, exercise_min minutes."`
+		Value float64 `json:"value" doc:"kg (weight, lean_mass), % (body_fat), count (steps), kcal (active_kcal, basal_kcal), h (sleep_h), bpm (rhr), ms (hrv), ml/kg/min (vo2max), min (exercise_min)."`
 	}
 }
 
@@ -105,7 +105,7 @@ func (s *sessions) deleteMetric(ctx context.Context, in *metricInput) (*dayChang
 }
 
 type checkInInput struct {
-	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour."`
+	Date string `path:"date" pattern:"^(today|[0-9]{4}-[0-9]{2}-[0-9]{2})$" example:"today" doc:"YYYY-MM-DD, or today: the user's day now."`
 	Body checkInBody
 }
 
@@ -115,8 +115,8 @@ type checkInBody struct {
 	Mood           *int    `json:"mood,omitempty" minimum:"0" maximum:"5" doc:"The user's mood, 1 (low) to 5 (high); 0 clears it."`
 	Hunger         *int    `json:"hunger,omitempty" minimum:"0" maximum:"5" doc:"How hungry the user was, 1 (not at all) to 5 (very); 0 clears it."`
 	Note           *string `json:"note,omitempty" maxLength:"2000" doc:"What the user says of the day; empty clears it."`
-	TrainingDay    *string `json:"training_day,omitempty" enum:"training,rest,plan" doc:"training or rest sets the day's type, which picks its target; plan leaves it to the training weekdays."`
-	ExcludedReason *string `json:"excluded_reason,omitempty" maxLength:"200" doc:"Takes the day out of calibration for this reason (restaurant, sick, forgot to log); empty brings it back."`
+	TrainingDay    *string `json:"training_day,omitempty" enum:"training,rest,plan" doc:"The day's type, which picks its target; plan: by the training weekdays."`
+	ExcludedReason *string `json:"excluded_reason,omitempty" maxLength:"200" doc:"Why the day is out of calibration (restaurant, sick, not logged); empty brings it back."`
 }
 
 func (s *sessions) checkIn(ctx context.Context, in *checkInInput) (*dayChangeOutput, error) {

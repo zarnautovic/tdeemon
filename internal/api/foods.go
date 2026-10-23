@@ -40,7 +40,7 @@ type servingBody struct {
 type foodNutrientsBody struct {
 	Kcal         float64  `json:"kcal" minimum:"0"`
 	Protein      float64  `json:"protein" minimum:"0"`
-	Carbs        float64  `json:"carbs" minimum:"0" doc:"Polyols are part of them, as on an EU label."`
+	Carbs        float64  `json:"carbs" minimum:"0" doc:"With polyols, as on an EU label."`
 	Fat          float64  `json:"fat" minimum:"0"`
 	Fiber        *float64 `json:"fiber,omitempty" minimum:"0"`
 	SaturatedFat *float64 `json:"saturated_fat,omitempty" minimum:"0"`
@@ -69,13 +69,13 @@ func (n foodNutrientsBody) nutrients() food.Nutrients {
 // field of an unexported embedded struct.
 type FoodFields struct {
 	Name         string            `json:"name" minLength:"1" maxLength:"200" example:"Greek yoghurt 2 %"`
-	Brand        string            `json:"brand,omitempty" maxLength:"100" doc:"The same name and brand are the same food."`
-	Basis        string            `json:"basis" enum:"100g,100ml,portion" doc:"What the nutrients are for: 100 g, 100 ml, or a portion."`
+	Brand        string            `json:"brand,omitempty" maxLength:"100" doc:"The same name and brand are one food."`
+	Basis        string            `json:"basis" enum:"100g,100ml,portion" doc:"What the nutrients are for."`
 	Nutrients    foodNutrientsBody `json:"nutrients"`
-	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"The weight of a portion of a food per portion, when known: it can then be logged in grams."`
-	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" maxItems:"20" doc:"Named amounts of a food by weight or volume: a piece, a slice."`
-	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" minLength:"1" maxLength:"100" doc:"Other names the user calls the food by; search finds them."`
-	Source       string            `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from: a label is exact, an estimate a judgement."`
+	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"The grams of a portion, when known."`
+	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" maxItems:"20" doc:"Named amounts: a piece, a slice."`
+	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" minLength:"1" maxLength:"100" doc:"Other names search finds."`
+	Source       string            `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from."`
 	Note         string            `json:"note,omitempty" maxLength:"2000"`
 }
 
@@ -119,7 +119,7 @@ type foodsOutput struct {
 // findFoodsInput's maxItems is store.MaxFoodQueries, and its limit's
 // maximum store.MaxFoodResults.
 type findFoodsInput struct {
-	Query []string `query:"query,explode" required:"true" nullable:"false" minItems:"1" maxItems:"20" minLength:"1" maxLength:"200" example:"greek yog" doc:"Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's."`
+	Query []string `query:"query,explode" required:"true" nullable:"false" minItems:"1" maxItems:"20" minLength:"1" maxLength:"200" example:"greek yog" doc:"The start of words of the name, brand or an alias, in any case, without diacritics; one a food."`
 	Limit int      `query:"limit" default:"10" minimum:"1" maximum:"50" doc:"The most foods of each query."`
 }
 
@@ -209,9 +209,9 @@ func (s *sessions) getFood(ctx context.Context, in *getFoodInput) (*foodOutputNo
 
 type upsertFoodInput struct {
 	Body struct {
-		ID string `json:"id,omitempty" format:"uuid" doc:"The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one."`
+		ID string `json:"id,omitempty" format:"uuid" doc:"The food to correct; without it, the food of the name and brand, or a new one."`
 		FoodFields
-		Archived bool `json:"archived,omitempty" doc:"Archives the food, or keeps it so: out of a search, keeping its name and aliases. Left out, a save brings an archived food back."`
+		Archived bool `json:"archived,omitempty" doc:"Archives the food (out of search, its names kept); left out, a save brings it back."`
 	}
 }
 

@@ -290,9 +290,16 @@ left.
        cache. The first log after the cache has expired (five minutes
        with Anthropic's) pays for the tools and instructions once more.
      - **The tools and the instructions are a budget of their own**,
-       which every request carries, cached or not: ~10k tokens in
-       October 2026, to bring down, as a client that does not cache
-       pays it in full with each request.
+       which every request carries, cached or not: ~6k tokens, as a
+       client that does not cache pays it in full with each request
+       (~10.5k until October 2026). So a tool's schema carries what a
+       model needs to call it, not the format of a number, examples or
+       bounds, which the operation checks; a schema two tools take is
+       said in full in its own tool's (a new food in `upsert_food`'s, an
+       item in `log_meal`'s) and named in a word in the other's; a
+       tool's description says what it does, and the policy of logging
+       is the instructions'. `TestMCPFitsItsBudget` holds them to a
+       budget in bytes.
 
      The eval of MCP (`internal/eval`) measures both, and a log's whole
      input.

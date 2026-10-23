@@ -5,7 +5,7 @@
         "additionalProperties": false,
         "properties": {
           "excluded_reason": {
-            "description": "Takes the day out of calibration for this reason (restaurant, sick, forgot to log); empty brings it back.",
+            "description": "Why the day is out of calibration (restaurant, sick, not logged); empty brings it back.",
             "maxLength": 200,
             "type": "string"
           },
@@ -29,7 +29,7 @@
             "type": "string"
           },
           "training_day": {
-            "description": "training or rest sets the day's type, which picks its target; plan leaves it to the training weekdays.",
+            "description": "The day's type, which picks its target; plan: by the training weekdays.",
             "enum": [
               "training",
               "rest",
@@ -387,7 +387,7 @@
         "additionalProperties": false,
         "properties": {
           "aliases": {
-            "description": "Other names the user calls the food by; search finds them.",
+            "description": "Other names search finds.",
             "items": {
               "maxLength": 100,
               "minLength": 1,
@@ -401,7 +401,7 @@
             "type": "boolean"
           },
           "basis": {
-            "description": "What the nutrients are for: 100 g, 100 ml, or a portion.",
+            "description": "What the nutrients are for.",
             "enum": [
               "100g",
               "100ml",
@@ -410,7 +410,7 @@
             "type": "string"
           },
           "brand": {
-            "description": "The same name and brand are the same food.",
+            "description": "The same name and brand are one food.",
             "maxLength": 100,
             "type": "string"
           },
@@ -438,7 +438,7 @@
             "$ref": "#/components/schemas/FoodNutrientsBody"
           },
           "portion_grams": {
-            "description": "The weight of a portion of a food per portion, when known: it can then be logged in grams.",
+            "description": "The grams of a portion, when known.",
             "format": "double",
             "minimum": 0,
             "type": "number"
@@ -451,7 +451,7 @@
             "type": "array"
           },
           "servings": {
-            "description": "Named amounts of a food by weight or volume: a piece, a slice.",
+            "description": "Named amounts: a piece, a slice.",
             "items": {
               "$ref": "#/components/schemas/ServingBody"
             },
@@ -459,7 +459,7 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from: a label is exact, an estimate a judgement.",
+            "description": "Where the values come from.",
             "enum": [
               "label",
               "estimate",
@@ -483,7 +483,7 @@
         "additionalProperties": false,
         "properties": {
           "aliases": {
-            "description": "Other names the user calls the food by; search finds them.",
+            "description": "Other names search finds.",
             "items": {
               "maxLength": 100,
               "minLength": 1,
@@ -493,7 +493,7 @@
             "type": "array"
           },
           "basis": {
-            "description": "What the nutrients are for: 100 g, 100 ml, or a portion.",
+            "description": "What the nutrients are for.",
             "enum": [
               "100g",
               "100ml",
@@ -502,7 +502,7 @@
             "type": "string"
           },
           "brand": {
-            "description": "The same name and brand are the same food.",
+            "description": "The same name and brand are one food.",
             "maxLength": 100,
             "type": "string"
           },
@@ -522,13 +522,13 @@
             "$ref": "#/components/schemas/FoodNutrientsBody"
           },
           "portion_grams": {
-            "description": "The weight of a portion of a food per portion, when known: it can then be logged in grams.",
+            "description": "The grams of a portion, when known.",
             "format": "double",
             "minimum": 0,
             "type": "number"
           },
           "servings": {
-            "description": "Named amounts of a food by weight or volume: a piece, a slice.",
+            "description": "Named amounts: a piece, a slice.",
             "items": {
               "$ref": "#/components/schemas/ServingBody"
             },
@@ -536,7 +536,7 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from: a label is exact, an estimate a judgement.",
+            "description": "Where the values come from.",
             "enum": [
               "label",
               "estimate",
@@ -563,7 +563,7 @@
             "type": "number"
           },
           "carbs": {
-            "description": "Polyols are part of them, as on an EU label.",
+            "description": "With polyols, as on an EU label.",
             "format": "double",
             "minimum": 0,
             "type": "number"
@@ -833,7 +833,7 @@
           },
           "food": {
             "$ref": "#/components/schemas/FoodFields",
-            "description": "A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food)."
+            "description": "A new food, saved; one of the name and brand of the user's food is that food, unchanged."
           },
           "food_id": {
             "description": "A food of the user's, from find_foods.",
@@ -841,12 +841,12 @@
             "type": "string"
           },
           "id": {
-            "description": "The client's id for the item; a new one when left out.",
+            "description": "The item's id; made when left out.",
             "format": "uuid",
             "type": "string"
           },
           "name": {
-            "description": "A one-off estimate of a whole plate: its name, with its nutrients.",
+            "description": "A whole plate's estimate: its name, with nutrients.",
             "maxLength": 200,
             "type": "string"
           },
@@ -859,13 +859,13 @@
             "description": "The estimate's values, for the whole plate."
           },
           "portions": {
-            "description": "How many portions of a food per portion.",
+            "description": "Portions of a food per portion.",
             "format": "double",
             "minimum": 0,
             "type": "number"
           },
           "serving": {
-            "description": "A serving the food names: a slice, a piece.",
+            "description": "A serving the food names.",
             "type": "string"
           },
           "servings": {
@@ -875,7 +875,7 @@
             "type": "number"
           },
           "unit": {
-            "description": "The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out for a food of the user's (food_id), its g or ml; a new food's amount and a food per portion need it.",
+            "description": "The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it.",
             "enum": [
               "g",
               "ml"
@@ -984,12 +984,12 @@
             "type": "string"
           },
           "eaten_at": {
-            "description": "When the meal was eaten; the time of the id when left out, so a retry has the same.",
+            "description": "When eaten; left out, the time of the id.",
             "format": "date-time",
             "type": "string"
           },
           "id": {
-            "description": "A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own).",
+            "description": "A UUIDv7 made now (a day back to five minutes ahead): the meal sent again under it is a retry. Left out (not empty), the server makes one, and a meal sent again is another.",
             "format": "uuid",
             "type": "string"
           },
@@ -999,10 +999,7 @@
             },
             "maxItems": 50,
             "minItems": 1,
-            "type": [
-              "array",
-              "null"
-            ]
+            "type": "array"
           },
           "note": {
             "maxLength": 2000,
@@ -1018,7 +1015,7 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "description": "In the kind's unit: weight and lean_mass kg, body_fat %, steps a count, active_kcal and basal_kcal kcal, sleep_h hours, rhr bpm, hrv ms, vo2max ml/kg/min, exercise_min minutes.",
+            "description": "kg (weight, lean_mass), % (body_fat), count (steps), kcal (active_kcal, basal_kcal), h (sleep_h), bpm (rhr), ms (hrv), ml/kg/min (vo2max), min (exercise_min).",
             "format": "double",
             "type": "number"
           }
@@ -1987,7 +1984,7 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "description": "A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change. Left out (not sent empty) by a client that cannot make one, the server makes one, and the undo sent again takes back another change.",
+            "description": "A UUIDv7 made now (a day back to five minutes ahead): the undo sent again under it takes back nothing more. Left out (not empty), the server makes one, and an undo sent again takes back another change.",
             "format": "uuid",
             "type": "string"
           }
@@ -2112,7 +2109,7 @@
         "additionalProperties": false,
         "properties": {
           "aliases": {
-            "description": "Other names the user calls the food by; search finds them.",
+            "description": "Other names search finds.",
             "items": {
               "maxLength": 100,
               "minLength": 1,
@@ -2122,11 +2119,11 @@
             "type": "array"
           },
           "archived": {
-            "description": "Archives the food, or keeps it so: out of a search, keeping its name and aliases. Left out, a save brings an archived food back.",
+            "description": "Archives the food (out of search, its names kept); left out, a save brings it back.",
             "type": "boolean"
           },
           "basis": {
-            "description": "What the nutrients are for: 100 g, 100 ml, or a portion.",
+            "description": "What the nutrients are for.",
             "enum": [
               "100g",
               "100ml",
@@ -2135,12 +2132,12 @@
             "type": "string"
           },
           "brand": {
-            "description": "The same name and brand are the same food.",
+            "description": "The same name and brand are one food.",
             "maxLength": 100,
             "type": "string"
           },
           "id": {
-            "description": "The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one.",
+            "description": "The food to correct; without it, the food of the name and brand, or a new one.",
             "format": "uuid",
             "type": "string"
           },
@@ -2160,13 +2157,13 @@
             "$ref": "#/components/schemas/FoodNutrientsBody"
           },
           "portion_grams": {
-            "description": "The weight of a portion of a food per portion, when known: it can then be logged in grams.",
+            "description": "The grams of a portion, when known.",
             "format": "double",
             "minimum": 0,
             "type": "number"
           },
           "servings": {
-            "description": "Named amounts of a food by weight or volume: a piece, a slice.",
+            "description": "Named amounts: a piece, a slice.",
             "items": {
               "$ref": "#/components/schemas/ServingBody"
             },
@@ -2174,7 +2171,7 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from: a label is exact, an estimate a judgement.",
+            "description": "Where the values come from.",
             "enum": [
               "label",
               "estimate",
@@ -2925,16 +2922,16 @@
     },
     "/api/v1/days/{date}": {
       "get": {
-        "description": "A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).",
+        "description": "A day: its meals and items, the total against its target, what remains, its metrics, check-in, type and status.",
         "operationId": "get-day",
         "parameters": [
           {
-            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "description": "YYYY-MM-DD, or today: the user's day now.",
             "in": "path",
             "name": "date",
             "required": true,
             "schema": {
-              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "description": "YYYY-MM-DD, or today: the user's day now.",
               "examples": [
                 "today"
               ],
@@ -3018,16 +3015,16 @@
         ]
       },
       "patch": {
-        "description": "Says what the user says of a day, each field given and only those: the mood and hunger, 1 to 5, a note, the day's type (training, rest, or plan: the training weekdays decide), and whether the day is out of calibration and why (a restaurant meal they could not weigh, being sick, a day they forgot to log). A day to come takes its type and exclusion, not a mood, hunger or note: send today for the user's day now. One undo takes the whole check-in back. The answer is the day, as get_day gives it.",
+        "description": "Sets what the user says of a day, the fields given only: mood and hunger (1 to 5), a note, the day's type, and whether it is out of calibration and why. A day to come takes its type and exclusion only. Answers the day.",
         "operationId": "check-in",
         "parameters": [
           {
-            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "description": "YYYY-MM-DD, or today: the user's day now.",
             "in": "path",
             "name": "date",
             "required": true,
             "schema": {
-              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "description": "YYYY-MM-DD, or today: the user's day now.",
               "examples": [
                 "today"
               ],
@@ -3156,16 +3153,16 @@
     },
     "/api/v1/days/{date}/metrics/{kind}": {
       "delete": {
-        "description": "Deletes a day's measurement of a kind, a wrong one: imports apply to the day again. The answer is the day, as get_day gives it.",
+        "description": "Deletes a wrong measurement of a day; imports apply to it again. Answers the day.",
         "operationId": "delete-metric",
         "parameters": [
           {
-            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "description": "YYYY-MM-DD, or today: the user's day now.",
             "in": "path",
             "name": "date",
             "required": true,
             "schema": {
-              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "description": "YYYY-MM-DD, or today: the user's day now.",
               "examples": [
                 "today"
               ],
@@ -3273,16 +3270,16 @@
         ]
       },
       "put": {
-        "description": "Stores a measurement of a day the user gave (a weighing, the night's sleep), of today or a day before, in the kind's unit: it counts over what an import brings, and replaces what the day held of the kind. The answer is the day, as get_day gives it.",
+        "description": "Stores a measurement the user gives, of today or a day before, in the kind's unit; it replaces the day's value of the kind and counts over imports. Answers the day.",
         "operationId": "log-metric",
         "parameters": [
           {
-            "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+            "description": "YYYY-MM-DD, or today: the user's day now.",
             "in": "path",
             "name": "date",
             "required": true,
             "schema": {
-              "description": "The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour.",
+              "description": "YYYY-MM-DD, or today: the user's day now.",
               "examples": [
                 "today"
               ],
@@ -3432,17 +3429,17 @@
     },
     "/api/v1/foods": {
       "get": {
-        "description": "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out.",
+        "description": "The user's foods whose name, brand or an alias has words starting with a query's, in any case, without diacritics, the name's matches first. One query a food, a meal's at once: each food says which queries found it, and its last use.",
         "operationId": "find-foods",
         "parameters": [
           {
-            "description": "Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's.",
+            "description": "The start of words of the name, brand or an alias, in any case, without diacritics; one a food.",
             "explode": true,
             "in": "query",
             "name": "query",
             "required": true,
             "schema": {
-              "description": "Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's.",
+              "description": "The start of words of the name, brand or an alias, in any case, without diacritics; one a food.",
               "examples": [
                 [
                   "greek yog"
@@ -3548,7 +3545,7 @@
         ]
       },
       "post": {
-        "description": "Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
+        "description": "Saves a food, or corrects one: by its id, or else its name and brand; else a new one. A save replaces the whole food, so a field left out is cleared: correct from what find_foods gave. A name or alias another food has is a 409 naming it.",
         "operationId": "upsert-food",
         "requestBody": {
           "content": {
@@ -3690,7 +3687,7 @@
     },
     "/api/v1/foods/{id}": {
       "get": {
-        "description": "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+        "description": "A food by its id, archived too.",
         "operationId": "get-food",
         "parameters": [
           {
@@ -4458,7 +4455,7 @@
     },
     "/api/v1/me": {
       "get": {
-        "description": "Who you are and what you aim for today: the profile, the phase today is in, the targets in force by type of day, today's type, the training weekdays, your notes for a coach, and the units every amount is in.",
+        "description": "Who the user is and aims for: the profile, today's phase, the targets by type of day, today's type, the training weekdays, the notes for a coach, the units, and the time now.",
         "operationId": "get-me",
         "responses": {
           "200": {
@@ -4537,7 +4534,7 @@
     },
     "/api/v1/meals": {
       "post": {
-        "description": "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
+        "description": "Logs a meal of items: a food of the user's by food_id, a new food (saved), or an estimate of a whole plate. The same meal sent again under its id is a retry; without an id the server makes one, and a meal sent again is another. Answers the meal with each item's values, where its day stands, and warnings.",
         "operationId": "log-meal",
         "requestBody": {
           "content": {
@@ -4679,7 +4676,7 @@
     },
     "/api/v1/meals/{id}": {
       "delete": {
-        "description": "Deletes a meal, and says where its day stands without it. Its id stays the deleted meal's: a meal logged under it again is refused (409).",
+        "description": "Deletes a meal and answers its day without it; its id cannot be logged again.",
         "operationId": "delete-meal",
         "parameters": [
           {
@@ -4770,7 +4767,7 @@
         ]
       },
       "patch": {
-        "description": "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. An item no op touches keeps what it brought when logged, though its food was corrected since. An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. A remove of an item no longer there changes nothing.",
+        "description": "Changes a meal: its time, its words, and its items by ops in order (add, replace, remove). An item no op touches keeps its values. An add under an item id the meal has is a retry when the same, a 409 when not. Answers as log_meal does.",
         "operationId": "update-meal",
         "parameters": [
           {
@@ -5129,7 +5126,7 @@
     },
     "/api/v1/summary": {
       "get": {
-        "description": "Calibration's summary of the days up to yesterday: the weekly averages, the trend weight, the measured TDEE with its interval and doubts, the verdict on the phase with its guards and flags, the recovery, and the days possibly not all logged. The server computes it: explain it, do not compute it again.",
+        "description": "Calibration's summary up to yesterday: weekly averages, the trend weight, the measured TDEE with its interval, the phase's verdict, recovery, and days maybe not all logged. Explain it; do not compute it again.",
         "operationId": "get-summary",
         "parameters": [
           {
@@ -5518,7 +5515,7 @@
     },
     "/api/v1/undo": {
       "post": {
-        "description": "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
+        "description": "Takes back the latest change not undone, of any client: a meal, a food, a measurement, a check-in; not the plan nor an import. Each undo takes a new id; the same id again answers as before. A change that cannot be taken back is a 409 saying why, and the next undo goes past it. Answers what was taken back.",
         "operationId": "undo-last",
         "requestBody": {
           "content": {
