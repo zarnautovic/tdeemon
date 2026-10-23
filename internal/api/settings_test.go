@@ -58,6 +58,23 @@ func TestSetSettings(t *testing.T) {
 	}
 }
 
+// A refusal of settings gives each reason, in one line, without the
+// store's words around them.
+func TestSetSettingsRefusal(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	cookies := []*http.Cookie{session}
+	rec := in.do(t, http.MethodPatch, "/api/v1/me", `{"name": "\u202e", "timezone": "Mars/Olympus"}`, cookies, nil)
+	var problem struct{ Detail string }
+	if err := json.Unmarshal(rec.Body.Bytes(), &problem); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(problem.Detail, `name "`) || !strings.Contains(problem.Detail, "; time zone ") || strings.Contains(problem.Detail, "\n") {
+		t.Errorf("two reasons: %d %q, want both in one line", rec.Code, problem.Detail)
+	}
+}
+
 // set-notes stores the notes for a coach, which get_me gives, and undo
 // takes them back.
 func TestSetNotes(t *testing.T) {

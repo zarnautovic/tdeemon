@@ -254,7 +254,7 @@ func (db *DB) ChangeSettings(ctx context.Context, id uuid.UUID, c SettingsChange
 		if err := s.Validate(); err != nil {
 			return fmt.Errorf("%w: %w", ErrInvalidSettings, err)
 		}
-		u.UpdatedAt = now.UTC()
+		u.UpdatedAt = now.UTC().Truncate(time.Second)
 		_, err = tx.ExecContext(ctx, `UPDATE users SET name = ?, locale = ?, timezone = ?, day_start_hour = ?, updated_at = ?
 			WHERE id = ?`, u.Name, u.Locale, u.TimeZone, u.DayStartHour, formatTime(now), id.String())
 		return err

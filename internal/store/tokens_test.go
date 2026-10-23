@@ -194,13 +194,15 @@ func TestChangeSettings(t *testing.T) {
 		t.Fatalf("ChangeSettings = %+v, %v", u, err)
 	}
 	// Another change keeps the first's: it changes the user as stored.
+	// The user returned is the one stored, to the second it keeps.
 	locale := "hr"
-	if u, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{Locale: &locale}, t0); err != nil ||
-		u.Name != "Ana M." || u.Locale != "hr" || u.TimeZone != "Europe/Zagreb" {
-		t.Errorf("a second change = %+v, %v; want the first's kept", u, err)
+	second, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{Locale: &locale}, t0.Add(1500*time.Millisecond))
+	if err != nil || second.Name != "Ana M." || second.Locale != "hr" || second.TimeZone != "Europe/Zagreb" {
+		t.Errorf("a second change = %+v, %v; want the first's kept", second, err)
 	}
-	if got, err := db.UserByEmail(t.Context(), "ana@example.com"); err != nil || got.Name != "Ana M." || got.Locale != "hr" {
-		t.Errorf("the user stored = %+v, %v", got, err)
+	if got, err := db.UserByEmail(t.Context(), "ana@example.com"); err != nil || got.Name != "Ana M." || got.Locale != "hr" ||
+		!got.UpdatedAt.Equal(second.UpdatedAt) {
+		t.Errorf("the user stored = %+v, %v; want %v updated", got, err, second.UpdatedAt)
 	}
 	if _, err := db.ChangeSettings(t.Context(), uuid.NewV7(), store.SettingsChange{Name: &name}, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("no such user: %v, want ErrNotFound", err)

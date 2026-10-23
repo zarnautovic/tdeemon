@@ -41,7 +41,7 @@ func (s *sessions) setSettings(ctx context.Context, in *settingsInput) (*setting
 	switch {
 	case errors.Is(err, store.ErrInvalidSettings):
 		return nil, huma.Error422UnprocessableEntity(
-			strings.ReplaceAll(strings.TrimPrefix(err.Error(), store.ErrInvalidSettings.Error()+": "), "\n", "; "))
+			strings.TrimPrefix(oneLine(err), store.ErrInvalidSettings.Error()+": "))
 	case err != nil:
 		return nil, internalError("saving the settings failed", err)
 	}
