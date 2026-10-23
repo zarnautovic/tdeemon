@@ -28,16 +28,17 @@ export function FoodsPage() {
   // What is typed: the address follows it, but the field is not taken
   // from it as it is typed, which would move the caret to the end. A q
   // the field did not write (a link, back and forward) is put in it; one
-  // it wrote comes later than the typing, and is passed over.
+  // it wrote comes later than the typing, and is passed over, with those
+  // written before it, which it replaced (some never come: a navigation
+  // that waits on the network gives way to the next).
   const [typed, setTyped] = useState(q)
-  const [written, setWritten] = useState<ReadonlySet<string>>(new Set())
+  const [written, setWritten] = useState<readonly string[]>([])
   const [seenQ, setSeenQ] = useState(q)
   if (q !== seenQ) {
     setSeenQ(q)
-    if (written.has(q)) {
-      const rest = new Set(written)
-      rest.delete(q)
-      setWritten(rest)
+    const at = written.indexOf(q)
+    if (at >= 0) {
+      setWritten(written.slice(at + 1))
     } else {
       setTyped(q)
     }
@@ -75,7 +76,7 @@ export function FoodsPage() {
           onChange={(event) => {
             const now = event.currentTarget.value
             setTyped(now)
-            setWritten((w) => new Set(w).add(now))
+            setWritten((w) => [...w, now])
             void navigate({
               search: (s) => ({ ...s, q: now === '' ? undefined : now }),
               replace: true,

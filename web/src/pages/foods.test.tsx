@@ -240,3 +240,49 @@ test("a food's page goes back to the foods as they were left", async () => {
   const back = await screen.findByRole('link', { name: 'Back to the foods' })
   expect(back.getAttribute('href')).toBe('/foods?archived=true&order=use')
 })
+
+test('an address with a search typed on the way to another puts it in the field', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': listOf([]),
+    'GET /api/v1/foods': () => Response.json({ foods: [] }),
+  })
+  const router = renderAt('/foods')
+  const field = await screen.findByLabelText('Search the foods')
+  for (const typed of ['o', 'oa', 'oat']) {
+    fireEvent.change(field, { target: { value: typed } })
+  }
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ q: 'oat' })
+  })
+
+  await router.navigate({ to: '/foods', search: { q: 'oa' } })
+
+  await waitFor(() => {
+    expect(screen.getByLabelText('Search the foods')).toHaveProperty('value', 'oa')
+  })
+})
+
+test("the section's link clears the search after a typo corrected fast", async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': listOf([]),
+    'GET /api/v1/foods': () => Response.json({ foods: [] }),
+  })
+  const router = renderAt('/foods')
+  const field = await screen.findByLabelText('Search the foods')
+  // Some of these never reach the address: the next navigation takes
+  // their place.
+  for (const typed of ['x', '', 'b']) {
+    fireEvent.change(field, { target: { value: typed } })
+  }
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ q: 'b' })
+  })
+
+  await router.navigate({ to: '/foods' })
+
+  await waitFor(() => {
+    expect(screen.getByLabelText('Search the foods')).toHaveProperty('value', '')
+  })
+})
