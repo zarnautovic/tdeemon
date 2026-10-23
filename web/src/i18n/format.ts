@@ -47,6 +47,23 @@ function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.D
   return f
 }
 
+// parseNumber reads a number a person typed in locale's language, or
+// undefined for anything else. A comma or a full stop before digits is
+// the decimal point, whichever the keyboard gave, except that groups of
+// three digits after the language's group separator are thousands:
+// 8,042 is 8042 in English and 8.042 in Croatian, 72,5 and 72.5 are 72.5
+// in both.
+export function parseNumber(s: string, locale: string): number | undefined {
+  const typed = s.replaceAll(/\s/g, '')
+  const group = numberFormat(locale, {})
+    .formatToParts(1_000_000)
+    .find((p) => p.type === 'group')?.value
+  if (group !== undefined && new RegExp(`^\\d{1,3}(\\${group}\\d{3})+$`).test(typed)) {
+    return Number(typed.replaceAll(group, ''))
+  }
+  return /^\d+([.,]\d+)?$/.test(typed) ? Number(typed.replace(',', '.')) : undefined
+}
+
 // useFormat formats numbers, dates and times in the app's language.
 export function useFormat() {
   const locale = useLocale()
@@ -54,6 +71,8 @@ export function useFormat() {
     // number rounds to at most digits decimals.
     number: (n: number, digits = 0) =>
       numberFormat(locale, { maximumFractionDigits: digits }).format(n),
+    // parse reads a number typed in the language (parseNumber).
+    parse: (s: string) => parseNumber(s, locale),
     // percent is a percentage, 18.2 for 18.2 %, as the language writes it.
     percent: (n: number, digits = 1) =>
       numberFormat(locale, { style: 'percent', maximumFractionDigits: digits }).format(n / 100),

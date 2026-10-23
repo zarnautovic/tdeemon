@@ -20,7 +20,8 @@ on a phase), the tool registry with `get_profile`, `get_day`,
 and `undo_last`, the MCP server that serves them at `/mcp`, the API
 contract and the web app's frame (signing in and out, its sections, in
 English and Croatian) with the day (what was eaten against the target,
-the meals, the measurements) exist.
+the meals, the measurements, and the check-in and measurements taken
+there) exist.
 
 | Path | What |
 | --- | --- |

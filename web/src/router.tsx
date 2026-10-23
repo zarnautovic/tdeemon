@@ -1,4 +1,4 @@
-import type { QueryClient } from '@tanstack/react-query'
+import { hashKey, type QueryClient } from '@tanstack/react-query'
 import {
   createRootRouteWithContext,
   createRoute,
@@ -124,25 +124,35 @@ export function createAppRouter(options: { queryClient: QueryClient; history?: R
     ...(options.history ? { history: options.history } : {}),
     defaultPreload: 'intent',
   })
-  // A query refused for want of a session (it ended, or was ended
-  // elsewhere) sends the browser to sign in: the sections ask the server
-  // again who is signed in, instead of the answer they keep for a minute.
-  // The session's own 401 is theirs to handle.
+  // A query or a change refused for want of a session (it ended, or was
+  // ended elsewhere) sends the browser to sign in: the sections ask the
+  // server again who is signed in, instead of the answer they keep for a
+  // minute. The session's own 401 is theirs to handle. (A sign-in's 401,
+  // a wrong password, only has the sign-in page ask again: no session.)
+  const signedOut = (error: unknown) => {
+    if (statusOf(error) === 401) {
+      options.queryClient.removeQueries({ queryKey: sessionQuery.queryKey })
+      void router.invalidate()
+    }
+  }
   options.queryClient.getQueryCache().subscribe((event) => {
     if (
       event.type === 'updated' &&
       event.action.type === 'error' &&
-      statusOf(event.action.error) === 401 &&
       event.query.queryHash !== sessionHash
     ) {
-      options.queryClient.removeQueries({ queryKey: sessionQuery.queryKey })
-      void router.invalidate()
+      signedOut(event.action.error)
+    }
+  })
+  options.queryClient.getMutationCache().subscribe((event) => {
+    if (event.type === 'updated' && event.action.type === 'error') {
+      signedOut(event.action.error)
     }
   })
   return router
 }
 
-const sessionHash = JSON.stringify(sessionQuery.queryKey)
+const sessionHash = hashKey(sessionQuery.queryKey)
 
 export type AppRouter = ReturnType<typeof createAppRouter>
 

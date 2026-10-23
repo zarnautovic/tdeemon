@@ -1,0 +1,55 @@
+import { useQueryClient } from '@tanstack/react-query'
+
+import { $api } from './client'
+import type { Day } from './types'
+
+// dayQuery is the query of a day of the user's: a date, YYYY-MM-DD, or
+// today.
+export function dayQuery(date: string) {
+  return $api.queryOptions('get', '/api/v1/days/{date}', { params: { path: { date } } })
+}
+
+// useKeepDay returns what keeps the day a change answered with: as its
+// date's query, and as today's when today's holds that day, so the page
+// shows it without asking the server again.
+function useKeepDay() {
+  const queryClient = useQueryClient()
+  return (answer: Day) => {
+    queryClient.setQueryData(dayQuery(answer.date).queryKey, answer)
+    const today = dayQuery('today').queryKey
+    if (queryClient.getQueryData<Day>(today)?.date === answer.date) {
+      queryClient.setQueryData(today, answer)
+    }
+  }
+}
+
+// The changes of a day run one at a time, in the order they were made, so
+// the day the last of them answers with holds them all.
+function scope(date: string) {
+  return { id: `day ${date}` }
+}
+
+// useCheckIn says what the user says of day date (PATCH, the fields given
+// only).
+export function useCheckIn(date: string) {
+  return $api.useMutation('patch', '/api/v1/days/{date}', {
+    scope: scope(date),
+    onSuccess: useKeepDay(),
+  })
+}
+
+// useLogMetric stores a measurement of day date of the user's.
+export function useLogMetric(date: string) {
+  return $api.useMutation('put', '/api/v1/days/{date}/metrics/{kind}', {
+    scope: scope(date),
+    onSuccess: useKeepDay(),
+  })
+}
+
+// useDeleteMetric deletes a measurement of day date.
+export function useDeleteMetric(date: string) {
+  return $api.useMutation('delete', '/api/v1/days/{date}/metrics/{kind}', {
+    scope: scope(date),
+    onSuccess: useKeepDay(),
+  })
+}

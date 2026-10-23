@@ -21,7 +21,7 @@ export function renderAt(path: string) {
   return router
 }
 
-type Handler = (request: Request) => Response | Promise<Response>
+export type Handler = (request: Request) => Response | Promise<Response>
 
 // fakeServer stands in for the API at fetch: a handler per "METHOD /path",
 // and a 404 problem for anything else. It returns the stub, to see what
