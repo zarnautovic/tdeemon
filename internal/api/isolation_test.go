@@ -648,6 +648,35 @@ func isolateCreateFood(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateSetSettings is set-settings' case: the other changes their own.
+func isolateSetSettings(t *testing.T, e isolationEnv) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodPatch, "/api/v1/me", `{"name": "Another name", "timezone": "Asia/Tokyo", "day_start_hour": 5}`,
+		[]*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), e.other.user.Email) {
+		t.Errorf("the other's settings: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// isolateSetNotes is set-notes' case: the other sets their own notes.
+func isolateSetNotes(t *testing.T, e isolationEnv) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodPut, "/api/v1/me/notes", `{"notes": "New notes of the other"}`, []*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("the other's notes: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// isolateRevokeTokens is revoke-tokens' case: the other's tokens go, and
+// the owner's work, which isolated checks.
+func isolateRevokeTokens(t *testing.T, e isolationEnv) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodDelete, "/api/v1/tokens", "", []*http.Cookie{e.other.session}, nil)
+	if body := rec.Body.String(); rec.Code != http.StatusOK || !strings.Contains(body, `"revoked":`) || strings.Contains(body, `"revoked":0`) {
+		t.Errorf("the other's tokens: %d %s", rec.Code, body)
+	}
+}
+
 // isolationCases has one case for every operation in the OpenAPI
 // document. TestIsolation checks after each that no answer showed the
 // owner's values, that the case got a 2xx from its operation, that the
@@ -703,6 +732,9 @@ func isolationCases() map[string]isolationCase {
 		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),
+		"set-settings":  isolateSetSettings,
+		"set-notes":     isolateSetNotes,
+		"revoke-tokens": isolateRevokeTokens,
 		"get-history": read("/api/v1/history", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
 		}),

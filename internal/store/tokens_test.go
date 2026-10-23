@@ -159,3 +159,49 @@ func TestAPITokensTableChecks(t *testing.T) {
 		t.Error("a second token with the same hash was stored")
 	}
 }
+
+// RevokeAPITokens revokes every token of the user's, and none of
+// another's.
+func TestRevokeAPITokens(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	for i, u := range []uuid.UUID{ana, ana, ivo} {
+		if err := db.CreateAPIToken(t.Context(), newToken(u, "device", t0), sid(string(rune('a'+i)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := db.RevokeAPITokens(t.Context(), ana); err != nil || n != 2 {
+		t.Errorf("RevokeAPITokens = %d, %v; want Ana's 2", n, err)
+	}
+	if got, err := db.APITokens(t.Context(), ivo); err != nil || len(got) != 1 {
+		t.Errorf("Ivo's tokens after = %v, %v; want his one", got, err)
+	}
+	if n, err := db.RevokeAPITokens(t.Context(), ana); err != nil || n != 0 {
+		t.Errorf("RevokeAPITokens again = %d, %v; want 0", n, err)
+	}
+}
+
+// SetSettings stores the settings, held to the user's rules, of a user
+// there is.
+func TestSetSettings(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	s := store.Settings{Name: "Ana M.", Locale: "hr", TimeZone: "Europe/Zagreb", DayStartHour: 3}
+	if err := db.SetSettings(t.Context(), ana, s, t0); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := db.UserByEmail(t.Context(), "ana@example.com"); err != nil || u.Name != "Ana M." || u.Locale != "hr" ||
+		u.TimeZone != "Europe/Zagreb" || u.DayStartHour != 3 {
+		t.Errorf("the user after = %+v, %v", u, err)
+	}
+	if err := db.SetSettings(t.Context(), uuid.NewV7(), s, t0); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("no such user: %v, want ErrNotFound", err)
+	}
+	bad := s
+	bad.TimeZone = "Mars/Olympus"
+	if err := db.SetSettings(t.Context(), ana, bad, t0); err == nil {
+		t.Error("a zone no one has: no error")
+	}
+}

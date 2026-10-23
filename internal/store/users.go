@@ -191,3 +191,50 @@ func parseTime(s string) (time.Time, error) {
 	}
 	return t, nil
 }
+
+// Settings are what a user changes of their account themselves: the name
+// the app shows, its language, their time zone and the hour their day
+// starts.
+type Settings struct {
+	Name         string
+	Locale       string
+	TimeZone     string
+	DayStartHour int
+}
+
+// Validate reports every setting that breaks the rules of user.Validate,
+// joined into one error.
+func (s Settings) Validate() error {
+	var errs []error
+	errs = append(errs, user.ValidateName(s.Name), user.ValidateTimeZone(s.TimeZone))
+	if !slices.Contains(user.Locales(), s.Locale) {
+		errs = append(errs, fmt.Errorf("locale %q: want one of %s", s.Locale, strings.Join(user.Locales(), ", ")))
+	}
+	if s.DayStartHour < 0 || s.DayStartHour > 23 {
+		errs = append(errs, fmt.Errorf("day start hour %d: want 0 to 23", s.DayStartHour))
+	}
+	return errors.Join(errs...)
+}
+
+// SetSettings stores s as the settings of the user with id, each held to
+// the rules of user.Validate, or returns ErrNotFound. A day's start or a
+// time zone changed moves no meal or measurement logged before: each keeps
+// the day it was logged on.
+func (db *DB) SetSettings(ctx context.Context, id uuid.UUID, s Settings, now time.Time) error {
+	if err := s.Validate(); err != nil {
+		return fmt.Errorf("set settings: %w", err)
+	}
+	return db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE users SET name = ?, locale = ?, timezone = ?, day_start_hour = ?, updated_at = ?
+			WHERE id = ?`, s.Name, s.Locale, s.TimeZone, s.DayStartHour, formatTime(now), id.String())
+		if err != nil {
+			return fmt.Errorf("set settings: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("set settings: %w", err)
+		} else if n == 0 {
+			return ErrNotFound
+		}
+		return nil
+	})
+}

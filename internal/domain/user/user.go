@@ -142,10 +142,54 @@ func ValidateEmail(email string) error {
 }
 
 // ValidateName reports whether name is a usable display name: not empty,
-// nothing invisible (a tab, a line break, a direction override that
-// reorders the list of users, a blank that only looks like a name), no
-// space around it, at most MaxNameLen characters.
-func ValidateName(name string) error { return text.Check("name", name, MaxNameLen, true) }
+// no space around it, at most MaxNameLen characters, and nothing
+// invisible (a tab, a line break, a direction override that reorders the
+// list of users, a zero-width space, a blank that only looks like a
+// name), but what writing needs between what shows: a zero-width joiner
+// or non-joiner between two visible characters (an emoji of a family,
+// Persian and the scripts of India), and a variation selector after one
+// (a Japanese name's variant of an ideograph). An email stays stricter
+// (ValidateEmail).
+func ValidateName(name string) error {
+	if !utf8.ValidString(name) {
+		return errors.New("name is not valid UTF-8")
+	}
+	if err := text.Check("name", stripJoins(name), MaxNameLen, true); err != nil {
+		return err
+	}
+	if n := utf8.RuneCountInString(name); n > MaxNameLen {
+		return fmt.Errorf("name is %d characters long, want at most %d", n, MaxNameLen)
+	}
+	return nil
+}
+
+// stripJoins returns name without the joiners, non-joiners and variation
+// selectors it may hold, for text.Check to judge the rest.
+func stripJoins(name string) string {
+	rs := []rune(name)
+	out := make([]rune, 0, len(rs))
+	for i, r := range rs {
+		if !joins(rs, i) {
+			out = append(out, r)
+		}
+	}
+	return string(out)
+}
+
+// joins reports whether rs[i] is a joiner or non-joiner between two
+// visible characters, not spaces, or a variation selector after one.
+func joins(rs []rune, i int) bool {
+	visible := func(j int) bool {
+		return j >= 0 && j < len(rs) && !text.Invisible(rs[j]) && !unicode.IsSpace(rs[j])
+	}
+	switch r := rs[i]; {
+	case r == '\u200c' || r == '\u200d':
+		return visible(i-1) && visible(i+1)
+	case unicode.Is(unicode.Variation_Selector, r):
+		return visible(i - 1)
+	}
+	return false
+}
 
 // ValidateTimeZone accepts an IANA time zone name, such as
 // Europe/Zagreb or UTC. It rejects names Go may resolve but that mean
