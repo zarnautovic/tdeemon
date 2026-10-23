@@ -934,3 +934,14 @@ func TestLogMealOfAFoodTheUserHasSaysSo(t *testing.T) {
 		t.Errorf("an add of 200 ml of the bread by weight: %d %s, want a 422 of op 1 naming it", rec.Code, rec.Body.String())
 	}
 }
+
+// An amount without its unit is in the food's, as a model may send it.
+func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"items": [{"food_id": %q, "amount": 80}]}`, e.bread), e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"quantity":{"amount":80,"unit":"g"}`) {
+		t.Errorf("80 of the bread: %d %s, want 80 g", rec.Code, rec.Body.String())
+	}
+}

@@ -824,7 +824,7 @@ export interface components {
         ItemInput: {
             /**
              * Format: double
-             * @description How much of the food, in unit: the food's own (g or ml).
+             * @description How much of the food, in unit.
              */
             amount?: number;
             /** @description A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food). */
@@ -856,7 +856,10 @@ export interface components {
              * @description How many of the food's serving.
              */
             servings?: number;
-            /** @enum {string} */
+            /**
+             * @description The amount's unit, the food's own: g or ml; grams of a food per portion. The food's when left out.
+             * @enum {string}
+             */
             unit?: "g" | "ml";
         };
         LastUseBody: {

@@ -13,7 +13,10 @@
         345
       ],
       "no_new_foods": true,
-      "known_items": 2
+      "known_items": 2,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -30,7 +33,10 @@
         190
       ],
       "no_new_foods": true,
-      "known_items": 1
+      "known_items": 1,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -48,6 +54,9 @@
       ],
       "new_foods": [
         "banan"
+      ],
+      "not_tools": [
+        "get_day"
       ]
     }
   },
@@ -64,7 +73,10 @@
         450,
         1400
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -98,7 +110,10 @@
       "tools": [
         "update_meal"
       ],
-      "writes": 2
+      "writes": 2,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -162,6 +177,9 @@
       ],
       "new_foods": [
         "protein"
+      ],
+      "not_tools": [
+        "get_day"
       ]
     }
   },
@@ -179,7 +197,10 @@
         345
       ],
       "no_new_foods": true,
-      "known_items": 2
+      "known_items": 2,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -196,7 +217,10 @@
         190
       ],
       "no_new_foods": true,
-      "known_items": 1
+      "known_items": 1,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -214,6 +238,9 @@
       ],
       "new_foods": [
         "banan"
+      ],
+      "not_tools": [
+        "get_day"
       ]
     }
   },
@@ -230,7 +257,10 @@
         450,
         1400
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -264,7 +294,10 @@
       "tools": [
         "update_meal"
       ],
-      "writes": 2
+      "writes": 2,
+      "not_tools": [
+        "get_day"
+      ]
     }
   },
   {
@@ -328,6 +361,9 @@
       ],
       "new_foods": [
         "protein"
+      ],
+      "not_tools": [
+        "get_day"
       ]
     }
   }

@@ -1,6 +1,7 @@
 package api_test
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -428,5 +429,32 @@ func propertyNames(schema any, names map[string]bool) {
 		for _, e := range v {
 			propertyNames(e, names)
 		}
+	}
+}
+
+// TestMCPLogsSessionsAtDebug holds the SDK's word of each stateless
+// request's session, three lines a call, to the debug level.
+func TestMCPLogsSessionsAtDebug(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
+	if text, isErr := callTool(t, cs, "get_profile", nil); isErr {
+		t.Fatal(text)
+	}
+	found := 0
+	sc := bufio.NewScanner(strings.NewReader(in.logs.String()))
+	for sc.Scan() {
+		var rec struct{ Level, Msg string }
+		if json.Unmarshal(sc.Bytes(), &rec) != nil || !strings.HasPrefix(rec.Msg, "server ") {
+			continue
+		}
+		found++
+		if rec.Level != "DEBUG" {
+			t.Errorf("%s at %s, want DEBUG", rec.Msg, rec.Level)
+		}
+	}
+	if found == 0 {
+		t.Errorf("no word of the SDK's in the log:\n%s", in.logs.String())
 	}
 }

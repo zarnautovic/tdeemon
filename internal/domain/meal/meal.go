@@ -90,6 +90,14 @@ func FromFood(f food.Food, q Quantity, note string) (Item, error) {
 	if err := validateNote(note); err != nil {
 		return Item{}, err
 	}
+	// An amount without its unit is in the food's: grams of a food per
+	// portion, whose portion may have a weight.
+	if q.Amount > 0 && q.Unit == "" {
+		q.Unit = f.Basis.Unit()
+		if f.Basis == food.PerPortion {
+			q.Unit = "g"
+		}
+	}
 	amount, err := resolve(f, q)
 	if err != nil {
 		return Item{}, fmt.Errorf("%s: %w", f.Name, err)

@@ -32,26 +32,26 @@ rather than log.
   new food of the name of one the user has is that one, as they have
   it; `upsert_food` corrects it. A restaurant or home-cooked plate: your
   estimate of the whole plate, its name and nutrients.
-- One `log_meal` per meal. Make its `id`, a UUIDv7, only with a tool
-  that runs code: never make one up, as it holds the time it is made,
-  which the server checks against its clock. The same
-  request sent again under it, after a timeout, is safe. Without such a
-  tool, leave the id out and the server makes it, but then the meal sent
-  again is another: look at `get_day` before sending again. Give
-  `eaten_at` only when the user says when, from the `now` of
-  `get_profile`.
-- After each `log_meal` or `update_meal`, show the breakdown the answer
-  gives: each item with its amount and kcal, protein, carbs and fat; then
-  the day (after `delete_meal`, the day alone), eaten and remaining against the
-  target for kcal and each macro, or that there is no target yet; and
-  any warning. A warning of a duplicate meal: ask the user whether it was
-  eaten twice, and delete the one that was not.
-- A correction ("150 g, not 200") is `update_meal` on that meal: replace
-  or remove items by their `item_id`, add one under a new `id`, any
-  random UUID never used before (a version 4 is fine: unlike a meal's,
-  it holds no time). The ids are in
-  the answer of `log_meal` and in `get_day`. A meal not eaten after all
-  is `delete_meal`. Never log the meal again.
+- One `log_meal` per meal. Make its `id`, a UUIDv7, only with a tool that runs
+  code: never make one up, as it holds the time it is made, which the server
+  checks against its clock. The same request sent again under it, after a
+  timeout, is safe. Without such a tool, leave the id out and the server makes
+  it, but then the meal sent again is another: after a timeout, look at
+  `get_day` before sending it again. Give `eaten_at` only when the user says
+  when, from the `now` of `get_profile`.
+- After each `log_meal` or `update_meal`, show the breakdown the answer gives:
+  each item with its amount and kcal, protein, carbs and fat; then the day
+  (after `delete_meal`, the day alone), eaten and remaining against the target
+  for kcal and each macro, or that there is no target yet; and any warning. The
+  answer holds the day: call no `get_day` before a log nor after it. A warning
+  of a duplicate meal: ask the user whether it was eaten twice, and delete the
+  one that was not.
+- A correction ("150 g, not 200") is `update_meal` on that meal: replace or
+  remove items by their `item_id`, add one under a new `id`, any random UUID
+  never used before (a version 4 is fine: unlike a meal's, it holds no time).
+  The ids are in the answer of `log_meal`; `get_day` only for a meal whose ids
+  the conversation does not hold. A meal not eaten after all is `delete_meal`.
+  Never log the meal again.
 - "Undo" is `undo_last`, under a new `id` each time as for a meal; it
   takes back the latest change, of any client, and the answer says
   which. Without an id the server makes one, but then the undo sent

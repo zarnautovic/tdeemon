@@ -77,6 +77,31 @@ func TestFromFood(t *testing.T) {
 	}
 }
 
+// TestFromFoodAmountInTheFoodsUnit holds an amount without its unit to
+// the food's: grams of one by weight or per portion, ml of one by
+// volume. The item keeps the unit, as if given.
+func TestFromFoodAmountInTheFoodsUnit(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		f          food.Food
+		wantUnit   string
+		wantAmount float64
+	}{
+		{egg(), "g", 150},
+		{milk(), "ml", 150},
+		{canteen(300), "g", 0.5},
+	} {
+		it, err := FromFood(tc.f, Quantity{Amount: 150}, "")
+		if err != nil {
+			t.Fatalf("%s: %v", tc.f.Name, err)
+		}
+		if it.Quantity != (Quantity{Amount: 150, Unit: tc.wantUnit}) || !near(it.Amount, tc.wantAmount) {
+			t.Errorf("%s: %+v, want 150 %s as given, %v in its unit", tc.f.Name, it, tc.wantUnit, tc.wantAmount)
+		}
+	}
+}
+
 // Optional nutrients scale with the item and stay unknown when unknown.
 func TestFromFoodScalesOptionalNutrients(t *testing.T) {
 	t.Parallel()
@@ -129,7 +154,6 @@ func TestFromFoodRefuses(t *testing.T) {
 		{"an unknown serving", egg(), Quantity{Servings: 1, Serving: "slice"}, "", `the food has "piece"`},
 		{"a serving of a food with none", milk(), Quantity{Servings: 1, Serving: "glass"}, "", "has none"},
 		{"portions of a food by weight", egg(), Quantity{Portions: 1}, "", "measured in g"},
-		{"an amount without a unit", egg(), Quantity{Amount: 100}, "", `unit, g or ml, not ""`},
 		{"an amount in cups", egg(), Quantity{Amount: 1, Unit: "cup"}, "", `not "cup"`},
 		{"a unit without an amount", egg(), Quantity{Servings: 1, Serving: "piece", Unit: "g"}, "", "a unit needs an amount"},
 		{"ml of a food by weight", egg(), Quantity{Amount: 250, Unit: "ml"}, "", "measured in g, not ml; give g"},

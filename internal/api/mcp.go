@@ -61,6 +61,9 @@ type mcpServer struct {
 	routes http.Handler
 	info   ServerInfo
 	logger *slog.Logger
+	// sdkLogger is the SDK's: its info at debug, as a stateless server
+	// opens and closes a session for each request.
+	sdkLogger *slog.Logger
 }
 
 // newMCPServer is the MCP server of tools, described by spec, the OpenAPI
@@ -71,6 +74,9 @@ func newMCPServer(tools []tool, spec []byte, routes http.Handler, info ServerInf
 		return nil, fmt.Errorf("mcp: the OpenAPI document: %w", err)
 	}
 	m := &mcpServer{routes: routes, info: info, logger: logger}
+	if logger != nil {
+		m.sdkLogger = slog.New(infoAtDebug{logger.Handler()})
+	}
 	for i := range tools {
 		mt, err := doc.mcpTool(tools[i])
 		if err != nil {
@@ -81,6 +87,33 @@ func newMCPServer(tools []tool, spec []byte, routes http.Handler, info ServerInf
 	return m, nil
 }
 
+// infoAtDebug logs its handler's info at debug.
+type infoAtDebug struct{ slog.Handler }
+
+func (h infoAtDebug) Enabled(ctx context.Context, l slog.Level) bool {
+	return h.Handler.Enabled(ctx, debugOfInfo(l))
+}
+
+func (h infoAtDebug) Handle(ctx context.Context, r slog.Record) error {
+	r.Level = debugOfInfo(r.Level)
+	return h.Handler.Handle(ctx, r)
+}
+
+func (h infoAtDebug) WithAttrs(as []slog.Attr) slog.Handler {
+	return infoAtDebug{h.Handler.WithAttrs(as)}
+}
+
+func (h infoAtDebug) WithGroup(name string) slog.Handler {
+	return infoAtDebug{h.Handler.WithGroup(name)}
+}
+
+func debugOfInfo(l slog.Level) slog.Level {
+	if l == slog.LevelInfo {
+		return slog.LevelDebug
+	}
+	return l
+}
+
 // handler answers MCP requests made with an API token that opens a tool.
 // The session's cookie is no way in: a browser would send it to any
 // site's request.
@@ -89,7 +122,7 @@ func (m *mcpServer) handler() http.Handler {
 		p, _ := auth.PrincipalFrom(r.Context())
 		return m.serverFor(p)
 	}, &mcp.StreamableHTTPOptions{
-		Stateless: true, JSONResponse: true, Logger: m.logger,
+		Stateless: true, JSONResponse: true, Logger: m.sdkLogger,
 		// The SDK refuses a request to a loopback address whose Host is
 		// not localhost, against DNS rebinding: that is every request
 		// through a reverse proxy on the same host. A page that rebinds
@@ -119,7 +152,7 @@ func opens(p auth.Principal, t tool) bool {
 // serverFor is the MCP server of the tools p's token opens.
 func (m *mcpServer) serverFor(p auth.Principal) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: m.info.Name, Version: m.info.Version},
-		&mcp.ServerOptions{Logger: m.logger, Instructions: mcpInstructions})
+		&mcp.ServerOptions{Logger: m.sdkLogger, Instructions: mcpInstructions})
 	p.Client = auth.ClientMCP
 	for i := range m.tools {
 		t := &m.tools[i]

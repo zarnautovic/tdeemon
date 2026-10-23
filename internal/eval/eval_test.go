@@ -85,8 +85,10 @@ type expect struct {
 	// Writes are the changes the client makes, from the event log: 0
 	// for a case that must change nothing.
 	Writes *int `json:"writes,omitempty"`
-	// Tools are tools the client must call.
-	Tools []string `json:"tools,omitempty"`
+	// Tools are tools the client must call; NotTools, tools it must
+	// not (get_day around a log, whose answer holds the day).
+	Tools    []string `json:"tools,omitempty"`
+	NotTools []string `json:"not_tools,omitempty"`
 }
 
 // systemPrompt is all the client says of itself: the policy comes from
@@ -590,6 +592,11 @@ func checkCalls(t *testing.T, in instance, e expect, turns []turn) {
 	for _, name := range e.Tools {
 		if !slices.Contains(called, name) {
 			t.Errorf("no call of %s among %v", name, called)
+		}
+	}
+	for _, name := range e.NotTools {
+		if slices.Contains(called, name) {
+			t.Errorf("a call of %s among %v, want none", name, called)
 		}
 	}
 }

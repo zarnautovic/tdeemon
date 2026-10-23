@@ -826,7 +826,7 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "description": "How much of the food, in unit: the food's own (g or ml).",
+            "description": "How much of the food, in unit.",
             "format": "double",
             "minimum": 0,
             "type": "number"
@@ -875,6 +875,7 @@
             "type": "number"
           },
           "unit": {
+            "description": "The amount's unit, the food's own: g or ml; grams of a food per portion. The food's when left out.",
             "enum": [
               "g",
               "ml"

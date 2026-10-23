@@ -198,10 +198,10 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `shopping_list(op, items?)` | |
 
 `log_meal` items accept these shapes (field names are illustrative; the
-tool schema is the reference). An amount always names its unit, and it
-must be the food's: 250 ml of a food by weight is refused rather than
-taken for 250 g. Grams of a portion food work when its portion weight
-is known.
+tool schema is the reference). An amount's unit must be the food's: 250
+ml of a food by weight is refused rather than taken for 250 g. Left out,
+it is the food's, grams for a food per portion. Grams of a portion food
+work when its portion weight is known.
 
 ```jsonc
 { "food_id": "0199…", "amount": 150, "unit": "g" }           // known food, in its unit (g or ml)
