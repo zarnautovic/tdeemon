@@ -360,7 +360,7 @@ type openAPIDoc struct {
 // alone: a model has each tool's schema with each request, so another
 // that takes it names it in a word. The operation checks it in full.
 var saidOnce = map[string]struct{ of, description string }{
-	"FoodFields": {"upsert_food", "A new food, saved: the fields upsert_food takes, but its id and archived."},
+	"FoodFields": {"upsert_food", "The fields upsert_food takes, but its id and archived."},
 	"ItemInput":  {"log_meal", "An item, as log_meal's items take it."},
 }
 
@@ -389,6 +389,9 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 		return mcpTool{}, fmt.Errorf("no %s %s in the document", t.op.Method, t.op.Path)
 	}
 	d.tool = t.name
+	if t.brief == "" {
+		return mcpTool{}, errors.New("no brief description")
+	}
 	mt := mcpTool{tool: t, params: map[string]param{}}
 	props := map[string]any{}
 	required, err := d.params(op, &mt, props)
@@ -415,7 +418,7 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 	// says so (tool.destroys).
 	readOnly := t.op.Method == http.MethodGet
 	mt.def = &mcp.Tool{
-		Name: t.name, Title: t.op.Summary, Description: t.op.Description, InputSchema: schema,
+		Name: t.name, Title: t.op.Summary, Description: t.brief, InputSchema: schema,
 		Annotations: &mcp.ToolAnnotations{
 			Title: t.op.Summary, ReadOnlyHint: readOnly, DestructiveHint: new(t.destructive),
 			IdempotentHint: !t.writesAgain, OpenWorldHint: new(false),
@@ -533,10 +536,17 @@ func (d openAPIDoc) inlineValue(v any, depth int) (any, error) {
 			if !found || !known {
 				return nil, fmt.Errorf("a $ref to nothing: %s", ref)
 			}
+			// A field's words stand by its $ref: they say what the field is
+			// where the schema says what it holds.
+			words, _ := v["description"].(string)
 			if once, ok := saidOnce[name]; ok && once.of != d.tool {
-				return map[string]any{"type": "object", "description": once.description}, nil
+				return map[string]any{"type": "object", "description": strings.TrimSpace(words + " " + once.description)}, nil
 			}
-			return d.inline(s, depth+1)
+			in, err := d.inline(s, depth+1)
+			if m, isMap := in.(map[string]any); isMap && words != "" {
+				m["description"] = words
+			}
+			return in, err
 		}
 		out := make(map[string]any, len(v))
 		for k, e := range v {

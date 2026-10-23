@@ -7,6 +7,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -152,6 +153,55 @@ func TestMCPToolSchemas(t *testing.T) {
 	if d := byName["log_meal"].Description; !strings.Contains(d, "without an id") {
 		t.Errorf("log_meal's description does not say a meal may come without an id: %s", d)
 	}
+	// What a model would get wrong without it: a replace with what an
+	// item has changes nothing; nothing is redone.
+	for name, want := range map[string]string{"update_meal": "remove the item and add it", "undo_last": "Nothing is redone"} {
+		if d := byName[name].Description; !strings.Contains(d, want) {
+			t.Errorf("%s's description does not say %q: %s", name, want, d)
+		}
+	}
+}
+
+// TestMCPDescriptionsAreBrief holds a tool's description in MCP to its
+// brief, and the operation's in the OpenAPI document to the whole of it.
+func TestMCPDescriptionsAreBrief(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	res, err := mcpSession(t, in, mcpToken(t, in, session, `"tools"`)).ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := os.ReadFile("../../api/openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Summary     string `json:"summary"`
+			Description string `json:"description"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(spec, &doc); err != nil {
+		t.Fatal(err)
+	}
+	// A tool's title is its operation's summary.
+	bySummary := map[string]string{}
+	for _, ops := range doc.Paths {
+		for _, op := range ops {
+			bySummary[op.Summary] = op.Description
+		}
+	}
+	full := map[string]string{}
+	for _, tl := range res.Tools {
+		full[tl.Name] = bySummary[tl.Title]
+		if f := full[tl.Name]; tl.Description == "" || len(tl.Description) >= len(f) {
+			t.Errorf("%s: %d bytes in MCP, %d in the document; want a brief", tl.Name, len(tl.Description), len(f))
+		}
+	}
+	if !strings.Contains(full["update_meal"], "A replace with what the item has already changes nothing") {
+		t.Errorf("update_meal's operation lost its whole description: %s", full["update_meal"])
+	}
 }
 
 // TestMCPSchemasCarryWhatAModelUses holds a tool's schema to what a model
@@ -254,6 +304,11 @@ func TestMCPSchemasSayOnce(t *testing.T) {
 	item := at(byName["log_meal"], "properties", "items", "items")
 	if at(item, "properties", "food_id") == nil {
 		t.Errorf("log_meal's item is not in full: %v", item)
+	}
+	for path, want := range map[string]string{"food": "is that food", "nutrients": "whole plate"} {
+		if d, _ := at(item, "properties", path)["description"].(string); !strings.Contains(d, want) {
+			t.Errorf("log_meal's %s says %q, want its field's words, %q", path, d, want)
+		}
 	}
 	for _, tc := range []struct {
 		name, of string
