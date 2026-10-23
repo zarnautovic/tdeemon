@@ -880,13 +880,14 @@ the first spec.
    no shadow mode and no nightly re-import.
 
    The predecessor kept a meal as a line of text, and a food of its
-   table at times as several eaten together. Before the import at the
-   cut-over, a split of both is proposed for the user to review
-   (`import-history --split-report`): the parts of each meal and
-   combination, with their amounts and the foods of the table they read
-   as. A split the user approved is to be applied by the import, each
-   meal keeping its total, the rest an estimate of its own ("Ostalo");
-   the combinations are archived for single foods.
+   table at times as several eaten together. The import at the cut-over
+   is to split both (`import-history --split-report` shows the split
+   before): a part with an amount and a food of the table becomes an
+   item of that food, the rest of the meal an estimate of its own
+   ("Ostalo"), so the meal keeps its total, and a meal whose parts would
+   pass it stays one estimate; a combination is no food. The split is
+   the maintainer's own history's, and goes with the import once the
+   cut-over is done.
 2. **New inputs for what the predecessor took in:** Health Auto Export
    directly (§9), the agent through `/mcp`, and Strong's CSV export
    (§9), whose days of workouts make the training days until P3 reads

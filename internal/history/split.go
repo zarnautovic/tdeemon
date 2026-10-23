@@ -14,9 +14,9 @@ import (
 
 // The splitting of the history (DESIGN.md §10): the predecessor kept a
 // meal as one line of text, and a food of its table at times as a meal
-// of several (a combination: "Jogurt + Whey + Müsli"). A split proposes
-// the parts of each, an amount and a food of the table for each part it
-// can tell, for the user to review before anything is written of it.
+// of several (a combination: "Jogurt + Whey + Müsli"). A split tells the
+// parts of each, an amount and a food of the table for each part it can
+// tell; the import is to apply it, each meal keeping its total.
 
 // Part is a part of a meal or a combination: what the text says of it,
 // the name left once its amount is taken out, the amount, in g, ml or
@@ -51,7 +51,10 @@ const (
 
 // MealSplit is a meal of the history and its parts.
 type MealSplit struct {
-	Date        string    `json:"date"`
+	Date string `json:"date"`
+	// Index is the meal's place in its day, from 0, which the import
+	// keys a meal by.
+	Index       int       `json:"index"`
 	Time        string    `json:"time,omitempty"`
 	Description string    `json:"description"`
 	Kcal        float64   `json:"kcal"`
@@ -68,7 +71,7 @@ type FoodSplit struct {
 	Parts   []Part `json:"parts"`
 }
 
-// SplitReport is the split proposed of a history: its meals, each with
+// SplitReport is the split of a history: its meals, each with
 // its parts, and the foods of its table that read as combinations.
 type SplitReport struct {
 	Meals []MealSplit `json:"meals"`
@@ -107,10 +110,10 @@ func ProposeSplits(days []Day, foods []FoodRow) SplitReport {
 		r.Foods = append(r.Foods, FoodSplit{Line: f.Line, Name: f.Name, Portion: f.Portion, Parts: m.parts(text)})
 	}
 	for _, d := range days {
-		for _, meal := range d.Meals {
+		for i, meal := range d.Meals {
 			parts := m.parts(meal.Description)
 			r.Meals = append(r.Meals, MealSplit{
-				Date: d.Date, Time: meal.Time, Description: meal.Description,
+				Date: d.Date, Index: i, Time: meal.Time, Description: meal.Description,
 				Kcal: meal.Nutrients.Kcal, Class: classOf(parts), Parts: parts,
 			})
 		}
@@ -147,15 +150,17 @@ func classOf(parts []Part) MealClass {
 }
 
 // SplitText returns the parts of a meal's text: a label before a colon
-// left out when the parts follow it ("French toast: 120 g kruha, 2
-// jaja"), the rest split at each " + ", and a part at its commas and
+// left out when parts of their own amounts follow it ("French toast:
+// 120 g kruha, 2 jaja"), kept else ("Pizza: šunka, sir"), the rest split at each " + ", and a part at its commas and
 // " i " too when each piece then has an amount and a name of its own, so
 // "pistacije, 15 komada" stays one part. A split ignores what is in
 // brackets.
 func SplitText(text string) []string {
 	text = strings.TrimSpace(text)
-	if i := topIndex(text, ": "); i > 0 && len(topSplit(text[i+2:], ", ")) > 1 {
-		text = text[i+2:]
+	if i := topIndex(text, ": "); i > 0 {
+		if subs := splitList(text[i+2:]); len(subs) > 1 && allTold(subs) {
+			text = text[i+2:]
+		}
 	}
 	var out []string
 	for _, piece := range topSplit(text, " + ") {
@@ -239,17 +244,24 @@ func topSplit(s, sep string) []string {
 var (
 	// number is a number as the notes write one: a decimal comma or
 	// point, a range ("450–500"), "about" (~) before it.
-	number = `~?\s*(\d+(?:[.,]\d+)?(?:/\d+)?)(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?`
+	// A point or a space between groups of three is of thousands ("1.000
+	// g", "1 000 g"), which a number of thousands starts without a 0.
+	number = `~?\s*([1-9]\d{0,2}(?:[ .]\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?(?:/\d+)?)(?:\s*[–-]\s*(\d+(?:[.,]\d+)?))?`
 	// measured is a number with a unit of weight or volume, times a
 	// count before it ("2 × 220 g").
-	measured = regexp.MustCompile(`(?i)(?:(\d+)\s*[×x]\s*)?` + number + `\s*(kg|g|dl|ml|l)\b`)
+	measured = regexp.MustCompile(`(?i)(?:(\d+)\s*[×x]\s*)?` + number + `\s*(kg|dkg|dag|grama|gram|gr|g|dl|ml|l)\b`)
+	// notCounts are what a number before a name may be of that is no
+	// count of pieces: energy, a share, a small weight.
+	notCounts = regexp.MustCompile(`(?i)^(kcal|kj|mg|mcg|µg|%|posto)`)
 	// bracketCount is a count of pieces a bracket starts with ("(1
 	// srednja)").
 	bracketCount = regexp.MustCompile(`^\(\s*` + number + `\s+\pL`)
 	// counted is a number of pieces before the name ("2 jaja").
-	counted = regexp.MustCompile(`^` + number + `\s+\pL`)
+	counted = regexp.MustCompile(`^` + number + `\s+(\pL\S*)`)
 	// bracketed is a part in brackets.
 	bracketed = regexp.MustCompile(`\([^()]*\)`)
+	// thousands is a number of thousands in groups of three.
+	thousands = regexp.MustCompile(`^[1-9]\d{0,2}(?:[ .]\d{3})+(?:,\d+)?$`)
 	// leading is a number a part's text starts with.
 	leading = regexp.MustCompile(`^` + number + `\s+`)
 	// fillers are the words around an amount, which name no food.
@@ -272,17 +284,23 @@ func amountOf(s string) (float64, string) {
 	if v, unit, ok := measure(bracketed.ReplaceAllString(s, " ")); ok {
 		return v, unit
 	}
-	if m := counted.FindStringSubmatch(strings.TrimSpace(s)); m != nil {
-		return mean(m[1], m[2]), Pieces
+	if m := counted.FindStringSubmatch(strings.TrimSpace(s)); len(m) == 4 && !notCounts.MatchString(m[3]) {
+		if v := mean(m[1], m[2]); v > 0 {
+			return v, Pieces
+		}
 	}
 	for _, b := range brackets {
 		if m := bracketCount.FindStringSubmatch(b); m != nil {
-			return mean(m[1], m[2]), Pieces
+			if v := mean(m[1], m[2]); v > 0 {
+				return v, Pieces
+			}
 		}
 	}
 	// "banana, 1 srednja"
 	if m := countWords.FindStringSubmatch(s); m != nil {
-		return parseDecimal(m[1]), Pieces
+		if v := parseDecimal(m[1]); v > 0 {
+			return v, Pieces
+		}
 	}
 	return 0, ""
 }
@@ -296,10 +314,15 @@ func measure(s string) (float64, string, bool) {
 	if m[1] != "" {
 		v *= parseDecimal(m[1])
 	}
+	if v <= 0 {
+		return 0, "", false
+	}
 	switch strings.ToLower(m[4]) {
 	case "kg":
 		return v * 1000, Grams, true
-	case "g":
+	case "dag", "dkg":
+		return v * 10, Grams, true
+	case "g", "gr", "gram", "grama":
 		return v, Grams, true
 	case "l":
 		return v * 1000, Millilitre, true
@@ -320,6 +343,9 @@ func mean(a, b string) float64 {
 }
 
 func parseDecimal(s string) float64 {
+	if thousands.MatchString(s) {
+		s = strings.NewReplacer(" ", "", ".", "").Replace(s)
+	}
 	if num, den, ok := strings.Cut(s, "/"); ok {
 		d := parseDecimal(den)
 		if d == 0 {
@@ -342,7 +368,8 @@ func nameOf(s string) string {
 	s = countWords.ReplaceAllString(s, " $3")
 	s = fillers.ReplaceAllString(s, " ")
 	s = leading.ReplaceAllString(strings.TrimSpace(s), "")
-	return strings.Trim(strings.Join(strings.Fields(s), " "), " ,;:~-–—")
+	s = strings.ReplaceAll(strings.Join(strings.Fields(s), " "), " ,", ",")
+	return strings.Trim(s, " ,;:~-–—")
 }
 
 // matcher tells the food of the table a part's name reads as.
@@ -404,15 +431,19 @@ func (m matcher) food(name string) string {
 }
 
 // sameWord reports whether a and b are one word inflected ("jogurta"
-// and "jogurt", "maline" and "malina"): without their last vowels, one
-// starts with the other, which is three letters at least and 60 % of the
-// other's length; "piletina" is not "pileća".
+// and "jogurt", "maline" and "malina", "zobenih" and "zobene"): without
+// their last vowels, they are one, or one of four letters or more starts
+// the other, which has three letters more at most. "piletina" is not
+// "pileća", "sirup" not "sir", "rižoto" not "riža".
 func sameWord(a, b string) bool {
 	a, b = strings.TrimRight(a, "aeiou"), strings.TrimRight(b, "aeiou")
 	if len(a) > len(b) {
 		a, b = b, a
 	}
-	return len(a) >= 3 && 10*len(a) >= 6*len(b) && strings.HasPrefix(b, a)
+	if a == b {
+		return a != ""
+	}
+	return len(a) >= 4 && len(b)-len(a) <= 3 && strings.HasPrefix(b, a)
 }
 
 // stopWords are words of a name that name no food.

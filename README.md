@@ -542,15 +542,16 @@ counts as yours, so a plan file changed after its import changes
 nothing of the plan: run it with `--dry-run` until it is right.
 
 With `--split-report PATH` it imports nothing, and needs no `--email`:
-it writes the split it proposes of the meals of `--health-db` and the
-combinations of `--foods` (a food of the table with a plus in its name or
-portion, "Jogurt + Whey + Müsli") to PATH, a JSON file readable by you
-only, to review before anything of it is written. Each meal and
-combination has its parts, as its text gives them: the part's words, its
-amount in g, ml or pieces, and the food of the table it reads as; and a
-meal its class, `known` (an amount and a food for each part),
-`amounts` (an amount for each), `partial` or `untold`. It reads the
-words of the notes, so it errs: it is a proposal, not an import.
+it writes the split of the meals of `--health-db` and the combinations
+of `--foods` (a food of the table with a plus in its name or portion,
+"Jogurt + Whey + Müsli") to PATH, a JSON file readable by you only, to
+look at before the import. Each meal and combination has its parts, as
+its text gives them: the part's words, its amount in g, ml or pieces,
+and the food of the table it reads as; and a meal its place in its day
+and its class, `known` (an amount and a food for each part), `amounts`
+(an amount for each), `partial` or `untold`. It reads the words of the
+notes, so it errs at times; the import is to apply it so that a meal
+keeps its total whatever it got wrong.
 
 ```sh
 kubectl exec deploy/tdeemon -- /tdeemon import-history \

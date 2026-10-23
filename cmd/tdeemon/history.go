@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,8 +44,8 @@ func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
 	if f.splitReport != "" {
 		// A report of the split imports nothing, into no user.
 		switch {
-		case f.plan != "":
-			return f, fmt.Errorf("%w: import-history: --split-report imports nothing; leave out --plan", errUsage)
+		case f.plan != "" || f.email != "" || f.dryRun:
+			return f, fmt.Errorf("%w: import-history: --split-report imports nothing; leave out --email, --plan and --dry-run", errUsage)
 		case f.healthDB == "" && f.foods == "":
 			return f, fmt.Errorf("%w: import-history: --split-report splits --health-db, --foods or both", errUsage)
 		}
@@ -166,9 +167,9 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 	return err
 }
 
-// writeSplitReport writes the split proposed of the predecessor's meals
-// and its food table's combinations to --split-report, a JSON file for
-// the user to review, readable by its owner only as it holds what they
+// writeSplitReport writes the split of the predecessor's meals and its
+// food table's combinations to --split-report, a JSON file to look at
+// before the import, readable by its owner only as it holds what they
 // ate, and says what it holds. It imports nothing.
 func writeSplitReport(ctx context.Context, f importHistoryFlags, out io.Writer) error {
 	src, err := readSources(ctx, f)
@@ -180,14 +181,40 @@ func writeSplitReport(ctx context.Context, f importHistoryFlags, out io.Writer) 
 	if err != nil {
 		return fmt.Errorf("the split report: %w", err)
 	}
-	if err := os.WriteFile(f.splitReport, append(body, '\n'), 0o600); err != nil {
+	if err := writePrivate(f.splitReport, append(body, '\n')); err != nil {
 		return fmt.Errorf("the split report: %w", err)
 	}
 	n := r.Count()
-	_, err = fmt.Fprintf(out, "Wrote the proposed split to %s, and imported nothing: %d meals, %d of them with an amount and a food of the table for each part, "+
-		"%d with an amount for each part, %d with an amount for some, %d with none; %d foods of the table that read as combinations.\n",
-		f.splitReport, len(r.Meals), n[history.Known], n[history.Amounts], n[history.Partial], n[history.Untold], len(r.Foods))
+	_, err = fmt.Fprintf(out, "Wrote the split to %s, and imported nothing: %d meals, %d of them with an amount and a food of the table for each part, "+
+		"%d with an amount for each part, %d with an amount for some, %d with none; %d %s of the table that read as combinations.\n",
+		f.splitReport, len(r.Meals), n[history.Known], n[history.Amounts], n[history.Partial], n[history.Untold], len(r.Foods), plural(len(r.Foods), "food", "foods"))
 	return err
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
+}
+
+// writePrivate writes body to path, readable by its owner only, whatever
+// a file already there allowed: to a file of its own beside it, renamed
+// over path once whole.
+func writePrivate(path string, body []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(body); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func verb(dryRun bool) string {

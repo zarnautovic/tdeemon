@@ -196,13 +196,18 @@ func TestImportHistorySplitReport(t *testing.T) {
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// A report there before, readable by all, is replaced by one for its
+	// owner.
 	path := filepath.Join(t.TempDir(), "split.json")
+	if err := os.WriteFile(path, []byte("old"), 0o644); err != nil { //nolint:gosec // G306: the file the report must not stay
+		t.Fatal(err)
+	}
 	var out bytes.Buffer
 	if err := run(t.Context(), []string{"import-history", "--health-db", predecessor(t), "--foods", foods, "--split-report", path}, lookup(nil), noInput(), &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if want := "Wrote the proposed split to " + path + ", and imported nothing: 3 meals, 0 of them with an amount and a food of the table for each part, " +
-		"0 with an amount for each part, 0 with an amount for some, 3 with none; 1 foods of the table that read as combinations.\n"; out.String() != want {
+	if want := "Wrote the split to " + path + ", and imported nothing: 3 meals, 0 of them with an amount and a food of the table for each part, " +
+		"0 with an amount for each part, 0 with an amount for some, 3 with none; 1 food of the table that read as combinations.\n"; out.String() != want {
 		t.Errorf("it said %q, want %q", out.String(), want)
 	}
 	info, err := os.Stat(path)
@@ -231,8 +236,10 @@ func TestImportHistorySplitReportRefuses(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "split.json")
 	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
 	for args, want := range map[string]string{
-		"--plan x.json --foods " + foods: "leave out --plan",
-		"":                               "splits --health-db, --foods or both",
+		"--plan x.json --foods " + foods:         "leave out --email, --plan and --dry-run",
+		"--dry-run --foods " + foods:             "leave out --email, --plan and --dry-run",
+		"--email a@example.com --foods " + foods: "leave out --email, --plan and --dry-run",
+		"":                                       "splits --health-db, --foods or both",
 	} {
 		err := run(t.Context(), append([]string{"import-history", "--split-report", path}, strings.Fields(args)...), lookup(nil), noInput(), io.Discard, io.Discard)
 		if !errors.Is(err, errUsage) || !strings.Contains(err.Error(), want) {

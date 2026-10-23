@@ -17,6 +17,9 @@ var table = []history.FoodRow{
 	{Line: 7, Name: "Zobene pahuljice", Portion: "100 g"},
 	{Line: 8, Name: "Skyr + zobene + jagode", Portion: "150 g skyra + 40 g zobenih pahuljica + 100 g jagoda"},
 	{Line: 9, Name: "Varivo od graha", Portion: "1/4 lonca"},
+	{Line: 10, Name: "Sir", Portion: "100 g"},
+	{Line: 11, Name: "Riža", Portion: "100 g"},
+	{Line: 12, Name: "Đumbir", Portion: "100 g"},
 }
 
 // splitOf is the one meal of text split against table.
@@ -56,7 +59,7 @@ func TestProposeSplitsParts(t *testing.T) {
 			[]history.Part{
 				{Text: "120 g kruha", Name: "kruha", Amount: 120, Unit: "g"},
 				{Text: "2 jaja", Name: "jaja", Amount: 2, Unit: "piece"},
-				{Text: "30 g sira", Name: "sira", Amount: 30, Unit: "g"},
+				{Text: "30 g sira", Name: "sira", Amount: 30, Unit: "g", Food: "Sir"},
 			},
 			history.Amounts,
 		},
@@ -92,6 +95,36 @@ func TestProposeSplitsParts(t *testing.T) {
 				{Text: "1/4 kolača", Name: "kolača", Amount: 0.25, Unit: "piece"},
 			},
 			history.Amounts,
+		},
+		{
+			"a label stays when what follows it is no parts of their own amounts",
+			"Pizza: šunka, sir, gljive",
+			[]history.Part{{Text: "Pizza: šunka, sir, gljive", Name: "Pizza: šunka, sir, gljive"}},
+			history.Untold,
+		},
+		{
+			"grams written out, decagrams, kilograms, thousands, fillers",
+			"100 gr piletine + 200 grama riže + pršut 5 dag + jogurt 0,5 kg + 1.000 g krumpira + oko 30 g sira",
+			[]history.Part{
+				{Text: "100 gr piletine", Name: "piletine", Amount: 100, Unit: "g"},
+				{Text: "200 grama riže", Name: "riže", Amount: 200, Unit: "g", Food: "Riža"},
+				{Text: "pršut 5 dag", Name: "pršut", Amount: 50, Unit: "g"},
+				{Text: "jogurt 0,5 kg", Name: "jogurt", Amount: 500, Unit: "g", Food: "Obični jogurt"},
+				{Text: "1.000 g krumpira", Name: "krumpira", Amount: 1000, Unit: "g"},
+				{Text: "oko 30 g sira", Name: "sira", Amount: 30, Unit: "g", Food: "Sir"},
+			},
+			history.Amounts,
+		},
+		{
+			"kcal, milligrams, a fraction of nothing and nothing are no amounts",
+			"250 kcal sladoleda + 200 mg kofeina + 1/0 kolača + 0 g maslaca",
+			[]history.Part{
+				{Text: "250 kcal sladoleda", Name: "kcal sladoleda"},
+				{Text: "200 mg kofeina", Name: "mg kofeina"},
+				{Text: "1/0 kolača", Name: "kolača"},
+				{Text: "0 g maslaca", Name: "maslaca"},
+			},
+			history.Untold,
 		},
 		{
 			"a plate without amounts",
@@ -136,6 +169,11 @@ func TestProposeSplitsFoods(t *testing.T) {
 		"skyr (150 g)":              "",
 		"jagoda (100 g)":            "Jagode",
 		"mali sok od jagoda (2 dl)": "",
+		"sirup (20 ml)":             "",
+		"rižoto (300 g)":            "",
+		// "pola" and "malo" name no food.
+		"pola banane":   "Banana",
+		"dumbir (10 g)": "Đumbir",
 	} {
 		if got := splitOf(t, text).Parts[0].Food; got != want {
 			t.Errorf("%q reads as %q, want %q", text, got, want)
@@ -181,7 +219,7 @@ func TestProposeSplitsCount(t *testing.T) {
 	if got, want := r.Count(), map[history.MealClass]int{history.Known: 2, history.Untold: 1}; !reflect.DeepEqual(got, want) {
 		t.Errorf("count = %v, want %v", got, want)
 	}
-	if m := r.Meals[1]; m.Date != "2026-09-01" || m.Time != "13:00" || m.Description != "ručak u restoranu" || m.Kcal != 900 {
+	if m := r.Meals[1]; m.Date != "2026-09-01" || m.Index != 1 || m.Time != "13:00" || m.Description != "ručak u restoranu" || m.Kcal != 900 {
 		t.Errorf("the second meal = %+v", m)
 	}
 }
