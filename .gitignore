@@ -39,3 +39,9 @@ node_modules/
 
 # The binary `go build ./cmd/tdeemon` writes at the root.
 /tdeemon
+
+# The end-to-end tests: the binary and data directory of their server
+# (scripts/e2e-server.sh), and Playwright's results.
+/.e2e/
+/web/test-results/
+/web/playwright-report/
