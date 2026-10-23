@@ -161,6 +161,14 @@ CREATE TABLE 'foods_fts_docsize'(id INTEGER PRIMARY KEY, sz BLOB);
 
 CREATE TABLE 'foods_fts_idx'(segid, term, pgno, PRIMARY KEY(segid, term)) WITHOUT ROWID;
 
+CREATE TABLE job_runs (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    job TEXT NOT NULL CHECK (length(job) BETWEEN 1 AND 64),
+    occurrence TEXT NOT NULL CHECK (length(occurrence) BETWEEN 1 AND 64),
+    ran_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, job, occurrence)
+) STRICT;
+
 CREATE TABLE meal_items (
     -- A UUIDv7 the client chose for a new item, or the store did; per
     -- user.
