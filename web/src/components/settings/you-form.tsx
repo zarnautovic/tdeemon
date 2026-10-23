@@ -28,21 +28,41 @@ function zones(current: string): string[] | undefined {
 
 const hours = Array.from({ length: 24 }, (_, h) => h)
 
+// Edits are the settings the user changed in the form, as typed.
+type Edits = Partial<{ name: string; locale: Locale; timezone: string; day_start_hour: number }>
+
 // YouForm changes the user's name, the app's language, their time zone
-// and the hour their day starts: those changed only, so what another tab
-// changed meanwhile stays. Saved, the session holds the user as changed
+// and the hour their day starts. A field shows the user as the session
+// has them until it is changed, and only the fields changed are sent, so
+// what another tab changed meanwhile stays and shows. Saved, the session holds the user as changed
 // and the user is asked again; a day, whose bounds may have moved, is
 // asked whenever it is shown.
 export function YouForm({ user }: { user: User }) {
   const t = useMessages()
   const id = useId()
   const queryClient = useQueryClient()
-  const [name, setName] = useState(user.name)
-  const [locale, setChosen] = useState<Locale>(user.locale)
-  const [timeZone, setTimeZone] = useState(user.timezone)
-  const [dayStart, setDayStart] = useState(user.day_start_hour)
+  const [edits, setEdits] = useState<Edits>({})
+  const name = edits.name ?? user.name
+  const locale = edits.locale ?? user.locale
+  const timeZone = edits.timezone ?? user.timezone
+  const dayStart = edits.day_start_hour ?? user.day_start_hour
+  const edit = (e: Edits) => {
+    setEdits((es) => ({ ...es, ...e }))
+  }
   const save = $api.useMutation('patch', '/api/v1/me', {
     onSuccess: async (answer) => {
+      // An edit the user now has is no longer one; one made since stays.
+      const now = answer.user
+      setEdits((es) => ({
+        ...(es.name === undefined || es.name.trim() === now.name ? {} : { name: es.name }),
+        ...(es.locale === undefined || es.locale === now.locale ? {} : { locale: es.locale }),
+        ...(es.timezone === undefined || es.timezone === now.timezone
+          ? {}
+          : { timezone: es.timezone }),
+        ...(es.day_start_hour === undefined || es.day_start_hour === now.day_start_hour
+          ? {}
+          : { day_start_hour: es.day_start_hour }),
+      }))
       queryClient.setQueryData(sessionQuery.queryKey, (s: Session | undefined) =>
         s ? { ...s, user: answer.user } : s,
       )
@@ -55,13 +75,19 @@ export function YouForm({ user }: { user: User }) {
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    const typed = name.trim()
+    const typed = edits.name?.trim()
     save.mutate({
       body: {
-        ...(typed === user.name ? {} : { name: typed }),
-        ...(locale === user.locale ? {} : { locale }),
-        ...(timeZone === user.timezone ? {} : { timezone: timeZone }),
-        ...(dayStart === user.day_start_hour ? {} : { day_start_hour: dayStart }),
+        ...(typed === undefined || typed === user.name ? {} : { name: typed }),
+        ...(edits.locale === undefined || edits.locale === user.locale
+          ? {}
+          : { locale: edits.locale }),
+        ...(edits.timezone === undefined || edits.timezone === user.timezone
+          ? {}
+          : { timezone: edits.timezone }),
+        ...(edits.day_start_hour === undefined || edits.day_start_hour === user.day_start_hour
+          ? {}
+          : { day_start_hour: edits.day_start_hour }),
       },
     })
   }
@@ -79,7 +105,7 @@ export function YouForm({ user }: { user: User }) {
           autoComplete="name"
           className={inputClass}
           onChange={(e) => {
-            setName(e.currentTarget.value)
+            edit({ name: e.currentTarget.value })
           }}
         />
       </label>
@@ -91,7 +117,7 @@ export function YouForm({ user }: { user: User }) {
           onChange={(e) => {
             const chosen = locales.find((l) => l.locale === e.currentTarget.value)
             if (chosen) {
-              setChosen(chosen.locale)
+              edit({ locale: chosen.locale })
             }
           }}
         >
@@ -109,7 +135,7 @@ export function YouForm({ user }: { user: User }) {
             value={timeZone}
             className={inputClass}
             onChange={(e) => {
-              setTimeZone(e.currentTarget.value)
+              edit({ timezone: e.currentTarget.value })
             }}
           >
             {choices.map((z) => (
@@ -126,7 +152,7 @@ export function YouForm({ user }: { user: User }) {
             placeholder="Europe/Zagreb"
             className={inputClass}
             onChange={(e) => {
-              setTimeZone(e.currentTarget.value.trim())
+              edit({ timezone: e.currentTarget.value.trim() })
             }}
           />
         )}
@@ -139,7 +165,7 @@ export function YouForm({ user }: { user: User }) {
             aria-describedby={`${id}-start`}
             className={inputClass}
             onChange={(e) => {
-              setDayStart(Number(e.currentTarget.value))
+              edit({ day_start_hour: Number(e.currentTarget.value) })
             }}
           >
             {hours.map((h) => (

@@ -40,13 +40,14 @@ function settingsServer(over: Record<string, (r: Request) => Response | Promise<
   // The notes and the tokens as the server keeps them.
   let notes = 'Knees: no running.'
   let tokens = [phone, claude]
+  let meFails = false
   const keep = (key: string) => async (r: Request) => {
     const text = await r.text()
     ;(sent[key] ??= []).push(text === '' ? undefined : JSON.parse(text))
   }
   const fetch = fakeServer({
     ...signedIn(),
-    'GET /api/v1/me': () => Response.json({ ...me(), notes }),
+    'GET /api/v1/me': () => (meFails ? problem(500) : Response.json({ ...me(), notes })),
     'GET /api/v1/tokens': () => Response.json({ tokens }),
     'GET /api/v1/info': () => Response.json({ name: 'tdeemon', version: 'v0.9.0' }),
     'PATCH /api/v1/me': async (r) => {
@@ -99,6 +100,7 @@ function settingsServer(over: Record<string, (r: Request) => Response | Promise<
     fetch,
     sent,
     setNotes: (n: string) => (notes = n),
+    failMe: () => (meFails = true),
     setTokens: (ts: Token[]) => (tokens = ts),
   }
 }
@@ -166,7 +168,7 @@ test("the time zones offer UTC and the browser's own, or a field without a list"
   expect(options).toContain('America/Los_Angeles')
   cleanup()
 
-  vi.stubGlobal('Intl', { ...Intl, supportedValuesOf: undefined })
+  vi.stubGlobal('Intl', Object.create(Intl, { supportedValuesOf: { value: undefined } }))
   const server = settingsServer()
   renderAt('/settings')
   const typed = within(await screen.findByRole('form', { name: 'You' })).getByRole('textbox', {
@@ -178,6 +180,8 @@ test("the time zones offer UTC and the browser's own, or a field without a list"
   await waitFor(() => {
     expect(server.sent['PATCH /api/v1/me']).toEqual([{ timezone: 'Europe/Zagreb' }])
   })
+  // The rest of the page stands: the tokens' times are formatted.
+  expect(await screen.findByText('iPhone')).toBeDefined()
 })
 
 test("the notes are the server's, not those a cache kept from before", async () => {
@@ -197,6 +201,50 @@ test("the notes are the server's, not those a cache kept from before", async () 
   await waitFor(() => {
     expect(screen.getByLabelText('Notes for a coach')).toHaveProperty('value', '')
   })
+})
+
+test('a setting changed elsewhere shows, and is not sent back', async () => {
+  const server = settingsServer({
+    // Another tab moved the zone meanwhile, which the answer brings.
+    'PATCH /api/v1/me': async (r) => {
+      const body: unknown = await r.json()
+      ;(server.sent['PATCH /api/v1/me'] ??= []).push(body)
+      return Response.json({
+        user: {
+          ...session().user,
+          timezone: 'Europe/London',
+          ...(typeof body === 'object' ? body : {}),
+        },
+      })
+    },
+  })
+  renderAt('/settings')
+
+  const you = within(await screen.findByRole('form', { name: 'You' }))
+  fireEvent.change(you.getByLabelText('Name'), { target: { value: 'Ana M.' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(you.getByLabelText('Time zone')).toHaveProperty('value', 'Europe/London')
+  })
+  fireEvent.change(you.getByLabelText('The day starts at'), { target: { value: '3' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(server.sent['PATCH /api/v1/me']).toEqual([{ name: 'Ana M.' }, { day_start_hour: 3 }])
+  })
+})
+
+test("notes the server failed to give again are not the cache's", async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  await screen.findByLabelText('Notes for a coach')
+  fireEvent.click(screen.getByRole('link', { name: 'Day' }))
+  await screen.findByRole('heading', { name: 'Today' })
+  server.failMe()
+  fireEvent.click(screen.getByRole('link', { name: 'Settings' }))
+  await screen.findByRole('heading', { name: 'Settings' })
+  expect(await screen.findByText('The server failed to answer.')).toBeDefined()
+  expect(screen.queryByLabelText('Notes for a coach')).toBeNull()
 })
 
 test('a setting the server refuses says why', async () => {
@@ -253,11 +301,16 @@ test('the tokens are listed with their use, and one is made and shown once', asy
   expect(await tokens.findByText('iPhone')).toBeDefined()
   expect(tokens.getByText('Send health data · Last used Oct 22 11:00 PM')).toBeDefined()
   expect(tokens.getByText('Read · Read, log and change · Not used yet')).toBeDefined()
+  // The region the token comes in is there before it, so it is said.
+  const live = document.querySelector('form [aria-live="polite"]')
+  expect(live?.textContent).toBe('')
   fireEvent.change(tokens.getByLabelText('Name of the token'), { target: { value: 'Laptop' } })
   fireEvent.click(tokens.getByLabelText('Read'))
   fireEvent.click(tokens.getByRole('button', { name: 'Create a token' }))
 
   expect(await tokens.findByText('tdm_made_up')).toBeDefined()
+  expect(live?.isConnected).toBe(true)
+  expect(live?.textContent).toContain('tdm_made_up')
   expect(tokens.getByText('The token, shown only now: copy it to the device.')).toBeDefined()
   expect(server.sent['POST /api/v1/tokens']).toEqual([
     { name: 'Laptop', scopes: ['ingest', 'read'] },
