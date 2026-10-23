@@ -181,6 +181,13 @@ func answerCases() map[string]answerCase {
 			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
 			in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", []*http.Cookie{session}, nil)
 		},
+		"list-foods": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			now := in.clock.Now()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
+			in.do(t, http.MethodGet, "/api/v1/foods/list?order=use", "", []*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/foods/list?archived=true", "", []*http.Cookie{session}, nil)
+		},
 		"log-meal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			// With a warning, a new food and a food by id.
