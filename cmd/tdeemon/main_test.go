@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zarnautovic/tdeemon/internal/api"
+	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -274,5 +276,18 @@ func TestRunTrustsTheConfiguredProxies(t *testing.T) {
 	}
 	if code := signIn("203.0.113.10", 11); code != http.StatusUnauthorized {
 		t.Errorf("another client behind the proxy: %d, want 401, not the first one's 429", code)
+	}
+}
+
+// The scheduler has the morning summary only with a Telegram bot to send it.
+func TestJobs(t *testing.T) {
+	t.Parallel()
+
+	if js := jobs(config.Config{}, api.Config{}); len(js) != 0 {
+		t.Errorf("jobs without a bot = %v", js)
+	}
+	js := jobs(config.Config{TelegramBotToken: testBotToken, TelegramAPIURL: "http://localhost"}, api.Config{})
+	if len(js) != 1 || js[0].Name != "morning_summary" {
+		t.Errorf("jobs with a bot = %v", js)
 	}
 }

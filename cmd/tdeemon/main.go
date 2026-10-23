@@ -25,6 +25,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
+	"github.com/zarnautovic/tdeemon/internal/telegram"
 	"github.com/zarnautovic/tdeemon/internal/webui"
 )
 
@@ -178,9 +179,6 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		wait := db.StartDailySnapshots(background, cfg.BackupKeep, time.Hour, logger)
 		defer wait()
 	}
-	sched := &scheduler.Scheduler{DB: db, Logger: logger}
-	wait := sched.Start(background, time.Minute)
-	defer wait()
 	defer stopBackground()
 
 	app, embedded, err := webui.New()
@@ -188,7 +186,7 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		return err
 	}
 	logger.Info("web app", "embedded", embedded)
-	handler, err := api.NewHandler(api.Config{
+	apiCfg := api.Config{
 		Info:      api.ServerInfo{Name: "tdeemon", Version: serverVersion},
 		App:       app,
 		DB:        db,
@@ -201,16 +199,34 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		Limits:         cfg.Limits,
 		// The raw bodies devices send, kept for 30 days.
 		IngestArchive: &ingest.Archive{Dir: filepath.Join(cfg.DataDir, "ingest"), Keep: 30 * 24 * time.Hour},
-	})
+	}
+	handler, err := api.NewHandler(apiCfg)
 	if err != nil {
 		return fmt.Errorf("api: %w", err)
 	}
+
+	// The scheduler stops before the database closes, as the snapshots:
+	// its wait is deferred after the Close, and before stopBackground.
+	sched := &scheduler.Scheduler{DB: db, Logger: logger, Jobs: jobs(cfg, apiCfg)}
+	wait := sched.Start(background, time.Minute)
+	defer wait()
+	defer stopBackground()
 
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.Listen, err)
 	}
 	return server.Run(ctx, ln, handler, logger)
+}
+
+// jobs are the scheduler's: the morning summary, with a Telegram bot to
+// send it.
+func jobs(cfg config.Config, apiCfg api.Config) []scheduler.Job {
+	if cfg.TelegramBotToken == "" {
+		return nil
+	}
+	bot := &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
+	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot)}
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {
