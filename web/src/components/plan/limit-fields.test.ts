@@ -71,6 +71,16 @@ test('a value of the wrong kind is no change', () => {
   expect(c.problems).toEqual({ step_kcal: { kind: 'number' }, interval_days: { kind: 'whole' } })
 })
 
+test('a share is of 0 to 100 %, a count of the days of a week of 0 to 7', () => {
+  expect(check(limitsBody(), { fat_floor_pct: '101', weigh_ins: '8' }, parse).problems).toEqual({
+    fat_floor_pct: { kind: 'range', min: 0, max: 100 },
+    weigh_ins: { kind: 'range', min: 0, max: 7 },
+  })
+  expect(check(limitsBody(), { fat_floor_pct: '100', logged_days: '7' }, parse).problems).toEqual(
+    {},
+  )
+})
+
 test('a minimum stays within its maximum', () => {
   expect(check(limitsBody(), { recomp_min: '0.3' }, parse).problems).toEqual({
     recomp_min: { kind: 'order', other: 'recomp_max' },

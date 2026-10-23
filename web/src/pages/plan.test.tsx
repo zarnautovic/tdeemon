@@ -4,7 +4,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import type { components } from '@/api/schema'
 import type { LimitsBody } from '@/components/plan/limit-fields'
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, renderAt, signedIn } from '@/test/app'
+import { fakeServer, problem, renderAt, signedIn } from '@/test/app'
 import { limitsBody } from '@/test/plan'
 
 afterEach(() => {
@@ -170,17 +170,37 @@ test("the profile is the server's, not one a cache kept from before", async () =
   })
 })
 
-test('a height that is no number is not sent', async () => {
+test('a height that is no number, or none the server takes, is not sent', async () => {
   const { sent } = planServer()
   renderAt('/settings/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
-  type(within(form).getByRole('textbox', { name: /Height/ }), 'tall')
-  save('Profile')
-  expect(await within(form).findByRole('alert')).toHaveProperty(
-    'textContent',
-    'The height is a number of centimetres.',
-  )
+  const height = within(form).getByRole('textbox', { name: /Height/ })
+  const refused = async (typed: string) => {
+    type(height, typed)
+    save('Profile')
+    expect(await within(form).findByRole('alert')).toHaveProperty(
+      'textContent',
+      'The height is 50 to 275 cm.',
+    )
+  }
+  await refused('tall')
+  // In metres, and past the tallest.
+  await refused('1,8')
+  await refused('300')
+  expect(height.getAttribute('aria-invalid')).toBe('true')
   expect(sent['PUT /api/v1/profile']).toBeUndefined()
+})
+
+test('a height is shown as it is stored, not rounded', async () => {
+  const { sent } = planServer({ profile: { height_cm: 168.25, missing: ['sex', 'birth_date'] } })
+  renderAt('/settings/plan')
+  const form = await screen.findByRole('form', { name: 'Profile' })
+  expect(within(form).getByRole('textbox', { name: /Height/ })).toHaveProperty('value', '168.25')
+  fireEvent.click(within(form).getByRole('radio', { name: 'Male' }))
+  save('Profile')
+  await waitFor(() => {
+    expect(sent['PUT /api/v1/profile']).toEqual([{ sex: 'male', height_cm: 168.25 }])
+  })
 })
 
 test('each limit is shown against its default and the instance', async () => {
@@ -293,6 +313,99 @@ test("a limit past the instance's other one says which to lower", async () => {
   expect(sent['PUT /api/v1/limits']).toEqual([
     { limits: { protein_floor: 2.5, step_kcal: 80 }, confirm: true },
   ])
+})
+
+test('a limit outside what any level may have says so, and is not sent', async () => {
+  const { sent } = planServer()
+  renderAt('/settings/plan')
+  type(await screen.findByRole('textbox', { name: /^Logged days a step needs/ }), '8')
+  expect(screen.getByText('From 0 to 7.')).toBeTruthy()
+  type(limit('Fat, least'), '120')
+  expect(screen.getByText('From 0 to 100.')).toBeTruthy()
+  save('Limits of the plan')
+  await screen.findByText('Some limits cannot be saved as they are.')
+  expect(sent['PUT /api/v1/limits']).toBeUndefined()
+})
+
+test('the question to loosen takes the focus, and a change of a field closes it', async () => {
+  planServer()
+  renderAt('/settings/plan')
+  type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
+  save('Limits of the plan')
+  const back = await screen.findByRole('button', { name: 'Back' })
+  expect(document.activeElement).toBe(back)
+  expect(document.getElementById(back.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+    'Loosening Bulk, fastest gain allows a plan the limit refused. Loosen it?',
+  )
+  type(limit('Bulk, fastest gain'), '0.45')
+  expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+})
+
+test('a loosening confirmed and refused says why, the question answered', async () => {
+  planServer(
+    {},
+    {
+      'PUT /api/v1/limits': () =>
+        Response.json(
+          { status: 422, title: 'Unprocessable Entity', detail: 'bulk_rate 0.4: want less' },
+          { status: 422, headers: { 'Content-Type': 'application/problem+json' } },
+        ),
+    },
+  )
+  renderAt('/settings/plan')
+  type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
+  save('Limits of the plan')
+  fireEvent.click(await screen.findByRole('button', { name: 'Loosen' }))
+  expect(
+    await screen.findByText('The server did not take it: "Bulk, fastest gain" 0.4: want less'),
+  ).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Loosen' })).toBeNull()
+})
+
+test('back from a loosening the server found leaves no word of it', async () => {
+  const { setLimits } = planServer()
+  renderAt('/settings/plan')
+  const bulk = await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ })
+  setLimits(limitsBody({ bulk_rate: 0.1 }))
+  type(bulk, '0.2')
+  save('Limits of the plan')
+  fireEvent.click(await screen.findByRole('button', { name: 'Back' }))
+  expect(screen.queryByText(/needs confirm/)).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('the limits hold still while they are saved, and a failure goes once they change', async () => {
+  let fail = true
+  let answer: ((r: Response) => void) | undefined
+  planServer(
+    {},
+    {
+      'PUT /api/v1/limits': () =>
+        fail
+          ? problem(500)
+          : new Promise<Response>((resolve) => {
+              answer = resolve
+            }),
+    },
+  )
+  renderAt('/settings/plan')
+  const cut = await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
+  type(cut, '0.5')
+  save('Limits of the plan')
+  expect(await screen.findByRole('button', { name: 'Try again' })).toBeTruthy()
+  // Typed again, what failed is no longer what would be sent again.
+  type(cut, '0.6')
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+
+  fail = false
+  save('Limits of the plan')
+  await waitFor(() => {
+    expect(cut.matches(':disabled')).toBe(true)
+  })
+  answer?.(Response.json(limitsBody({ cut_rate: -0.6 })))
+  await waitFor(() => {
+    expect(cut.matches(':disabled')).toBe(false)
+  })
 })
 
 test("the server's refusal names the limits as the page does", async () => {

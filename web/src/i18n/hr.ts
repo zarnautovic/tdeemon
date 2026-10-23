@@ -354,7 +354,7 @@ export const hr: Messages = {
     missing: (what: string) => `Planu još treba: ${what}.`,
     complete: 'Plan ima sve što mu treba o tebi.',
     missingField: { sex: 'spol', birth_date: 'datum rođenja', height_cm: 'visina' },
-    wrongHeight: 'Visina je broj centimetara.',
+    wrongHeight: (min: string, max: string) => `Visina je od ${min} do ${max} cm.`,
     save: 'Spremi',
     limits: 'Granice plana',
     limitsHint:
@@ -369,7 +369,7 @@ export const hr: Messages = {
       recomp_max: 'Recomp, najviši tempo',
       protein_floor: 'Proteini, najmanje',
       protein_ceiling: 'Proteini, najviše',
-      protein_floor_grams: 'Proteini, najmanje u gramima (0 za bez)',
+      protein_floor_grams: 'Proteini, najmanje u gramima (0 znači bez granice)',
       kcal_floor_male: 'Kcal dana, najmanje, muški',
       kcal_floor_female: 'Kcal dana, najmanje, ženski',
       fat_floor_pct: 'Masti, najmanje',
@@ -394,11 +394,12 @@ export const hr: Messages = {
       ofWeek: 'od 7 dana',
     },
     defaults: (value: string) => `Zadano ${value}`,
-    instance: (value: string) => `instanca ${value}`,
+    instance: (value: string) => `granica instance ${value}`,
     holds: (value: string) => `Vrijedi: ${value}, granica instance`,
     problem: {
       number: 'Nije broj.',
       whole: 'Cijeli broj dana.',
+      range: (min: string, max: string) => `Od ${min} do ${max}.`,
       instance: (value: string) => `Preko granice instance, ${value}.`,
       order: (other: string) => `Preko granice: ${other}.`,
       lower: (other: string, value: string) =>

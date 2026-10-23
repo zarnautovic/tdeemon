@@ -16,6 +16,10 @@ type Sex = NonNullable<Profile['sex']>
 
 const sexes: readonly Sex[] = ['male', 'female']
 
+// The heights the server takes, in cm (profile.MinHeightCm, MaxHeightCm).
+const minHeight = 50
+const maxHeight = 275
+
 // ProfileForm sets what a plan needs of the user: the sex the energy
 // equations take, the birth date and the height. A field left empty is
 // cleared, as the server takes a field left out; what a plan still needs
@@ -28,14 +32,12 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   const [sex, setSex] = useState<Sex | ''>(profile.sex ?? '')
   const [birthDate, setBirthDate] = useState(profile.birth_date ?? '')
   const [height, setHeight] = useState(
-    profile.height_cm === undefined ? '' : f.field(profile.height_cm, 1),
+    profile.height_cm === undefined ? '' : f.field(profile.height_cm),
   )
   const [wrongHeight, setWrongHeight] = useState(false)
   const save = $api.useMutation('put', '/api/v1/profile', {
-    onSuccess: async (answer) => {
+    onSuccess: (answer) => {
       queryClient.setQueryData($api.queryOptions('get', '/api/v1/profile').queryKey, answer)
-      // The age and what is missing, which get_me gives a model.
-      await queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/me'] })
     },
   })
 
@@ -43,8 +45,9 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     event.preventDefault()
     const typed = height.trim()
     const cm = typed === '' ? undefined : f.parse(typed)
-    setWrongHeight(typed !== '' && cm === undefined)
-    if (typed !== '' && cm === undefined) {
+    const wrong = typed !== '' && (cm === undefined || cm < minHeight || cm > maxHeight)
+    setWrongHeight(wrong)
+    if (wrong) {
       return
     }
     save.mutate({
@@ -125,7 +128,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
         </label>
         {wrongHeight && (
           <p id={`${id}-height`} role="alert" className="text-sm text-destructive">
-            {t.plan.wrongHeight}
+            {t.plan.wrongHeight(f.number(minHeight), f.number(maxHeight))}
           </p>
         )}
       </div>

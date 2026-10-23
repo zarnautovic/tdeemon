@@ -29,7 +29,7 @@ export function PlanPage() {
       )}
       {/* The profile as the server has it when the page opens, not as a
           cache kept it. What is typed then stays, saved or not. */}
-      {profile.isFetchedAfterMount && profile.data && <ProfileForm profile={profile.data} />}
+      {profile.isSuccess && profile.isFetchedAfterMount && <ProfileForm profile={profile.data} />}
       {limits.isPending && <output className="block text-muted-foreground">{t.loading}</output>}
       {limits.isError && <LoadError error={limits.error} onRetry={() => void limits.refetch()} />}
       {limits.data && <LimitsForm body={limits.data} />}

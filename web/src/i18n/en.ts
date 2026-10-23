@@ -371,7 +371,7 @@ export const en = {
     missing: (what: string) => `A plan still needs: ${what}.`,
     complete: 'A plan has all it needs of you.',
     missingField: { sex: 'sex', birth_date: 'birth date', height_cm: 'height' },
-    wrongHeight: 'The height is a number of centimetres.',
+    wrongHeight: (min: string, max: string) => `The height is ${min} to ${max} cm.`,
     save: 'Save',
     limits: 'Limits of the plan',
     limitsHint:
@@ -416,6 +416,7 @@ export const en = {
     problem: {
       number: 'Not a number.',
       whole: 'A whole number of days.',
+      range: (min: string, max: string) => `From ${min} to ${max}.`,
       instance: (value: string) => `Past the instance's limit, ${value}.`,
       order: (other: string) => `Past ${other}.`,
       lower: (other: string, value: string) =>

@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useState, type SubmitEvent } from 'react'
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
 import { detailOf, statusOf } from '@/api/errors'
@@ -46,6 +46,10 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
       setAsking(false)
     },
     onError: async (error) => {
+      // Refused: the question is answered, and the refusal says why.
+      if (statusOf(error) === 422) {
+        setAsking(false)
+      }
       // The limits were changed elsewhere, so this loosens one after all:
       // read them again, and ask.
       if (statusOf(error) === 409) {
@@ -91,6 +95,9 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
     if (p.kind === 'order') {
       return t.plan.problem.order(label(p.other))
     }
+    if (p.kind === 'range') {
+      return t.plan.problem.range(f.number(p.min), f.number(p.max))
+    }
     if (p.kind === 'instance') {
       return t.plan.problem.instance(value(field, p.value))
     }
@@ -131,8 +138,11 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
                           onChange={(e) => {
                             const next = e.currentTarget.value
                             setTyped((ts) => ({ ...ts, [field.name]: next }))
+                            // What was sent, and said of it, is no longer
+                            // what is typed.
                             setAsking(false)
                             setTried(undefined)
+                            save.reset()
                           }}
                         />
                         <span className="text-sm text-muted-foreground">
@@ -173,31 +183,21 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
         </p>
       )}
       {asking && loosening && (
-        <div role="alert" className="space-y-2 rounded-lg border border-amber-500/50 p-3 text-sm">
-          <p>{t.plan.loosen(result.loosened.map(label).join(', '))}</p>
-          <div className="flex gap-2">
-            <Button
-              variant="destructive"
-              disabled={save.isPending}
-              onClick={() => {
-                send(true)
-              }}
-            >
-              {t.plan.yesLoosen}
-            </Button>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setAsking(false)
-              }}
-            >
-              {t.plan.keep}
-            </Button>
-          </div>
-        </div>
+        <Loosen
+          names={result.loosened.map(label).join(', ')}
+          pending={save.isPending}
+          onYes={() => {
+            send(true)
+          }}
+          onBack={() => {
+            setAsking(false)
+            save.reset()
+          }}
+        />
       )}
-      {/* A 409 the limits read again do not explain is told as it is. */}
-      {refused && (status === 422 || !(asking && loosening)) && (
+      {/* A refusal says why; a 409 is asked instead, unless the limits
+          read again do not explain it. */}
+      {refused && !(asking && loosening) && (
         <p role="alert" className="text-sm text-destructive">
           {t.plan.refused(named(detailOf(save.error), label))}
         </p>
@@ -207,6 +207,41 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
         {t.plan.save}
       </Button>
     </form>
+  )
+}
+
+// Loosen asks the user to loosen what a change loosens: the focus goes
+// to Back, the safe answer, and the question describes both answers.
+function Loosen({
+  names,
+  pending,
+  onYes,
+  onBack,
+}: {
+  names: string
+  pending: boolean
+  onYes: () => void
+  onBack: () => void
+}) {
+  const t = useMessages()
+  const id = useId()
+  const back = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    back.current?.focus()
+  }, [])
+
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-500/50 p-3 text-sm">
+      <p id={id}>{t.plan.loosen(names)}</p>
+      <div className="flex gap-2">
+        <Button variant="destructive" aria-describedby={id} disabled={pending} onClick={onYes}>
+          {t.plan.yesLoosen}
+        </Button>
+        <Button ref={back} variant="ghost" aria-describedby={id} onClick={onBack}>
+          {t.plan.keep}
+        </Button>
+      </div>
+    </div>
   )
 }
 

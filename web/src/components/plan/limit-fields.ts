@@ -48,6 +48,8 @@ export interface LimitField {
   loss?: boolean
   signed?: boolean
   whole?: boolean
+  // range is the values any level may have, as the server checks them.
+  range?: readonly [number, number]
 }
 
 export const limitFields: readonly LimitField[] = [
@@ -62,14 +64,14 @@ export const limitFields: readonly LimitField[] = [
   { name: 'protein_floor_grams', group: 'food', unit: 'g' },
   { name: 'kcal_floor_male', group: 'food', unit: 'kcal' },
   { name: 'kcal_floor_female', group: 'food', unit: 'kcal' },
-  { name: 'fat_floor_pct', group: 'food', unit: 'pctKcal' },
+  { name: 'fat_floor_pct', group: 'food', unit: 'pctKcal', range: [0, 100] },
   { name: 'step_kcal', group: 'autopilot', unit: 'kcal' },
-  { name: 'step_pct', group: 'autopilot', unit: 'pctAvg' },
+  { name: 'step_pct', group: 'autopilot', unit: 'pctAvg', range: [0, 100] },
   { name: 'interval_days', group: 'autopilot', unit: 'days', whole: true },
   { name: 'first_step_days', group: 'autopilot', unit: 'days', whole: true },
-  { name: 'logged_days', group: 'autopilot', unit: 'ofWeek', whole: true },
-  { name: 'weigh_ins', group: 'autopilot', unit: 'ofWeek', whole: true },
-  { name: 'drift_pct', group: 'autopilot', unit: 'pctTdee' },
+  { name: 'logged_days', group: 'autopilot', unit: 'ofWeek', whole: true, range: [0, 7] },
+  { name: 'weigh_ins', group: 'autopilot', unit: 'ofWeek', whole: true, range: [0, 7] },
+  { name: 'drift_pct', group: 'autopilot', unit: 'pctTdee', range: [0, 100] },
 ]
 
 // The limits that bound one another, a minimum and its maximum, which
@@ -110,6 +112,8 @@ export function looser(body: LimitsBody, name: string, a: number, b: number): bo
 export type Problem =
   | { kind: 'number' }
   | { kind: 'whole' }
+  // outside what any level may have
+  | { kind: 'range'; min: number; max: number }
   // past the instance's limit, which is value
   | { kind: 'instance'; value: number }
   // a minimum past its maximum, or the other way round, both the user's
@@ -151,6 +155,10 @@ export function check(
     }
     if (field.whole && !Number.isInteger(v)) {
       problems[field.name] = { kind: 'whole' }
+      continue
+    }
+    if (field.range && (v < field.range[0] || v > field.range[1])) {
+      problems[field.name] = { kind: 'range', min: field.range[0], max: field.range[1] }
       continue
     }
     if (v === body.limits[field.name]) {
