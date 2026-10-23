@@ -16,6 +16,7 @@ afterEach(() => {
 function server(login: (request: Request) => Response | Promise<Response>) {
   let live = false
   return fakeServer({
+    ...signedIn(),
     ...signedOut,
     'GET /api/v1/auth/session': () => (live ? Response.json(session('hr')) : problem(401)),
     'POST /api/v1/auth/login': async (request) => {

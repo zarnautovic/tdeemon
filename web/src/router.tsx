@@ -9,6 +9,7 @@ import {
 
 import { statusOf } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
+import { isDate } from '@/i18n/format'
 import { setLocale } from '@/i18n/locale'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
@@ -79,7 +80,18 @@ const loginRoute = createRoute({
   component: LoginPage,
 })
 
-const dayRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: DayPage })
+// The day's date, YYYY-MM-DD; without it, or with one that is no date
+// (2026-02-31), today.
+const dayRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/',
+  // The router keeps the URL's keys a validator leaves out, so a date
+  // that is none is set undefined, not left out.
+  validateSearch: (search: Record<string, unknown>): { date?: string | undefined } => ({
+    date: typeof search.date === 'string' && isDate(search.date) ? search.date : undefined,
+  }),
+  component: DayPage,
+})
 const foodsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/foods',
@@ -102,7 +114,7 @@ const routeTree = rootRoute.addChildren([
 ])
 
 export function createAppRouter(options: { queryClient: QueryClient; history?: RouterHistory }) {
-  return createRouter({
+  const router = createRouter({
     routeTree,
     context: { queryClient: options.queryClient },
     // An error a route does not handle, the sections' session check's
@@ -112,7 +124,25 @@ export function createAppRouter(options: { queryClient: QueryClient; history?: R
     ...(options.history ? { history: options.history } : {}),
     defaultPreload: 'intent',
   })
+  // A query refused for want of a session (it ended, or was ended
+  // elsewhere) sends the browser to sign in: the sections ask the server
+  // again who is signed in, instead of the answer they keep for a minute.
+  // The session's own 401 is theirs to handle.
+  options.queryClient.getQueryCache().subscribe((event) => {
+    if (
+      event.type === 'updated' &&
+      event.action.type === 'error' &&
+      statusOf(event.action.error) === 401 &&
+      event.query.queryHash !== sessionHash
+    ) {
+      options.queryClient.removeQueries({ queryKey: sessionQuery.queryKey })
+      void router.invalidate()
+    }
+  })
+  return router
 }
+
+const sessionHash = JSON.stringify(sessionQuery.queryKey)
 
 export type AppRouter = ReturnType<typeof createAppRouter>
 

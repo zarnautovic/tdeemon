@@ -4,6 +4,7 @@ import { render } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import type { components } from '@/api/schema'
+import type { Day } from '@/api/types'
 import { App } from '@/app'
 import type { Locale } from '@/i18n/locale'
 import { createAppRouter } from '@/router'
@@ -51,16 +52,58 @@ export function session(locale: Locale = 'en'): components['schemas']['SessionBo
       name: 'Ana',
       role: 'user',
       locale,
-      timezone: 'Europe/Zagreb',
+      // Far from a developer's own, so a time shown in the machine's zone,
+      // not the user's, fails the tests anywhere.
+      timezone: 'America/Los_Angeles',
       day_start_hour: 4,
     },
     expires_at: '2026-11-22T10:00:00Z',
   }
 }
 
-// signedIn are the routes of a server with a session.
+export const today = '2026-10-23'
+
+// day is a day with nothing logged, its target that of a rest day; over
+// is laid over it.
+export function day(over: Partial<Day> = {}): Day {
+  return {
+    date: today,
+    status: 'open',
+    type: 'rest',
+    target: { kcal: 2500, protein: 160, carbs: 280, fat: 80 },
+    total: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+    remaining: { kcal: 2500, protein: 160, carbs: 280, fat: 80 },
+    meals: [],
+    metrics: [],
+    ...over,
+  }
+}
+
+// me is who the user is, as GET /api/v1/me answers, today being today.
+export function me(): components['schemas']['MeBody'] {
+  return {
+    name: 'Ana',
+    locale: 'en',
+    time_zone: 'America/Los_Angeles',
+    day_start_hour: 4,
+    now: `${today}T09:30:00-07:00`,
+    today,
+    today_type: 'rest',
+    notes: '',
+    profile: { missing: [] },
+    training_weekdays: [],
+    units: { energy: 'kcal', nutrients: 'g', weight: 'kg', height: 'cm' },
+  }
+}
+
+// signedIn are the routes of a server with a session, whose user has
+// logged nothing today.
 export function signedIn(locale: Locale = 'en'): Record<string, Handler> {
-  return { 'GET /api/v1/auth/session': () => Response.json(session(locale)) }
+  return {
+    'GET /api/v1/auth/session': () => Response.json(session(locale)),
+    'GET /api/v1/me': () => Response.json(me()),
+    'GET /api/v1/days/today': () => Response.json(day()),
+  }
 }
 
 // signedOut are the routes of a server without one, which offers a
