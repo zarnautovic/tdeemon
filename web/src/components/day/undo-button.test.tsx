@@ -124,3 +124,26 @@ test('an undo whose id the server refuses, of a clock far from its own, goes wit
   expect(bodies).toHaveLength(2)
   expect(bodies[1]).toEqual({})
 })
+
+test('an undo without an id that got no answer is not offered again', async () => {
+  const bodies: unknown[] = []
+  fakeServer({
+    ...signedIn(),
+    'POST /api/v1/undo': async (request) => {
+      const body: unknown = await request.json()
+      bodies.push(body)
+      return typeof body === 'object' && body !== null && 'id' in body
+        ? problem(422)
+        : Promise.reject(new TypeError('Failed to fetch'))
+    },
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'The undo got no answer. Look at the day before you undo again.',
+  )
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+  expect(bodies).toHaveLength(2)
+})

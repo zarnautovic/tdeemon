@@ -9,12 +9,15 @@ const days = ['get', '/api/v1/days/{date}']
 
 // useUpdateMeal changes a meal of day date by its ops, in order. Its
 // answer has the day's totals but not its meals, so the days are asked
-// again; the change stands done once they came.
+// again; the change stands done once they came. So they are for a meal no
+// longer there (404), deleted elsewhere.
 export function useUpdateMeal(date: string) {
   const queryClient = useQueryClient()
   return $api.useMutation('patch', '/api/v1/meals/{id}', {
     scope: dayScope(date),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: days }),
+    onError: (error) =>
+      statusOf(error) === 404 ? queryClient.invalidateQueries({ queryKey: days }) : undefined,
   })
 }
 

@@ -138,6 +138,7 @@ export const en = {
     keepMeal: 'Keep it',
     refused: 'The server did not take this change.',
     recomputed: 'A changed amount is worked out from the food as it is now.',
+    changedElsewhere: 'Changed elsewhere since this opened.',
     // What a warning of the server's says, by its code.
     warnings: {
       atwater: 'The kcal do not match the protein, carbs and fat.',
@@ -153,6 +154,7 @@ export const en = {
     button: 'Undo the latest change',
     done: (what: string) => `Taken back: ${what}.`,
     nothing: 'There is no change to take back.',
+    unsure: 'The undo got no answer. Look at the day before you undo again.',
     clash:
       'The latest change cannot be taken back: what came since clashes with it. The next undo takes back the one before.',
     // What a change taken back did, by its action.

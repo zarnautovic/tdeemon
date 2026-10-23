@@ -30,6 +30,14 @@ export function UndoButton({ date }: { date: string }) {
         {t.undo.clash}
       </p>
     )
+  } else if (undo.isError && undo.variables.body.id === undefined) {
+    // Without an id, sent again it would take back another change, if
+    // the first was taken back and only its answer lost.
+    said = (
+      <p role="alert" className="text-sm text-destructive">
+        {t.undo.unsure}
+      </p>
+    )
   } else if (undo.isError) {
     said = <SaveStatus change={undo} />
   }

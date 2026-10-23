@@ -533,3 +533,109 @@ test('an item removed here and elsewhere leaves the meal its others', async () =
   expect(meal().queryByText('A meal keeps at least one item: delete the meal instead.')).toBeNull()
   expect(meal().getByRole('button', { name: 'Save the meal' }).hasAttribute('disabled')).toBe(false)
 })
+
+test('an item added elsewhere while the meal is open can be changed too', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // A model adds a milk; the window gets the focus back.
+  const milk: Item = { ...oats, id: '0193c3a5-0000-7000-8000-0000000000b6', name: 'Milk' }
+  server.elsewhere((m) => ({ ...m, items: [...m.items, milk] }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  const field = await meal().findByLabelText('Amount: Milk')
+  expect(field).toHaveProperty('value', '80')
+  fireEvent.change(field, { target: { value: '250' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          { op: 'replace', item_id: milk.id, item: { food_id: oatsFood, amount: 250, unit: 'g' } },
+        ],
+      },
+    ])
+  })
+})
+
+test('an item changed elsewhere says so, and its field keeps what it opened with', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // The oats go from 80 g to 2 servings of a cup elsewhere.
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) =>
+      i.id === oats.id ? { ...i, quantity: { serving: 'cup', servings: 2 } } : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+
+  expect(await meal().findByText('Changed elsewhere since this opened.')).toBeDefined()
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '80')
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '90' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  // The number typed means what the field showed: grams.
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          { op: 'replace', item_id: oats.id, item: { food_id: oatsFood, amount: 90, unit: 'g' } },
+        ],
+      },
+    ])
+  })
+})
+
+test('a change tried again after it failed sends the meal as it is typed then', async () => {
+  const server = mealServer()
+  let up = false
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: (request) => (up && patch ? patch(request) : problem(503)),
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await meal().findByRole('alert')
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '95' } })
+  up = true
+  fireEvent.click(meal().getByRole('button', { name: 'Try again' }))
+
+  expect(await meal().findByText('95 g')).toBeDefined()
+  expect(server.sent.at(-1)?.body).toEqual({
+    ops: [
+      { op: 'replace', item_id: oats.id, item: { food_id: oatsFood, amount: 95, unit: 'g' } },
+      { op: 'remove', item_id: egg.id },
+    ],
+  })
+})
+
+test('a change of a meal deleted elsewhere (404) asks the day again, and the meal goes', async () => {
+  let gone = false
+  fakeServer({
+    ...mealServer().routes,
+    'GET /api/v1/days/today': () => Response.json(day({ meals: gone ? [] : [breakfast] })),
+    [`PATCH /api/v1/meals/${mealId}`]: () => {
+      gone = true
+      return problem(404)
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
+})

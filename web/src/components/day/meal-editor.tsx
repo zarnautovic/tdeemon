@@ -55,6 +55,11 @@ function amountOf(item: Item, portions: string): Amount | undefined {
   return undefined
 }
 
+interface Start {
+  text: string
+  amount: Amount
+}
+
 // MealEditor changes a meal's items, the amount of each of a food and
 // which stay, in one change saved at once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
@@ -74,16 +79,23 @@ export function MealEditor({
   const id = useId()
   const update = useUpdateMeal(date)
   const remove = useDeleteMeal(date)
-  // What each amount field started with, when the editor opened.
+  // Each amount as the editor opened with it: what its field starts with,
+  // and what a number typed in it means, though the item changes
+  // elsewhere meanwhile. An item added since starts as it is.
+  const start = (item: Item): Start | undefined => {
+    const amount = amountOf(item, t.meal.portions)
+    return amount && { text: f.field(amount.n), amount }
+  }
   const [initial] = useState(
     () =>
       new Map(
         meal.items.flatMap((item) => {
-          const amount = amountOf(item, t.meal.portions)
-          return amount ? [[item.id, f.field(amount.n)] as const] : []
+          const s = start(item)
+          return s ? [[item.id, s] as const] : []
         }),
       ),
   )
+  const startOf = (item: Item) => initial.get(item.id) ?? start(item)
   // The items to remove, and those whose amount is not a number.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
@@ -92,7 +104,9 @@ export function MealEditor({
   const none = meal.items.every((item) => removed.has(item.id))
   // A change the server refuses (422, or 409 for an item changed since)
   // would be refused again.
-  const refused = update.isError && [409, 422].includes(statusOf(update.error) ?? 0)
+  // A meal no longer there (404) was deleted elsewhere: the days are asked
+  // again, and its card goes.
+  const refused = update.isError && [404, 409, 422].includes(statusOf(update.error) ?? 0)
   const form = useRef<HTMLFormElement>(null)
   const keep = useRef<HTMLButtonElement>(null)
 
@@ -128,19 +142,18 @@ export function MealEditor({
         ops.push({ op: 'remove', item_id: item.id })
         continue
       }
-      const amount = amountOf(item, t.meal.portions)
+      const was = startOf(item)
       const typed = typedIn.get(item.id)
-      const was = initial.get(item.id)
-      if (amount === undefined || typeof typed !== 'string' || was === undefined) {
+      if (was === undefined || typeof typed !== 'string') {
         continue
       }
       const n = f.parse(typed)
       if (n === undefined) {
         notNumbers.add(item.id)
-      } else if (n !== f.parse(was)) {
+      } else if (n !== f.parse(was.text)) {
         // Only an amount typed anew: one left as it started, rounded to
         // what the field shows, is not sent rounded.
-        ops.push({ op: 'replace', item_id: item.id, item: amount.with(n) })
+        ops.push({ op: 'replace', item_id: item.id, item: was.amount.with(n) })
       }
     }
     setWrong(notNumbers)
@@ -158,29 +171,39 @@ export function MealEditor({
     <form ref={form} onSubmit={submit} noValidate className="space-y-3">
       <ul className="divide-y text-sm">
         {meal.items.map((item) => {
-          const amount = amountOf(item, t.meal.portions)
+          const was = startOf(item)
+          const now = start(item)
           const gone = removed.has(item.id)
+          // Changed elsewhere since the editor opened: its field keeps what
+          // it opened with.
+          const moved =
+            was !== undefined && (now?.text !== was.text || now.amount.unit !== was.amount.unit)
           return (
             <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
               <span className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}>
                 {item.name}
                 {gone && <span className="sr-only"> ({t.meal.removed})</span>}
+                {moved && !gone && (
+                  <span className="block text-xs text-amber-700 dark:text-amber-400">
+                    {t.meal.changedElsewhere}
+                  </span>
+                )}
               </span>
-              {amount && !gone && (
+              {was && !gone && (
                 <span className="relative w-32">
                   <input
                     name={item.id}
                     aria-label={t.meal.amount(item.name)}
                     inputMode="decimal"
                     autoComplete="off"
-                    defaultValue={initial.get(item.id)}
+                    defaultValue={was.text}
                     aria-invalid={wrong.has(item.id)}
                     aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
-                    className={cn(inputClass, 'h-9 tabular-nums', amount.unit && 'pr-14')}
+                    className={cn(inputClass, 'h-9 tabular-nums', was.amount.unit && 'pr-14')}
                   />
-                  {amount.unit && (
+                  {was.amount.unit && (
                     <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
-                      {amount.unit}
+                      {was.amount.unit}
                     </span>
                   )}
                 </span>
@@ -219,10 +242,10 @@ export function MealEditor({
       ) : (
         <SaveStatus
           change={update}
+          // Again, with the meal as it is typed now: an op done already
+          // the server takes for done.
           onRetry={() => {
-            if (update.variables) {
-              send(update.variables.body)
-            }
+            form.current?.requestSubmit()
           }}
         />
       )}
