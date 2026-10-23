@@ -21,9 +21,9 @@ measured TDEE and the verdict on a phase), the tool registry with
 and `undo_last`, the MCP server that serves them at `/mcp`, the API
 contract and the web app's frame (signing in and out, its sections, in
 English and Croatian) with the day (what was eaten against the target,
-the meals, the measurements, and the check-in and measurements taken
-there) and the foods (their list and search, a food made, corrected or
-archived) exist.
+the meals, the measurements, and the check-in, the measurements, a
+meal's corrections and a meal logged by hand taken there) and the
+foods (their list and search, a food made, corrected or archived) exist.
 
 | Path | What |
 | --- | --- |

@@ -1,0 +1,259 @@
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, expect, test, vi } from 'vitest'
+
+import type { Day, Food } from '@/api/types'
+import { day, fakeServer, problem, renderAt, signedIn, type Handler } from '@/test/app'
+
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  localStorage.clear()
+})
+
+const bread: Food = {
+  id: '0193c3a5-0000-7000-8000-0000000000f1',
+  name: 'Rye bread',
+  basis: '100g',
+  source: 'label',
+  archived: false,
+  nutrients: { kcal: 259, protein: 8.5, carbs: 48, fat: 3.3 },
+  servings: [{ name: 'slice', amount: 40 }],
+  last_use: {
+    at: '2026-10-21T07:00:00Z',
+    meal_id: '0193c3a5-0000-7000-8000-0000000000a9',
+    quantity: { serving: 'slice', servings: 2 },
+    amount: 80,
+    unit: 'g',
+  },
+}
+
+// logServer is a day that takes a meal: it answers as the API does and
+// keeps the bodies it was sent.
+function logServer(date = '2026-10-23', over: Record<string, Handler> = {}) {
+  let current: Day = day({ date })
+  const sent: unknown[] = []
+  const routes: Record<string, Handler> = {
+    ...signedIn(),
+    'GET /api/v1/days/today': () => Response.json(current),
+    [`GET /api/v1/days/${date}`]: () => Response.json(current),
+    'GET /api/v1/foods': (request) =>
+      Response.json({
+        foods: new URL(request.url).searchParams.get('query') === 'rye' ? [bread] : [],
+      }),
+    'POST /api/v1/meals': async (request) => {
+      const body: unknown = await request.json()
+      sent.push(body)
+      current = {
+        ...current,
+        meals: [
+          {
+            id: '0193c3a5-0000-7000-8000-0000000000a1',
+            eaten_at: '2026-10-23T15:30:00Z',
+            description: 'Breakfast',
+            client: 'web',
+            total: { kcal: 207, protein: 7, carbs: 38, fat: 3 },
+            items: [],
+          },
+        ],
+      }
+      const { meals: _meals, metrics: _metrics, ...summary } = current
+      return Response.json({ meal: current.meals[0], day: summary, warnings: [] }, { status: 201 })
+    },
+    ...over,
+  }
+  fakeServer(routes)
+  return { sent }
+}
+
+function composer() {
+  return within(screen.getByRole('form', { name: 'A new meal' }))
+}
+
+test("a meal is logged of a food of the user's and an estimate, at a time of the day", async () => {
+  const server = logServer()
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('What it was'), { target: { value: 'Breakfast' } })
+  fireEvent.change(composer().getByLabelText('Time'), { target: { value: '08:30' } })
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  // As it was eaten last: two slices.
+  expect(composer().getByLabelText('Amount: Rye bread')).toHaveProperty('value', '2')
+  expect(composer().getByLabelText('Unit: Rye bread')).toHaveProperty('value', 'serving:slice')
+  fireEvent.change(composer().getByLabelText('Unit: Rye bread'), { target: { value: 'g' } })
+  fireEvent.change(composer().getByLabelText('Amount: Rye bread'), { target: { value: '60' } })
+  fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
+  fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Coffee' } })
+  for (const [label, value] of [
+    ['Energy (kcal)', '50'],
+    ['Protein (g)', '2'],
+    ['Carbs (g)', '6'],
+    ['Fat (g)', '2.5'],
+  ] as const) {
+    fireEvent.change(composer().getByLabelText(label), { target: { value } })
+  }
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  expect(await screen.findByText('The meal is logged.')).toBeDefined()
+  expect(await screen.findByText('Breakfast')).toBeDefined()
+  expect(screen.queryByRole('form', { name: 'A new meal' })).toBeNull()
+  expect(server.sent).toEqual([
+    {
+      id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/) as unknown,
+      description: 'Breakfast',
+      // 08:30 in Los Angeles, the user's time zone.
+      eaten_at: '2026-10-23T15:30:00.000Z',
+      items: [
+        { id: expect.any(String) as unknown, food_id: bread.id, amount: 60, unit: 'g' },
+        {
+          id: expect.any(String) as unknown,
+          name: 'Coffee',
+          nutrients: { kcal: 50, protein: 2, carbs: 6, fat: 2.5 },
+        },
+      ],
+    },
+  ])
+})
+
+test("another day's meal is at noon, and one past midnight is of the night after the day", async () => {
+  const server = logServer('2026-10-21')
+  renderAt('/?date=2026-10-21')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  expect(composer().getByLabelText('Time')).toHaveProperty('value', '12:00')
+  fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
+  fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Snack' } })
+  for (const label of ['Energy (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)']) {
+    fireEvent.change(composer().getByLabelText(label), { target: { value: '1' } })
+  }
+  // The day starts at 04:00: 01:30 is the night after the 21st.
+  fireEvent.change(composer().getByLabelText('Time'), { target: { value: '01:30' } })
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ eaten_at: '2026-10-22T08:30:00.000Z' })
+})
+
+test('a meal without items, or with an amount that is no number, is not sent', async () => {
+  const server = logServer()
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+  expect(composer().getByRole('alert').textContent).toBe('Add a food or an estimate first.')
+
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.change(composer().getByLabelText('Amount: Rye bread'), { target: { value: 'a few' } })
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  expect(composer().getByRole('alert').textContent).toBe('Write a number, such as 72.5.')
+  expect(composer().getByLabelText('Amount: Rye bread').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+})
+
+test('a search that finds nothing says to give an estimate, and an item is removed', async () => {
+  logServer()
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'kale' } })
+  expect(
+    await composer().findByText('No food of yours matches: give it as an estimate.'),
+  ).toBeDefined()
+  fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
+  fireEvent.click(composer().getByRole('button', { name: 'Remove: an estimate' }))
+  expect(composer().queryByLabelText('What it is')).toBeNull()
+
+  fireEvent.click(composer().getByRole('button', { name: 'Cancel' }))
+  expect(screen.queryByRole('form', { name: 'A new meal' })).toBeNull()
+})
+
+test('a meal that got no answer is sent again under its id', async () => {
+  let up = false
+  const bodies: unknown[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods': () => Response.json({ foods: [bread] }),
+    'POST /api/v1/meals': async (request) => {
+      bodies.push(await request.json())
+      return up ? problem(503) : Promise.reject(new TypeError('Failed to fetch'))
+    },
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+  up = true
+  fireEvent.click(await composer().findByRole('button', { name: 'Try again' }))
+
+  await waitFor(() => {
+    expect(bodies).toHaveLength(2)
+  })
+  expect(bodies[1]).toEqual(bodies[0])
+})
+
+test("a meal the server refuses says why, in the server's words", async () => {
+  logServer('2026-10-23', { 'POST /api/v1/meals': () => problem(422) })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  expect((await composer().findByRole('alert')).textContent).toBe(
+    'The server did not take this meal: what went wrong',
+  )
+})
+
+test("the server's warnings of a logged meal are said", async () => {
+  logServer('2026-10-23', {
+    'POST /api/v1/meals': () =>
+      Response.json(
+        {
+          meal: {
+            id: 'x',
+            eaten_at: '2026-10-23T15:30:00Z',
+            description: '',
+            client: 'web',
+            total: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+            items: [],
+          },
+          day: {
+            date: '2026-10-23',
+            status: 'open',
+            type: 'rest',
+            total: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+          },
+          warnings: [{ code: 'duplicate_meal', message: 'the same meal at 08:25' }],
+        },
+        { status: 201 },
+      ),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  expect(
+    await screen.findByText(
+      'A meal with the same items was logged just before: if this one was sent twice, delete it.',
+    ),
+  ).toBeDefined()
+})
+
+test('a day to come has no meal to log', async () => {
+  logServer('2026-10-25')
+  renderAt('/?date=2026-10-25')
+
+  expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
+  expect(screen.queryByRole('button', { name: 'Log a meal' })).toBeNull()
+})
