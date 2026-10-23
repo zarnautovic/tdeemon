@@ -10,7 +10,7 @@ the admin may tighten them, and loosen some within a floor nobody can
 lower.
 
 > **Status: early development.** Only the server skeleton, the database
-> layer, the API contract and an empty web app exist so far.
+> layer, the API contract and the web app's frame exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights

@@ -779,6 +779,11 @@ the first spec.
     openapi-fetch) and TanStack Router (routes declared in code).
   - Tailwind + shadcn/ui on Base UI (components owned in-repo).
   - ECharts, keeping the validated palette.
+  - i18n without a library: each language's text is a typed object
+    (`web/src/i18n`), so a key missing in one language fails the type
+    check. Paraglide JS was the plan, but its compiler loads plugins
+    from a CDN at build time and pulls ~500 packages, one without a
+    licence on npm; two languages do not need that.
   - `vite-plugin-pwa` for install and web push.
   - Later, Capacitor wraps the same app for iOS with a HealthKit plugin.
 - **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals, their
