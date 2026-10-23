@@ -393,7 +393,7 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 		mt.body = true
 	}
 	slices.Sort(required)
-	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	schema := map[string]any{"type": "object", "properties": forModel(props, true), "additionalProperties": false}
 	if len(required) > 0 {
 		schema["required"] = required
 	}
@@ -411,6 +411,38 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 		},
 	}
 	return mt, nil
+}
+
+// A tool's schema goes with each request a model makes, so it carries
+// what the model needs to call the tool: not the format of a number, nor
+// examples, nor the bounds of a number, a string or a list, which the
+// operation checks and answers in its error.
+var (
+	droppedKeywords = []string{"examples", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems"}
+	keptFormats     = []string{"uuid", "date", "date-time"}
+)
+
+// forModel returns schema v without what a model does not need; names
+// says v is a map of properties by name, whose keys are no keywords.
+func forModel(v any, names bool) any {
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			if f, isString := e.(string); !names && (slices.Contains(droppedKeywords, k) || k == "format" && (!isString || !slices.Contains(keptFormats, f))) {
+				continue
+			}
+			out[k] = forModel(e, !names && k == "properties")
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = forModel(e, false)
+		}
+		return out
+	}
+	return v
 }
 
 // params adds op's path and query parameters to props and to mt, and

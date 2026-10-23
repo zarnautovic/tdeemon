@@ -154,6 +154,53 @@ func TestMCPToolSchemas(t *testing.T) {
 	}
 }
 
+// TestMCPSchemasCarryWhatAModelUses holds a tool's schema to what a model
+// needs to call it, as it is sent with each request: no format of a
+// number, no examples, no bounds of a number, a string or a list, which
+// the operation checks; the enums, the required and the formats of a
+// string stay.
+func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	res, err := mcpSession(t, in, mcpToken(t, in, session, `"tools"`)).ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropped := []string{"examples", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems"}
+	var walk func(tool string, v any, names bool)
+	walk = func(tool string, v any, names bool) {
+		switch v := v.(type) {
+		case map[string]any:
+			for k, e := range v {
+				if !names && slices.Contains(dropped, k) {
+					t.Errorf("%s: a schema has %s", tool, k)
+				}
+				if f, _ := e.(string); !names && k == "format" && !slices.Contains([]string{"uuid", "date", "date-time"}, f) {
+					t.Errorf("%s: a schema has the format %s", tool, f)
+				}
+				walk(tool, e, !names && k == "properties")
+			}
+		case []any:
+			for _, e := range v {
+				walk(tool, e, false)
+			}
+		}
+	}
+	enums := 0
+	for _, tl := range res.Tools {
+		walk(tl.Name, tl.InputSchema, false)
+		b, err := json.Marshal(tl.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		enums += strings.Count(string(b), `"enum"`)
+	}
+	if enums == 0 {
+		t.Error("no schema has an enum")
+	}
+}
+
 // A tool called through MCP is its operation: its answer, as JSON, and a
 // write recorded as the client mcp's. A day left out is today.
 func TestMCPCallsATool(t *testing.T) {
