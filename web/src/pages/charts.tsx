@@ -139,8 +139,13 @@ function Cards({
   const sleep = n(averageOf(days.map((d) => d.sleep_h)), 1)
   const rhr = n(averageOf(days.map((d) => d.resting_hr)))
   const hrv = n(averageOf(days.map((d) => d.hrv)))
-  // An open day's steps still grow; a day left out counts for nothing.
-  const steps = n(averageOf(days.filter((d) => d.status === 'complete').map((d) => d.steps)))
+  // An open day's steps still grow, a day left out counts for nothing,
+  // and 0 steps are none (a phone switched off), as calibration counts.
+  const steps = n(
+    averageOf(
+      days.filter((d) => d.status === 'complete' && (d.steps ?? 0) > 0).map((d) => d.steps),
+    ),
+  )
   const none = t.charts.said.none
   const recovery = [
     rhr === undefined ? undefined : t.charts.said.rhr(rhr),
@@ -168,7 +173,7 @@ function Cards({
         ? t.charts.said.tdee(
             f.number(lastTDEE.kcal),
             f.number(lastTDEE.half_width),
-            lastTDEE.trusted && !lastTDEE.before_phase,
+            lastTDEE.trusted ? (lastTDEE.before_phase ? 'before' : 'trusted') : 'unsure',
           )
         : none,
       option: tdeeOption(days, words),

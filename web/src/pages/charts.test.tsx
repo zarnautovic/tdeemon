@@ -4,6 +4,10 @@ import { afterEach, expect, test, vi } from 'vitest'
 import type { components } from '@/api/schema'
 import { fakeServer, problem, renderAt, signedIn, today } from '@/test/app'
 
+// The first test of the file loads the charts' module, ECharts with it,
+// which a busy machine takes seconds to.
+vi.setConfig({ testTimeout: 20_000 })
+
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
@@ -213,5 +217,45 @@ test('a card says what it has, and an estimate not trusted yet says so', async (
   expect(screen.getByText('HRV 45 ms on average.')).toBeDefined()
   expect(
     screen.getByText('TDEE 2,300 ± 300 kcal a day, as of the last day, not to be trusted yet.'),
+  ).toBeDefined()
+})
+
+test('a TDEE of the days before the phase says so, and still is one', async () => {
+  historyServer({
+    'GET /api/v1/history': () =>
+      Response.json({
+        from: today,
+        to: today,
+        days: [
+          {
+            date: today,
+            status: 'complete',
+            type: 'rest',
+            meals: 0,
+            steps: 0,
+            tdee: {
+              kcal: 2300,
+              half_width: 40,
+              trusted: true,
+              before_phase: true,
+              to: '2026-10-01',
+            },
+          },
+        ],
+        weeks: [],
+      }),
+  })
+  renderAt('/charts')
+
+  expect(
+    await screen.findByText(
+      'TDEE 2,300 ± 40 kcal a day, as of the last day, of the days before this phase.',
+      {},
+      { timeout: 10_000 },
+    ),
+  ).toBeDefined()
+  // 0 steps are none.
+  expect(
+    within(screen.getByRole('region', { name: 'Activity' })).getByText('No values in these days.'),
   ).toBeDefined()
 })

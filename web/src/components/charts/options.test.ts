@@ -6,6 +6,7 @@ import { expect, test } from 'vitest'
 
 import {
   average7,
+  intervalText,
   macrosOption,
   sleepColor,
   tdeeOption,
@@ -128,4 +129,18 @@ test('the goal is drawn though it is far below the weights', () => {
 
   expect(svg).toContain('Goal 75.0')
   expect(svgOf(weightOption(days, words))).not.toContain('Goal')
+})
+
+test("a day without a TDEE says no interval in the tooltip, not a number's half", () => {
+  expect(intervalText(120, words)).toBe('± 60')
+  expect(intervalText(null, words)).toBe('-')
+  expect(intervalText(Number.NaN, words)).toBe('-')
+})
+
+test('one weigh-in at the goal keeps the axis around it', () => {
+  const option = weightOption([day('2026-10-20', { weight_kg: 80, trend_kg: 80 })], words, 80)
+  const svg = svgOf(option)
+  expect(svg).toContain('>81<')
+  expect(svg).toContain('>79<')
+  expect(svg).not.toContain('>40<')
 })

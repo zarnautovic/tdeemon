@@ -98,8 +98,14 @@ export function weightOption(days: HistoryDay[], w: Words, goalKg?: number): Opt
     goalKg === undefined
       ? {}
       : {
-          min: (v: { min: number }) => Math.floor(Math.min(v.min, goalKg)),
-          max: (v: { max: number }) => Math.ceil(Math.max(v.max, goalKg)),
+          // A kilo off each way when the weights and the goal are one
+          // number, which ECharts would stretch the axis around.
+          min: (v: { min: number; max: number }) =>
+            Math.floor(Math.min(v.min, goalKg)) -
+            (Math.min(v.min, goalKg) === Math.max(v.max, goalKg) ? 1 : 0),
+          max: (v: { min: number; max: number }) =>
+            Math.ceil(Math.max(v.max, goalKg)) +
+            (Math.min(v.min, goalKg) === Math.max(v.max, goalKg) ? 1 : 0),
         }
   return {
     ...base(days, w),
@@ -170,6 +176,12 @@ export function macrosOption(days: HistoryDay[], w: Words): Option {
   }
 }
 
+// intervalText is the TDEE band's width in a tooltip, said as what it is:
+// ± half of it; ECharts asks it of a day without one too.
+export function intervalText(width: unknown, w: Words): string {
+  return typeof width === 'number' && Number.isFinite(width) ? `± ${w.number(width / 2)}` : '-'
+}
+
 // tdeeOption is the TDEE measured up to each day, with its 80 % interval
 // as a band, and what was eaten as dots.
 export function tdeeOption(days: HistoryDay[], w: Words): Option {
@@ -196,7 +208,7 @@ export function tdeeOption(days: HistoryDay[], w: Words): Option {
         itemStyle: { color: palette.series2 },
         areaStyle: { color: palette.series2, opacity: 0.18 },
         // The band's width, said as what it is: ± half of it.
-        tooltip: { valueFormatter: (v: number) => `± ${w.number(v / 2)}` },
+        tooltip: { valueFormatter: (v: unknown) => intervalText(v, w) },
         data: days.map((d): Point => (d.tdee ? 2 * d.tdee.half_width : null)),
       },
       {
