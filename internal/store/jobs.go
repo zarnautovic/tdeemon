@@ -62,8 +62,14 @@ func (db *DB) RecordJobRun(ctx context.Context, userID uuid.UUID, job, occurrenc
 // as SQLite advises a long-lived connection to do now and then (PRAGMA
 // optimize); Migrate does it at the start.
 func (db *DB) Optimize(ctx context.Context) error {
-	return db.withSingleUseConn(ctx, func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, "PRAGMA analysis_limit = 400; PRAGMA optimize")
-		return err
-	})
+	return db.withSingleUseConn(ctx, func(conn *sql.Conn) error { return optimize(ctx, conn) })
+}
+
+// optimize runs PRAGMA optimize on conn for every table, not only those
+// the connection's queries used (0x10000): conn is a fresh connection,
+// and the reads go through the read pool. analysis_limit keeps ANALYZE of
+// a large table quick, as the SQLite documentation advises.
+func optimize(ctx context.Context, conn *sql.Conn) error {
+	_, err := conn.ExecContext(ctx, "PRAGMA analysis_limit = 400; PRAGMA optimize = 0x10002")
+	return err
 }

@@ -1,7 +1,9 @@
 // Package scheduler runs the jobs that come due in each user's day, such
-// as the morning summary and the watchdog, at most once per occurrence:
-// the store records each run, so a restart does not run it again. It also
-// keeps the database's query planner statistics fresh.
+// as the morning summary and the watchdog: once per occurrence in the
+// usual case, at least once in any: the store records each run, so a
+// restart does not run it again, but a crash between a job's run and its
+// record runs it again. It also keeps the database's query planner
+// statistics fresh.
 package scheduler
 
 import (
@@ -24,7 +26,9 @@ type Job struct {
 	// characters such as the date it is for, and whether one is.
 	Due func(u user.User, now time.Time) (occurrence string, ok bool)
 	// Run does the job. An error leaves the occurrence due, so a later
-	// tick tries it again, after RetryAfter.
+	// tick tries it again, after RetryAfter. A run may come again for an
+	// occurrence that ran, after a crash between the run and its record:
+	// a job whose repeat would harm must guard against it itself.
 	Run func(ctx context.Context, u user.User, occurrence string, now time.Time) error
 }
 
@@ -37,10 +41,12 @@ const RetryAfter = 10 * time.Minute
 // statistics (store.DB.Optimize); Migrate does it at the start.
 const OptimizeEvery = 24 * time.Hour
 
-// Scheduler runs Jobs for every user.
+// Scheduler runs Jobs for every user. Its Tick is not for calls at once:
+// Start calls it from one goroutine.
 type Scheduler struct {
-	DB     *store.DB
-	Jobs   []Job
+	DB   *store.DB
+	Jobs []Job
+	// Logger is slog.Default() when nil.
 	Logger *slog.Logger
 	// Now is the clock; time.Now when nil.
 	Now func() time.Time
@@ -49,6 +55,21 @@ type Scheduler struct {
 	// failed holds when a job last failed for a user, by the job's name
 	// and the user's id.
 	failed map[string]time.Time
+	// ran holds the occurrences that ran but whose record failed, by the
+	// job's name, the user's id and the occurrence, so this process does
+	// not run them again at every tick.
+	ran map[string]bool
+}
+
+// recordTimeout bounds the record of a run, which is written even when
+// the scheduler is stopping, so a run that went out is not lost.
+const recordTimeout = 10 * time.Second
+
+func (s *Scheduler) logger() *slog.Logger {
+	if s.Logger != nil {
+		return s.Logger
+	}
+	return slog.Default()
 }
 
 func (s *Scheduler) now() time.Time {
@@ -88,8 +109,9 @@ func (s *Scheduler) run(ctx context.Context, j Job, u *user.User, now time.Time)
 	key := j.Name + "/" + u.ID.String()
 	s.mu.Lock()
 	failedAt, failed := s.failed[key]
+	ranHere := s.ran[key+"/"+occurrence]
 	s.mu.Unlock()
-	if failed && now.Sub(failedAt) < RetryAfter {
+	if ranHere || failed && now.Sub(failedAt) < RetryAfter {
 		return nil
 	}
 	ran, err := s.DB.JobRan(ctx, u.ID, j.Name, occurrence)
@@ -103,14 +125,30 @@ func (s *Scheduler) run(ctx context.Context, j Job, u *user.User, now time.Time)
 		}
 		s.failed[key] = now
 		s.mu.Unlock()
-		s.Logger.Error("a scheduled job failed", "job", j.Name, "user_id", u.ID, "occurrence", occurrence, "error", err)
+		if ctx.Err() == nil {
+			s.logger().Error("a scheduled job failed", "job", j.Name, "user_id", u.ID, "occurrence", occurrence, "error", err)
+		}
 		return nil
 	}
 	s.mu.Lock()
 	delete(s.failed, key)
 	s.mu.Unlock()
-	s.Logger.Info("ran a scheduled job", "job", j.Name, "user_id", u.ID, "occurrence", occurrence)
-	return s.DB.RecordJobRun(ctx, u.ID, j.Name, occurrence, now)
+	s.logger().Info("ran a scheduled job", "job", j.Name, "user_id", u.ID, "occurrence", occurrence)
+	// The record outlives a stop, so a run that went out is not run
+	// again by the next process; one that fails keeps this one from
+	// running it again.
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	if err := s.DB.RecordJobRun(rctx, u.ID, j.Name, occurrence, now); err != nil {
+		s.mu.Lock()
+		if s.ran == nil {
+			s.ran = map[string]bool{}
+		}
+		s.ran[key+"/"+occurrence] = true
+		s.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 // Start ticks at once and then every interval, and refreshes the
@@ -132,7 +170,7 @@ func (s *Scheduler) Start(ctx context.Context, every time.Duration) (wait func()
 				s.tick(ctx)
 			case <-optimize.C:
 				if err := s.DB.Optimize(ctx); err != nil && ctx.Err() == nil {
-					s.Logger.Warn("refreshing query planner statistics failed", "error", err)
+					s.logger().Warn("refreshing query planner statistics failed", "error", err)
 				}
 			}
 		}
@@ -142,7 +180,7 @@ func (s *Scheduler) Start(ctx context.Context, every time.Duration) (wait func()
 
 func (s *Scheduler) tick(ctx context.Context) {
 	if err := s.Tick(ctx); err != nil && ctx.Err() == nil {
-		s.Logger.Error("the scheduler's tick failed", "error", err)
+		s.logger().Error("the scheduler's tick failed", "error", err)
 	}
 }
 
@@ -151,7 +189,9 @@ func (s *Scheduler) tick(ctx context.Context) {
 // and up to within after it: a server down at that time catches up when
 // it starts within that, and later leaves the day out. The occurrence is
 // the user's logical day (day.Calendar) the time falls on, so a time
-// before the day's start hour belongs to the day before.
+// before the day's start hour belongs to the day before, and the window
+// ends with that day at the latest. A time in the hour summer time skips
+// is due when the clock jumps.
 func DailyAt(at, within time.Duration) func(u user.User, now time.Time) (string, bool) {
 	return func(u user.User, now time.Time) (string, bool) {
 		cal, err := day.NewCalendar(u.TimeZone, u.DayStartHour)

@@ -1,9 +1,13 @@
 package scheduler_test
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -154,27 +158,96 @@ func TestDailyAt(t *testing.T) {
 	}
 }
 
-// Start ticks at once, and stops when its context is done.
+// Start ticks at once and then every interval, and stops when its
+// context is done.
 func TestStart(t *testing.T) {
 	t.Parallel()
 
 	db := storetest.Open(t)
 	newUser(t, db, "ana@example.com", "Europe/Zagreb")
 	r := &runs{}
-	always := func(user.User, time.Time) (string, bool) { return "once", true }
-	s := &scheduler.Scheduler{DB: db, Jobs: []scheduler.Job{r.job("always", always)}, Logger: slog.New(slog.DiscardHandler)}
+	var mu sync.Mutex
+	n := 0
+	// A new occurrence at every tick, so each tick runs one.
+	each := func(user.User, time.Time) (string, bool) {
+		mu.Lock()
+		defer mu.Unlock()
+		n++
+		return fmt.Sprint(n), true
+	}
+	s := &scheduler.Scheduler{DB: db, Jobs: []scheduler.Job{r.job("each", each)}} // the default logger
 	ctx, cancel := context.WithCancel(t.Context())
-	wait := s.Start(ctx, time.Hour)
+	wait := s.Start(ctx, 20*time.Millisecond)
 	deadline := time.Now().Add(5 * time.Second)
-	for len(r.list()) == 0 {
+	for len(r.list()) < 2 {
 		if time.Now().After(deadline) {
-			t.Fatal("no tick at the start")
+			t.Fatalf("runs = %v, want a tick at the start and another", r.list())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
 	wait()
+}
+
+// A run whose record fails is not run again by the same scheduler, and
+// one that went out as the scheduler stops is recorded all the same.
+func TestTickAfterARun(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	newUser(t, db, "ana@example.com", "Europe/Zagreb")
+	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(t.Context(), `CREATE TRIGGER full BEFORE INSERT ON job_runs
+			WHEN NEW.job = 'morning' BEGIN SELECT RAISE(FAIL, 'database or disk is full'); END`)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &runs{}
+	clock := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
+	daily := scheduler.DailyAt(10*time.Hour, 4*time.Hour)
+	s := &scheduler.Scheduler{DB: db, Jobs: []scheduler.Job{r.job("morning", daily)}, Now: func() time.Time { return clock }}
+	if err := s.Tick(t.Context()); err == nil {
+		t.Error("a record that failed was no error")
+	}
+	for range 3 {
+		clock = clock.Add(scheduler.RetryAfter)
+		_ = s.Tick(t.Context())
+	}
 	if got := r.list(); len(got) != 1 {
-		t.Errorf("runs = %v, want one", got)
+		t.Errorf("runs with a record that fails = %v, want one", got)
+	}
+
+	// The run stops the scheduler, as a shutdown would while it sends.
+	ctx, cancel := context.WithCancel(t.Context())
+	var logs bytes.Buffer
+	stopping := &scheduler.Scheduler{
+		DB: db, Logger: slog.New(slog.NewTextHandler(&logs, nil)), Now: s.Now,
+		Jobs: []scheduler.Job{{Name: "evening", Due: daily, Run: func(context.Context, user.User, string, time.Time) error {
+			cancel()
+			return nil
+		}}},
+	}
+	if err := stopping.Tick(ctx); err != nil {
+		t.Fatal(err)
+	}
+	us, _ := db.Users(t.Context())
+	if ran, err := db.JobRan(t.Context(), us[0].ID, "evening", "2026-10-23"); !ran || err != nil {
+		t.Errorf("the run as it stopped was not recorded: %v, %v", ran, err)
+	}
+
+	// A run that fails as the scheduler stops is no error to log.
+	ctx, cancel = context.WithCancel(t.Context())
+	failing := &scheduler.Scheduler{
+		DB: db, Logger: stopping.Logger, Now: s.Now,
+		Jobs: []scheduler.Job{{Name: "night", Due: daily, Run: func(context.Context, user.User, string, time.Time) error {
+			cancel()
+			return context.Canceled
+		}}},
+	}
+	_ = failing.Tick(ctx)
+	if strings.Contains(logs.String(), "failed") {
+		t.Errorf("logs = %s", logs.String())
 	}
 }

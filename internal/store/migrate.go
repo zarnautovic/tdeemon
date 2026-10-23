@@ -140,8 +140,7 @@ func (db *DB) migrate(ctx context.Context, fsys fs.FS, logger *slog.Logger) erro
 	// documentation advises for PRAGMA optimize. The statistics live in the
 	// file, so the read pool benefits too. A failure only costs query plans.
 	err = db.withSingleUseConn(ctx, func(conn *sql.Conn) error {
-		_, err := conn.ExecContext(ctx, "PRAGMA analysis_limit = 400; PRAGMA optimize = 0x10002")
-		return err
+		return optimize(ctx, conn)
 	})
 	if err != nil {
 		logger.Warn("refreshing query planner statistics failed", "error", err)

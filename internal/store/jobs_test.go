@@ -1,6 +1,8 @@
 package store_test
 
 import (
+	"database/sql"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,7 +70,32 @@ func TestJobRuns(t *testing.T) {
 	if err := db.RecordJobRun(t.Context(), ana.ID, "", "x", now); err == nil {
 		t.Error("a run of a job without a name was recorded")
 	}
+}
+
+// Optimize refreshes the statistics of a table that grew since they were
+// taken, though no query of its connection used it.
+func TestOptimize(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	exec := func(q string) {
+		t.Helper()
+		if err := db.WriteTx(t.Context(), func(tx *sql.Tx) error { _, err := tx.ExecContext(t.Context(), q); return err }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exec(`CREATE TABLE grows (n INTEGER NOT NULL); CREATE INDEX grows_n ON grows (n)`)
+	exec(`WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < 100) INSERT INTO grows SELECT i FROM c`)
+	exec(`ANALYZE grows`)
+	exec(`WITH RECURSIVE c(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM c WHERE i < 5000) INSERT INTO grows SELECT i FROM c`)
 	if err := db.Optimize(t.Context()); err != nil {
-		t.Errorf("Optimize: %v", err)
+		t.Fatal(err)
+	}
+	var stat string
+	if err := db.Read().QueryRowContext(t.Context(), "SELECT stat FROM sqlite_stat1 WHERE idx = 'grows_n'").Scan(&stat); err != nil {
+		t.Fatal(err)
+	}
+	if strings.HasPrefix(stat, "100 ") {
+		t.Errorf("the statistics are the old ones: %q", stat)
 	}
 }
