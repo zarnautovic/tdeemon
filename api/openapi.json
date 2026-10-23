@@ -266,6 +266,31 @@
         ],
         "type": "object"
       },
+      "DayTDEEBody": {
+        "additionalProperties": false,
+        "properties": {
+          "half_width": {
+            "description": "Half its 80 % interval.",
+            "format": "double",
+            "type": "number"
+          },
+          "kcal": {
+            "description": "In kcal a day.",
+            "format": "double",
+            "type": "number"
+          },
+          "trusted": {
+            "description": "Whether its interval and data are enough for a verdict.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kcal",
+          "half_width",
+          "trusted"
+        ],
+        "type": "object"
+      },
       "DayTargetBody": {
         "additionalProperties": false,
         "properties": {
@@ -295,6 +320,34 @@
           "protein",
           "fat",
           "carbs"
+        ],
+        "type": "object"
+      },
+      "DayTotalBody": {
+        "additionalProperties": false,
+        "properties": {
+          "carbs": {
+            "format": "double",
+            "type": "number"
+          },
+          "fat": {
+            "format": "double",
+            "type": "number"
+          },
+          "kcal": {
+            "format": "double",
+            "type": "number"
+          },
+          "protein": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "carbs",
+          "fat"
         ],
         "type": "object"
       },
@@ -650,6 +703,129 @@
         },
         "required": [
           "foods"
+        ],
+        "type": "object"
+      },
+      "HistoryBody": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "description": "For granularity day, every day from from to to, in order; else empty.",
+            "items": {
+              "$ref": "#/components/schemas/HistoryDayBody"
+            },
+            "type": "array"
+          },
+          "from": {
+            "format": "date",
+            "type": "string"
+          },
+          "to": {
+            "format": "date",
+            "type": "string"
+          },
+          "weeks": {
+            "description": "For granularity week, the weeks, the latest last; else empty.",
+            "items": {
+              "$ref": "#/components/schemas/WeekBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "days",
+          "weeks"
+        ],
+        "type": "object"
+      },
+      "HistoryDayBody": {
+        "additionalProperties": false,
+        "properties": {
+          "active_kcal": {
+            "format": "double",
+            "type": "number"
+          },
+          "body_fat_pct": {
+            "format": "double",
+            "type": "number"
+          },
+          "date": {
+            "format": "date",
+            "type": "string"
+          },
+          "excluded_reason": {
+            "description": "Why the user left the day out of calibration.",
+            "type": "string"
+          },
+          "hrv": {
+            "format": "double",
+            "type": "number"
+          },
+          "intake": {
+            "$ref": "#/components/schemas/DayTotalBody",
+            "description": "What the meals add up to; absent for a day without a meal, whose intake is unknown, not 0."
+          },
+          "lean_mass_kg": {
+            "format": "double",
+            "type": "number"
+          },
+          "meals": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "resting_hr": {
+            "format": "double",
+            "type": "number"
+          },
+          "sleep_h": {
+            "description": "The night that ended on the day.",
+            "format": "double",
+            "type": "number"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "complete",
+              "excluded"
+            ],
+            "type": "string"
+          },
+          "steps": {
+            "format": "double",
+            "type": "number"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DayTargetBody",
+            "description": "The target of the day's type; absent before the first target."
+          },
+          "tdee": {
+            "$ref": "#/components/schemas/DayTDEEBody",
+            "description": "The TDEE calibration measures over its window up to the day; absent when it measures none."
+          },
+          "trend_kg": {
+            "description": "The trend weight on the day, from the weigh-ins up to it; absent before the first.",
+            "format": "double",
+            "type": "number"
+          },
+          "type": {
+            "enum": [
+              "training",
+              "rest"
+            ],
+            "type": "string"
+          },
+          "weight_kg": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "status",
+          "type",
+          "meals"
         ],
         "type": "object"
       },
@@ -4069,6 +4245,124 @@
         "summary": "Get a food",
         "tags": [
           "tools"
+        ]
+      }
+    },
+    "/api/v1/history": {
+      "get": {
+        "description": "Needs a web session. Your days from from to to, at most 366 of them up to today, or their weeks: what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, as the summary computes them. The charts read it.",
+        "operationId": "get-history",
+        "parameters": [
+          {
+            "description": "The first day; left out, 89 days before to.",
+            "explode": false,
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "description": "The first day; left out, 89 days before to.",
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The last day, today at the latest; left out, today.",
+            "explode": false,
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "description": "The last day, today at the latest; left out, today.",
+              "format": "date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from.",
+            "explode": false,
+            "in": "query",
+            "name": "granularity",
+            "schema": {
+              "default": "day",
+              "description": "day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from.",
+              "enum": [
+                "day",
+                "week"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get your history",
+        "tags": [
+          "history"
         ]
       }
     },

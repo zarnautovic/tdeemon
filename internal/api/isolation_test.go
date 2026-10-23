@@ -705,6 +705,9 @@ func isolationCases() map[string]isolationCase {
 		}),
 		// The summary holds no text of the user's: the store's queries by
 		// the user keep it theirs.
+		"get-history": read("/api/v1/history", false, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
+		}),
 		"get-summary": read("/api/v1/summary", true, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user)), fmt.Sprintf(`"kcal":%v`, isolationKcal(e.other.user))}
 		}),

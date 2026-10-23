@@ -251,7 +251,14 @@ others (`archived`), by name or by their last use (`order=name|use`),
 each with its last use, and how many there are (`total`); and makes a
 new food with `POST /api/v1/foods/new`, also a web session's only, which
 refuses a name and brand the user has (409, naming the food, archived
-too) where `upsert_food` would correct that food. `log_meal` is
+too) where `upsert_food` would correct that food. The charts read
+`GET /api/v1/history?from=&to=&granularity=day|week`, a web session's
+only for now: every day of a span of at most 366 days up to today (the
+90 up to it by default), or its weeks, with what was eaten against the
+day's target, the measurements, the trend weight and the TDEE
+calibration measures up to each day, as the summary computes them; it is
+the table `get_history` (§8) is to give a model, once the tool's bytes
+fit MCP's budget. `log_meal` is
 `POST /api/v1/meals` (201, or 200 for a retry), `update_meal` is
 `PATCH /api/v1/meals/{id}` (ops: add, replace, remove an item; an item
 no op touches keeps what it brought when logged), and `delete_meal` is
