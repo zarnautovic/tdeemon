@@ -9,6 +9,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -106,6 +107,9 @@ func (s *Scheduler) run(ctx context.Context, j Job, u *user.User, now time.Time)
 	if !ok {
 		return nil
 	}
+	if err := checkNames(j.Name, occurrence); err != nil {
+		return err
+	}
 	key := j.Name + "/" + u.ID.String()
 	s.mu.Lock()
 	failedAt, failed := s.failed[key]
@@ -151,6 +155,15 @@ func (s *Scheduler) run(ctx context.Context, j Job, u *user.User, now time.Time)
 	return nil
 }
 
+// checkNames refuses a job's name or occurrence the record of its run
+// would refuse, after the run: before it, so it does not run.
+func checkNames(job, occurrence string) error {
+	if n, o := len(job), len(occurrence); n < 1 || n > 64 || o < 1 || o > 64 {
+		return fmt.Errorf("job %q, occurrence %q: want names of 1 to 64 characters", job, occurrence)
+	}
+	return nil
+}
+
 // Start ticks at once and then every interval, and refreshes the
 // statistics every OptimizeEvery, in the background until ctx is done.
 // The returned wait blocks until it has stopped; cancel ctx first.
@@ -191,7 +204,7 @@ func (s *Scheduler) tick(ctx context.Context) {
 // the user's logical day (day.Calendar) the time falls on, so a time
 // before the day's start hour belongs to the day before, and the window
 // ends with that day at the latest. A time in the hour summer time skips
-// is due when the clock jumps.
+// is due an hour after it, as time.Date moves it.
 func DailyAt(at, within time.Duration) func(u user.User, now time.Time) (string, bool) {
 	return func(u user.User, now time.Time) (string, bool) {
 		cal, err := day.NewCalendar(u.TimeZone, u.DayStartHour)

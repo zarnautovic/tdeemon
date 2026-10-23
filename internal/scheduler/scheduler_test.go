@@ -158,8 +158,47 @@ func TestDailyAt(t *testing.T) {
 	}
 }
 
-// Start ticks at once and then every interval, and stops when its
-// context is done.
+// Start ticks at once, before its interval.
+func TestStartTicksAtOnce(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	newUser(t, db, "ana@example.com", "Europe/Zagreb")
+	r := &runs{}
+	always := func(user.User, time.Time) (string, bool) { return "once", true }
+	s := &scheduler.Scheduler{DB: db, Jobs: []scheduler.Job{r.job("always", always)}, Logger: slog.New(slog.DiscardHandler)}
+	ctx, cancel := context.WithCancel(t.Context())
+	wait := s.Start(ctx, time.Hour)
+	deadline := time.Now().Add(5 * time.Second)
+	for len(r.list()) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no tick at the start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	wait()
+}
+
+// A job whose name or occurrence the record would refuse does not run.
+func TestTickRefusesALongName(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	newUser(t, db, "ana@example.com", "Europe/Zagreb")
+	r := &runs{}
+	long := func(user.User, time.Time) (string, bool) { return strings.Repeat("x", 65), true }
+	unnamed := r.job("", func(user.User, time.Time) (string, bool) { return "x", true })
+	s := &scheduler.Scheduler{DB: db, Jobs: []scheduler.Job{r.job("long", long), unnamed}, Logger: slog.New(slog.DiscardHandler)}
+	if err := s.Tick(t.Context()); err == nil || !strings.Contains(err.Error(), "1 to 64") {
+		t.Errorf("Tick = %v", err)
+	}
+	if got := r.list(); len(got) != 0 {
+		t.Errorf("runs = %v, want none", got)
+	}
+}
+
+// Start ticks every interval, and stops when its context is done.
 func TestStart(t *testing.T) {
 	t.Parallel()
 
