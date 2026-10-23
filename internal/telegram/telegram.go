@@ -47,6 +47,9 @@ type Error struct {
 	Description string
 	// RetryAfter is how long Telegram asks to wait, for a 429.
 	RetryAfter time.Duration
+	// MigrateTo is the chat a group became, as a supergroup: the chat to
+	// send to instead.
+	MigrateTo int64
 }
 
 func (e *Error) Error() string {
@@ -131,7 +134,8 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 		ErrorCode   int    `json:"error_code"`
 		Description string `json:"description"`
 		Parameters  struct {
-			RetryAfter int `json:"retry_after"`
+			RetryAfter int   `json:"retry_after"`
+			MigrateTo  int64 `json:"migrate_to_chat_id"`
 		} `json:"parameters"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&answer); err != nil {
@@ -142,7 +146,10 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 		if code == 0 {
 			code = resp.StatusCode
 		}
-		return &Error{Code: code, Description: answer.Description, RetryAfter: time.Duration(answer.Parameters.RetryAfter) * time.Second}
+		return &Error{
+			Code: code, Description: answer.Description,
+			RetryAfter: time.Duration(answer.Parameters.RetryAfter) * time.Second, MigrateTo: answer.Parameters.MigrateTo,
+		}
 	}
 	return nil
 }

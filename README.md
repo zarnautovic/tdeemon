@@ -260,6 +260,20 @@ line for each of these that came:
 
 A value that did not come is left out; nothing is guessed.
 
+**The watchdog** looks each hour and tells the user, in the same chat,
+when their data stop coming:
+
+- no new or changed metric for more than 26 hours: a day of syncs
+  missed, as a day of a user who moves changes its steps;
+- an ingest token unused for more than 3 days: the device that sends
+  with it has stopped. Every ingest token counts as a daily device's, so
+  one that sends only now and then (a Strong export twice a week) alarms
+  after each pause, until the alarms have settings.
+
+Each stop alarms once (and a chat that blocked the bot, not at all); it
+alarms again only after data have come and stopped again. A group chat
+that Telegram turns into a supergroup is followed to its new id.
+
 ### Single sign-on (OpenID Connect)
 
 With `TDEEMON_OIDC_*` set, users can sign in through a provider such as

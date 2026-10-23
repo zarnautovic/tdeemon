@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
@@ -97,5 +98,46 @@ func TestOptimize(t *testing.T) {
 	}
 	if strings.HasPrefix(stat, "100 ") {
 		t.Errorf("the statistics are the old ones: %q", stat)
+	}
+}
+
+// DeleteJobRuns removes a user's runs of a job made before a time, and
+// nothing else.
+func TestDeleteJobRuns(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	ana, ivo := newUser("ana@example.com"), newUser("ivo@example.com")
+	for _, err := range []error{db.CreateUser(t.Context(), ana, ""), db.CreateUser(t.Context(), ivo, "")} {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
+	for _, r := range []struct {
+		id       uuid.UUID
+		job, occ string
+		ran      time.Time
+	}{
+		{ana.ID, "watchdog", "old", at.Add(-time.Hour)},
+		{ana.ID, "watchdog", "new", at},
+		{ana.ID, "morning", "old", at.Add(-time.Hour)},
+		{ivo.ID, "watchdog", "old", at.Add(-time.Hour)},
+	} {
+		if err := db.RecordJobRun(t.Context(), r.id, r.job, r.occ, r.ran); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.DeleteJobRuns(t.Context(), ana.ID, "watchdog", at); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		id       uuid.UUID
+		job, occ string
+		want     bool
+	}{{ana.ID, "watchdog", "old", false}, {ana.ID, "watchdog", "new", true}, {ana.ID, "morning", "old", true}, {ivo.ID, "watchdog", "old", true}} {
+		if ran, _ := db.JobRan(t.Context(), c.id, c.job, c.occ); ran != c.want {
+			t.Errorf("%s %s: ran %v, want %v", c.job, c.occ, ran, c.want)
+		}
 	}
 }

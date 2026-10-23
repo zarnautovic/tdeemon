@@ -720,9 +720,12 @@ the first spec.
   for `hr`. Delivered by
   Telegram send (no LLM), web push or ntfy. An optional AI comment is
   off by default.
-- **Watchdog**, configurable per user: no metrics for > 26 h, nothing
-  logged by a set hour, an ingest token unused for N days. It goes out
-  through the same channels.
+- **Watchdog** (`internal/watchdog`), the scheduler's job each hour: no
+  metric for more than 26 h, an ingest token unused for more than 3
+  days. It goes out through the same channel (`internal/notify`, which
+  follows a group to its supergroup), once per stop: the stop is
+  recorded by when the data last came. Later, configurable per user, and
+  nothing logged by a set hour.
 - **Deploy:**
   - Docker image with one volume, `/data`.
   - Env, all prefixed `TDEEMON_`: `BASE_URL`, `SECRET_KEY`, `LISTEN`,
