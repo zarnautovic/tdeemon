@@ -4,6 +4,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
 
@@ -38,5 +42,30 @@ func TestTelegramChat(t *testing.T) {
 	}
 	if _, ok, err := db.TelegramChat(t.Context(), ana.ID); ok || err != nil {
 		t.Errorf("after 0 = %v, %v", ok, err)
+	}
+}
+
+// LastMetricUpdate is when a metric of the user last changed.
+func TestLastMetricUpdate(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	ana := newUser("ana@example.com")
+	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.LastMetricUpdate(t.Context(), ana.ID); ok || err != nil {
+		t.Fatalf("before = %v, %v", ok, err)
+	}
+	at := time.Date(2026, 10, 23, 7, 54, 15, 0, time.UTC)
+	actor := event.Actor{Kind: event.User, Client: "web"}
+	for i, when := range []time.Time{at.Add(-time.Hour), at} {
+		v := []metric.Value{{Kind: metric.Steps, Value: float64(1000 * (i + 1)), Source: metric.Import}}
+		if _, err := db.MergeMetrics(t.Context(), ana.ID, actor, day.DateOf(when), v, when); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, ok, err := db.LastMetricUpdate(t.Context(), ana.ID); !ok || err != nil || !got.Equal(at) {
+		t.Errorf("= %v, %v, %v, want %v", got, ok, err, at)
 	}
 }

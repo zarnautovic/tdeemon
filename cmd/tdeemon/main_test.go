@@ -279,7 +279,8 @@ func TestRunTrustsTheConfiguredProxies(t *testing.T) {
 	}
 }
 
-// The scheduler has the morning summary only with a Telegram bot to send it.
+// The scheduler has the morning summary and the watchdog only with a
+// Telegram bot to send them.
 func TestJobs(t *testing.T) {
 	t.Parallel()
 
@@ -287,7 +288,7 @@ func TestJobs(t *testing.T) {
 		t.Errorf("jobs without a bot = %v", js)
 	}
 	js := jobs(config.Config{TelegramBotToken: testBotToken, TelegramAPIURL: "http://localhost"}, api.Config{})
-	if len(js) != 1 || js[0].Name != "morning_summary" {
+	if len(js) != 2 || js[0].Name != "morning_summary" || js[1].Name != "watchdog" {
 		t.Errorf("jobs with a bot = %v", js)
 	}
 }
