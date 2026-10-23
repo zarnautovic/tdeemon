@@ -95,6 +95,7 @@ type foodBody struct {
 	FoodFields
 	Archived bool         `json:"archived" doc:"An archived food stays out of a search, and keeps its name and aliases."`
 	LastUse  *lastUseBody `json:"last_use,omitempty" doc:"The last time a meal used the food; absent when none has."`
+	Queries  []string     `json:"queries,omitempty" nullable:"false" doc:"The queries of find_foods that found the food, of those it was sent."`
 }
 
 func newFoodBody(f *food.Food) foodBody {
@@ -115,9 +116,11 @@ type foodsOutput struct {
 	}
 }
 
+// findFoodsInput's maxItems is store.MaxFoodQueries, and its limit's
+// maximum store.MaxFoodResults.
 type findFoodsInput struct {
-	Query string `query:"query" required:"true" minLength:"1" maxLength:"200" example:"greek yog" doc:"Words the name, the brand or an alias starts with, in any case and without the diacritics."`
-	Limit int    `query:"limit" default:"10" minimum:"1" maximum:"50"`
+	Query []string `query:"query,explode" required:"true" nullable:"false" minItems:"1" maxItems:"20" minLength:"1" maxLength:"200" example:"greek yog" doc:"Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's."`
+	Limit int      `query:"limit" default:"10" minimum:"1" maximum:"50" doc:"The most foods of each query."`
 }
 
 func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOutput, error) {
@@ -125,9 +128,30 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 	if err != nil {
 		return nil, err
 	}
-	foods, err := s.db.FindFoods(ctx, p.User.ID, in.Query, in.Limit)
-	if err != nil {
-		return nil, internalError("finding foods failed", err)
+	// The foods of each query, in the order of the queries; a food two
+	// find, once, with both. A query sent twice, in any case, is one.
+	var foods []food.Food
+	var queries [][]string
+	at := map[uuid.UUID]int{}
+	asked := map[string]bool{}
+	for _, q := range in.Query {
+		key := strings.ToLower(strings.TrimSpace(q))
+		if asked[key] {
+			continue
+		}
+		asked[key] = true
+		found, err := s.db.FindFoods(ctx, p.User.ID, q, in.Limit)
+		if err != nil {
+			return nil, internalError("finding foods failed", err)
+		}
+		for i := range found {
+			if j, ok := at[found[i].ID]; ok {
+				queries[j] = append(queries[j], q)
+				continue
+			}
+			at[found[i].ID] = len(foods)
+			foods, queries = append(foods, found[i]), append(queries, []string{q})
+		}
 	}
 	ids := make([]uuid.UUID, len(foods))
 	for i := range foods {
@@ -141,6 +165,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 	out.Body.Foods = make([]foodBody, 0, len(foods))
 	for i := range foods {
 		b := newFoodBody(&foods[i])
+		b.Queries = queries[i]
 		if u, ok := uses[foods[i].ID]; ok {
 			b.LastUse = &lastUseBody{
 				At: u.At, MealID: u.MealID.String(), Amount: u.Amount, Unit: u.Unit,

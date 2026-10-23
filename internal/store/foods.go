@@ -60,6 +60,10 @@ func conflict(ctx context.Context, tx *sql.Tx, userID uuid.UUID, err error, id, 
 // MaxFoodResults bounds FindFoods.
 const MaxFoodResults = 50
 
+// MaxFoodQueries bounds the queries of one search, whose foods' last
+// uses LastUses looks up at once.
+const MaxFoodQueries = 20
+
 const foodColumns = `f.id, f.name, f.brand, f.basis, f.kcal, f.protein, f.carbs, f.fat,
 	f.fiber, f.saturated_fat, f.sugars, f.salt, f.polyols, f.alcohol, f.portion_g, f.source, f.note, f.archived`
 

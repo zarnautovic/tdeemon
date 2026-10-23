@@ -215,7 +215,7 @@ func TestHandlersPassOnTheirErrors(t *testing.T) {
 		},
 		"get-me": func(ctx context.Context) error { _, err := s.getMe(ctx, nil); return err },
 		"find-foods": func(ctx context.Context) error {
-			_, err := s.findFoods(ctx, &findFoodsInput{Query: "rye", Limit: 10})
+			_, err := s.findFoods(ctx, &findFoodsInput{Query: []string{"rye"}, Limit: 10})
 			return err
 		},
 		"log-meal": func(ctx context.Context) error {

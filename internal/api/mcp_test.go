@@ -175,8 +175,8 @@ func TestMCPCallsATool(t *testing.T) {
 	if isErr || !strings.Contains(text, `"date":"`+day.DateOf(in.clock.Now()).String()+`"`) || !strings.Contains(text, id) {
 		t.Errorf("get_day of no day: %v %s", isErr, text)
 	}
-	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": 5}); isErr {
-		t.Errorf("find_foods with a number in the query: %s", text)
+	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": []any{"soup", "bread"}, "limit": 5}); isErr {
+		t.Errorf("find_foods of two queries and a number: %s", text)
 	}
 	// An argument of null, or a parameter of "", is one left out, as a
 	// model may send it.
@@ -187,6 +187,19 @@ func TestMCPCallsATool(t *testing.T) {
 	}
 	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": "soup", "limit": nil}); isErr {
 		t.Errorf("find_foods of a null limit: %s", text)
+	}
+}
+
+// TestMCPListInAString takes a list a model sends as a string of JSON as
+// the list, not as one query of its brackets and words.
+func TestMCPListInAString(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
+	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": `["rye", "nothing"]`}); isErr || !strings.Contains(text, `"queries":["rye"]`) {
+		t.Errorf("find_foods of a list in a string: %v %s", isErr, text)
 	}
 }
 
@@ -209,6 +222,11 @@ func TestMCPToolErrors(t *testing.T) {
 		{"delete_metric", map[string]any{"date": "today"}, "delete_metric needs kind"},
 		{"get_food", map[string]any{"id": []any{1}}, "id: want a string"},
 		{"get_day", map[string]any{"date": "yesterday"}, "date"},
+		// A list for a parameter of one value, and a list of what no
+		// query holds.
+		{"find_foods", map[string]any{"query": "rye", "limit": []any{1, 2}}, "limit: want a string"},
+		{"find_foods", map[string]any{"query": []any{nil}}, "query: want a string"},
+		{"find_foods", map[string]any{"query": []any{[]any{"rye"}}}, "query: want a string"},
 	} {
 		if text, isErr := callTool(t, cs, tc.name, tc.args); !isErr || !strings.Contains(text, tc.want) {
 			t.Errorf("%s %v: %v %s, want an error saying %q", tc.name, tc.args, isErr, text, tc.want)
