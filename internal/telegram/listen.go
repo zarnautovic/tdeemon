@@ -13,7 +13,7 @@ const Wait = 50 * time.Second
 
 // Listen gives handle the bot's messages, in order and once each, until
 // ctx ends. A message being handled when ctx ends is handled to its end,
-// within handleLimit. A request that fails is tried again after a pause: as long
+// within handleLimit, and the rest of its batch is left for a restart. A request that fails is tried again after a pause: as long
 // as Telegram asks, or from a second, doubling up to a minute. When ctx
 // ends, it confirms the updates it handled, so that a restart does not
 // handle them again; an update handled just before a crash may come
@@ -37,6 +37,9 @@ func (b *Bot) Listen(ctx context.Context, logger *slog.Logger, handle func(conte
 		}
 		pause = 0
 		for _, u := range updates {
+			if ctx.Err() != nil {
+				break // the rest come again after a restart
+			}
 			offset = u.ID + 1
 			if u.ChatID != 0 {
 				b.handle(ctx, u, handle)
@@ -54,8 +57,9 @@ func (b *Bot) Listen(ctx context.Context, logger *slog.Logger, handle func(conte
 }
 
 // handleLimit bounds the handling of a message, which ctx's end does
-// not cut short: a shutdown waits for it.
-const handleLimit = 30 * time.Second
+// not cut short: a shutdown waits for it, and then for the confirmation,
+// within the 15 seconds the server's requests get.
+const handleLimit = 10 * time.Second
 
 // handle gives u to handle with a context of its own, within
 // handleLimit, so that a message being answered when ctx ends is not

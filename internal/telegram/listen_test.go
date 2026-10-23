@@ -142,6 +142,29 @@ func TestListen(t *testing.T) {
 	}
 }
 
+// A listener that stops in a batch handles the message it is on, and
+// confirms only up to it: the rest come again after a restart.
+func TestListenStopsInABatch(t *testing.T) {
+	t.Parallel()
+
+	srv, last := fakeAPI(t, http.StatusOK, `{"ok":true,"result":[
+		{"update_id":1,"message":{"date":1,"text":"/pomoc","chat":{"id":853}}},
+		{"update_id":2,"message":{"date":1,"text":"/sazetak","chat":{"id":853}}},
+		{"update_id":3,"message":{"date":1,"text":"/help","chat":{"id":853}}}]}`)
+	ctx, cancel := context.WithCancel(t.Context())
+	var handled []int64
+	(&telegram.Bot{Token: token, BaseURL: srv.URL}).Listen(ctx, slog.New(slog.DiscardHandler), func(_ context.Context, u telegram.Update) {
+		handled = append(handled, u.ID)
+		cancel()
+	})
+	if len(handled) != 1 || handled[0] != 1 {
+		t.Errorf("handled = %v, want only the first", handled)
+	}
+	if last.body["offset"] != float64(2) || last.body["timeout"] != float64(0) {
+		t.Errorf("the confirmation = %v, want from 2", last.body)
+	}
+}
+
 // fakeUpdates is a Bot API whose getUpdates answers two messages and an
 // edit, then fails once, then answers a message, then waits as Telegram
 // does, until the request ends; one that does not wait (a confirmation)

@@ -233,7 +233,8 @@ reaches it; no other program may poll the same bot.
 3. Find the chat's id, the user's id in Telegram for a private chat: a
    running tdeemon logs it for a message from a chat that is no user's
    (`a message to the Telegram bot from a chat that is no user's`,
-   `chat_id`). Without one running, the bot's updates have it
+   `chat_id`), such as the **Start** above, or in a group a command
+   (`/start@<bot>`). Without one running, the bot's updates have it
    (`https://api.telegram.org/bot<token>/getUpdates`, `message.chat.id`).
 4. Set it for the user:
 
