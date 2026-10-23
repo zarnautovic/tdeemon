@@ -81,10 +81,10 @@ test('a target off the app is the start page after signing in', async () => {
 test('a signed-in user who opens the sign-in page goes where they were headed', async () => {
   fakeServer(signedIn())
 
-  const router = renderAt('/login?redirect=%2Fcharts')
+  const router = renderAt('/login?redirect=%2Fsettings')
 
-  expect(await screen.findByRole('heading', { name: 'Charts' })).toBeDefined()
-  expect(router.state.location.pathname).toBe('/charts')
+  expect(await screen.findByRole('heading', { name: 'Settings' })).toBeDefined()
+  expect(router.state.location.pathname).toBe('/settings')
 })
 
 test.each([
@@ -212,14 +212,14 @@ test('a section says when the server cannot say who is signed in, and tries agai
     'GET /api/v1/auth/session': () =>
       up ? Response.json(session()) : Promise.reject(new TypeError('Failed to fetch')),
   })
-  renderAt('/charts')
+  renderAt('/settings')
 
   expect((await screen.findByRole('alert')).textContent).toBe('The server cannot be reached.')
 
   up = true
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
-  expect(await screen.findByRole('heading', { name: 'Charts' })).toBeDefined()
+  expect(await screen.findByRole('heading', { name: 'Settings' })).toBeDefined()
 })
 
 test('a section says when the server failed to say who is signed in', async () => {

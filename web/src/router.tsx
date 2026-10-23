@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   redirect,
   type RouterHistory,
 } from '@tanstack/react-router'
@@ -13,7 +14,6 @@ import { isDate } from '@/i18n/format'
 import { setLocale } from '@/i18n/locale'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
-import { ChartsPage } from '@/pages/charts'
 import { DayPage } from '@/pages/day'
 import { FoodPage } from '@/pages/food'
 import { FoodsPage } from '@/pages/foods'
@@ -116,10 +116,16 @@ const foodRoute = createRoute({
   path: '/foods/$id',
   component: FoodPage,
 })
+// The charts, over the span of days the address says (90 by default),
+// load ECharts with them, not with the app.
 const chartsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/charts',
-  component: ChartsPage,
+  validateSearch: (search: Record<string, unknown>): { days?: 30 | 180 | 365 | undefined } => {
+    const days = Number(search.days)
+    return { days: days === 30 || days === 180 || days === 365 ? days : undefined }
+  },
+  component: lazyRouteComponent(() => import('@/pages/charts'), 'ChartsPage'),
 })
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,

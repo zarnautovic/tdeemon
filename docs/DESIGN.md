@@ -797,7 +797,10 @@ the first spec.
   - TanStack Query (server state, typed by the OpenAPI document through
     openapi-fetch) and TanStack Router (routes declared in code).
   - Tailwind + shadcn/ui on Base UI (components owned in-repo).
-  - ECharts, keeping the validated palette.
+  - ECharts: `echarts/core` with only the charts it draws and the SVG
+    renderer, loaded with the charts' page (a chunk of its own), not with
+    the app; health-api's validated palette, the charts on its dark cards,
+    each saying in words what it shows.
   - i18n without a library: each language's text is a typed object
     (`web/src/i18n`), so a key missing in one language fails the type
     check. Paraglide JS was the plan, but its compiler loads plugins
