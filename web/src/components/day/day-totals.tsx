@@ -19,10 +19,16 @@ export function DayTotals({ day }: { day: Day }) {
         {t.day.eaten}
       </h2>
       <p className="text-3xl font-semibold tabular-nums">
-        {f.number(total.kcal)}{' '}
-        <span className="text-sm font-normal text-muted-foreground">
-          {target ? t.day.ofTarget(f.number(target.kcal)) : 'kcal'}
-        </span>
+        {target ? (
+          <>
+            {f.number(total.kcal)}{' '}
+            <span className="text-sm font-normal text-muted-foreground">
+              {t.day.ofTarget(f.number(target.kcal))}
+            </span>
+          </>
+        ) : (
+          t.unit.kcal(f.number(total.kcal))
+        )}
       </p>
       {target && remaining ? (
         <>
@@ -43,7 +49,7 @@ export function DayTotals({ day }: { day: Day }) {
               <div key={m}>
                 <dt className="text-muted-foreground">{t.day[m]}</dt>
                 <dd className="tabular-nums">
-                  {f.number(total[m])} / {f.number(target[m])} g
+                  {f.number(total[m])} / {t.unit.g(f.number(target[m]))}
                 </dd>
               </div>
             ))}

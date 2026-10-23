@@ -16,6 +16,16 @@ export function DayMetrics({ metrics }: { metrics: Metric[] }) {
   const t = useMessages()
   const f = useFormat()
 
+  // value is a measurement in its unit, as the language writes it: the
+  // steps without one, which the label says.
+  function value(m: Metric): string {
+    if (m.unit === '%') {
+      return f.percent(m.value)
+    }
+    const n = f.number(m.value, digits[m.kind] ?? 0)
+    return m.kind === 'steps' ? n : `${n} ${m.unit}`
+  }
+
   return (
     <section aria-labelledby="day-measurements" className="space-y-2">
       <h2 id="day-measurements" className="font-medium">
@@ -28,11 +38,7 @@ export function DayMetrics({ metrics }: { metrics: Metric[] }) {
           {metrics.map((m) => (
             <div key={m.kind} className="rounded-lg border p-3">
               <dt className="text-muted-foreground">{t.day.metric[m.kind]}</dt>
-              <dd className="text-lg font-semibold tabular-nums">
-                {f.number(m.value, digits[m.kind] ?? 0)}
-                {/* The label says they are steps. */}
-                {m.kind === 'steps' ? '' : ` ${m.unit}`}
-              </dd>
+              <dd className="text-lg font-semibold tabular-nums">{value(m)}</dd>
             </div>
           ))}
         </dl>

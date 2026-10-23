@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Meal } from '@/api/types'
 import { setLocale } from '@/i18n/locale'
-import { day, fakeServer, problem, renderAt, session, signedIn, signedOut } from '@/test/app'
+import { day, fakeServer, me, problem, renderAt, session, signedIn, signedOut } from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -14,8 +14,8 @@ afterEach(() => {
 
 const breakfast: Meal = {
   id: '0193c3a5-0000-7000-8000-0000000000a1',
-  // 08:45 in Zagreb, the session user's time zone.
-  eaten_at: '2026-10-23T06:45:00Z',
+  // 08:45 in Los Angeles, the session user's time zone.
+  eaten_at: '2026-10-23T15:45:00Z',
   description: 'Oats with a banana',
   client: 'mcp',
   total: { kcal: 520, protein: 18, carbs: 92, fat: 9 },
@@ -53,6 +53,7 @@ test('today shows what was eaten against the target, the meals and the measureme
           metrics: [
             { kind: 'weight', value: 72.46, unit: 'kg', source: 'manual' },
             { kind: 'steps', value: 8042, unit: 'steps', source: 'import' },
+            { kind: 'body_fat', value: 18.24, unit: '%', source: 'import' },
           ],
         }),
       ),
@@ -68,7 +69,7 @@ test('today shows what was eaten against the target, the meals and the measureme
   expect(within(eaten).getByText('88 / 160 g')).toBeDefined()
 
   const meal = within(screen.getByRole('region', { name: 'Meals' })).getByRole('article')
-  expect(within(meal).getByRole('heading').textContent).toBe('08:45 AM Oats with a banana')
+  expect(within(meal).getByRole('heading').textContent).toBe('8:45 AM Oats with a banana')
   expect(within(meal).getByText('520 kcal')).toBeDefined()
   const items = within(meal).getAllByRole('listitem')
   expect(items[0]?.textContent).toBe('Oats 80 g300 kcal · P 11 · C 54 · F 6')
@@ -77,6 +78,25 @@ test('today shows what was eaten against the target, the meals and the measureme
   const measurements = screen.getByRole('region', { name: 'Measurements' })
   expect(within(measurements).getByText('72.5 kg')).toBeDefined()
   expect(within(measurements).getByText('8,042')).toBeDefined()
+  expect(within(measurements).getByText('18.2%')).toBeDefined()
+})
+
+test("an amount of portions takes the word's form of the number shown", async () => {
+  const [oats] = breakfast.items
+  if (!oats) {
+    throw new Error('the fixture has no items')
+  }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({ meals: [{ ...breakfast, items: [{ ...oats, amount: 0.999, unit: 'portion' }] }] }),
+      ),
+  })
+
+  renderAt('/')
+
+  expect(await screen.findByText('1 portion')).toBeDefined()
 })
 
 test('a day past its target says by how much', async () => {
@@ -196,4 +216,64 @@ test('the day speaks Croatian, its numbers too', async () => {
   expect(await screen.findByRole('heading', { name: 'Danas' })).toBeDefined()
   expect(screen.getByText('petak, 23. listopada · Dan odmora')).toBeDefined()
   expect(screen.getByText('još 1.040 kcal')).toBeDefined()
+})
+
+test('on another day, the section is still the current one, and no link to a day is', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-10-22': () => Response.json(day({ date: '2026-10-22' })),
+  })
+
+  renderAt('/?date=2026-10-22')
+
+  expect(await screen.findByRole('link', { name: 'Back to today' })).toBeDefined()
+  const current = screen
+    .getAllByRole('link')
+    .filter((a) => a.getAttribute('aria-current') === 'page')
+  expect(current.map((a) => a.textContent)).toEqual(['Day'])
+})
+
+test('a date that is no date is today', async () => {
+  const fetch = fakeServer(signedIn())
+
+  const router = renderAt('/?date=2026-02-31')
+
+  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(router.state.location.search).toEqual({})
+  const paths = fetch.mock.calls.map(([r]) => (r instanceof Request ? new URL(r.url).pathname : r))
+  expect(paths).not.toContain('/api/v1/days/2026-02-31')
+})
+
+test('/ is today though what the app knew of today is older', async () => {
+  // The day's start hour passed while the app was open: the day came
+  // again, /api/v1/me not yet.
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/me': () => Response.json({ ...me(), today: '2026-10-22' }),
+  })
+
+  renderAt('/')
+
+  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(screen.queryByRole('link', { name: 'Back to today' })).toBeNull()
+})
+
+test('another day keeps its way back to today when the server cannot say which day it is', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/me': () => problem(500),
+    'GET /api/v1/days/2026-10-20': () => Response.json(day({ date: '2026-10-20' })),
+  })
+
+  renderAt('/?date=2026-10-20')
+
+  expect(await screen.findByRole('link', { name: 'Back to today' })).toBeDefined()
+})
+
+test('a day the server refuses is not blamed on the server', async () => {
+  fakeServer({ ...signedIn(), 'GET /api/v1/days/today': () => problem(422) })
+
+  renderAt('/')
+
+  expect((await screen.findByRole('alert')).textContent).toBe('Something went wrong.')
 })

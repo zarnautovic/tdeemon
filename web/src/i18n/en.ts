@@ -42,6 +42,12 @@ export const en = {
     noMethod: 'This server offers no way to sign in. Ask its admin.',
   },
   loading: 'Loading…',
+  // Amounts in their units, which every language here writes the same.
+  unit: {
+    kcal: (n: string) => `${n} kcal`,
+    g: (n: string) => `${n} g`,
+    ml: (n: string) => `${n} ml`,
+  },
   day: {
     today: 'Today',
     previous: 'The day before',

@@ -40,6 +40,12 @@ export const hr: Messages = {
     noMethod: 'Ovaj server ne nudi način prijave. Javi se njegovom adminu.',
   },
   loading: 'Učitavanje…',
+  // Amounts in their units, which every language here writes the same.
+  unit: {
+    kcal: (n: string) => `${n} kcal`,
+    g: (n: string) => `${n} g`,
+    ml: (n: string) => `${n} ml`,
+  },
   day: {
     today: 'Danas',
     previous: 'Dan prije',
@@ -51,8 +57,8 @@ export const hr: Messages = {
     eaten: 'Pojedeno',
     ofTarget: (kcal: string) => `od ${kcal} kcal`,
     left: (kcal: string) => `još ${kcal} kcal`,
-    over: (kcal: string) => `${kcal} kcal preko`,
-    noTarget: 'Još nema targeta: postavlja ga plan.',
+    over: (kcal: string) => `${kcal} kcal previše`,
+    noTarget: 'Još nema cilja: postavlja ga plan.',
     protein: 'Proteini',
     carbs: 'Ugljikohidrati',
     fat: 'Masti',

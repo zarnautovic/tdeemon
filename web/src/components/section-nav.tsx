@@ -18,7 +18,13 @@ export function SectionNav() {
     >
       <ul className="mx-auto grid max-w-3xl grid-cols-4">
         <li>
-          <Link to="/" activeOptions={{ exact: true }} className={linkClass}>
+          <Link
+            to="/"
+            // The day is current on any day's page, /?date=… too, and only
+            // there.
+            activeOptions={{ exact: true, includeSearch: false }}
+            className={linkClass}
+          >
             <CalendarDays aria-hidden className="size-5" />
             {t.nav.day}
           </Link>

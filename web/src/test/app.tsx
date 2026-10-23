@@ -52,7 +52,9 @@ export function session(locale: Locale = 'en'): components['schemas']['SessionBo
       name: 'Ana',
       role: 'user',
       locale,
-      timezone: 'Europe/Zagreb',
+      // Far from a developer's own, so a time shown in the machine's zone,
+      // not the user's, fails the tests anywhere.
+      timezone: 'America/Los_Angeles',
       day_start_hour: 4,
     },
     expires_at: '2026-11-22T10:00:00Z',
@@ -82,9 +84,9 @@ export function me(): components['schemas']['MeBody'] {
   return {
     name: 'Ana',
     locale: 'en',
-    time_zone: 'Europe/Zagreb',
+    time_zone: 'America/Los_Angeles',
     day_start_hour: 4,
-    now: `${today}T09:30:00+02:00`,
+    now: `${today}T09:30:00-07:00`,
     today,
     today_type: 'rest',
     notes: '',

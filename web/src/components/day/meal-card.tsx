@@ -11,9 +11,11 @@ export function MealCard({ meal, timeZone }: { meal: Meal; timeZone: string }) {
   // amount is how much of an item, in its unit.
   function amount(item: Item): string {
     if (item.unit === 'portion') {
-      return t.day.portions(f.number(item.amount, 2), item.amount)
+      // The word's form follows the number shown: 0.999 is "1 portion".
+      const shown = Math.round(item.amount * 100) / 100
+      return t.day.portions(f.number(shown, 2), shown)
     }
-    return `${f.number(item.amount)} ${item.unit}`
+    return t.unit[item.unit](f.number(item.amount))
   }
 
   return (
@@ -25,7 +27,7 @@ export function MealCard({ meal, timeZone }: { meal: Meal; timeZone: string }) {
           </time>{' '}
           {meal.description}
         </h3>
-        <p className="font-semibold tabular-nums">{f.number(meal.total.kcal)} kcal</p>
+        <p className="font-semibold tabular-nums">{t.unit.kcal(f.number(meal.total.kcal))}</p>
       </header>
       <ul className="divide-y text-sm">
         {meal.items.map((item) => (
@@ -34,7 +36,7 @@ export function MealCard({ meal, timeZone }: { meal: Meal; timeZone: string }) {
               {item.name} <span className="text-muted-foreground">{amount(item)}</span>
             </span>
             <span className="text-right text-muted-foreground tabular-nums">
-              {f.number(item.nutrients.kcal)} kcal · {t.day.short.protein}{' '}
+              {t.unit.kcal(f.number(item.nutrients.kcal))} · {t.day.short.protein}{' '}
               {f.number(item.nutrients.protein)} · {t.day.short.carbs}{' '}
               {f.number(item.nutrients.carbs)} · {t.day.short.fat} {f.number(item.nutrients.fat)}
             </span>

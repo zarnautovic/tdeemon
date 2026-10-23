@@ -9,6 +9,7 @@ import {
 
 import { statusOf } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
+import { isDate } from '@/i18n/format'
 import { setLocale } from '@/i18n/locale'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
@@ -79,14 +80,16 @@ const loginRoute = createRoute({
   component: LoginPage,
 })
 
-// The day's date, YYYY-MM-DD; without it, today.
+// The day's date, YYYY-MM-DD; without it, or with one that is no date
+// (2026-02-31), today.
 const dayRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
-  validateSearch: (search: Record<string, unknown>): { date?: string } =>
-    typeof search.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
-      ? { date: search.date }
-      : {},
+  // The router keeps the URL's keys a validator leaves out, so a date
+  // that is none is set undefined, not left out.
+  validateSearch: (search: Record<string, unknown>): { date?: string | undefined } => ({
+    date: typeof search.date === 'string' && isDate(search.date) ? search.date : undefined,
+  }),
   component: DayPage,
 })
 const foodsRoute = createRoute({

@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useSearch } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
@@ -19,22 +19,29 @@ export function DayPage() {
   const t = useMessages()
   const f = useFormat()
   const { date } = useSearch({ from: '/app/' })
-  const day = $api.useQuery('get', '/api/v1/days/{date}', {
-    params: { path: { date: date ?? 'today' } },
-  })
+  const day = $api.useQuery(
+    'get',
+    '/api/v1/days/{date}',
+    { params: { path: { date: date ?? 'today' } } },
+    // Moving to another day keeps this one, and its arrows under the
+    // thumb, until the other comes.
+    { placeholderData: keepPreviousData },
+  )
   const me = $api.useQuery('get', '/api/v1/me')
   const session = useQuery(sessionQuery)
   const today = me.data?.today
 
   if (day.isPending) {
-    return <p className="text-muted-foreground">{t.loading}</p>
+    return <output className="block text-muted-foreground">{t.loading}</output>
   }
   if (day.isError) {
     return <LoadError error={day.error} onRetry={() => void day.refetch()} />
   }
 
   const shown = day.data.date
-  const isToday = today === undefined ? date === undefined : shown === today
+  // / is today, whatever /me said earlier: the day's start hour may have
+  // passed since.
+  const isToday = date === undefined || shown === today
   const before = addDays(shown, -1)
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.
@@ -46,8 +53,11 @@ export function DayPage() {
         <Link
           to="/"
           search={searchOf(before)}
+          // Another day is never the current page: its date must match
+          // too, not be left out.
+          activeOptions={{ exact: true }}
           aria-label={t.day.previous}
-          className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+          className={buttonVariants({ variant: 'ghost', size: 'icon-lg' })}
         >
           <ChevronLeft aria-hidden />
         </Link>
@@ -62,14 +72,15 @@ export function DayPage() {
           <Link
             to="/"
             search={searchOf(after)}
+            activeOptions={{ exact: true }}
             aria-label={t.day.next}
-            className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+            className={buttonVariants({ variant: 'ghost', size: 'icon-lg' })}
           >
             <ChevronRight aria-hidden />
           </Link>
         ) : (
           // Keeps the title centred.
-          <span className="size-8" />
+          <span className="size-9" />
         )}
       </header>
       {day.data.status === 'excluded' && (
@@ -91,8 +102,12 @@ export function DayPage() {
         )}
       </section>
       <DayMetrics metrics={day.data.metrics} />
-      {!isToday && today !== undefined && (
-        <Link to="/" className={buttonVariants({ variant: 'outline', className: 'w-full' })}>
+      {!isToday && (
+        <Link
+          to="/"
+          activeOptions={{ exact: true }}
+          className={buttonVariants({ variant: 'outline', className: 'w-full' })}
+        >
           {t.day.toToday}
         </Link>
       )}

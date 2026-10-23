@@ -17,16 +17,50 @@ export function addDays(date: string, n: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+// isDate tells a real calendar date, YYYY-MM-DD, from one of its shape
+// only (2026-02-31).
+export function isDate(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && addDays(s, 0) === s
+}
+
+// formatters keeps each Intl formatter once made, by its locale and
+// options: a day of many items formats hundreds of numbers.
+const formatters = new Map<string, Intl.NumberFormat | Intl.DateTimeFormat>()
+
+function numberFormat(locale: string, options: Intl.NumberFormatOptions): Intl.NumberFormat {
+  const key = `n|${locale}|${JSON.stringify(options)}`
+  let f = formatters.get(key)
+  if (!(f instanceof Intl.NumberFormat)) {
+    f = new Intl.NumberFormat(locale, options)
+    formatters.set(key, f)
+  }
+  return f
+}
+
+function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = `d|${locale}|${JSON.stringify(options)}`
+  let f = formatters.get(key)
+  if (!(f instanceof Intl.DateTimeFormat)) {
+    f = new Intl.DateTimeFormat(locale, options)
+    formatters.set(key, f)
+  }
+  return f
+}
+
 // useFormat formats numbers, dates and times in the app's language.
 export function useFormat() {
   const locale = useLocale()
   return {
     // number rounds to at most digits decimals.
     number: (n: number, digits = 0) =>
-      new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(n),
-    // date is a day's date in words: "Wednesday, 22 October".
+      numberFormat(locale, { maximumFractionDigits: digits }).format(n),
+    // percent is a percentage, 18.2 for 18.2 %, as the language writes it.
+    percent: (n: number, digits = 1) =>
+      numberFormat(locale, { style: 'percent', maximumFractionDigits: digits }).format(n / 100),
+    // date is a day's date in words: "Wednesday, October 22" in English,
+    // "srijeda, 22. listopada" in Croatian.
     date: (date: string) =>
-      new Intl.DateTimeFormat(locale, {
+      dateFormat(locale, {
         weekday: 'long',
         day: 'numeric',
         month: 'long',
@@ -34,7 +68,7 @@ export function useFormat() {
       }).format(calendarDate(date)),
     // time is an instant's time of day on the user's clock.
     time: (instant: string, timeZone: string) =>
-      new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone }).format(
+      dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(
         new Date(instant),
       ),
   }
