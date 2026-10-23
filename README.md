@@ -169,8 +169,10 @@ kubectl exec deploy/tdeemon -- /tdeemon user create --admin --email you@example.
   when it is the only factor, and at most 256. tdeemon stores only its
   argon2id hash.
 - `--name` sets the name the app shows (by default, the part of the
-  address before the @), and `--timezone` the user's time zone (by
-  default `TZ`, or UTC). `tdeemon help` lists the flags.
+  address before the @), `--timezone` the user's time zone (by default
+  `TZ`, or UTC), and `--locale` their language, `en` or `hr` (by default
+  `en`); `tdeemon user set-locale --email … --locale hr` changes it later.
+  `tdeemon help` lists the flags.
 - `tdeemon user set-password --email …` gives a user a new password,
   generated or with `--password-stdin`, and ends their sessions: the way
   back when a password is lost. Their API tokens keep working; if they

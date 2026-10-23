@@ -41,6 +41,7 @@ const usage = `Usage:
                                     their sessions
   tdeemon user set-telegram [flags] set the Telegram chat a user's
                                     notifications go to
+  tdeemon user set-locale [flags]   set a user's language
   tdeemon import-history [flags]    import a user's history from the
                                     predecessor, once
   tdeemon help                      show this help
@@ -52,6 +53,7 @@ Flags of user create:
   --admin            make the user an admin
   --timezone ZONE    an IANA time zone such as Europe/Zagreb (default: TZ,
                      or UTC when TZ is not set)
+  --locale LANG      the app's language, en or hr (default: en)
   --password-stdin   read the password from the first line of standard
                      input; without it, tdeemon generates one and prints
                      it once
@@ -66,6 +68,11 @@ Flags of user set-telegram:
                      removes it. With a bot configured, the chat gets a
                      message first, and a chat that does not take it is
                      not set
+
+Flags of user set-locale:
+  --email ADDRESS    the user's address (required)
+  --locale LANG      en or hr (required): the language of the app, the
+                     morning summary and the alerts
 
 Flags of import-history (--health-db, --foods, --plan, or more):
   --email ADDRESS    the user's address (required)

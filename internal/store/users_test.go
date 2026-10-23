@@ -205,3 +205,27 @@ func TestUsersTableChecksTheID(t *testing.T) {
 		})
 	}
 }
+
+// SetLocale changes a user's language to one the app speaks.
+func TestSetLocale(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	ana := newUser("ana@example.com")
+	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
+		t.Fatal(err)
+	}
+	now := ana.CreatedAt.Add(2 * time.Hour)
+	if err := db.SetLocale(t.Context(), ana.ID, "en", now); err != nil {
+		t.Fatal(err)
+	}
+	if u, _ := db.UserByEmail(t.Context(), ana.Email); u.Locale != "en" || !u.UpdatedAt.Equal(now) {
+		t.Errorf("locale = %q, updated at %v", u.Locale, u.UpdatedAt)
+	}
+	if err := db.SetLocale(t.Context(), ana.ID, "de", now); err == nil {
+		t.Error("a language not spoken was set")
+	}
+	if err := db.SetLocale(t.Context(), uuid.NewV7(), "hr", now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("no such user: %v", err)
+	}
+}

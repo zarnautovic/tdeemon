@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 	"uuid"
 
@@ -131,6 +133,26 @@ func (db *DB) SetPasswordHash(ctx context.Context, id uuid.UUID, passwordHash st
 		}
 		if _, err := tx.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ?", id.String()); err != nil {
 			return fmt.Errorf("set password: end sessions: %w", err)
+		}
+		return nil
+	})
+}
+
+// SetLocale sets the language of the user with id, one of user.Locales,
+// or returns ErrNotFound.
+func (db *DB) SetLocale(ctx context.Context, id uuid.UUID, locale string, now time.Time) error {
+	if !slices.Contains(user.Locales(), locale) {
+		return fmt.Errorf("set locale: %q: want one of %s", locale, strings.Join(user.Locales(), ", "))
+	}
+	return db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, "UPDATE users SET locale = ?, updated_at = ? WHERE id = ?", locale, formatTime(now), id.String())
+		if err != nil {
+			return fmt.Errorf("set locale: %w", err)
+		}
+		if n, err := res.RowsAffected(); err != nil {
+			return fmt.Errorf("set locale: %w", err)
+		} else if n == 0 {
+			return ErrNotFound
 		}
 		return nil
 	})
