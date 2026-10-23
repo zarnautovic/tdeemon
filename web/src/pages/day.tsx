@@ -8,6 +8,7 @@ import { CheckIn } from '@/components/day/check-in'
 import { DayMetrics } from '@/components/day/day-metrics'
 import { DayTotals } from '@/components/day/day-totals'
 import { MealCard } from '@/components/day/meal-card'
+import { UndoButton } from '@/components/day/undo-button'
 import { LoadError } from '@/components/load-error'
 import { buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
@@ -112,7 +113,12 @@ export function DayPage() {
             <p className="text-sm text-muted-foreground">{t.day.noMeals}</p>
           ) : (
             day.data.meals.map((meal) => (
-              <MealCard key={meal.id} meal={meal} timeZone={session.data?.user.timezone ?? 'UTC'} />
+              <MealCard
+                key={meal.id}
+                meal={meal}
+                date={day.data.date}
+                timeZone={session.data?.user.timezone ?? 'UTC'}
+              />
             ))
           )}
         </section>
@@ -122,6 +128,7 @@ export function DayPage() {
           metrics={day.data.metrics}
           canLog={!future}
         />
+        <UndoButton key={`undo ${day.data.date}`} date={day.data.date} />
       </div>
       {!isToday && (
         <Link

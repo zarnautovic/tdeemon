@@ -1,0 +1,38 @@
+import { useQueryClient } from '@tanstack/react-query'
+
+import { $api } from './client'
+import { dayScope } from './day'
+
+// The days' queries, by the prefix of their keys.
+const days = ['get', '/api/v1/days/{date}']
+
+// useUpdateMeal changes a meal of day date by its ops, in order. Its
+// answer has the day's totals but not its meals, so the days are asked
+// again; the change stands done once they came.
+export function useUpdateMeal(date: string) {
+  const queryClient = useQueryClient()
+  return $api.useMutation('patch', '/api/v1/meals/{id}', {
+    scope: dayScope(date),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: days }),
+  })
+}
+
+// useDeleteMeal deletes a meal of day date.
+export function useDeleteMeal(date: string) {
+  const queryClient = useQueryClient()
+  return $api.useMutation('delete', '/api/v1/meals/{id}', {
+    scope: dayScope(date),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: days }),
+  })
+}
+
+// useUndo takes back the user's latest change, made anywhere: after the
+// changes of day date made before it. What it took back may be of any
+// day, a food or the notes, so everything is asked again.
+export function useUndo(date: string) {
+  const queryClient = useQueryClient()
+  return $api.useMutation('post', '/api/v1/undo', {
+    scope: dayScope(date),
+    onSuccess: () => queryClient.invalidateQueries(),
+  })
+}
