@@ -51,3 +51,12 @@ export function retry(failures: number, error: unknown): boolean {
   const status = statusOf(error)
   return status !== undefined && status >= 500
 }
+
+// detailOf is what the API's problem (RFC 9457) says of a refusal, in
+// the server's words; empty for anything else.
+export function detailOf(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'detail' in error) {
+    return typeof error.detail === 'string' ? error.detail : ''
+  }
+  return ''
+}

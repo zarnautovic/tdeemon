@@ -98,5 +98,9 @@ export function useFormat() {
       dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(
         new Date(instant),
       ),
+    // day is an instant's day on the user's clock, short: "Oct 21" in
+    // English, "21. lis" in Croatian.
+    day: (instant: string, timeZone: string) =>
+      dateFormat(locale, { day: 'numeric', month: 'short', timeZone }).format(new Date(instant)),
   }
 }
