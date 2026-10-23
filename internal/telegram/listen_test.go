@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -24,19 +25,27 @@ func TestUpdates(t *testing.T) {
 
 	srv, last := fakeAPI(t, http.StatusOK, `{"ok":true,"result":[
 		{"update_id":41,"message":{"message_id":7,"date":1792760700,"text":"/sazetak","chat":{"id":853,"type":"private"}}},
-		{"update_id":42,"my_chat_member":{"chat":{"id":-100123}}}]}`)
+		{"update_id":42,"my_chat_member":{"chat":{"id":-100123}}},
+		{"update_id":43,"message":{"date":1792760701,"migrate_to_chat_id":-1001234567,"chat":{"id":-100123,"type":"group"}}},
+		{"update_id":44,"message":{"date":1792760701,"migrate_from_chat_id":-100123,"chat":{"id":-1001234567,"type":"supergroup"}}}]}`)
 	got, err := (&telegram.Bot{Token: token, BaseURL: srv.URL}).Updates(t.Context(), 41, 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if last.path != "/bot"+token+"/getUpdates" || last.body["offset"] != float64(41) || last.body["timeout"] != float64(30) {
+	if last.path != "/bot"+token+"/getUpdates" || last.body["offset"] != float64(41) || last.body["timeout"] != float64(30) ||
+		last.body["limit"] != float64(20) {
 		t.Errorf("request = %s %v", last.path, last.body)
 	}
 	if a, _ := last.body["allowed_updates"].([]any); len(a) != 1 || a[0] != "message" {
 		t.Errorf("allowed_updates = %v", last.body["allowed_updates"])
 	}
-	want := []telegram.Update{{ID: 41, ChatID: 853, Text: "/sazetak", Sent: time.Unix(1792760700, 0)}, {ID: 42}}
-	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+	want := []telegram.Update{
+		{ID: 41, ChatID: 853, Text: "/sazetak", Sent: time.Unix(1792760700, 0)},
+		{ID: 42},
+		{ID: 43, ChatID: -100123, Sent: time.Unix(1792760701, 0), MigrateTo: -1001234567},
+		{ID: 44, ChatID: -1001234567, Sent: time.Unix(1792760701, 0), MigrateFrom: -100123},
+	}
+	if !slices.Equal(got, want) {
 		t.Errorf("Updates = %+v, want %+v", got, want)
 	}
 }
@@ -100,13 +109,15 @@ func TestListen(t *testing.T) {
 	url, offsets := fakeUpdates(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	var got []telegram.Update
+	cut := errors.New("the second message was not handled")
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		(&telegram.Bot{Token: token, BaseURL: url}).Listen(ctx, slog.New(slog.DiscardHandler), func(_ context.Context, u telegram.Update) {
+		(&telegram.Bot{Token: token, BaseURL: url}).Listen(ctx, slog.New(slog.DiscardHandler), func(hctx context.Context, u telegram.Update) {
 			got = append(got, u)
 			if len(got) == 2 {
 				cancel()
+				cut = hctx.Err()
 			}
 		})
 	}()
@@ -115,8 +126,14 @@ func TestListen(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("Listen did not stop")
 	}
-	if len(got) != 2 || got[0].ID != 10 || got[0].Text != "/pomoc" || got[1].ID != 12 || got[1].ChatID != -100123 {
+	want := []telegram.Update{{ID: 10, ChatID: 853, Text: "/pomoc", Sent: time.Unix(1, 0)}, {ID: 12, ChatID: -100123, Text: "/sazetak", Sent: time.Unix(2, 0)}}
+	if !slices.Equal(got, want) {
 		t.Errorf("handled = %+v", got)
+	}
+	// The message being handled when the listener stops is handled to
+	// its end.
+	if cut != nil {
+		t.Errorf("the handling's context once the listener stopped: %v", cut)
 	}
 	// The first from 0, the next from after 11 (failed, then again), and
 	// the confirmation from after 12.

@@ -36,9 +36,14 @@ type commandsEnv struct {
 	ana  user.User
 	now  time.Time
 	logs *bytes.Buffer
-	// ask has the commands answer text sent in chat age ago, and returns
-	// what was sent.
-	ask func(chat int64, text string, age time.Duration) []botMessage
+	// send has the commands answer m, and returns what was sent.
+	send func(m telegram.Update) []botMessage
+}
+
+// ask has the commands answer text sent in chat age ago, and returns
+// what was sent.
+func (env commandsEnv) ask(chat int64, text string, age time.Duration) []botMessage {
+	return env.send(telegram.Update{ID: 1, ChatID: chat, Text: text, Sent: env.now.Add(-age)})
 }
 
 func newCommandsEnv(t *testing.T) commandsEnv {
@@ -87,12 +92,12 @@ func newCommandsEnv(t *testing.T) commandsEnv {
 	logs := &bytes.Buffer{}
 	handle := api.TelegramCommands(api.Config{DB: db, Logger: slog.New(slog.NewTextHandler(logs, nil)), Now: func() time.Time { return now }},
 		&telegram.Bot{Token: "123456:made-up-token-for-tests-only-0123", BaseURL: srv.URL})
-	return commandsEnv{db: db, ana: ana, now: now, logs: logs, ask: func(chat int64, text string, age time.Duration) []botMessage {
+	return commandsEnv{db: db, ana: ana, now: now, logs: logs, send: func(m telegram.Update) []botMessage {
 		t.Helper()
 		mu.Lock()
 		sent = nil
 		mu.Unlock()
-		handle(t.Context(), telegram.Update{ID: 1, ChatID: chat, Text: text, Sent: now.Add(-age)})
+		handle(t.Context(), m)
 		mu.Lock()
 		defer mu.Unlock()
 		return sent
@@ -107,12 +112,12 @@ func TestTelegramCommands(t *testing.T) {
 
 	env := newCommandsEnv(t)
 	summary := "Jutarnji sažetak, petak 23. 10.\nSan: 7 h 30 min"
-	for _, text := range []string{"/sazetak", "/summary", " /SAZETAK@tdeemon_test_bot ", "/sazetak danas"} {
+	for _, text := range []string{"/sazetak", "/summary", "/sažetak", " /SAZETAK@tdeemon_test_bot ", "/sazetak danas", "/sazetak\nmolim"} {
 		if got := env.ask(853, text, time.Minute); len(got) != 1 || got[0].chat != 853 || !strings.HasPrefix(got[0].text, summary) {
 			t.Errorf("%q = %+v, want Ana's summary", text, got)
 		}
 	}
-	for _, text := range []string{"/pomoc", "/help", "/start", "sažetak", "/nepoznata", ""} {
+	for _, text := range []string{"/pomoc", "/help", "/start", "sažetak", "/nepoznata", "/ sazetak"} {
 		if got := env.ask(853, text, 0); len(got) != 1 || got[0].chat != 853 || !strings.HasPrefix(got[0].text, "Naredbe:\n/sazetak") {
 			t.Errorf("%q = %+v, want the commands in Croatian", text, got)
 		}
@@ -139,6 +144,42 @@ func TestTelegramCommandsInAGroup(t *testing.T) {
 		!strings.HasPrefix(got[1].text, "Jutarnji sažetak") || strings.Contains(got[1].text, "San:") {
 		t.Errorf("/summary = %+v, want each user's own, without Ana's sleep", got)
 	}
+	// The group's talk that is not to the bot, and its service messages,
+	// get nothing.
+	for _, text := range []string{"hvala", "", " "} {
+		if got := env.ask(-100123, text, 0); got != nil {
+			t.Errorf("%q in the group got %+v", text, got)
+		}
+	}
+}
+
+// A group that became a supergroup moves its users to it, from either of
+// the change's service messages, without an answer; another chat's users
+// stay.
+func TestTelegramCommandsFollowASupergroup(t *testing.T) {
+	t.Parallel()
+
+	for name, m := range map[string]telegram.Update{
+		"in the group":      {ID: 1, ChatID: -100123, MigrateTo: -1001234567},
+		"in the supergroup": {ID: 1, ChatID: -1001234567, MigrateFrom: -100123},
+	} {
+		env := newCommandsEnv(t)
+		if got := env.send(m); got != nil {
+			t.Errorf("%s: answered %+v", name, got)
+		}
+		if us, err := env.db.TelegramChatUsers(t.Context(), -1001234567); err != nil || len(us) != 2 {
+			t.Errorf("%s: the supergroup's users = %v, %v", name, us, err)
+		}
+		if us, _ := env.db.TelegramChatUsers(t.Context(), -100123); len(us) != 0 {
+			t.Errorf("%s: the group's users = %v", name, us)
+		}
+		if chat, _, _ := env.db.TelegramChat(t.Context(), env.ana.ID); chat != 853 {
+			t.Errorf("%s: Ana's chat = %d", name, chat)
+		}
+		if got := env.ask(-1001234567, "/help", 0); len(got) != 2 {
+			t.Errorf("%s: the supergroup's /help = %+v", name, got)
+		}
+	}
 }
 
 // A chat that is no user's gets nothing, and its id is logged for the
@@ -158,5 +199,10 @@ func TestTelegramCommandsIgnored(t *testing.T) {
 	}
 	if got := env.ask(853, "/sazetak", 4*time.Minute); len(got) != 1 {
 		t.Errorf("a command 4 minutes old got %+v", got)
+	}
+	for _, text := range []string{"", "  "} {
+		if got := env.ask(853, text, 0); got != nil {
+			t.Errorf("a service message %q got %+v", text, got)
+		}
 	}
 }

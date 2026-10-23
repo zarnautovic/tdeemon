@@ -267,13 +267,14 @@ A value that did not come is left out; nothing is guessed.
 lists:
 
 - `/sazetak` or `/summary`: the morning summary, as it is now;
-- `/pomoc`, `/help` or `/start`, or any other message: the commands.
+- `/pomoc`, `/help` or `/start`, or, in a private chat, any other
+  message: the commands.
 
 The answer is in the user's language, and in a group set for several
-users, one for each. A chat that is no user's gets no answer, and
-neither does a command older than 5 minutes (one sent while the server
-was down). A command changes nothing: the morning summary still comes
-at 10:00.
+users, one for each; a group's other messages get none. A chat that is
+no user's gets no answer, and neither does a command older than 5
+minutes (one sent while the server was down). A command changes
+nothing: the morning summary still comes at 10:00.
 
 **The watchdog** looks each hour and tells the user, in the same chat,
 when their data stop coming:
@@ -287,7 +288,8 @@ when their data stop coming:
 
 Each stop alarms once (and a chat that blocked the bot, not at all); it
 alarms again only after data have come and stopped again. A group chat
-that Telegram turns into a supergroup is followed to its new id.
+that Telegram turns into a supergroup is followed to its new id, at the
+change's message or at the next send.
 
 ### Single sign-on (OpenID Connect)
 

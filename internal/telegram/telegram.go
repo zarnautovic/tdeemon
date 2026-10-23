@@ -101,12 +101,22 @@ type Update struct {
 	// the updates from the last one's ID + 1.
 	ID int64
 	// ChatID is the chat the message came in; 0 for an update that is
-	// not a message, which has nothing to answer.
+	// not a message, which has nothing to answer. A private chat's is
+	// above 0, a group's below.
 	ChatID int64
-	Text   string
+	// Text is the message's; "" for one without, such as a service
+	// message (someone joined, a pin).
+	Text string
+	// MigrateTo is, in a group that became a supergroup, the
+	// supergroup's chat, and MigrateFrom, in the supergroup, the group's:
+	// the service messages of the change.
+	MigrateTo, MigrateFrom int64
 	// Sent is when the message was sent, to the second.
 	Sent time.Time
 }
+
+// updatesLimit is the most updates a request for them gets.
+const updatesLimit = 20
 
 // Updates returns the bot's messages from the update offset on, waiting
 // up to wait for one to come; none when none came. Asking from an
@@ -116,16 +126,21 @@ func (b *Bot) Updates(ctx context.Context, offset int64, wait time.Duration) ([]
 	var result []struct {
 		UpdateID int64 `json:"update_id"`
 		Message  *struct {
-			Date int64  `json:"date"`
-			Text string `json:"text"`
-			Chat struct {
+			Date        int64  `json:"date"`
+			Text        string `json:"text"`
+			MigrateTo   int64  `json:"migrate_to_chat_id"`
+			MigrateFrom int64  `json:"migrate_from_chat_id"`
+			Chat        struct {
 				ID int64 `json:"id"`
 			} `json:"chat"`
 		} `json:"message"`
 	}
 	err := b.call(ctx, "getUpdates", map[string]any{
-		"offset":          offset,
-		"timeout":         int(wait / time.Second),
+		"offset":  offset,
+		"timeout": int(wait / time.Second),
+		// A batch well below what an answer may hold, so that one that
+		// does not read is not the same batch for ever.
+		"limit":           updatesLimit,
 		"allowed_updates": []string{"message"},
 	}, &result, wait+timeout)
 	if err != nil {
@@ -135,7 +150,9 @@ func (b *Bot) Updates(ctx context.Context, offset int64, wait time.Duration) ([]
 	for _, r := range result {
 		u := Update{ID: r.UpdateID}
 		if r.Message != nil {
-			u.ChatID, u.Text, u.Sent = r.Message.Chat.ID, r.Message.Text, time.Unix(r.Message.Date, 0)
+			m := r.Message
+			u.ChatID, u.Text, u.Sent = m.Chat.ID, m.Text, time.Unix(m.Date, 0)
+			u.MigrateTo, u.MigrateFrom = m.MigrateTo, m.MigrateFrom
 		}
 		updates = append(updates, u)
 	}
