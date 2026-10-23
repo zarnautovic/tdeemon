@@ -20,7 +20,8 @@ export function FoodPage() {
   let body
   if (food.isPending) {
     body = <output className="block text-muted-foreground">{t.loading}</output>
-  } else if (food.isError && statusOf(food.error) === 404) {
+  } else if (food.isError && [404, 422].includes(statusOf(food.error) ?? 0)) {
+    // 422: the address names no food's id at all.
     body = <p className="text-muted-foreground">{t.foods.notFound}</p>
   } else if (food.isError) {
     body = <LoadError error={food.error} onRetry={() => void food.refetch()} />

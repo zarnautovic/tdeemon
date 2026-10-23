@@ -661,3 +661,50 @@ func TestListFoods(t *testing.T) {
 		t.Error("ListFoods by kcal: no error")
 	}
 }
+
+// CreateFood saves a new food only: the food of the name and brand, in
+// any case and archived too, is in the way, and an alias another has.
+func TestCreateFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	oats := saveFood(t, db, ana, food.Food{
+		ID: uuid.NewV7(), Name: "Rolled oats", Brand: "Mill", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 370, Protein: 13, Carbs: 60, Fat: 7}, Aliases: []string{"porridge"},
+	})
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, oats.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	mk := func(name, brand string, aliases ...string) food.Food {
+		return food.Food{
+			ID: uuid.NewV7(), Name: name, Brand: brand, Basis: food.Per100g, Source: food.Estimate,
+			Nutrients: food.Nutrients{Kcal: 100, Protein: 5, Carbs: 10, Fat: 3}, Aliases: aliases,
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		f    food.Food
+		want error
+	}{
+		{"the name and brand, in another case, archived", mk("rolled OATS", "mill"), store.ErrNameTaken},
+		{"an alias another food has", mk("Oat flakes", "", "Porridge"), store.ErrAliasTaken},
+	} {
+		_, err := db.CreateFood(t.Context(), ana, testActor, tc.f, t0)
+		var conflict *store.FoodConflictError
+		if !errors.Is(err, tc.want) || !errors.As(err, &conflict) || conflict.Food.ID != oats.ID {
+			t.Errorf("%s: CreateFood = %v, want %v naming the oats", tc.name, err, tc.want)
+		}
+	}
+	// The oats are as they were.
+	if got, err := db.FoodByID(t.Context(), ana, oats.ID); err != nil || got.Nutrients.Kcal != 370 || !got.Archived {
+		t.Errorf("the oats after the refused creates: %+v, %v", got, err)
+	}
+	// A food of another name is made; the same name is free for another
+	// user.
+	if _, err := db.CreateFood(t.Context(), ana, testActor, mk("Oat flakes", "Mill"), t0); err != nil {
+		t.Errorf("a food of another name: %v", err)
+	}
+	if _, err := db.CreateFood(t.Context(), ivo, testActor, mk("Rolled oats", "Mill"), t0); err != nil {
+		t.Errorf("Ivo's food of Ana's name: %v", err)
+	}
+}

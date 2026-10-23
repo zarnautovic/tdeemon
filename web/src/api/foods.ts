@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQueryClient, type QueryClient } from '@tanstack/react-query'
 
 import { $api } from './client'
 import type { components } from './schema'
@@ -34,26 +34,39 @@ export function useFindFoods(query: string) {
     'get',
     '/api/v1/foods',
     { params: { query: { query: [q], limit: 50 } } },
-    { enabled: q !== '' },
+    // While the next search comes, the last one's foods stay.
+    { enabled: q !== '', placeholderData: keepPreviousData },
   )
 }
 
-// useSaveFood saves a food, new or corrected (archived too, or brought
-// back): the food itself is kept, and the lists and searches asked again.
+// keep keeps a food a save answered with, and asks the lists and the
+// searches again.
+async function keep(queryClient: QueryClient, food: Food) {
+  queryClient.setQueryData(
+    $api.queryOptions('get', '/api/v1/foods/{id}', { params: { path: { id: food.id } } }).queryKey,
+    food,
+  )
+  await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods/list'] }),
+    queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods'] }),
+  ])
+}
+
+// useSaveFood saves a food the user has, corrected, archived or brought
+// back.
 export function useSaveFood() {
   const queryClient = useQueryClient()
   return $api.useMutation('post', '/api/v1/foods', {
-    onSuccess: async (food) => {
-      queryClient.setQueryData(
-        $api.queryOptions('get', '/api/v1/foods/{id}', { params: { path: { id: food.id } } })
-          .queryKey,
-        food,
-      )
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods/list'] }),
-        queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods'] }),
-      ])
-    },
+    onSuccess: (food) => keep(queryClient, food),
+  })
+}
+
+// useCreateFood makes a new food; a food of its name and brand, archived
+// too, is in the way (409), not corrected.
+export function useCreateFood() {
+  const queryClient = useQueryClient()
+  return $api.useMutation('post', '/api/v1/foods/new', {
+    onSuccess: (food) => keep(queryClient, food),
   })
 }
 

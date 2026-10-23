@@ -624,6 +624,30 @@ func isolateUpsertFood(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateListFoods is list-foods' case: the other's foods, of both lists,
+// and none of the owner's.
+func isolateListFoods(t *testing.T, e isolationEnv) {
+	t.Helper()
+	read("/api/v1/foods/list?order=use", false, func(e isolationEnv) []string {
+		return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
+	})(t, e)
+	read("/api/v1/foods/list?archived=true", false, func(e isolationEnv) []string {
+		return []string{e.other.user.Name + "'s canteen stew"}
+	})(t, e)
+}
+
+// isolateCreateFood is create-food's case: the other makes a food of
+// their own, and the owner's stay as they were.
+func isolateCreateFood(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := fmt.Sprintf(`{"name": "%s's kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 41, "protein": 3.4, "carbs": 4, "fat": 1.5}}`,
+		e.other.user.Name)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/foods/new", body, []*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), e.other.user.Name+"'s kefir") {
+		t.Errorf("the other's food: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // isolationCases has one case for every operation in the OpenAPI
 // document. TestIsolation checks after each that no answer showed the
 // owner's values, that the case got a 2xx from its operation, that the
@@ -690,16 +714,9 @@ func isolationCases() map[string]isolationCase {
 		"find-foods": read("/api/v1/foods?query=rye", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
 		}),
-		// The other's foods, of both lists, and none of the owner's.
-		"list-foods": func(t *testing.T, e isolationEnv) {
-			read("/api/v1/foods/list?order=use", false, func(e isolationEnv) []string {
-				return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
-			})(t, e)
-			read("/api/v1/foods/list?archived=true", false, func(e isolationEnv) []string {
-				return []string{e.other.user.Name + "'s canteen stew"}
-			})(t, e)
-		},
+		"list-foods":    isolateListFoods,
 		"upsert-food":   isolateUpsertFood,
+		"create-food":   isolateCreateFood,
 		"get-food":      isolateGetFood,
 		"log-meal":      isolateLogMeal,
 		"update-meal":   isolateMeal(http.MethodPatch, `{"note": "seen"}`),

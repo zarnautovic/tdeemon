@@ -243,6 +243,17 @@ func (s *sessions) registerFoods(a huma.API) {
 		Tags:   []string{"foods"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, s.listFoods)
+	huma.Register(a, huma.Operation{
+		OperationID: "create-food",
+		Method:      http.MethodPost,
+		Path:        Prefix + "/foods/new",
+		Summary:     "Make a new food",
+		Description: "Needs a web session. Saves a new food: a food you have of the name and brand, archived too, is refused (409), naming it, " +
+			"and so is an alias another food has; upsert_food corrects a food instead.",
+		Tags:          []string{"foods"},
+		DefaultStatus: http.StatusCreated,
+		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
+	}, s.createFood)
 }
 
 type getFoodInput struct {
@@ -290,19 +301,14 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 		return nil, err
 	}
 	b := in.Body
-	f := food.Food{
-		ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Basis(b.Basis), Nutrients: b.Nutrients.nutrients(),
-		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Source: food.Source(b.Source), Note: b.Note, Archived: b.Archived,
-	}
+	f := b.food()
+	f.Archived = b.Archived
 	if b.ID != "" {
 		// An id corrects a food the user has; a new food comes without
 		// one, so a mistyped or made-up id makes no duplicate.
 		if f.ID, err = uuid.Parse(b.ID); err != nil {
 			return nil, huma.Error422UnprocessableEntity("the id: " + err.Error())
 		}
-	}
-	for _, sv := range b.Servings {
-		f.Servings = append(f.Servings, food.Serving{Name: sv.Name, Amount: sv.Amount})
 	}
 	if err := f.Validate(); err != nil {
 		return nil, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
@@ -322,6 +328,49 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 		return nil, internalError("saving the food failed", err)
 	}
 	return &foodOutput{Body: newFoodBody(&saved)}, nil
+}
+
+// food is a new food of b's fields, under a new id.
+func (b *FoodFields) food() food.Food {
+	f := food.Food{
+		ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Basis(b.Basis), Nutrients: b.Nutrients.nutrients(),
+		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Source: food.Source(b.Source), Note: b.Note,
+	}
+	for _, sv := range b.Servings {
+		f.Servings = append(f.Servings, food.Serving{Name: sv.Name, Amount: sv.Amount})
+	}
+	return f
+}
+
+type createFoodInput struct {
+	Body FoodFields
+}
+
+type createdFoodOutput struct {
+	Body foodBody
+}
+
+// createFood saves a new food, and only that: a food the user has of the
+// name and brand, archived too, is in the way (409), where upsert_food
+// would correct it. The web app's "Add a food" makes a new food.
+func (s *sessions) createFood(ctx context.Context, in *createFoodInput) (*createdFoodOutput, error) {
+	p, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f := in.Body.food()
+	if err := f.Validate(); err != nil {
+		return nil, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
+	}
+	saved, err := s.db.CreateFood(ctx, p.User.ID, actorOf(p), f, s.now())
+	var conflict *store.FoodConflictError
+	switch {
+	case errors.As(err, &conflict):
+		return nil, huma.Error409Conflict(conflictDetail(conflict))
+	case err != nil:
+		return nil, internalError("saving the food failed", err)
+	}
+	return &createdFoodOutput{Body: newFoodBody(&saved)}, nil
 }
 
 // conflictDetail says which food is in the way of a save, so a client can

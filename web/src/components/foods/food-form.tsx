@@ -1,8 +1,8 @@
 import { X } from 'lucide-react'
-import { useId, useState, type SubmitEvent } from 'react'
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { detailOf, statusOf } from '@/api/errors'
-import { useSaveFood } from '@/api/foods'
+import { useCreateFood, useSaveFood } from '@/api/foods'
 import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
 import { SaveStatus } from '@/components/day/save-status'
@@ -15,6 +15,9 @@ import { uuidv7 } from '@/lib/uuid'
 
 type Upsert = components['schemas']['UpsertFoodInputBody']
 type Nutrients = components['schemas']['FoodNutrientsBody']
+
+// The most a serving may be, in the food's unit (servingBody).
+const maxServing = 10000
 
 // The nutrients a food must have, and those it may.
 const needed = ['kcal', 'protein', 'carbs', 'fat'] as const
@@ -56,8 +59,15 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const save = useSaveFood()
-  const field = (n: number | undefined) => (n === undefined ? '' : f.field(n))
+  // A food the user has is saved as corrected; a new one is made, and
+  // refused when a food of its name and brand is in the way.
+  const upsert = useSaveFood()
+  const create = useCreateFood()
+  const save = food ? upsert : create
+  const form = useRef<HTMLFormElement>(null)
+  // Every decimal a value has, near enough: a save leaves untouched
+  // values as they are.
+  const field = (n: number | undefined) => (n === undefined ? '' : f.field(n, 6))
   const [draft, setDraft] = useState<Draft>(() => ({
     name: food?.name ?? '',
     brand: food?.brand ?? '',
@@ -126,7 +136,12 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       if (value.name.trim() === '' && value.amount.trim() === '') {
         return []
       }
-      const amount = number(`serving ${key}`, value.amount, true)
+      let amount = number(`serving ${key}`, value.amount, true)
+      // As the server bounds a serving.
+      if (amount !== undefined && (amount <= 0 || amount > maxServing)) {
+        errors.set(`serving ${key}`, t.foods.servingBounds)
+        amount = undefined
+      }
       if (value.name.trim() === '') {
         errors.set(`serving name ${key}`, t.foods.needed)
       }
@@ -153,19 +168,43 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     return { body: fields }
   }
 
-  function submit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault()
+  // send saves the draft, or says what in it is wrong.
+  function send() {
     const made = body()
     if ('wrong' in made) {
       setWrong(made.wrong)
       return
     }
     setWrong(new Map())
-    save.mutate({ body: made.body }, { onSuccess: (saved) => onSaved?.(saved) })
+    const done = { onSuccess: (saved: Food) => onSaved?.(saved) }
+    if (food) {
+      upsert.mutate({ body: made.body }, done)
+    } else {
+      create.mutate({ body: made.body }, done)
+    }
   }
 
-  // A text field of the form, with its label and what is wrong with it.
-  function text(key: string, label: string, value: string, onChange: (v: string) => void) {
+  // A draft that cannot be sent takes the focus to its first wrong field.
+  useEffect(() => {
+    if (wrong.size > 0) {
+      form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
+    }
+  }, [wrong])
+
+  function submit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault()
+    send()
+  }
+
+  // A text field of the form, with its label and what is wrong with it: a
+  // number's (decimal), or words of at most maxLength.
+  function text(
+    key: string,
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    kind: { decimal: true } | { maxLength: number },
+  ) {
     const error = wrong.get(key)
     return (
       <div className="space-y-1">
@@ -176,7 +215,9 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           id={`${id}-${key}`}
           value={value}
           autoComplete="off"
-          inputMode={key === 'name' || key === 'brand' ? undefined : 'decimal'}
+          {...('decimal' in kind
+            ? { inputMode: 'decimal' as const }
+            : { maxLength: kind.maxLength })}
           aria-invalid={error !== undefined}
           aria-describedby={error === undefined ? undefined : `${id}-${key}-error`}
           className={inputClass}
@@ -202,13 +243,25 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
   }
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-4">
-      {text('name', t.foods.name, draft.name, (name) => {
-        set({ name })
-      })}
-      {text('brand', t.foods.brand, draft.brand, (brand) => {
-        set({ brand })
-      })}
+    <form ref={form} onSubmit={submit} noValidate className="space-y-4">
+      {text(
+        'name',
+        t.foods.name,
+        draft.name,
+        (name) => {
+          set({ name })
+        },
+        { maxLength: 200 },
+      )}
+      {text(
+        'brand',
+        t.foods.brand,
+        draft.brand,
+        (brand) => {
+          set({ brand })
+        },
+        { maxLength: 100 },
+      )}
       <div className="space-y-1">
         <label htmlFor={`${id}-basis`} className={cn(fieldLabel, 'block')}>
           {t.foods.basis}
@@ -234,9 +287,15 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       <div className="grid grid-cols-2 gap-3">
         {needed.map((k) => (
           <div key={k}>
-            {text(k, t.foods.nutrient[k], draft.nutrients[k], (v) => {
-              set({ nutrients: { ...draft.nutrients, [k]: v } })
-            })}
+            {text(
+              k,
+              t.foods.nutrient[k],
+              draft.nutrients[k],
+              (v) => {
+                set({ nutrients: { ...draft.nutrients, [k]: v } })
+              },
+              { decimal: true },
+            )}
           </div>
         ))}
       </div>
@@ -245,38 +304,62 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         <div className="mt-3 grid grid-cols-2 gap-3">
           {optional.map((k) => (
             <div key={k}>
-              {text(k, t.foods.nutrient[k], draft.nutrients[k], (v) => {
-                set({ nutrients: { ...draft.nutrients, [k]: v } })
-              })}
+              {text(
+                k,
+                t.foods.nutrient[k],
+                draft.nutrients[k],
+                (v) => {
+                  set({ nutrients: { ...draft.nutrients, [k]: v } })
+                },
+                { decimal: true },
+              )}
             </div>
           ))}
         </div>
       </details>
       {draft.basis === 'portion' &&
-        text('portionGrams', t.foods.portionGrams, draft.portionGrams, (portionGrams) => {
-          set({ portionGrams })
-        })}
+        text(
+          'portionGrams',
+          t.foods.portionGrams,
+          draft.portionGrams,
+          (portionGrams) => {
+            set({ portionGrams })
+          },
+          { decimal: true },
+        )}
       <fieldset className="space-y-2">
         <legend className={fieldLabel}>{t.foods.servings}</legend>
-        {draft.servings.map(({ key, value }) => (
+        {draft.servings.map(({ key, value }, i) => (
           <div key={key} className="flex items-end gap-2">
             <div className="flex-1">
-              {text(`serving name ${key}`, t.foods.serving, value.name, (name) => {
-                set({
-                  servings: draft.servings.map((r) =>
-                    r.key === key ? { key, value: { ...r.value, name } } : r,
-                  ),
-                })
-              })}
+              {text(
+                `serving name ${key}`,
+                t.foods.serving(i + 1),
+                value.name,
+                (name) => {
+                  set({
+                    servings: draft.servings.map((r) =>
+                      r.key === key ? { key, value: { ...r.value, name } } : r,
+                    ),
+                  })
+                },
+                { maxLength: 50 },
+              )}
             </div>
             <div className="w-28">
-              {text(`serving ${key}`, t.foods.servingAmount(unit), value.amount, (amount) => {
-                set({
-                  servings: draft.servings.map((r) =>
-                    r.key === key ? { key, value: { ...r.value, amount } } : r,
-                  ),
-                })
-              })}
+              {text(
+                `serving ${key}`,
+                t.foods.servingAmount(unit, i + 1),
+                value.amount,
+                (amount) => {
+                  set({
+                    servings: draft.servings.map((r) =>
+                      r.key === key ? { key, value: { ...r.value, amount } } : r,
+                    ),
+                  })
+                },
+                { decimal: true },
+              )}
             </div>
             <Button
               variant="ghost"
@@ -301,14 +384,20 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       </fieldset>
       <fieldset className="space-y-2">
         <legend className={fieldLabel}>{t.foods.aliases}</legend>
-        {draft.aliases.map(({ key, value }) => (
+        {draft.aliases.map(({ key, value }, i) => (
           <div key={key} className="flex items-end gap-2">
             <div className="flex-1">
-              {text(`alias ${key}`, t.foods.alias, value, (alias) => {
-                set({
-                  aliases: draft.aliases.map((r) => (r.key === key ? { key, value: alias } : r)),
-                })
-              })}
+              {text(
+                `alias ${key}`,
+                t.foods.alias(i + 1),
+                value,
+                (alias) => {
+                  set({
+                    aliases: draft.aliases.map((r) => (r.key === key ? { key, value: alias } : r)),
+                  })
+                },
+                { maxLength: 100 },
+              )}
             </div>
             <Button
               variant="ghost"
@@ -372,16 +461,10 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         <p role="alert" className="text-sm text-destructive">
           {refused}
         </p>
+      ) : food ? (
+        <SaveStatus change={upsert} onRetry={send} />
       ) : (
-        <SaveStatus
-          change={save}
-          onRetry={() => {
-            const made = body()
-            if ('body' in made) {
-              save.mutate({ body: made.body }, { onSuccess: (saved) => onSaved?.(saved) })
-            }
-          }}
-        />
+        <SaveStatus change={create} onRetry={send} />
       )}
       <Button type="submit" size="lg" className="w-full" disabled={save.isPending}>
         {t.foods.save}

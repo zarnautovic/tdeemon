@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { Plus, Search } from 'lucide-react'
-import { useId } from 'react'
+import { useId, useState } from 'react'
 
 import { useFindFoods, useFoodList } from '@/api/foods'
 import { sessionQuery } from '@/api/session'
@@ -23,7 +23,11 @@ export function FoodsPage() {
   const navigate = useNavigate({ from: '/foods' })
   const session = useQuery(sessionQuery)
   const timeZone = session.data?.user.timezone ?? 'UTC'
-  const searching = q.trim() !== ''
+  // What is typed: the address follows it, and gives it back on coming
+  // back, but the field is not taken from it as it is typed, which would
+  // move the caret to the end.
+  const [typed, setTyped] = useState(q)
+  const searching = typed.trim() !== ''
 
   return (
     <section className="space-y-4">
@@ -45,21 +49,22 @@ export function FoodsPage() {
         <input
           id={id}
           type="search"
-          value={q}
+          value={typed}
           placeholder={t.foods.searchHint}
           autoComplete="off"
           className={cn(inputClass, 'pl-9')}
           onChange={(event) => {
-            const typed = event.currentTarget.value
+            const now = event.currentTarget.value
+            setTyped(now)
             void navigate({
-              search: (s) => ({ ...s, q: typed === '' ? undefined : typed }),
+              search: (s) => ({ ...s, q: now === '' ? undefined : now }),
               replace: true,
             })
           }}
         />
       </div>
       {searching ? (
-        <Found query={q} timeZone={timeZone} />
+        <Found query={typed} timeZone={timeZone} />
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -142,7 +147,11 @@ function Listed({
   if (list.isLoadingError) {
     return <LoadError error={list.error} onRetry={() => void list.refetch()} />
   }
-  const foods = list.data.pages.flatMap((p) => p.foods)
+  // A food may come on two pages, when the list changed between them.
+  const seen = new Set<string>()
+  const foods = list.data.pages
+    .flatMap((p) => p.foods)
+    .filter((food) => !seen.has(food.id) && Boolean(seen.add(food.id)))
   const total = list.data.pages.at(-1)?.total ?? foods.length
   if (foods.length === 0) {
     return <p className="text-muted-foreground">{archived ? t.foods.noneArchived : t.foods.none}</p>

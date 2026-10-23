@@ -29,13 +29,21 @@ const oats: Food = {
 
 // foodServer is a server with oats, which takes a save as the API does,
 // and keeps the bodies it was sent.
-function foodServer(save?: (body: unknown) => Response, locale: 'en' | 'hr' = 'en') {
-  let current = oats
+function foodServer(
+  save?: (body: unknown) => Response,
+  locale: 'en' | 'hr' = 'en',
+  start: Food = oats,
+) {
+  let current = start
   const sent: unknown[] = []
   const fetch = fakeServer({
     ...signedIn(locale),
     [`GET /api/v1/foods/${id}`]: () => Response.json(current),
-    'POST /api/v1/foods': async (request) => {
+    'POST /api/v1/foods/new': (request) => saved(request),
+    'POST /api/v1/foods': (request) => saved(request),
+  })
+  async function saved(request: Request) {
+    {
       const body: unknown = await request.json()
       sent.push(body)
       if (save) {
@@ -55,8 +63,8 @@ function foodServer(save?: (body: unknown) => Response, locale: 'en' | 'hr' = 'e
             : '0193c3a5-0000-7000-8000-0000000000f9',
       }
       return Response.json(current)
-    },
-  })
+    }
+  }
   return { fetch, sent }
 }
 
@@ -67,17 +75,14 @@ test('a food is corrected, the whole of it saved', async () => {
   expect(await screen.findByRole('heading', { name: 'Rolled oats' })).toBeDefined()
   expect(screen.getByLabelText('Energy (kcal)')).toHaveProperty('value', '370')
   expect(screen.getByLabelText('Fibre (g)')).toHaveProperty('value', '10')
-  expect(screen.getByLabelText('Serving')).toHaveProperty('value', 'cup')
-  expect(screen.getByLabelText('Amount (g)')).toHaveProperty('value', '80')
-  expect(screen.getByLabelText('Other name')).toHaveProperty('value', 'porridge oats')
+  expect(screen.getByLabelText('Serving 1')).toHaveProperty('value', 'cup')
+  expect(screen.getByLabelText('Amount 1 (g)')).toHaveProperty('value', '80')
+  expect(screen.getByLabelText('Other name 1')).toHaveProperty('value', 'porridge oats')
   fireEvent.change(screen.getByLabelText('Energy (kcal)'), { target: { value: '372.5' } })
   fireEvent.click(screen.getByRole('button', { name: 'Remove the name: porridge oats' }))
   fireEvent.click(screen.getByRole('button', { name: 'Add a serving' }))
-  const servings = screen.getAllByLabelText('Serving')
-  fireEvent.change(servings[1] ?? document.body, { target: { value: 'spoon' } })
-  fireEvent.change(screen.getAllByLabelText('Amount (g)')[1] ?? document.body, {
-    target: { value: '10' },
-  })
+  fireEvent.change(screen.getByLabelText('Serving 2'), { target: { value: 'spoon' } })
+  fireEvent.change(screen.getByLabelText('Amount 2 (g)'), { target: { value: '10' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
 
   expect(await screen.findByText('Saved')).toBeDefined()
@@ -125,7 +130,7 @@ test("a name another food has is refused, in the server's words", async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
 
   expect((await screen.findByRole('alert')).textContent).toBe(
-    'Another food is in the way: the name and brand are taken by food x ("Oats")',
+    'Another food has this name or other name: the name and brand are taken by food x ("Oats")',
   )
 })
 
@@ -169,7 +174,7 @@ test('a food of a portion has its grams, and none else', async () => {
   })
   fireEvent.change(screen.getByLabelText('The values are'), { target: { value: '100ml' } })
   expect(screen.queryByLabelText('Grams of a portion')).toBeNull()
-  expect(screen.getByLabelText('Amount (ml)')).toBeDefined()
+  expect(screen.getByLabelText('Amount 1 (ml)')).toBeDefined()
   // The grams typed for a portion do not go with a food per 100 ml.
   fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
   await waitFor(() => {
@@ -228,4 +233,98 @@ test('a food is corrected in Croatian, its numbers too', async () => {
   await waitFor(() => {
     expect(server.sent[0]).toMatchObject({ nutrients: { protein: 13.5 } })
   })
+})
+
+test('an archived food corrected stays archived', async () => {
+  const server = foodServer(undefined, 'en', { ...oats, archived: true })
+  renderAt(`/foods/${id}`)
+
+  fireEvent.change(await screen.findByLabelText('Note'), { target: { value: 'from the box' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  await waitFor(() => {
+    expect(server.sent[0]).toMatchObject({ archived: true, note: 'from the box' })
+  })
+})
+
+test('a new food of a name another food has is refused, not saved over it', async () => {
+  const paths: string[] = []
+  foodServer((body) => {
+    paths.push(JSON.stringify(body))
+    return Response.json(
+      {
+        status: 409,
+        title: 'Conflict',
+        detail: 'the name and brand are taken by food x ("Rolled oats", archived)',
+      },
+      { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+    )
+  })
+  const fetch = vi.mocked(globalThis.fetch)
+  renderAt('/foods/new')
+
+  fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'rolled OATS' } })
+  for (const label of ['Energy (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)']) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value: '1' } })
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  expect((await screen.findByRole('alert')).textContent).toBe(
+    'Another food has this name or other name: the name and brand are taken by food x ("Rolled oats", archived)',
+  )
+  const posts = fetch.mock.calls
+    .map(([r]) => (r instanceof Request && r.method === 'POST' ? new URL(r.url).pathname : ''))
+    .filter(Boolean)
+  expect(posts).toEqual(['/api/v1/foods/new'])
+})
+
+test('a try again with a draft that cannot be sent says what is wrong', async () => {
+  foodServer(() => problem(500))
+  renderAt(`/foods/${id}`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
+  await screen.findByRole('button', { name: 'Try again' })
+  fireEvent.change(screen.getByLabelText('Fat (g)'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+
+  expect(screen.getByLabelText('Fat (g)').getAttribute('aria-invalid')).toBe('true')
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByLabelText('Fat (g)'))
+  })
+})
+
+test('an address that names no id says there is no such food', async () => {
+  fakeServer({ ...signedIn(), 'GET /api/v1/foods/abc': () => problem(422) })
+  renderAt('/foods/abc')
+
+  expect(await screen.findByText('There is no such food.')).toBeDefined()
+})
+
+test('a value saved untouched keeps its decimals, and words get a keyboard of letters', async () => {
+  const server = foodServer(undefined, 'en', {
+    ...oats,
+    nutrients: { ...oats.nutrients, salt: 0.012345 },
+  })
+  renderAt(`/foods/${id}`)
+
+  expect(await screen.findByLabelText('Salt (g)')).toHaveProperty('value', '0.012345')
+  expect(screen.getByLabelText('Other name 1').getAttribute('inputmode')).toBeNull()
+  expect(screen.getByLabelText('Serving 1').getAttribute('inputmode')).toBeNull()
+  expect(screen.getByLabelText('Amount 1 (g)').getAttribute('inputmode')).toBe('decimal')
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  await waitFor(() => {
+    expect(server.sent[0]).toMatchObject({ nutrients: { salt: 0.012345 } })
+  })
+})
+
+test('a serving of no amount, or of more than the server takes, is not sent', async () => {
+  const server = foodServer()
+  renderAt(`/foods/${id}`)
+
+  fireEvent.change(await screen.findByLabelText('Amount 1 (g)'), { target: { value: '0' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  expect(screen.getByText('More than 0, at most 10000.')).toBeDefined()
+  expect(server.sent).toEqual([])
 })

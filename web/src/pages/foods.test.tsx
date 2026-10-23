@@ -85,7 +85,9 @@ test('the archived foods, and the order of the last use, are in the address', as
   const router = renderAt('/foods')
 
   expect(
-    await screen.findByText('No foods yet: a meal logged through a model saves its foods.'),
+    await screen.findByText(
+      'No foods yet: a meal logged through a model saves its foods, or add one.',
+    ),
   ).toBeDefined()
   fireEvent.click(screen.getByRole('button', { name: 'Archived' }))
   expect(await screen.findByText('No archived foods.')).toBeDefined()
@@ -135,4 +137,64 @@ test('a list that did not come says why, and asks again', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
   expect(await screen.findByText('Rolled oats')).toBeDefined()
+})
+
+test('a food on two pages, as the list changed between them, is shown once', async () => {
+  const foods = Array.from({ length: 60 }, (_, i) => food(i + 1))
+  let first = true
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': (request) => {
+      // A food came on top of the list after its first page.
+      const now = first ? foods : [food(99, { name: 'Food 00' }), ...foods]
+      first = false
+      return listOf(now)(request)
+    },
+  })
+  renderAt('/foods')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Show more' }))
+
+  expect(await screen.findByText('Food 60')).toBeDefined()
+  expect(screen.getAllByText('Food 50')).toHaveLength(1)
+})
+
+test('what the last search found stays while the next one comes', async () => {
+  let answer: ((r: Response) => void) | undefined
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': listOf([oats]),
+    'GET /api/v1/foods': (request) =>
+      new URL(request.url).searchParams.get('query') === 'oat'
+        ? Response.json({ foods: [oats] })
+        : new Promise<Response>((resolve) => {
+            answer = resolve
+          }),
+  })
+  renderAt('/foods')
+
+  fireEvent.change(await screen.findByLabelText('Search the foods'), { target: { value: 'oat' } })
+  expect(await screen.findByRole('list', { name: 'Found' })).toBeDefined()
+  fireEvent.change(screen.getByLabelText('Search the foods'), { target: { value: 'oats' } })
+
+  expect(screen.getByRole('list', { name: 'Found' })).toBeDefined()
+  answer?.(Response.json({ foods: [] }))
+  expect(await screen.findByText('No food matches.')).toBeDefined()
+})
+
+test('a food eaten last in another year says the year', async () => {
+  const old = food(7, {
+    name: 'Old cereal',
+    last_use: {
+      at: '2024-10-21T07:00:00Z',
+      meal_id: '0193c3a5-0000-7000-8000-0000000000a1',
+      quantity: { amount: 80, unit: 'g' },
+      amount: 80,
+      unit: 'g',
+    },
+  })
+  fakeServer({ ...signedIn(), 'GET /api/v1/foods/list': listOf([old]) })
+  renderAt('/foods')
+
+  expect(await screen.findByText('Last eaten Oct 21, 2024')).toBeDefined()
 })

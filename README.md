@@ -10,7 +10,8 @@ the admin may tighten them, and loosen some within a floor nobody can
 lower.
 
 > **Status: early development.** Only the server skeleton, the database
-> layer, the API contract and the web app's frame with the day exist so far.
+> layer, the API contract and the web app's frame with the day and the
+> foods exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights
