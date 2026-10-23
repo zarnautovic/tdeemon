@@ -30,9 +30,10 @@ token only reads: say so.
   Without such a tool, leave the id out; then, after a timeout, look at
   `get_day` before sending again. Give `eaten_at` only when the user
   says when, from `get_profile`'s `now`.
-- After `log_meal` or `update_meal`, show its answer: each item's amount
-  and kcal, protein, carbs, fat; the day's eaten and remaining against
-  the target (or that there is none); any warning. The answer holds the
+- After `log_meal`, `update_meal` or `delete_meal`, show its answer:
+  each item's amount and kcal, protein, carbs, fat; the day's eaten and
+  remaining, kcal and each macro, against the target (or that there is
+  none); any warning. The answer holds the
   day: no `get_day` before or after a log. A duplicate warning: ask
   whether it was eaten twice, and delete the one that was not.
 - A correction ("150 g, not 200") is `update_meal`: replace or remove

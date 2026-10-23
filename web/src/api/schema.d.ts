@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * Get a day
-         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).
+         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded). today is the user's day now, by their day's start hour.
          */
         get: operations["get-day"];
         put?: never;
@@ -167,7 +167,7 @@ export interface paths {
         put?: never;
         /**
          * Save a food
-         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
+         * @description Saves a food, or corrects one: the food with the id (404 for an id the user has no food of), or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
          */
         post: operations["upsert-food"];
         delete?: never;
@@ -331,7 +331,7 @@ export interface paths {
         put?: never;
         /**
          * Log a meal
-         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
+         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another (or a 409, when its items carry ids of their own), so after a timeout, look at get_day before sending it again. eaten_at left out is the id's time, so a retry has the same. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
          */
         post: operations["log-meal"];
         delete?: never;
