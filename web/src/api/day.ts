@@ -25,7 +25,7 @@ function useKeepDay() {
 
 // The changes of a day run one at a time, in the order they were made, so
 // the day the last of them answers with holds them all.
-function scope(date: string) {
+export function dayScope(date: string) {
   return { id: `day ${date}` }
 }
 
@@ -33,7 +33,7 @@ function scope(date: string) {
 // only).
 export function useCheckIn(date: string) {
   return $api.useMutation('patch', '/api/v1/days/{date}', {
-    scope: scope(date),
+    scope: dayScope(date),
     onSuccess: useKeepDay(),
   })
 }
@@ -41,7 +41,7 @@ export function useCheckIn(date: string) {
 // useLogMetric stores a measurement of day date of the user's.
 export function useLogMetric(date: string) {
   return $api.useMutation('put', '/api/v1/days/{date}/metrics/{kind}', {
-    scope: scope(date),
+    scope: dayScope(date),
     onSuccess: useKeepDay(),
   })
 }
@@ -49,7 +49,7 @@ export function useLogMetric(date: string) {
 // useDeleteMetric deletes a measurement of day date.
 export function useDeleteMetric(date: string) {
   return $api.useMutation('delete', '/api/v1/days/{date}/metrics/{kind}', {
-    scope: scope(date),
+    scope: dayScope(date),
     onSuccess: useKeepDay(),
   })
 }
