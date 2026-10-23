@@ -195,9 +195,74 @@ test('a profile typed stays when it cannot be asked again', async () => {
     await fetch.mock.results.at(-1)?.value
   })
   expect(screen.getByRole('textbox', { name: /Height/ })).toHaveProperty('value', '181')
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
   failProfile(false)
   focusManager.setFocused(undefined)
   expect(screen.getByRole('textbox', { name: /Height/ })).toHaveProperty('value', '181')
+})
+
+test('a profile or limits that did not come say why, and come when asked again', async () => {
+  let fails = true
+  const { failProfile } = planServer(
+    {},
+    { 'GET /api/v1/limits': () => (fails ? problem(503) : Response.json(limitsBody())) },
+  )
+  failProfile(true)
+  renderAt('/settings/plan')
+  const again = await screen.findAllByRole('button', { name: 'Try again' })
+  expect(again).toHaveLength(2)
+  expect(screen.queryByRole('form', { name: 'Profile' })).toBeNull()
+  expect(screen.queryByRole('form', { name: 'Limits of the plan' })).toBeNull()
+
+  failProfile(false)
+  fails = false
+  for (const button of again) {
+    fireEvent.click(button)
+  }
+  expect(await screen.findByRole('form', { name: 'Profile' })).toBeTruthy()
+  expect(await screen.findByRole('form', { name: 'Limits of the plan' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+})
+
+test('a cached profile asked again says it is loading, not nothing', async () => {
+  let hang = false
+  planServer(
+    {},
+    {
+      'GET /api/v1/profile': () =>
+        hang
+          ? new Promise<Response>(() => undefined)
+          : Response.json({ missing: ['sex', 'birth_date', 'height_cm'] }),
+    },
+  )
+  renderAt('/settings/plan')
+  await screen.findByRole('form', { name: 'Profile' })
+  fireEvent.click(within(page()).getByRole('link', { name: 'Settings' }))
+  await screen.findByRole('heading', { name: 'Settings', level: 1 })
+  hang = true
+  fireEvent.click(screen.getByRole('link', { name: /Profile and limits of the plan/ }))
+  await screen.findByRole('heading', { name: 'Profile and limits', level: 1 })
+  expect(screen.getByText('Loading…')).toBeTruthy()
+  expect(screen.queryByRole('form', { name: 'Profile' })).toBeNull()
+})
+
+test('a birth date typed in part is not sent, as it would clear the one stored', async () => {
+  const { sent } = planServer({
+    profile: { birth_date: '1990-06-15', missing: ['sex', 'height_cm'] },
+  })
+  renderAt('/settings/plan')
+  const form = await screen.findByRole('form', { name: 'Profile' })
+  const date = within(form).getByLabelText('Birth date')
+  // The browser's word for a date part typed: jsdom has none of its own.
+  Object.defineProperty(date, 'validity', { value: { badInput: true }, configurable: true })
+  fireEvent.change(date, { target: { value: '' } })
+  save('Profile')
+  expect(await within(form).findByRole('alert')).toHaveProperty(
+    'textContent',
+    'The birth date is not a whole date: give it all, or clear it.',
+  )
+  expect(date.getAttribute('aria-invalid')).toBe('true')
+  expect(sent['PUT /api/v1/profile']).toBeUndefined()
 })
 
 test('a height that is no number, or none the server takes, is not sent', async () => {

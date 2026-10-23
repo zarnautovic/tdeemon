@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useState, type SubmitEvent } from 'react'
+import { useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
 import { detailOf, statusOf } from '@/api/errors'
@@ -35,6 +35,10 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     profile.height_cm === undefined ? '' : f.field(profile.height_cm),
   )
   const [wrongHeight, setWrongHeight] = useState(false)
+  // A date part typed and part not reads as none, which would clear the
+  // one stored: the field says it is no whole date.
+  const date = useRef<HTMLInputElement>(null)
+  const [wrongDate, setWrongDate] = useState(false)
   const save = $api.useMutation('put', '/api/v1/profile', {
     onSuccess: (answer) => {
       queryClient.setQueryData($api.queryOptions('get', '/api/v1/profile').queryKey, answer)
@@ -46,8 +50,10 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     const typed = height.trim()
     const cm = typed === '' ? undefined : f.parse(typed)
     const wrong = typed !== '' && (cm === undefined || cm < minHeight || cm > maxHeight)
+    const partDate = date.current?.validity.badInput === true
     setWrongHeight(wrong)
-    if (wrong) {
+    setWrongDate(partDate)
+    if (wrong || partDate) {
       return
     }
     save.mutate({
@@ -97,17 +103,27 @@ export function ProfileForm({ profile }: { profile: Profile }) {
           {t.plan.sexHint}
         </p>
       </fieldset>
-      <label className="block space-y-1">
-        <span className={cn(fieldLabel, 'block')}>{t.plan.birthDate}</span>
-        <input
-          type="date"
-          value={birthDate}
-          className={inputClass}
-          onChange={(e) => {
-            setBirthDate(e.currentTarget.value)
-          }}
-        />
-      </label>
+      <div className="space-y-1">
+        <label className="block space-y-1">
+          <span className={cn(fieldLabel, 'block')}>{t.plan.birthDate}</span>
+          <input
+            ref={date}
+            type="date"
+            value={birthDate}
+            aria-invalid={wrongDate || undefined}
+            aria-describedby={wrongDate ? `${id}-date` : undefined}
+            className={inputClass}
+            onChange={(e) => {
+              setBirthDate(e.currentTarget.value)
+            }}
+          />
+        </label>
+        {wrongDate && (
+          <p id={`${id}-date`} role="alert" className="text-sm text-destructive">
+            {t.plan.wrongDate}
+          </p>
+        )}
+      </div>
       <div className="space-y-1">
         <label className="block space-y-1">
           <span className={cn(fieldLabel, 'block')}>{t.plan.height}</span>

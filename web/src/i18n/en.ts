@@ -371,6 +371,7 @@ export const en = {
     missing: (what: string) => `A plan still needs: ${what}.`,
     complete: 'A plan has all it needs of you.',
     missingField: { sex: 'sex', birth_date: 'birth date', height_cm: 'height' },
+    wrongDate: 'The birth date is not a whole date: give it all, or clear it.',
     wrongHeight: (min: string, max: string) => `The height is ${min} to ${max} cm.`,
     save: 'Save',
     limits: 'Limits of the plan',

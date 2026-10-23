@@ -27,7 +27,10 @@ export function PlanPage() {
         {t.plan.back}
       </Link>
       <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
-      {profile.isPending && <output className="block text-muted-foreground">{t.loading}</output>}
+      {/* Loading too while a cached profile is asked again. */}
+      {!fresh && !profile.isError && (
+        <output className="block text-muted-foreground">{t.loading}</output>
+      )}
       {/* The profile as the server has it when the page opens, not as a
           cache kept it. Once shown, what is typed stays, saved or not,
           whatever a later ask comes to. */}

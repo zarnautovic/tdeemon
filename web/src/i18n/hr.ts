@@ -354,6 +354,7 @@ export const hr: Messages = {
     missing: (what: string) => `Planu još treba: ${what}.`,
     complete: 'Plan ima sve što mu treba o tebi.',
     missingField: { sex: 'spol', birth_date: 'datum rođenja', height_cm: 'visina' },
+    wrongDate: 'Datum rođenja nije potpun: upiši ga cijelog ili ga obriši.',
     wrongHeight: (min: string, max: string) => `Visina je od ${min} do ${max} cm.`,
     save: 'Spremi',
     limits: 'Granice plana',
