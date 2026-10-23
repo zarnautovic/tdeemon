@@ -1,5 +1,5 @@
 import { RotateCcw, X } from 'lucide-react'
-import { useState, type SubmitEvent } from 'react'
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { statusOf } from '@/api/errors'
 import { useDeleteMeal, useUpdateMeal } from '@/api/meals'
@@ -14,10 +14,13 @@ import { cn } from '@/lib/utils'
 
 type Op = components['schemas']['MealOp']
 type ItemInput = components['schemas']['ItemInput']
+type Change = components['schemas']['UpdateMealBody']
 
 // An amount is how much of an item was given, as it was given (grams,
 // portions, servings), and the item that puts another number in its
-// place. Only an item of a food has one: an estimate is of a whole plate.
+// place: the same food, worked out again from the food as it is now, so a
+// food corrected since gives its new values. Only an item of a food has
+// one: an estimate is of a whole plate.
 interface Amount {
   n: number
   unit: string | undefined
@@ -40,12 +43,13 @@ function amountOf(item: Item, portions: string): Amount | undefined {
     return { n: q.portions, unit: portions, with: (n) => ({ ...base, portions: n }) }
   }
   if (q.amount !== undefined) {
-    // Left out, the unit is the food's.
-    const unit = q.unit ?? (item.unit === 'portion' ? undefined : item.unit)
+    // Given without a unit, it is the food's, and stays so.
+    const given = q.unit
     return {
       n: q.amount,
-      unit,
-      with: (n) => (unit === undefined ? { ...base, amount: n } : { ...base, amount: n, unit }),
+      unit: given ?? (item.unit === 'portion' ? undefined : item.unit),
+      with: (n) =>
+        given === undefined ? { ...base, amount: n } : { ...base, amount: n, unit: given },
     }
   }
   return undefined
@@ -53,7 +57,9 @@ function amountOf(item: Item, portions: string): Amount | undefined {
 
 // MealEditor changes a meal's items, the amount of each of a food and
 // which stay, in one change saved at once, or deletes the meal after
-// asking. onDone gives the server's warnings of the change.
+// asking. It sends only what was changed since it opened, so a change
+// made elsewhere meanwhile stays. onDone gives the server's warnings of
+// the change.
 export function MealEditor({
   meal,
   date,
@@ -65,20 +71,56 @@ export function MealEditor({
 }) {
   const t = useMessages()
   const f = useFormat()
+  const id = useId()
   const update = useUpdateMeal(date)
   const remove = useDeleteMeal(date)
+  // What each amount field started with, when the editor opened.
+  const [initial] = useState(
+    () =>
+      new Map(
+        meal.items.flatMap((item) => {
+          const amount = amountOf(item, t.meal.portions)
+          return amount ? [[item.id, f.field(amount.n)] as const] : []
+        }),
+      ),
+  )
   // The items to remove, and those whose amount is not a number.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
   const [confirming, setConfirming] = useState(false)
-  const none = removed.size === meal.items.length
+  // Of the items there now: one removed elsewhere is not counted.
+  const none = meal.items.every((item) => removed.has(item.id))
   // A change the server refuses (422, or 409 for an item changed since)
   // would be refused again.
   const refused = update.isError && [409, 422].includes(statusOf(update.error) ?? 0)
+  const form = useRef<HTMLFormElement>(null)
+  const keep = useRef<HTMLButtonElement>(null)
+
+  // The editor takes the focus from the pencil that opened it.
+  useEffect(() => {
+    form.current?.querySelector<HTMLElement>('input, button')?.focus()
+  }, [])
+  // Asked whether to delete, the focus is on keeping the meal.
+  useEffect(() => {
+    if (confirming) {
+      keep.current?.focus()
+    }
+  }, [confirming])
+
+  function send(body: Change) {
+    update.mutate(
+      { params: { path: { id: meal.id } }, body },
+      {
+        onSuccess: (answer) => {
+          onDone(answer.warnings)
+        },
+      },
+    )
+  }
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    const form = new FormData(event.currentTarget)
+    const typedIn = new FormData(event.currentTarget)
     const ops: Op[] = []
     const notNumbers = new Set<string>()
     for (const item of meal.items) {
@@ -87,14 +129,17 @@ export function MealEditor({
         continue
       }
       const amount = amountOf(item, t.meal.portions)
-      const typed = form.get(item.id)
-      if (amount === undefined || typeof typed !== 'string') {
+      const typed = typedIn.get(item.id)
+      const was = initial.get(item.id)
+      if (amount === undefined || typeof typed !== 'string' || was === undefined) {
         continue
       }
       const n = f.parse(typed)
       if (n === undefined) {
         notNumbers.add(item.id)
-      } else if (n !== amount.n) {
+      } else if (n !== f.parse(was)) {
+        // Only an amount typed anew: one left as it started, rounded to
+        // what the field shows, is not sent rounded.
         ops.push({ op: 'replace', item_id: item.id, item: amount.with(n) })
       }
     }
@@ -106,18 +151,11 @@ export function MealEditor({
       onDone([])
       return
     }
-    update.mutate(
-      { params: { path: { id: meal.id } }, body: { ops } },
-      {
-        onSuccess: (answer) => {
-          onDone(answer.warnings)
-        },
-      },
-    )
+    send({ ops })
   }
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-3">
+    <form ref={form} onSubmit={submit} noValidate className="space-y-3">
       <ul className="divide-y text-sm">
         {meal.items.map((item) => {
           const amount = amountOf(item, t.meal.portions)
@@ -135,8 +173,9 @@ export function MealEditor({
                     aria-label={t.meal.amount(item.name)}
                     inputMode="decimal"
                     autoComplete="off"
-                    defaultValue={f.field(amount.n)}
+                    defaultValue={initial.get(item.id)}
                     aria-invalid={wrong.has(item.id)}
+                    aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
                     className={cn(inputClass, 'h-9 tabular-nums', amount.unit && 'pr-14')}
                   />
                   {amount.unit && (
@@ -166,8 +205,9 @@ export function MealEditor({
           )
         })}
       </ul>
+      <p className="text-xs text-muted-foreground">{t.meal.recomputed}</p>
       {wrong.size > 0 && (
-        <p role="alert" className="text-xs text-destructive">
+        <p id={`${id}-wrong`} role="alert" className="text-xs text-destructive">
           {t.day.notANumber}
         </p>
       )}
@@ -177,7 +217,14 @@ export function MealEditor({
           {t.meal.refused}
         </p>
       ) : (
-        <SaveStatus change={update} />
+        <SaveStatus
+          change={update}
+          onRetry={() => {
+            if (update.variables) {
+              send(update.variables.body)
+            }
+          }}
+        />
       )}
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={none || update.isPending}>
@@ -206,6 +253,7 @@ export function MealEditor({
               {t.meal.yesDelete}
             </Button>
             <Button
+              ref={keep}
               variant="ghost"
               onClick={() => {
                 setConfirming(false)
@@ -224,7 +272,9 @@ export function MealEditor({
             {t.meal.delete}
           </Button>
         )}
-        {remove.isError && <SaveStatus change={remove} />}
+        {/* A meal no longer there (404) was deleted: by this delete, its
+            answer lost, or elsewhere. */}
+        {remove.isError && statusOf(remove.error) !== 404 && <SaveStatus change={remove} />}
       </div>
     </form>
   )

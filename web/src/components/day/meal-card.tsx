@@ -1,5 +1,5 @@
 import { Pencil } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { Item, Meal, Warning } from '@/api/types'
 import { MealEditor } from '@/components/day/meal-editor'
@@ -15,6 +15,14 @@ export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; t
   const f = useFormat()
   const [editing, setEditing] = useState(false)
   const [warnings, setWarnings] = useState<Warning[]>([])
+  // The pencil, which takes the focus back when the editor closes.
+  const pencil = useRef<HTMLButtonElement>(null)
+  const [closed, setClosed] = useState(false)
+  useEffect(() => {
+    if (closed) {
+      pencil.current?.focus()
+    }
+  }, [closed])
   const time = f.time(meal.eaten_at, timeZone)
 
   // amount is how much of an item, in its unit.
@@ -40,12 +48,14 @@ export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; t
           <p className="font-semibold tabular-nums">{t.unit.kcal(f.number(meal.total.kcal))}</p>
           {!editing && (
             <Button
+              ref={pencil}
               variant="ghost"
               size="icon-sm"
               aria-label={t.meal.edit(meal.description || time)}
               className="self-center"
               onClick={() => {
                 setEditing(true)
+                setClosed(false)
                 setWarnings([])
               }}
             >
@@ -60,6 +70,7 @@ export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; t
           date={date}
           onDone={(w) => {
             setEditing(false)
+            setClosed(true)
             setWarnings(w)
           }}
         />
@@ -82,8 +93,9 @@ export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; t
       {warnings.length > 0 && (
         <output className="block text-sm text-amber-700 dark:text-amber-400">
           <ul className="space-y-1">
-            {warnings.map((w) => (
-              <li key={w.code}>{t.meal.warnings[w.code]}</li>
+            {warnings.map((w, i) => (
+              // Two items may bring a warning of one code.
+              <li key={`${w.code} ${String(i)}`}>{t.meal.warnings[w.code]}</li>
             ))}
           </ul>
         </output>

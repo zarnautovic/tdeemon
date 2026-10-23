@@ -42,7 +42,19 @@ export function UndoButton({ date }: { date: string }) {
         className="w-full"
         disabled={undo.isPending}
         onClick={() => {
-          undo.mutate({ body: { id: uuidv7() } })
+          undo.mutate(
+            { body: { id: uuidv7() } },
+            {
+              // An id the server refuses was made by a clock far from
+              // its own: it makes one then, and a retry of that undo
+              // would take back another change.
+              onError: (error) => {
+                if (statusOf(error) === 422) {
+                  undo.mutate({ body: {} })
+                }
+              },
+            },
+          )
         }}
       >
         <Undo2 aria-hidden />

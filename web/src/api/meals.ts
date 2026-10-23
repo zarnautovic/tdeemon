@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 
 import { $api } from './client'
 import { dayScope } from './day'
+import { statusOf } from './errors'
 
 // The days' queries, by the prefix of their keys.
 const days = ['get', '/api/v1/days/{date}']
@@ -17,12 +18,16 @@ export function useUpdateMeal(date: string) {
   })
 }
 
-// useDeleteMeal deletes a meal of day date.
+// useDeleteMeal deletes a meal of day date. A meal no longer there (404)
+// was deleted already, by a delete whose answer was lost or elsewhere:
+// the days are asked again all the same.
 export function useDeleteMeal(date: string) {
   const queryClient = useQueryClient()
   return $api.useMutation('delete', '/api/v1/meals/{id}', {
     scope: dayScope(date),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: days }),
+    onError: (error) =>
+      statusOf(error) === 404 ? queryClient.invalidateQueries({ queryKey: days }) : undefined,
   })
 }
 

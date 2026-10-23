@@ -103,3 +103,24 @@ test('a change of a kind the app does not know is still said', async () => {
 
   expect(await screen.findByText('Taken back: a change.')).toBeDefined()
 })
+
+test('an undo whose id the server refuses, of a clock far from its own, goes without one', async () => {
+  const bodies: unknown[] = []
+  fakeServer({
+    ...signedIn(),
+    'POST /api/v1/undo': async (request) => {
+      const body: unknown = await request.json()
+      bodies.push(body)
+      return typeof body === 'object' && body !== null && 'id' in body
+        ? problem(422)
+        : Response.json(undone)
+    },
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+
+  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  expect(bodies).toHaveLength(2)
+  expect(bodies[1]).toEqual({})
+})

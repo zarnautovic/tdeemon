@@ -126,6 +126,7 @@ export const hr: Messages = {
     yesDelete: 'Obriši',
     keepMeal: 'Zadrži ga',
     refused: 'Server nije prihvatio ovu promjenu.',
+    recomputed: 'Promijenjena količina računa se iz namirnice kakva je sada.',
     warnings: {
       atwater: 'Kcal se ne slažu s proteinima, ugljikohidratima i mastima.',
       saturated_fat: 'Zasićenih masti je više nego svih masti.',
@@ -139,7 +140,7 @@ export const hr: Messages = {
   undo: {
     button: 'Poništi zadnju promjenu',
     done: (what: string) => `Poništeno: ${what}.`,
-    nothing: 'Nema promjene za poništiti.',
+    nothing: 'Nema ničega za poništavanje.',
     clash:
       'Zadnja promjena ne može se poništiti: s njom se sukobljava ono što je došlo poslije. Sljedeće poništavanje vraća onu prije nje.',
     actions: {

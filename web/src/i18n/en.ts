@@ -137,6 +137,7 @@ export const en = {
     yesDelete: 'Delete',
     keepMeal: 'Keep it',
     refused: 'The server did not take this change.',
+    recomputed: 'A changed amount is worked out from the food as it is now.',
     // What a warning of the server's says, by its code.
     warnings: {
       atwater: 'The kcal do not match the protein, carbs and fat.',
