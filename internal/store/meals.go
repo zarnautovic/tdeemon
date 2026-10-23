@@ -330,6 +330,11 @@ func itemsOf(items []meal.Item, ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]
 		if !had {
 			continue
 		}
+		// A new food's amount names its unit: the user's food may be by
+		// another basis.
+		if q := out[i].Quantity; q.Amount > 0 && q.Unit == "" {
+			return nil, &FoodItemError{Food: f, Err: errors.New("a new food's amount names its unit, g or ml")}
+		}
 		it, err := meal.FromFood(f, out[i].Quantity, out[i].Note)
 		if err != nil {
 			return nil, &FoodItemError{Food: f, Err: err}

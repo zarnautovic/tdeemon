@@ -98,7 +98,7 @@ func FromFood(f food.Food, q Quantity, note string) (Item, error) {
 	if q.Amount > 0 && q.Unit == "" && f.Basis == food.PerPortion {
 		return Item{}, fmt.Errorf("%s: a food per portion takes portions, or an amount in g when its portion's weight is known", f.Name)
 	}
-	amount, err := resolve(f, q.InUnitOf(f.Basis))
+	amount, err := resolve(f, q.inUnitOf(f.Basis))
 	if err != nil {
 		return Item{}, fmt.Errorf("%s: %w", f.Name, err)
 	}
@@ -175,10 +175,10 @@ func servingNames(f food.Food) string {
 	return strings.Join(names, ", ")
 }
 
-// InUnitOf returns q with an amount's unit, when left out, b's: g or
-// ml, what an amount sent with a food of basis b means. A food per
-// portion has none to give.
-func (q Quantity) InUnitOf(b food.Basis) Quantity {
+// inUnitOf returns q with an amount's unit, when left out, b's: g or
+// ml, the unit of a food of the user's. A food per portion has none to
+// give.
+func (q Quantity) inUnitOf(b food.Basis) Quantity {
 	if q.Amount > 0 && q.Unit == "" && b != food.PerPortion {
 		q.Unit = b.Unit()
 	}

@@ -28,9 +28,10 @@ rather than log.
   next time: a packaged one with its label's values per 100 g or 100 ml,
   a piece of it (a bar of 55 g) as one of its `servings`; a plain one (a
   banana, an apple) with your values per 100 g and the `source`
-  estimate; a dish by the portion with its `portion_grams` when known. A
-  new food of the name of one the user has is that one, as they have
-  it; `upsert_food` corrects it. A restaurant or home-cooked plate: your
+  estimate; a dish by the portion with its `portion_grams` when known.
+  Its amount always names its unit, g or ml. A new food of the name of
+  one the user has is that one, as they have it; `upsert_food` corrects
+  it. A restaurant or home-cooked plate: your
   estimate of the whole plate, its name and nutrients.
 - One `log_meal` per meal. Make its `id`, a UUIDv7, only with a tool that runs
   code: never make one up, as it holds the time it is made, which the server
