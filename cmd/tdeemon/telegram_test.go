@@ -10,7 +10,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -164,5 +167,33 @@ func TestHelloIn(t *testing.T) {
 		if got := helloIn(locale); !strings.HasPrefix(got, want) {
 			t.Errorf("%s: %q", locale, got)
 		}
+	}
+}
+
+// The hello is in the user's locale: Croatian for hr.
+func TestSetTelegramInTheUsersLocale(t *testing.T) {
+	t.Parallel()
+
+	api, sent := fakeTelegram(t, http.StatusOK, `{"ok":true}`)
+	env, dbPath := instance(t, map[string]string{"TDEEMON_TELEGRAM_BOT_TOKEN": testBotToken, "TDEEMON_TELEGRAM_API_URL": api})
+	db, err := store.Open(t.Context(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	ana := user.User{
+		ID: uuid.NewV7(), Email: "ana@example.com", Name: "Ana", Role: user.RoleUser, Locale: "hr",
+		TimeZone: "Europe/Zagreb", DayStartHour: 4, CreatedAt: now, UpdatedAt: now,
+	}
+	err = db.CreateUser(t.Context(), ana, "")
+	_ = db.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t.Context(), []string{"user", "set-telegram", "--email", "ana@example.com", "--chat-id", "853"}, env, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if msgs := sent(); len(msgs) != 1 || !strings.HasPrefix(msgs[0].text, "tdeemon je spojen") {
+		t.Errorf("sent = %v", msgs)
 	}
 }

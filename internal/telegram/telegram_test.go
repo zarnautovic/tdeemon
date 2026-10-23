@@ -1,8 +1,10 @@
 package telegram_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -150,9 +152,28 @@ func TestSendKeepsTheToken(t *testing.T) {
 		http.Redirect(w, r, elsewhere.URL+"/elsewhere", http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(redirecting.Close)
-	err = (&telegram.Bot{Token: token, BaseURL: redirecting.URL}).Send(t.Context(), 853, "x")
-	if err == nil || strings.Contains(err.Error(), token) {
-		t.Errorf("a redirect: %v", err)
+	for name, client := range map[string]*http.Client{"the default client": nil, "a client of one's own": {}} {
+		err = (&telegram.Bot{Token: token, BaseURL: redirecting.URL, Client: client}).Send(t.Context(), 853, "x")
+		if err == nil || strings.Contains(err.Error(), token) {
+			t.Errorf("a redirect with %s: %v", name, err)
+		}
+	}
+
+	// A Bot API of one's own that names the path refuses as an *Error
+	// still, its description without the token.
+	naming404, _ := fakeAPI(t, http.StatusNotFound, `{"ok":false,"error_code":404,"description":"Not Found: /bot`+token+`/sendMessage"}`)
+	err = (&telegram.Bot{Token: token, BaseURL: naming404.URL}).Send(t.Context(), 853, "x")
+	te, ok := errors.AsType[*telegram.Error](err)
+	if !ok || te.Code != 404 || strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("a refusal that names the path: %v (*Error %v)", err, ok)
+	}
+	// A transport's error that names the URL keeps its chain.
+	cancelled := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf("%s: %w", r.URL, context.Canceled)
+	})}
+	err = (&telegram.Bot{Token: token, BaseURL: "http://example.invalid", Client: cancelled}).Send(t.Context(), 853, "x")
+	if !errors.Is(err, context.Canceled) || strings.Contains(err.Error(), token) {
+		t.Errorf("a cancelled send: %v", err)
 	}
 }
 

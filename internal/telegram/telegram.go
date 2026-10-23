@@ -35,7 +35,8 @@ type Bot struct {
 	Token string
 	// BaseURL is the Bot API's; DefaultBaseURL when empty.
 	BaseURL string
-	// Client is the HTTP client; one with a timeout when nil.
+	// Client is the HTTP client; one with a timeout when nil. One without
+	// a CheckRedirect is used as if it refused redirects.
 	Client *http.Client
 }
 
@@ -56,15 +57,29 @@ func (e *Error) Error() string {
 // previews. Text longer than MaxText is cut, ending with an ellipsis. No
 // error it returns carries the token.
 func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
-	if err := b.send(ctx, chatID, text); err != nil {
-		if b.Token != "" && strings.Contains(err.Error(), b.Token) {
-			// A transport of a custom Client may name the URL.
-			return errors.New(strings.ReplaceAll(err.Error(), b.Token, "[redacted]"))
-		}
+	err := b.send(ctx, chatID, text)
+	if err == nil || b.Token == "" || !strings.Contains(err.Error(), b.Token) {
 		return err
 	}
-	return nil
+	// A transport of a custom Client, or a Bot API of one's own, may name
+	// the URL: the token goes, the error's type and chain stay.
+	if te, ok := errors.AsType[*Error](err); ok {
+		redacted := *te
+		redacted.Description = strings.ReplaceAll(te.Description, b.Token, "[redacted]")
+		return &redacted
+	}
+	return &redactedError{msg: strings.ReplaceAll(err.Error(), b.Token, "[redacted]"), err: err}
 }
+
+// redactedError is an error whose message has the token taken out; its
+// chain is the error's.
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e *redactedError) Error() string { return e.msg }
+func (e *redactedError) Unwrap() error { return e.err }
 
 func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 	if b.Token == "" {
@@ -92,13 +107,16 @@ func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 		return errors.New("telegram: a request that does not build") // its error would carry the token
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := b.Client
-	if client == nil {
-		// The Bot API does not redirect; a redirect would take the POST,
-		// and the token in its URL, elsewhere.
-		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
-			return errors.New("a redirect")
-		}}
+	// The Bot API does not redirect; a redirect would take the POST, and
+	// the token in its URL, elsewhere. A Client that does not refuse them
+	// gets a copy that does.
+	client := &http.Client{Timeout: timeout}
+	if b.Client != nil {
+		c := *b.Client
+		client = &c
+	}
+	if client.CheckRedirect == nil {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return errors.New("a redirect") }
 	}
 	resp, err := client.Do(req)
 	if err != nil {
