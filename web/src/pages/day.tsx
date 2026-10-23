@@ -38,14 +38,19 @@ export function DayPage() {
     return <LoadError error={day.error} onRetry={() => void day.refetch()} />
   }
 
-  const shown = day.data.date
-  // / is today, whatever /me said earlier: the day's start hour may have
-  // passed since.
-  const isToday = date === undefined || shown === today
+  // While another day comes, the one before stays on the page
+  // (placeholder data), and the title and arrows already follow the day
+  // asked for.
+  const waiting = day.isPlaceholderData
+  // Today is the day / answered, once it has: /me's may be older, the
+  // day's start hour having passed since.
+  const todayDate = date === undefined && !waiting ? day.data.date : today
+  const shown = date ?? todayDate ?? day.data.date
+  const isToday = date === undefined || shown === todayDate
   const before = addDays(shown, -1)
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.
-  const searchOf = (d: string) => (d === today ? {} : { date: d })
+  const searchOf = (d: string) => (d === todayDate ? {} : { date: d })
 
   return (
     <div className="space-y-4">
@@ -68,7 +73,7 @@ export function DayPage() {
             {day.data.type === 'training' ? t.day.training : t.day.rest}
           </p>
         </div>
-        {today !== undefined && shown < today ? (
+        {todayDate !== undefined && shown < todayDate ? (
           <Link
             to="/"
             search={searchOf(after)}
@@ -88,20 +93,22 @@ export function DayPage() {
           {t.day.excluded(day.data.excluded_reason ?? '')}
         </p>
       )}
-      <DayTotals day={day.data} />
-      <section aria-labelledby="day-meals" className="space-y-2">
-        <h2 id="day-meals" className="font-medium">
-          {t.day.meals}
-        </h2>
-        {day.data.meals.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t.day.noMeals}</p>
-        ) : (
-          day.data.meals.map((meal) => (
-            <MealCard key={meal.id} meal={meal} timeZone={session.data?.user.timezone ?? 'UTC'} />
-          ))
-        )}
-      </section>
-      <DayMetrics metrics={day.data.metrics} />
+      <div aria-busy={waiting} className={`space-y-4 ${waiting ? 'opacity-60' : ''}`}>
+        <DayTotals day={day.data} />
+        <section aria-labelledby="day-meals" className="space-y-2">
+          <h2 id="day-meals" className="font-medium">
+            {t.day.meals}
+          </h2>
+          {day.data.meals.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t.day.noMeals}</p>
+          ) : (
+            day.data.meals.map((meal) => (
+              <MealCard key={meal.id} meal={meal} timeZone={session.data?.user.timezone ?? 'UTC'} />
+            ))
+          )}
+        </section>
+        <DayMetrics metrics={day.data.metrics} />
+      </div>
       {!isToday && (
         <Link
           to="/"

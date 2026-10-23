@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Meal } from '@/api/types'
@@ -160,7 +160,7 @@ test('the days move back and ahead, up to today', async () => {
 
   expect(await screen.findByRole('heading', { name: 'Thursday, October 22' })).toBeDefined()
   expect(router.state.location.href).toBe('/?date=2026-10-22')
-  expect(screen.getByText('Training day')).toBeDefined()
+  expect(await screen.findByText('Training day')).toBeDefined()
   expect(screen.getByText('Out of calibration: restaurant')).toBeDefined()
   // Today is /, not /?date=… of today.
   expect(screen.getByRole('link', { name: 'The day after' }).getAttribute('href')).toBe('/')
@@ -239,7 +239,7 @@ test('a date that is no date is today', async () => {
   const router = renderAt('/?date=2026-02-31')
 
   expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
-  expect(router.state.location.search).toEqual({})
+  expect(router.state.location.href).toBe('/')
   const paths = fetch.mock.calls.map(([r]) => (r instanceof Request ? new URL(r.url).pathname : r))
   expect(paths).not.toContain('/api/v1/days/2026-02-31')
 })
@@ -256,6 +256,9 @@ test('/ is today though what the app knew of today is older', async () => {
 
   expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
   expect(screen.queryByRole('link', { name: 'Back to today' })).toBeNull()
+  expect(screen.getByRole('link', { name: 'The day before' }).getAttribute('href')).toBe(
+    '/?date=2026-10-22',
+  )
 })
 
 test('another day keeps its way back to today when the server cannot say which day it is', async () => {
@@ -276,4 +279,31 @@ test('a day the server refuses is not blamed on the server', async () => {
   renderAt('/')
 
   expect((await screen.findByRole('alert')).textContent).toBe('Something went wrong.')
+})
+
+test('while another day comes, the page says which, and the one before waits dimmed', async () => {
+  let answer: ((r: Response) => void) | undefined
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-10-22': () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve
+      }),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('link', { name: 'The day before' }))
+
+  expect(await screen.findByRole('heading', { name: 'Thursday, October 22' })).toBeDefined()
+  expect(screen.getByRole('link', { name: 'The day before' }).getAttribute('href')).toBe(
+    '/?date=2026-10-21',
+  )
+  expect(screen.getByRole('link', { name: 'The day after' }).getAttribute('href')).toBe('/')
+  expect(screen.getByRole('region', { name: 'Eaten' }).closest('[aria-busy="true"]')).not.toBeNull()
+
+  answer?.(Response.json(day({ date: '2026-10-22' })))
+
+  await waitFor(() => {
+    expect(screen.getByRole('region', { name: 'Eaten' }).closest('[aria-busy="true"]')).toBeNull()
+  })
 })
