@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import type { SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
-import { HttpError } from '@/api/errors'
+import { HttpError, NoAnswerError } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
 import { signIn } from '@/api/sign-in'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -33,7 +33,7 @@ function problem(t: Messages, error: unknown): string {
     }
     return t.signIn.failed
   }
-  return t.unreachable
+  return error instanceof NoAnswerError ? t.unreachable : t.signIn.failed
 }
 
 // LoginPage signs a person in with a password, or through the instance's
@@ -69,7 +69,7 @@ export function LoginPage() {
       {methods.isPending && <p className="text-muted-foreground">{t.connecting}</p>}
       {methods.isError && (
         <p role="alert" className="text-destructive">
-          {methods.error instanceof TypeError ? t.unreachable : t.serverFailed}
+          {methods.error instanceof NoAnswerError ? t.unreachable : t.serverFailed}
         </p>
       )}
       {methods.data?.password && (

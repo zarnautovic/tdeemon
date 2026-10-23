@@ -278,9 +278,16 @@ test('the sign-in page says it is connecting until the server answers', async ()
 })
 
 test('a failure of the app itself is not blamed on the server', async () => {
-  fakeServer({ 'GET /api/v1/auth/session': () => Promise.reject(new Error('a bug')) })
+  // A session without its user: reading its locale is a TypeError, as most
+  // bugs are, and not a request that got no answer.
+  fakeServer({
+    'GET /api/v1/auth/session': () => Response.json({ expires_at: '2026-11-22T10:00:00Z' }),
+  })
 
   renderAt('/charts')
 
   expect((await screen.findByRole('alert')).textContent).toBe('Something went wrong.')
+  // Within the app's frame, with the way to try again.
+  expect(screen.getByRole('main')).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeDefined()
 })

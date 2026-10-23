@@ -30,9 +30,6 @@ interface RouterContext {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
   notFoundComponent: NotFoundPage,
-  // Any error a page does not handle, in the app's words, not the
-  // router's own page.
-  errorComponent: AppError,
 })
 
 // The app's sections share a layout with the navigation between them,
@@ -57,7 +54,6 @@ const appRoute = createRoute({
     }
   },
   component: AppLayout,
-  errorComponent: AppError,
 })
 
 const loginRoute = createRoute({
@@ -109,6 +105,10 @@ export function createAppRouter(options: { queryClient: QueryClient; history?: R
   return createRouter({
     routeTree,
     context: { queryClient: options.queryClient },
+    // An error a route does not handle, the sections' session check's
+    // above all, in the app's words and within the root's frame, not the
+    // router's own page.
+    defaultErrorComponent: AppError,
     ...(options.history ? { history: options.history } : {}),
     defaultPreload: 'intent',
   })

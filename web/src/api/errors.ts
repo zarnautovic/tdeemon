@@ -16,10 +16,19 @@ export class HttpError extends Error {
   }
 }
 
+// NoAnswerError is a request that got no answer: the server is down, or
+// out of reach. fetchClient throws it for what fetch throws, so it is not
+// taken for a bug of the app, which is often a TypeError too.
+export class NoAnswerError extends Error {
+  constructor(cause: unknown) {
+    super('the server did not answer', { cause })
+    this.name = 'NoAnswerError'
+  }
+}
+
 // statusOf is the HTTP status a request failed with: an HttpError's, or
 // the status of the API's problem (RFC 9457) that openapi-react-query
-// throws; undefined for a request with no answer (a TypeError from fetch)
-// or anything else.
+// throws; undefined for a request with no answer, or anything else.
 export function statusOf(error: unknown): number | undefined {
   if (error instanceof HttpError) {
     return error.status
@@ -36,7 +45,7 @@ export function retry(failures: number, error: unknown): boolean {
   if (failures >= 1) {
     return false
   }
-  if (error instanceof TypeError) {
+  if (error instanceof NoAnswerError) {
     return true
   }
   const status = statusOf(error)
