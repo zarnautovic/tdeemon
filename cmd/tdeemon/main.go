@@ -61,17 +61,17 @@ Flags of user set-password:
   --email ADDRESS    the user's address (required)
   --password-stdin   as for user create
 
-Flags of user set-locale:
-  --email ADDRESS    the user's address (required)
-  --locale LANG      en or hr (required): the language of the app, the
-                     morning summary and the alerts
-
 Flags of user set-telegram:
   --email ADDRESS    the user's address (required)
   --chat-id ID       Telegram's id of the chat with the bot (required); 0
                      removes it. With a bot configured, the chat gets a
                      message first, and a chat that does not take it is
                      not set
+
+Flags of user set-locale:
+  --email ADDRESS    the user's address (required)
+  --locale LANG      en or hr (required): the language of the app, the
+                     morning summary and the alerts
 
 Flags of import-history (--health-db, --foods, --plan, or more):
   --email ADDRESS    the user's address (required)

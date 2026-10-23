@@ -215,12 +215,12 @@ func TestSetLocale(t *testing.T) {
 	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
 		t.Fatal(err)
 	}
-	now := ana.CreatedAt.Add(time.Hour)
+	now := ana.CreatedAt.Add(2 * time.Hour)
 	if err := db.SetLocale(t.Context(), ana.ID, "en", now); err != nil {
 		t.Fatal(err)
 	}
-	if u, _ := db.UserByEmail(t.Context(), ana.Email); u.Locale != "en" {
-		t.Errorf("locale = %q", u.Locale)
+	if u, _ := db.UserByEmail(t.Context(), ana.Email); u.Locale != "en" || !u.UpdatedAt.Equal(now) {
+		t.Errorf("locale = %q, updated at %v", u.Locale, u.UpdatedAt)
 	}
 	if err := db.SetLocale(t.Context(), ana.ID, "de", now); err == nil {
 		t.Error("a language not spoken was set")
