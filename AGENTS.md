@@ -19,7 +19,8 @@ on a phase), the tool registry with `get_profile`, `get_day`,
 `update_meal`, `delete_meal`, `log_metric`, `delete_metric`, `checkin`
 and `undo_last`, the MCP server that serves them at `/mcp`, the API
 contract and the web app's frame (signing in and out, its sections, in
-English and Croatian) exist.
+English and Croatian) with the day (what was eaten against the target,
+the meals, the measurements) exist.
 
 | Path | What |
 | --- | --- |

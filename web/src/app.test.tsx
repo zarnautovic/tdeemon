@@ -66,7 +66,7 @@ test("the day is the start page, and only it is current there, not every path un
     .getAllByRole('link')
     .filter((a) => a.getAttribute('aria-current') === 'page')
   expect(current.map((a) => a.textContent)).toEqual(['Day'])
-  expect(screen.getByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
 })
 
 test('an unknown path shows the not-found page with a way back, without the sections', async () => {

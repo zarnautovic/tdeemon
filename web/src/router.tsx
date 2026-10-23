@@ -79,7 +79,16 @@ const loginRoute = createRoute({
   component: LoginPage,
 })
 
-const dayRoute = createRoute({ getParentRoute: () => appRoute, path: '/', component: DayPage })
+// The day's date, YYYY-MM-DD; without it, today.
+const dayRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/',
+  validateSearch: (search: Record<string, unknown>): { date?: string } =>
+    typeof search.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(search.date)
+      ? { date: search.date }
+      : {},
+  component: DayPage,
+})
 const foodsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/foods',
@@ -102,7 +111,7 @@ const routeTree = rootRoute.addChildren([
 ])
 
 export function createAppRouter(options: { queryClient: QueryClient; history?: RouterHistory }) {
-  return createRouter({
+  const router = createRouter({
     routeTree,
     context: { queryClient: options.queryClient },
     // An error a route does not handle, the sections' session check's
@@ -112,7 +121,25 @@ export function createAppRouter(options: { queryClient: QueryClient; history?: R
     ...(options.history ? { history: options.history } : {}),
     defaultPreload: 'intent',
   })
+  // A query refused for want of a session (it ended, or was ended
+  // elsewhere) sends the browser to sign in: the sections ask the server
+  // again who is signed in, instead of the answer they keep for a minute.
+  // The session's own 401 is theirs to handle.
+  options.queryClient.getQueryCache().subscribe((event) => {
+    if (
+      event.type === 'updated' &&
+      event.action.type === 'error' &&
+      statusOf(event.action.error) === 401 &&
+      event.query.queryHash !== sessionHash
+    ) {
+      options.queryClient.removeQueries({ queryKey: sessionQuery.queryKey })
+      void router.invalidate()
+    }
+  })
+  return router
 }
+
+const sessionHash = JSON.stringify(sessionQuery.queryKey)
 
 export type AppRouter = ReturnType<typeof createAppRouter>
 
