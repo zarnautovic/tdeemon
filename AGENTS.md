@@ -24,7 +24,9 @@ sections, in English and Croatian) with the day (what was eaten against
 the target, the meals, the measurements, and the check-in, the
 measurements, a meal's corrections and a meal logged by hand taken
 there) and the foods (their list and search, a food made, corrected or
-archived) and the charts (ECharts, loaded with them) exist.
+archived), the charts (ECharts, loaded with them) and the settings (the
+name, language, time zone and day's start, the notes for a coach, the API
+tokens) exist.
 
 | Path | What |
 | --- | --- |

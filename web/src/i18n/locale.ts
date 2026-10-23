@@ -11,6 +11,12 @@ const known: Record<Locale, true> = { en: true, hr: true }
 
 export const baseLocale: Locale = 'en'
 
+// locales are the languages the app speaks, each named in itself.
+export const locales: readonly { locale: Locale; name: string }[] = [
+  { locale: 'en', name: 'English' },
+  { locale: 'hr', name: 'Hrvatski' },
+]
+
 export function isLocale(s: string): s is Locale {
   return Object.hasOwn(known, s)
 }

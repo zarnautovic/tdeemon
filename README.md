@@ -11,7 +11,7 @@ lower.
 
 > **Status: early development.** Only the server skeleton, the database
 > layer, the API contract and the web app's frame with the day, the
-> foods and the charts exist so far.
+> foods, the charts and the settings exist so far.
 > The full design lives in [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Planned highlights
@@ -396,7 +396,8 @@ or revoke tokens, read the session or change a setting. Only
 one): another header, such as a reverse proxy's Basic credentials or the
 ID token an authenticating proxy passes on as a Bearer, leaves the
 request to its session cookie.
-The web app's settings page comes with the web UI.
+The web app's settings make, list and revoke them too, the token shown
+once, when it is made.
 
 ### MCP
 
