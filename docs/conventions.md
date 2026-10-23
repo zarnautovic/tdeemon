@@ -155,6 +155,11 @@ for the author and the reviewer.
     read from `internal/eval`. With `-v` the eval prints every call and
     answer, so the output of real cases stays out of issues and pull
     requests too.
+  - A model slips now and then: a call whose input is not JSON, which
+    the client refuses before tdeemon ("the client, before tdeemon,
+    answered an error"), costs a round and may fail a case. Such a
+    failure asks for the eval to run again, not for a change to
+    tdeemon.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 

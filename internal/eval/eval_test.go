@@ -302,7 +302,7 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 		}
 		// The checks of the client's tools stand on its first line.
 		if !started {
-			t.Fatal("an answer before the session's start: the client's output is not what the eval reads")
+			t.Fatalf("an answer before the session's start, which the eval does not read: %s", oneLine(ev.Result))
 		}
 		if ev.IsError {
 			t.Errorf("the client failed: %s", ev.Result)
@@ -425,7 +425,13 @@ func (cur *turn) add(t *testing.T, ev *streamLine) {
 			cur.tools = append(cur.tools, name)
 			t.Logf("call %s %s", name, oneLine(string(c.Input)))
 		case ev.Type == "user" && c.Type == "tool_result" && c.IsError:
-			t.Logf("the tool answered an error: %s", oneLine(string(c.Content)))
+			// Claude Code refuses an input that is not JSON before it
+			// sends it: the model's slip, not tdeemon's answer.
+			who := "the tool"
+			if strings.Contains(string(c.Content), "tool_use_error") {
+				who = "the client, before tdeemon,"
+			}
+			t.Logf("%s answered an error: %s", who, oneLine(string(c.Content)))
 		}
 	}
 	if calls > 0 && ev.Message.ID == "" {
