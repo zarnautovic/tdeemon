@@ -34,6 +34,7 @@
         "required_status_checks": [
           { "context": "Go", "integration_id": 15368 },
           { "context": "Web app", "integration_id": 15368 },
+          { "context": "End-to-end", "integration_id": 15368 },
           { "context": "Other files", "integration_id": 15368 },
           { "context": "Docker image", "integration_id": 15368 },
           { "context": "Dependencies and secrets", "integration_id": 15368 },

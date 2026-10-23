@@ -28,7 +28,14 @@
   // node_modules is listed although .gitignore covers it: without it, a
   // copy of the tree with no .gitignore makes tsgolint type-check every
   // dependency, which takes minutes and gigabytes.
-  "ignorePatterns": ["**/node_modules/**", "dist/**", "coverage/**", "src/api/schema.d.ts"],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "dist/**",
+    "coverage/**",
+    "test-results/**",
+    "playwright-report/**",
+    "src/api/schema.d.ts"
+  ],
   "rules": {
     // typescript-eslint's strict-type-checked set, beyond the categories,
     // with that set's options where they differ from oxlint's defaults.

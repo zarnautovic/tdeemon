@@ -5,9 +5,10 @@ for the author and the reviewer.
 
 ## Running the checks
 
-- **`make check`** runs every check CI runs, except four that only CI
-  runs: the Docker image build, CodeQL, the pull request title check, and
-  zizmor's online audits, which need `GH_TOKEN` set:
+- **`make check`** runs every check CI runs, except five that only CI
+  runs: the Docker image build, the end-to-end tests (`make e2e`, which
+  need Chromium: `make e2e-browser` once), CodeQL, the pull request title
+  check, and zizmor's online audits, which need `GH_TOKEN` set:
   - the linters and format checks for every language;
   - the Go and web tests, with coverage, the Go tests behind the
     `webui` tag against a fresh build, and the tests of the scripts;
@@ -18,17 +19,17 @@ for the author and the reviewer.
   the targets. The tools run through mise, at the versions in
   `mise.toml`.
 - **CI** (`.github/workflows/ci.yml`) runs the same targets on every pull
-  request and on `main`, in five parallel jobs: Go, the web app, the
-  other files, the dependencies and secrets, and the Docker image, which
-  is built with its tests but not pushed. Only pushes to `main` write the
-  caches; pull requests read them. Each job installs only the tools it
-  runs (`install_args`), and mise does not install the others on demand,
-  so a tool that a job's make target starts using goes into that job's
-  list too. Without it mise warns that the tool "is not installed and
-  auto-install is disabled" and runs the runner's own copy if there is
-  one (Node, Python, yamllint and shellcheck are), at whatever version;
-  otherwise the job stops. In CI, CodeQL and the Docker build, a Go
-  module or tool the proxy fails to serve comes from its source instead.
+  request and on `main`, in six parallel jobs: Go, the web app, the end-to-end
+  tests, the other files, the dependencies and secrets, and the Docker image,
+  which is built with its tests but not pushed. Only pushes to `main` write
+  the caches; pull requests read them. Each job installs only the tools it
+  runs (`install_args`), and mise does not install the others on demand, so a
+  tool that a job's make target starts using goes into that job's list too.
+  Without it mise warns that the tool "is not installed and auto-install is
+  disabled" and runs the runner's own copy if there is one (Node, Python,
+  yamllint and shellcheck are), at whatever version; otherwise the job stops.
+  In CI, CodeQL and the Docker build, a Go module or tool the proxy fails to
+  serve comes from its source instead.
 - **`mise.lock`** pins each tool's version and, for the tools mise
   downloads as binaries, the URL and checksum for Linux and macOS on x64
   and arm64; `.mise/locks/` pins the dependencies of the Python and npm
@@ -630,6 +631,13 @@ generator writes it.
   own modules, and the stubs are undone after each test.
 - A change in behaviour comes with a test that fails without it.
 - Asynchronous UI is awaited with `findBy…` queries, never with sleeps.
+- **End-to-end tests** (`web/e2e`, Playwright, `make e2e`) run the app in
+  Chromium as a phone sees it (Pixel 7), against the binary built with
+  it, over a fresh database with one made-up user
+  (`scripts/e2e-server.sh`). They are few: a path a person takes through
+  a screen, signing in, the day, the foods; the rest is Vitest's. A
+  failed run in CI leaves Playwright's report, with a trace, as the
+  `e2e-report` artifact.
 
 ## Other files
 
