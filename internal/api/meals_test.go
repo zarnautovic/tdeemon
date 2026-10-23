@@ -935,36 +935,43 @@ func TestLogMealOfAFoodTheUserHasSaysSo(t *testing.T) {
 	}
 }
 
-// An amount without its unit is in the food's, as a model may send it;
-// sent again, a log, a new food's and an add are retries.
+// An amount without its unit, of a food of the user's, is in the food's,
+// as a model may send it; sent again, a log and an add are retries. A
+// new food's amount names its unit, whatever food the user has of its
+// name.
 func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
 	t.Parallel()
 
 	e := newMealsEnv(t)
 	id := meal.NewIDAt(e.now).String()
-	log := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 80}, {"food": {"name": "Oat flakes", "basis": "100g", "source": "label",
-		"nutrients": {"kcal": 372, "protein": 13, "carbs": 59, "fat": 7}}, "amount": 50}]}`, id, e.bread)
+	log := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 80}]}`, id, e.bread)
 	for _, want := range []int{http.StatusCreated, http.StatusOK} {
 		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", log, e.session, nil)
 		if rec.Code != want || !strings.Contains(rec.Body.String(), `"quantity":{"amount":80},"amount":80,"unit":"g"`) {
-			t.Fatalf("80 of the bread and 50 of new oats: %d %s, want %d and 80 g", rec.Code, rec.Body.String(), want)
+			t.Fatalf("80 of the bread: %d %s, want %d and 80 g", rec.Code, rec.Body.String(), want)
 		}
-	}
-	// 250 of a new food by volume, of the name of the user's food by
-	// weight: ml, as sent, which the bread does not take.
-	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
-	if err != nil {
-		t.Fatal(err)
-	}
-	inML := fmt.Sprintf(`{"items": [{"food": {"name": %q, "basis": "100ml", "source": "estimate",
-		"nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 250}]}`, bread.Name)
-	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", inML, e.session, nil); rec.Code != http.StatusUnprocessableEntity {
-		t.Errorf("250 of a food in ml, the user's by weight: %d %s, want 422", rec.Code, rec.Body.String())
 	}
 	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "amount": 40}}]}`, uuid.NewV7(), e.bread)
 	for range 2 {
 		if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
 			t.Fatalf("an add of 40 of the bread: %d %s, want 200", rec.Code, rec.Body.String())
+		}
+	}
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Oat flakes", bread.Name} {
+		for _, basis := range []string{"100g", "portion"} {
+			nf := fmt.Sprintf(`{"food": {"name": %q, "basis": %q, "source": "estimate",
+				"nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 2}`, name, basis)
+			if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+nf+`]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a new food's amount names its unit") {
+				t.Errorf("2 of a new %s by %s: %d %s, want a 422 asking for the unit", name, basis, rec.Code, rec.Body.String())
+			}
+			op := fmt.Sprintf(`{"ops": [{"op": "add", "item": %s}]}`, strings.Replace(nf, `{"food"`, fmt.Sprintf(`{"id": %q, "food"`, uuid.NewV7()), 1))
+			if rec := e.patch(t, id, op); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a new food's amount names its unit") {
+				t.Errorf("an add of 2 of a new %s by %s: %d %s, want a 422 asking for the unit", name, basis, rec.Code, rec.Body.String())
+			}
 		}
 	}
 }

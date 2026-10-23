@@ -185,7 +185,7 @@ func (s *sessions) tools() []tool {
 			DefaultStatus: http.StatusCreated,
 			Description: "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). " +
 				"Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. " +
-				"An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml, its own when left out), servings or portions; " +
+				"An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; " +
 				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), " +
 				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
 			Errors: []int{http.StatusUnauthorized, http.StatusConflict},

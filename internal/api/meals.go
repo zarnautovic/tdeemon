@@ -39,7 +39,7 @@ type itemInput struct {
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
 	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food)."`
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit."`
-	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out, the food's g or ml; a food per portion needs it."`
+	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out for a food of the user's (food_id), its g or ml; a new food's amount and a food per portion need it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
 	Serving  string      `json:"serving,omitempty" doc:"A serving the food names: a slice, a piece."`
 	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"How many portions of a food per portion."`
@@ -113,6 +113,10 @@ func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, n
 	var f food.Food
 	var warnings []meal.Warning
 	switch {
+	case nf != nil && sent.Quantity.Amount > 0 && sent.Quantity.Unit == "":
+		// The food may turn out to be the user's, by another basis, so
+		// the amount must say what it is in.
+		return meal.Item{}, nil, huma.Error422UnprocessableEntity(nf.Name + ": a new food's amount names its unit, g or ml")
 	case nf != nil:
 		had, err := s.db.FoodByKey(ctx, p.User.ID, nf.Name, nf.Brand)
 		switch {
@@ -133,17 +137,11 @@ func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, n
 	default:
 		return sent, nil, nil
 	}
-	q := sent.Quantity
-	if nf != nil {
-		// An amount without its unit is in the food sent's, though the
-		// user's food of its name is logged.
-		q = q.InUnitOf(nf.Basis)
-	}
-	it, err := meal.FromFood(f, q, sent.Note)
+	it, err := meal.FromFood(f, sent.Quantity, sent.Note)
 	if err != nil {
 		return meal.Item{}, nil, huma.Error422UnprocessableEntity(oneLine(err))
 	}
-	it.ID, it.SentFood, it.Quantity = sent.ID, sent.SentFood, sent.Quantity
+	it.ID, it.SentFood = sent.ID, sent.SentFood
 	if nf != nil {
 		// The store finds the food the item is by the new food's id.
 		it.FoodID = nf.ID

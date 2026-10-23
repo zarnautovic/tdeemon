@@ -330,17 +330,11 @@ func itemsOf(items []meal.Item, ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]
 		if !had {
 			continue
 		}
-		// An amount without its unit is in the food sent's, whose unit
-		// the item was worked out in.
-		q := out[i].Quantity
-		if q.Amount > 0 && q.Unit == "" && (out[i].Unit == "g" || out[i].Unit == "ml") {
-			q.Unit = out[i].Unit
-		}
-		it, err := meal.FromFood(f, q, out[i].Note)
+		it, err := meal.FromFood(f, out[i].Quantity, out[i].Note)
 		if err != nil {
 			return nil, &FoodItemError{Food: f, Err: err}
 		}
-		it.ID, it.SentFood, it.Quantity = out[i].ID, out[i].SentFood, out[i].Quantity
+		it.ID, it.SentFood = out[i].ID, out[i].SentFood
 		out[i] = it
 	}
 	return out, nil

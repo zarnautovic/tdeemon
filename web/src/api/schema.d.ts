@@ -331,7 +331,7 @@ export interface paths {
         put?: never;
         /**
          * Log a meal
-         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml, its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
+         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
          */
         post: operations["log-meal"];
         delete?: never;
@@ -857,7 +857,7 @@ export interface components {
              */
             servings?: number;
             /**
-             * @description The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out, the food's g or ml; a food per portion needs it.
+             * @description The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out for a food of the user's (food_id), its g or ml; a new food's amount and a food per portion need it.
              * @enum {string}
              */
             unit?: "g" | "ml";
@@ -1154,7 +1154,7 @@ export interface components {
              */
             servings?: number;
             /**
-             * @description The amount's unit as given; left out, the food's own, as the item's amount and unit say.
+             * @description The amount's unit as given; left out, the unit of the user's food, as the item's amount and unit say.
              * @enum {string}
              */
             unit?: "g" | "ml";
