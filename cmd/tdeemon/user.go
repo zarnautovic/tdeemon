@@ -224,8 +224,19 @@ func parseSetTelegramFlags(args []string) (setTelegramFlags, error) {
 }
 
 // telegramHello is the message that tells a chat it is the user's for
-// notifications, in the user's language (the summary's).
-const telegramHello = "tdeemon je spojen: ovdje stižu jutarnji sažetak i upozorenja kad podaci prestanu stizati."
+// notifications, by the user's locale; English for another.
+var telegramHello = map[string]string{
+	"en": "tdeemon is connected: your morning summary and the alerts when data stop coming arrive here.",
+	"hr": "tdeemon je spojen: ovdje stižu jutarnji sažetak i upozorenja kad podaci prestanu stizati.",
+}
+
+// helloIn returns telegramHello in locale, or in English.
+func helloIn(locale string) string {
+	if h, ok := telegramHello[locale]; ok {
+		return h
+	}
+	return telegramHello["en"]
+}
 
 // setTelegram sets the Telegram chat the user with --email gets their
 // notifications in, or with --chat-id 0 removes it. With a bot configured
@@ -259,8 +270,11 @@ func setTelegram(ctx context.Context, args []string, lookup config.LookupFunc, o
 			said = fmt.Sprintf("Set the Telegram chat of %s; no message was sent, as %sTELEGRAM_BOT_TOKEN is not set.\n", email, config.Prefix)
 		default:
 			bot := telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
-			if err := bot.Send(ctx, f.chatID, telegramHello); err != nil {
-				return fmt.Errorf("the chat %d did not take a message, so it is not set: %w", f.chatID, err)
+			if err := bot.Send(ctx, f.chatID, helloIn(u.Locale)); err != nil {
+				if _, refused := errors.AsType[*telegram.Error](err); refused {
+					return fmt.Errorf("the chat %d did not take a message, so it is not set: %w", f.chatID, err)
+				}
+				return fmt.Errorf("telegram did not answer, so the chat is not set; try again: %w", err)
 			}
 			said = fmt.Sprintf("Set the Telegram chat of %s, and sent it a message.\n", email)
 		}

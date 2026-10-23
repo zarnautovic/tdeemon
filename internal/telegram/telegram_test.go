@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/zarnautovic/tdeemon/internal/telegram"
@@ -86,32 +87,75 @@ func TestSendRefused(t *testing.T) {
 	if err := (&telegram.Bot{Token: token, BaseURL: bad.URL}).Send(t.Context(), 853, "x"); err == nil || !strings.Contains(err.Error(), "502") {
 		t.Errorf("an answer that does not read: %v", err)
 	}
-	for name, b := range map[string]telegram.Bot{"no token": {BaseURL: bad.URL}, "a token that breaks the URL": {Token: "a b\x7f", BaseURL: bad.URL}} {
-		if err := b.Send(t.Context(), 853, "x"); err == nil || strings.Contains(err.Error(), "\x7f") {
-			t.Errorf("%s: %v", name, err)
-		}
+	if err := (&telegram.Bot{BaseURL: bad.URL}).Send(t.Context(), 853, "x"); err == nil {
+		t.Error("a send without a token succeeded")
+	}
+	broken := telegram.Bot{Token: "123456:made-up secret\x7f", BaseURL: bad.URL}
+	if err := broken.Send(t.Context(), 853, "x"); err == nil || err.Error() != "telegram: a request that does not build" {
+		t.Errorf("a token that breaks the URL: %v", err)
 	}
 	if err := (&telegram.Bot{Token: token, BaseURL: bad.URL}).Send(t.Context(), 0, "x"); err == nil {
 		t.Error("a send to no chat succeeded")
 	}
 }
 
-// A text longer than Telegram takes is cut, ending with an ellipsis.
+// units counts text's UTF-16 code units, as Telegram does.
+func units(text string) int { return len(utf16.Encode([]rune(text))) }
+
+// A text longer than Telegram takes, in UTF-16 code units, is cut at a
+// character's end, ending with an ellipsis.
 func TestSendCutsALongText(t *testing.T) {
 	t.Parallel()
 
 	srv, last := fakeAPI(t, http.StatusOK, `{"ok":true}`)
-	if err := (&telegram.Bot{Token: token, BaseURL: srv.URL}).Send(t.Context(), 853, strings.Repeat("ž", telegram.MaxText+10)); err != nil {
-		t.Fatal(err)
-	}
-	text, _ := last.body["text"].(string)
-	if utf8.RuneCountInString(text) != telegram.MaxText || !strings.HasSuffix(text, "…") {
-		t.Errorf("a text of %d characters", utf8.RuneCountInString(text))
-	}
-	if err := (&telegram.Bot{Token: token, BaseURL: srv.URL}).Send(t.Context(), 853, strings.Repeat("ž", telegram.MaxText)); err != nil {
-		t.Fatal(err)
-	}
-	if text, _ := last.body["text"].(string); strings.HasSuffix(text, "…") {
-		t.Error("a text of exactly MaxText was cut")
+	bot := telegram.Bot{Token: token, BaseURL: srv.URL}
+	for _, tc := range []struct {
+		name string
+		text string
+		cut  bool
+	}{
+		{"letters, exactly the limit", strings.Repeat("ž", telegram.MaxText), false},
+		{"letters past it", strings.Repeat("ž", telegram.MaxText+10), true},
+		{"emoji, exactly the limit", strings.Repeat("🥗", telegram.MaxText/2), false},
+		{"emoji past it, in units though not in characters", strings.Repeat("🥗", telegram.MaxText/2+1), true},
+	} {
+		if err := bot.Send(t.Context(), 853, tc.text); err != nil {
+			t.Fatal(err)
+		}
+		text, _ := last.body["text"].(string)
+		if got := strings.HasSuffix(text, "…"); got != tc.cut || units(text) > telegram.MaxText || !utf8.ValidString(text) {
+			t.Errorf("%s: cut %v, %d units", tc.name, got, units(text))
+		}
 	}
 }
+
+// No error carries the token: not one of a transport that names the URL,
+// nor a redirect's, which is refused.
+func TestSendKeepsTheToken(t *testing.T) {
+	t.Parallel()
+
+	naming := &http.Client{Transport: roundTripper(func(r *http.Request) (*http.Response, error) {
+		return nil, errors.New("tracing: POST " + r.URL.String() + ": boom")
+	})}
+	err := (&telegram.Bot{Token: token, BaseURL: "http://example.invalid", Client: naming}).Send(t.Context(), 853, "x")
+	if err == nil || strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "[redacted]") {
+		t.Errorf("a transport that names the URL: %v", err)
+	}
+
+	elsewhere := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("the redirect was followed")
+	}))
+	t.Cleanup(elsewhere.Close)
+	redirecting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, elsewhere.URL+"/elsewhere", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirecting.Close)
+	err = (&telegram.Bot{Token: token, BaseURL: redirecting.URL}).Send(t.Context(), 853, "x")
+	if err == nil || strings.Contains(err.Error(), token) {
+		t.Errorf("a redirect: %v", err)
+	}
+}
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (f roundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

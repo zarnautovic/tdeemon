@@ -16,25 +16,32 @@ import (
 
 const testBotToken = "123456:made-up-token-for-tests-only-0123"
 
+// message is what a fake Bot API was sent.
+type message struct {
+	chat float64
+	text string
+}
+
 // fakeTelegram answers sendMessage with status and answer, and keeps the
-// chats it was sent to.
-func fakeTelegram(t *testing.T, status int, answer string) (url string, chats func() []float64) {
+// messages it was sent.
+func fakeTelegram(t *testing.T, status int, answer string) (url string, messages func() []message) {
 	t.Helper()
 	var mu sync.Mutex
-	var got []float64
+	var got []message
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &body)
 		mu.Lock()
 		chat, _ := body["chat_id"].(float64)
-		got = append(got, chat)
+		text, _ := body["text"].(string)
+		got = append(got, message{chat, text})
 		mu.Unlock()
 		w.WriteHeader(status)
 		_, _ = io.WriteString(w, answer)
 	}))
 	t.Cleanup(srv.Close)
-	return srv.URL, func() []float64 { mu.Lock(); defer mu.Unlock(); return append([]float64(nil), got...) }
+	return srv.URL, func() []message { mu.Lock(); defer mu.Unlock(); return append([]message(nil), got...) }
 }
 
 // telegramChat reads back Ana's Telegram chat.
@@ -58,7 +65,7 @@ func telegramChat(t *testing.T, dbPath string) (int64, bool) {
 func TestSetTelegram(t *testing.T) {
 	t.Parallel()
 
-	api, chats := fakeTelegram(t, http.StatusOK, `{"ok":true}`)
+	api, sent := fakeTelegram(t, http.StatusOK, `{"ok":true}`)
 	env, dbPath := instance(t, map[string]string{"TDEEMON_TELEGRAM_BOT_TOKEN": testBotToken, "TDEEMON_TELEGRAM_API_URL": api})
 	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com"}, env, noInput(), io.Discard, io.Discard); err != nil {
 		t.Fatal(err)
@@ -67,19 +74,13 @@ func TestSetTelegram(t *testing.T) {
 	if err := run(t.Context(), []string{"user", "set-telegram", "--email", "ana@example.com", "--chat-id", "853"}, env, noInput(), &out, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-	if chat, ok := telegramChat(t, dbPath); !ok || chat != 853 || len(chats()) != 1 || !strings.Contains(out.String(), "sent it a message") {
-		t.Errorf("chat = %d, %v; sent to %v; said %q", chat, ok, chats(), out.String())
+	msgs := sent()
+	if chat, ok := telegramChat(t, dbPath); !ok || chat != 853 || len(msgs) != 1 || msgs[0].chat != 853 || !strings.Contains(out.String(), "sent it a message") {
+		t.Errorf("chat = %d, %v; sent %v; said %q", chat, ok, msgs, out.String())
 	}
-
-	refusing, _ := fakeTelegram(t, http.StatusBadRequest, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)
-	refused, refusedDB := instance(t, map[string]string{"TDEEMON_TELEGRAM_BOT_TOKEN": testBotToken, "TDEEMON_TELEGRAM_API_URL": refusing})
-	_ = run(t.Context(), []string{"user", "create", "--email", "ana@example.com"}, refused, noInput(), io.Discard, io.Discard)
-	err := run(t.Context(), []string{"user", "set-telegram", "--email", "ana@example.com", "--chat-id", "999"}, refused, noInput(), io.Discard, io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "chat not found") || strings.Contains(err.Error(), testBotToken) {
-		t.Errorf("a chat that refuses: %v", err)
-	}
-	if _, ok := telegramChat(t, refusedDB); ok {
-		t.Error("a chat that refused the message was set")
+	// Ana's locale is English, the default.
+	if len(msgs) == 1 && !strings.HasPrefix(msgs[0].text, "tdeemon is connected") {
+		t.Errorf("hello = %q", msgs[0].text)
 	}
 
 	out.Reset()
@@ -88,6 +89,37 @@ func TestSetTelegram(t *testing.T) {
 	}
 	if _, ok := telegramChat(t, dbPath); ok || !strings.Contains(out.String(), "Removed") {
 		t.Errorf("after 0: set %v; said %q", ok, out.String())
+	}
+}
+
+// A chat that refuses the message is not set, and neither is one while
+// Telegram does not answer, which the error tells apart.
+func TestSetTelegramFails(t *testing.T) {
+	t.Parallel()
+
+	refusing, _ := fakeTelegram(t, http.StatusBadRequest, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`)
+	refused, refusedDB := instance(t, map[string]string{"TDEEMON_TELEGRAM_BOT_TOKEN": testBotToken, "TDEEMON_TELEGRAM_API_URL": refusing})
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com"}, refused, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	err := run(t.Context(), []string{"user", "set-telegram", "--email", "ana@example.com", "--chat-id", "999"}, refused, noInput(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "chat not found") || strings.Contains(err.Error(), testBotToken) {
+		t.Errorf("a chat that refuses: %v", err)
+	}
+	if _, ok := telegramChat(t, refusedDB); ok {
+		t.Error("a chat that refused the message was set")
+	}
+
+	// A Telegram that does not answer is not the chat's fault.
+	gone := httptest.NewServer(http.NotFoundHandler())
+	gone.Close()
+	down, _ := instance(t, map[string]string{"TDEEMON_TELEGRAM_BOT_TOKEN": testBotToken, "TDEEMON_TELEGRAM_API_URL": gone.URL})
+	if err := run(t.Context(), []string{"user", "create", "--email", "ana@example.com"}, down, noInput(), io.Discard, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	err = run(t.Context(), []string{"user", "set-telegram", "--email", "ana@example.com", "--chat-id", "853"}, down, noInput(), io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "telegram did not answer") {
+		t.Errorf("a Telegram that does not answer: %v", err)
 	}
 }
 
@@ -120,6 +152,17 @@ func TestSetTelegramWithoutABot(t *testing.T) {
 		err := run(t.Context(), append([]string{"user", "set-telegram"}, args...), env, noInput(), io.Discard, io.Discard)
 		if !errors.Is(err, errUsage) {
 			t.Errorf("%s: %v, want a usage error", name, err)
+		}
+	}
+}
+
+// The hello is in the user's locale, and English for another.
+func TestHelloIn(t *testing.T) {
+	t.Parallel()
+
+	for locale, want := range map[string]string{"hr": "tdeemon je spojen", "en": "tdeemon is connected", "de": "tdeemon is connected"} {
+		if got := helloIn(locale); !strings.HasPrefix(got, want) {
+			t.Errorf("%s: %q", locale, got)
 		}
 	}
 }

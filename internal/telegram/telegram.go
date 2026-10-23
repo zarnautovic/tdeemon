@@ -14,13 +14,14 @@ import (
 	"net/url"
 	"strings"
 	"time"
-	"unicode/utf8"
+	"unicode/utf16"
 )
 
 // DefaultBaseURL is Telegram's Bot API.
 const DefaultBaseURL = "https://api.telegram.org"
 
-// MaxText is the longest message Telegram takes, in characters.
+// MaxText is the longest message Telegram takes, in UTF-16 code units,
+// as it counts lengths: an emoji takes two.
 const MaxText = 4096
 
 // timeout bounds a send, so a Telegram that does not answer does not hold
@@ -52,8 +53,20 @@ func (e *Error) Error() string {
 }
 
 // Send sends text to the chat chatID, as plain text without link
-// previews. Text longer than MaxText is cut, ending with an ellipsis.
+// previews. Text longer than MaxText is cut, ending with an ellipsis. No
+// error it returns carries the token.
 func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
+	if err := b.send(ctx, chatID, text); err != nil {
+		if b.Token != "" && strings.Contains(err.Error(), b.Token) {
+			// A transport of a custom Client may name the URL.
+			return errors.New(strings.ReplaceAll(err.Error(), b.Token, "[redacted]"))
+		}
+		return err
+	}
+	return nil
+}
+
+func (b *Bot) send(ctx context.Context, chatID int64, text string) error {
 	if b.Token == "" {
 		return errors.New("telegram: no bot token")
 	}
@@ -81,7 +94,11 @@ func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
 	req.Header.Set("Content-Type", "application/json")
 	client := b.Client
 	if client == nil {
-		client = &http.Client{Timeout: timeout}
+		// The Bot API does not redirect; a redirect would take the POST,
+		// and the token in its URL, elsewhere.
+		client = &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("a redirect")
+		}}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -112,10 +129,27 @@ func (b *Bot) Send(ctx context.Context, chatID int64, text string) error {
 	return nil
 }
 
-// cut returns text cut to MaxText characters, the last an ellipsis.
+// cut returns text cut to MaxText UTF-16 code units, the last an
+// ellipsis, at a character's end.
 func cut(text string) string {
-	if utf8.RuneCountInString(text) <= MaxText {
+	if units(text) <= MaxText {
 		return text
 	}
-	return string([]rune(text)[:MaxText-1]) + "…"
+	n := 0
+	for i, r := range text {
+		if n+utf16.RuneLen(r) > MaxText-1 {
+			return text[:i] + "…"
+		}
+		n += utf16.RuneLen(r)
+	}
+	return text
+}
+
+// units counts text's UTF-16 code units.
+func units(text string) int {
+	n := 0
+	for _, r := range text {
+		n += utf16.RuneLen(r)
+	}
+	return n
 }
