@@ -82,15 +82,15 @@ test('an unknown path shows the not-found page with a way back, without the sect
 
 test('the app speaks the language set, and the document says which', async () => {
   fakeServer(signedIn())
-  renderAt('/charts')
-  expect(await screen.findByRole('heading', { name: 'Charts' })).toBeDefined()
+  renderAt('/settings')
+  expect(await screen.findByRole('heading', { name: 'Settings' })).toBeDefined()
   expect(document.documentElement.lang).toBe('en')
 
   act(() => {
     setLocale('hr')
   })
 
-  expect(await screen.findByRole('heading', { name: 'Grafovi' })).toBeDefined()
+  expect(await screen.findByRole('heading', { name: 'Postavke' })).toBeDefined()
   const nav = screen.getByRole('navigation', { name: 'Odjeljci' })
   expect(within(nav).getByRole('link', { name: 'Postavke' })).toBeDefined()
   expect(document.documentElement.lang).toBe('hr')

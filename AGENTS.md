@@ -23,7 +23,8 @@ contract and the web app's frame (signing in and out, its sections, in
 English and Croatian) with the day (what was eaten against the target,
 the meals, the measurements, and the check-in, the measurements, a
 meal's corrections and a meal logged by hand taken there) and the
-foods (their list and search, a food made, corrected or archived) exist.
+foods (their list and search, a food made, corrected or archived) and
+the charts (ECharts, loaded with them) exist.
 
 | Path | What |
 | --- | --- |

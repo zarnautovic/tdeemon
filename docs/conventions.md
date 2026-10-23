@@ -638,9 +638,9 @@ generator writes it.
   Chromium as a phone sees it (Pixel 7), against the binary built with
   it, over a fresh database with one made-up user
   (`scripts/e2e-server.sh`). They are few: a path a person takes through
-  a screen, signing in, the day, the foods; the rest is Vitest's. A
-  failed run in CI leaves Playwright's report, with a trace, as the
-  `e2e-report` artifact.
+  a screen, signing in, the day, the foods, the charts; the rest is
+  Vitest's. A failed run in CI leaves Playwright's report, with a trace,
+  as the `e2e-report` artifact.
 
 ## Other files
 

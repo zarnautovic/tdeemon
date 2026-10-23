@@ -95,6 +95,12 @@ export function useFormat() {
         month: 'long',
         timeZone: 'UTC',
       }).format(calendarDate(date)),
+    // short is a day's date, short: "Oct 21" in English, "21. lis" in
+    // Croatian.
+    short: (date: string) =>
+      dateFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
+        calendarDate(date),
+      ),
     // time is an instant's time of day on the user's clock.
     time: (instant: string, timeZone: string) =>
       dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(
