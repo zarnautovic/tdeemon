@@ -690,6 +690,15 @@ func isolationCases() map[string]isolationCase {
 		"find-foods": read("/api/v1/foods?query=rye", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
 		}),
+		// The other's foods, of both lists, and none of the owner's.
+		"list-foods": func(t *testing.T, e isolationEnv) {
+			read("/api/v1/foods/list?order=use", false, func(e isolationEnv) []string {
+				return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
+			})(t, e)
+			read("/api/v1/foods/list?archived=true", false, func(e isolationEnv) []string {
+				return []string{e.other.user.Name + "'s canteen stew"}
+			})(t, e)
+		},
 		"upsert-food":   isolateUpsertFood,
 		"get-food":      isolateGetFood,
 		"log-meal":      isolateLogMeal,

@@ -176,6 +176,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/foods/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your foods
+         * @description Needs a web session. A page of your foods, the archived ones or the others, by name or by their last use, with how many there are; find_foods searches them.
+         */
+        get: operations["list-foods"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/foods/{id}": {
         parameters: {
             query?: never;
@@ -720,6 +740,14 @@ export interface components {
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
+        };
+        FoodListOutputBody: {
+            foods: components["schemas"]["FoodBody"][];
+            /**
+             * Format: int64
+             * @description How many foods the whole list has.
+             */
+            total: number;
         };
         FoodNutrientsBody: {
             /** Format: double */
@@ -2503,6 +2531,81 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-foods": {
+        parameters: {
+            query?: {
+                /** @description The archived foods instead of the others. */
+                archived?: boolean;
+                /** @description name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name. */
+                order?: "name" | "use";
+                /** @description The most foods of the page. */
+                limit?: number;
+                /** @description How many foods of the list come before the page. */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodListOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

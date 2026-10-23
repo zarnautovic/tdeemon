@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 	"uuid"
@@ -167,17 +168,81 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		b := newFoodBody(&foods[i])
 		b.Queries = queries[i]
 		if u, ok := uses[foods[i].ID]; ok {
-			b.LastUse = &lastUseBody{
-				At: u.At, MealID: u.MealID.String(), Amount: u.Amount, Unit: u.Unit,
-				Quantity: quantityBody{
-					Amount: u.Quantity.Amount, Unit: u.Quantity.Unit,
-					Servings: u.Quantity.Servings, Serving: u.Quantity.Serving, Portions: u.Quantity.Portions,
-				},
-			}
+			b.LastUse = newLastUseBody(u)
 		}
 		out.Body.Foods = append(out.Body.Foods, b)
 	}
 	return out, nil
+}
+
+func newLastUseBody(u store.LastUse) *lastUseBody {
+	return &lastUseBody{
+		At: u.At, MealID: u.MealID.String(), Amount: u.Amount, Unit: u.Unit,
+		Quantity: quantityBody{
+			Amount: u.Quantity.Amount, Unit: u.Quantity.Unit,
+			Servings: u.Quantity.Servings, Serving: u.Quantity.Serving, Portions: u.Quantity.Portions,
+		},
+	}
+}
+
+// listFoodsInput's limit's maximum is store.MaxFoodList, and its order's
+// values store.FoodOrder's.
+type listFoodsInput struct {
+	Archived bool   `query:"archived" doc:"The archived foods instead of the others."`
+	Order    string `query:"order" enum:"name,use" default:"name" doc:"name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name."`
+	Limit    int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"The most foods of the page."`
+	Offset   int    `query:"offset" default:"0" minimum:"0" maximum:"1000000" doc:"How many foods of the list come before the page."`
+}
+
+type foodListOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         struct {
+		Foods []foodBody `json:"foods" nullable:"false"`
+		Total int        `json:"total" doc:"How many foods the whole list has."`
+	}
+}
+
+func (s *sessions) listFoods(ctx context.Context, in *listFoodsInput) (*foodListOutput, error) {
+	p, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	foods, total, err := s.db.ListFoods(ctx, p.User.ID, in.Archived, store.FoodOrder(in.Order), in.Limit, in.Offset)
+	if err != nil {
+		return nil, internalError("listing the foods failed", err)
+	}
+	ids := make([]uuid.UUID, len(foods))
+	for i := range foods {
+		ids[i] = foods[i].ID
+	}
+	uses, err := s.db.LastUses(ctx, p.User.ID, ids)
+	if err != nil {
+		return nil, internalError("listing the foods failed", err)
+	}
+	out := &foodListOutput{CacheControl: "no-store"}
+	out.Body.Total = total
+	out.Body.Foods = make([]foodBody, 0, len(foods))
+	for i := range foods {
+		b := newFoodBody(&foods[i])
+		if u, ok := uses[foods[i].ID]; ok {
+			b.LastUse = newLastUseBody(u)
+		}
+		out.Body.Foods = append(out.Body.Foods, b)
+	}
+	return out, nil
+}
+
+func (s *sessions) registerFoods(a huma.API) {
+	huma.Register(a, huma.Operation{
+		OperationID: "list-foods",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/foods/list",
+		Summary:     "List your foods",
+		Description: "Needs a web session. A page of your foods, the archived ones or the others, by name or by their last use, " +
+			"with how many there are; find_foods searches them.",
+		Tags:   []string{"foods"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden},
+	}, s.listFoods)
 }
 
 type getFoodInput struct {

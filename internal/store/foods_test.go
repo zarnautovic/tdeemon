@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -572,5 +576,88 @@ func TestCorrectFood(t *testing.T) {
 	}
 	if foods, err := db.FindFoods(t.Context(), ivo, "caramel", 10); err != nil || len(foods) != 0 {
 		t.Errorf("ivo's foods = %v, %v; want none", foods, err)
+	}
+}
+
+// ListFoods pages a user's foods, the archived ones apart, by name or by
+// the last use, and counts them.
+func TestListFoods(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	mk := func(u uuid.UUID, name string) food.Food {
+		return saveFood(t, db, u, food.Food{
+			ID: uuid.NewV7(), Name: name, Basis: food.Per100g, Source: food.Estimate,
+			Nutrients: food.Nutrients{Kcal: 100, Protein: 5, Carbs: 10, Fat: 3},
+			Aliases:   []string{name + " too"},
+		})
+	}
+	banana := mk(ana, "banana")
+	apple := mk(ana, "Apple")
+	cheese := mk(ana, "Cheese")
+	mk(ana, "Dates")
+	old := mk(ana, "Old bread")
+	mk(ivo, "Avocado")
+	// Ivo's food under the id of Ana's apple, eaten last of all: Ana's list
+	// does not go by what Ivo ate.
+	ivosApple := saveFood(t, db, ivo, food.Food{
+		ID: apple.ID, Name: "Ivo's apple", Basis: food.Per100g, Source: food.Estimate,
+		Nutrients: food.Nutrients{Kcal: 50, Protein: 0, Carbs: 12, Fat: 0},
+	})
+	ivosItem, err := meal.FromFood(ivosApple, meal.Quantity{Amount: 100}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createMeal(t, db, ivo, meal.Meal{ID: uuid.NewV7(), EatenAt: t0, Day: day.DateOf(t0), Client: meal.ClientMCP, Items: []meal.Item{ivosItem}})
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, old.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	// Cheese eaten last, then the banana; the others never.
+	for i, f := range []food.Food{banana, cheese} {
+		it, err := meal.FromFood(f, meal.Quantity{Amount: 50}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := t0.Add(time.Duration(i-2) * time.Hour)
+		createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientMCP, Items: []meal.Item{it}})
+	}
+
+	list := func(archived bool, order store.FoodOrder, limit, offset int) ([]string, int) {
+		t.Helper()
+		got, total, err := db.ListFoods(t.Context(), ana, archived, order, limit, offset)
+		if err != nil {
+			t.Fatalf("ListFoods: %v", err)
+		}
+		return names(got), total
+	}
+	for _, tc := range []struct {
+		name          string
+		archived      bool
+		order         store.FoodOrder
+		limit, offset int
+		want          []string
+		total         int
+	}{
+		{"by name, in any case", false, store.ByName, 10, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
+		{"a page", false, store.ByName, 2, 1, []string{"banana", "Cheese"}, 4},
+		{"past the end", false, store.ByName, 2, 9, nil, 4},
+		{"by the last use, then the name", false, store.ByUse, 10, 0, []string{"Cheese", "banana", "Apple", "Dates"}, 4},
+		{"the archived", true, store.ByName, 10, 0, []string{"Old bread"}, 1},
+		{"no more than the bound", false, store.ByName, store.MaxFoodList + 1, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, total := list(tc.archived, tc.order, tc.limit, tc.offset)
+			if !slices.Equal(got, tc.want) || total != tc.total {
+				t.Errorf("ListFoods = %v of %d, want %v of %d", got, total, tc.want, tc.total)
+			}
+		})
+	}
+	got, _, err := db.ListFoods(t.Context(), ana, false, store.ByName, 1, 0)
+	if err != nil || len(got) != 1 || len(got[0].Aliases) != 1 {
+		t.Errorf("a listed food without its alias: %+v, %v", got, err)
+	}
+	if _, _, err := db.ListFoods(t.Context(), ana, false, "kcal", 10, 0); err == nil {
+		t.Error("ListFoods by kcal: no error")
 	}
 }

@@ -686,6 +686,67 @@ func (db *DB) FindFoods(ctx context.Context, userID uuid.UUID, query string, lim
 	return out, nil
 }
 
+// FoodOrder is the order of a list of foods.
+type FoodOrder string
+
+// The orders of ListFoods.
+const (
+	// ByName sorts by name, then brand, in any case (food.Key), by code
+	// point: a letter with a diacritic after the plain ones.
+	ByName FoodOrder = "name"
+	// ByUse puts the food a meal had last first, and the foods no meal
+	// has had after the others, by name.
+	ByUse FoodOrder = "use"
+)
+
+// MaxFoodList bounds a page of ListFoods.
+const MaxFoodList = 200
+
+// ListFoods returns a page of userID's foods, the archived ones or the
+// others as archived says, in order, from offset and at most limit of
+// them, with their servings and aliases; and how many such foods there
+// are.
+func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, order FoodOrder, limit, offset int) ([]food.Food, int, error) {
+	by := "f.name_key, f.brand_key, f.id"
+	switch order {
+	case ByName:
+	case ByUse:
+		by = `(SELECT max(m.eaten_at) FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
+				WHERE i.user_id = f.user_id AND i.food_id = f.id) DESC NULLS LAST, ` + by
+	default:
+		return nil, 0, fmt.Errorf("list foods: order %q: want name or use", order)
+	}
+	limit = min(max(limit, 0), MaxFoodList)
+	offset = max(offset, 0)
+	uid := userID.String()
+	var out []food.Food
+	var total int
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND archived = ?", uid, archived).Scan(&total); err != nil {
+			return err
+		}
+		var err error
+		out, err = queryFoods(ctx, tx, `
+			SELECT `+foodColumns+` FROM foods AS f
+			WHERE f.user_id = ? AND f.archived = ?
+			ORDER BY `+by+`
+			LIMIT ? OFFSET ?`, uid, archived, limit, offset)
+		if err != nil {
+			return err
+		}
+		for i := range out {
+			if err := foodChildren(ctx, tx, userID, &out[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list foods: %w", err)
+	}
+	return out, total, nil
+}
+
 // queryFoods runs q, which selects foodColumns, and returns the foods,
 // without their servings and aliases.
 func queryFoods(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]food.Food, error) {
