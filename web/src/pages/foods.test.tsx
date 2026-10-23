@@ -198,3 +198,45 @@ test('a food eaten last in another year says the year', async () => {
 
   expect(await screen.findByText('Last eaten Oct 21, 2024')).toBeDefined()
 })
+
+test('the search field follows the address it did not write, and keeps what is typed', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': listOf([oats]),
+    'GET /api/v1/foods': () => Response.json({ foods: [oats] }),
+  })
+  const router = renderAt('/foods?q=oat')
+
+  const field = await screen.findByLabelText('Search the foods')
+  expect(field).toHaveProperty('value', 'oat')
+  // Typed fast: the address comes after each letter.
+  for (const typed of ['oatm', 'oatme', 'oatmea']) {
+    fireEvent.change(field, { target: { value: typed } })
+  }
+  expect(field).toHaveProperty('value', 'oatmea')
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ q: 'oatmea' })
+  })
+  expect(field).toHaveProperty('value', 'oatmea')
+
+  // A link to the foods, as the section's: the search is gone.
+  await router.navigate({ to: '/foods' })
+  await waitFor(() => {
+    expect(screen.getByLabelText('Search the foods')).toHaveProperty('value', '')
+  })
+  expect(await screen.findByRole('list', { name: 'In use' })).toBeDefined()
+})
+
+test("a food's page goes back to the foods as they were left", async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': listOf([{ ...oats, archived: true }]),
+    [`GET /api/v1/foods/${oats.id}`]: () => Response.json({ ...oats, archived: true }),
+  })
+  renderAt('/foods?archived=true&order=use')
+
+  fireEvent.click(await screen.findByRole('link', { name: /Rolled oats/ }))
+
+  const back = await screen.findByRole('link', { name: 'Back to the foods' })
+  expect(back.getAttribute('href')).toBe('/foods?archived=true&order=use')
+})

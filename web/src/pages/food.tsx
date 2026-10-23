@@ -1,13 +1,13 @@
-import { Link, useParams } from '@tanstack/react-router'
-import { ChevronLeft } from 'lucide-react'
+import { useParams } from '@tanstack/react-router'
 
 import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
 import { fieldsOf, useSaveFood } from '@/api/foods'
 import { SaveStatus } from '@/components/day/save-status'
+import { BackToFoods } from '@/components/foods/back-to-foods'
 import { FoodForm } from '@/components/foods/food-form'
 import { LoadError } from '@/components/load-error'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 
 // FoodPage is a food of the user's, to correct, archive or bring back.
@@ -54,10 +54,7 @@ export function FoodPage() {
 
   return (
     <section className="space-y-4">
-      <Link to="/foods" className={buttonVariants({ variant: 'ghost', className: '-ml-2' })}>
-        <ChevronLeft aria-hidden />
-        {t.foods.back}
-      </Link>
+      <BackToFoods />
       {body}
     </section>
   )

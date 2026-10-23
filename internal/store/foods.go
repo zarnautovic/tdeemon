@@ -334,6 +334,9 @@ func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, 
 	var one int
 	err := tx.QueryRowContext(ctx, "SELECT 1 FROM foods WHERE user_id = ? AND id = ?", uid, id.String()).Scan(&one)
 	switch {
+	case err == nil && mode == createOnly:
+		// A new food under the id of one the user has corrects nothing.
+		return uuid.Nil(), false, conflict(ctx, tx, userID, ErrNameTaken, id.String(), "")
 	case err == nil:
 		var other string
 		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",

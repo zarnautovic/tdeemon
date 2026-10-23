@@ -11,6 +11,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 import { inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import type { FoodsSearch } from '@/router'
 
 // FoodsPage is the user's foods: a search of them, or the list of those in
 // use or archived, by name or by when they were eaten last, a page at a
@@ -19,21 +20,39 @@ import { cn } from '@/lib/utils'
 export function FoodsPage() {
   const t = useMessages()
   const id = useId()
-  const { q = '', archived = false, order = 'name' } = useSearch({ from: '/app/foods' })
+  const search = useSearch({ from: '/app/foods' })
+  const { q = '', archived = false, order = 'name' } = search
   const navigate = useNavigate({ from: '/foods' })
   const session = useQuery(sessionQuery)
   const timeZone = session.data?.user.timezone ?? 'UTC'
-  // What is typed: the address follows it, and gives it back on coming
-  // back, but the field is not taken from it as it is typed, which would
-  // move the caret to the end.
+  // What is typed: the address follows it, but the field is not taken
+  // from it as it is typed, which would move the caret to the end. A q
+  // the field did not write (a link, back and forward) is put in it; one
+  // it wrote comes later than the typing, and is passed over.
   const [typed, setTyped] = useState(q)
+  const [written, setWritten] = useState<ReadonlySet<string>>(new Set())
+  const [seenQ, setSeenQ] = useState(q)
+  if (q !== seenQ) {
+    setSeenQ(q)
+    if (written.has(q)) {
+      const rest = new Set(written)
+      rest.delete(q)
+      setWritten(rest)
+    } else {
+      setTyped(q)
+    }
+  }
   const searching = typed.trim() !== ''
 
   return (
     <section className="space-y-4">
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">{t.foods.title}</h1>
-        <Link to="/foods/new" className={buttonVariants({ variant: 'outline' })}>
+        <Link
+          to="/foods/new"
+          state={{ foods: search }}
+          className={buttonVariants({ variant: 'outline' })}
+        >
           <Plus aria-hidden />
           {t.foods.add}
         </Link>
@@ -56,6 +75,7 @@ export function FoodsPage() {
           onChange={(event) => {
             const now = event.currentTarget.value
             setTyped(now)
+            setWritten((w) => new Set(w).add(now))
             void navigate({
               search: (s) => ({ ...s, q: now === '' ? undefined : now }),
               replace: true,
@@ -64,7 +84,7 @@ export function FoodsPage() {
         />
       </div>
       {searching ? (
-        <Found query={typed} timeZone={timeZone} />
+        <Found query={typed} timeZone={timeZone} from={search} />
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -97,7 +117,7 @@ export function FoodsPage() {
               </select>
             </label>
           </div>
-          <Listed archived={archived} order={order} timeZone={timeZone} />
+          <Listed archived={archived} order={order} timeZone={timeZone} from={search} />
         </>
       )}
     </section>
@@ -105,7 +125,7 @@ export function FoodsPage() {
 }
 
 // Found is what a search of the foods finds.
-function Found({ query, timeZone }: { query: string; timeZone: string }) {
+function Found({ query, timeZone, from }: { query: string; timeZone: string; from: FoodsSearch }) {
   const t = useMessages()
   const found = useFindFoods(query)
 
@@ -121,7 +141,7 @@ function Found({ query, timeZone }: { query: string; timeZone: string }) {
   return (
     <ul aria-label={t.foods.found} className="divide-y">
       {found.data.foods.map((food) => (
-        <FoodRow key={food.id} food={food} timeZone={timeZone} />
+        <FoodRow key={food.id} food={food} timeZone={timeZone} from={from} />
       ))}
     </ul>
   )
@@ -133,10 +153,12 @@ function Listed({
   archived,
   order,
   timeZone,
+  from,
 }: {
   archived: boolean
   order: 'name' | 'use'
   timeZone: string
+  from: FoodsSearch
 }) {
   const t = useMessages()
   const list = useFoodList(archived, order)
@@ -160,7 +182,7 @@ function Listed({
     <div className="space-y-3">
       <ul aria-label={archived ? t.foods.archived : t.foods.inUse} className="divide-y">
         {foods.map((food) => (
-          <FoodRow key={food.id} food={food} timeZone={timeZone} />
+          <FoodRow key={food.id} food={food} timeZone={timeZone} from={from} />
         ))}
       </ul>
       <p className="text-center text-sm text-muted-foreground">

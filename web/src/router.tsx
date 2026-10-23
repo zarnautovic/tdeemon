@@ -99,9 +99,7 @@ const dayRoute = createRoute({
 const foodsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/foods',
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { q?: string | undefined; archived?: true | undefined; order?: 'use' | undefined } => ({
+  validateSearch: (search: Record<string, unknown>): FoodsSearch => ({
     q: typeof search.q === 'string' && search.q !== '' ? search.q : undefined,
     archived: search.archived === true || search.archived === 'true' ? true : undefined,
     order: search.order === 'use' ? 'use' : undefined,
@@ -180,5 +178,20 @@ export type AppRouter = ReturnType<typeof createAppRouter>
 declare module '@tanstack/react-router' {
   interface Register {
     router: AppRouter
+  }
+}
+
+// FoodsSearch is what the foods page shows: its search, its list and its
+// order.
+export interface FoodsSearch {
+  q?: string | undefined
+  archived?: true | undefined
+  order?: 'use' | undefined
+}
+
+declare module '@tanstack/history' {
+  interface HistoryState {
+    // The foods page a food's page was opened from, to go back to.
+    foods?: FoodsSearch
   }
 }

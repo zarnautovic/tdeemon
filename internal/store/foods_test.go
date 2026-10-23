@@ -695,6 +695,12 @@ func TestCreateFood(t *testing.T) {
 			t.Errorf("%s: CreateFood = %v, want %v naming the oats", tc.name, err, tc.want)
 		}
 	}
+	// Nor under the oats' id.
+	again := mk("Something else", "")
+	again.ID = oats.ID
+	if _, err := db.CreateFood(t.Context(), ana, testActor, again, t0); !errors.Is(err, store.ErrNameTaken) {
+		t.Errorf("a new food under the oats' id: %v, want ErrNameTaken", err)
+	}
 	// The oats are as they were.
 	if got, err := db.FoodByID(t.Context(), ana, oats.ID); err != nil || got.Nutrients.Kcal != 370 || !got.Archived {
 		t.Errorf("the oats after the refused creates: %+v, %v", got, err)
