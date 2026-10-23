@@ -13,6 +13,13 @@ function wait(seconds: number): string {
   return `${String(minutes)} ${plural('en', minutes, { one: 'minute', other: 'minutes' })}`
 }
 
+// Scale is the words of a check-in's scale, from 1 to 5.
+export type Scale = readonly [string, string, string, string, string]
+
+export function scale(...words: Scale): Scale {
+  return words
+}
+
 export const en = {
   nav: {
     label: 'Sections',
@@ -42,6 +49,10 @@ export const en = {
     noMethod: 'This server offers no way to sign in. Ask its admin.',
   },
   loading: 'Loading…',
+  saving: 'Saving…',
+  saved: 'Saved',
+  notSaved: (why: string) => `Not saved. ${why}`,
+  refused: 'The server did not take it.',
   // Amounts in their units, which every language here writes the same.
   unit: {
     kcal: (n: string) => `${n} kcal`,
@@ -85,6 +96,31 @@ export const en = {
       vo2max: 'VO₂ max',
       exercise_min: 'Exercise',
     },
+    checkIn: 'Check-in',
+    mood: 'Mood',
+    moods: scale('bad', 'low', 'okay', 'good', 'great'),
+    hunger: 'Hunger',
+    hungers: scale('full', 'calm', 'moderate', 'hungry', 'very hungry'),
+    note: 'Note',
+    notePlaceholder: 'restaurant, sick, travelling…',
+    dayType: 'Type of day',
+    dayTypes: { training: 'Training', rest: 'Rest', plan: 'By plan' },
+    calibration: 'Calibration',
+    counted: 'Counted in calibration.',
+    leaveOut: 'Leave out of calibration',
+    countAgain: 'Count it again',
+    reason: 'Reason',
+    // Reasons a tap writes in, the ones a day is left out for most.
+    reasons: ['restaurant', 'sick', 'not logged'],
+    cancel: 'Cancel',
+    save: 'Save',
+    delete: 'Delete',
+    change: (what: string) => `Change: ${what}`,
+    addMetric: 'Add a measurement',
+    kind: 'Measurement',
+    value: 'Value',
+    notANumber: 'Write a number, such as 72.5.',
+    outOfRange: 'The server does not take this value.',
   },
   foods: {
     title: 'Foods',

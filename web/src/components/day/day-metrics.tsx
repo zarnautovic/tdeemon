@@ -1,48 +1,47 @@
 import type { Metric } from '@/api/types'
-import { useFormat } from '@/i18n/format'
+import { AddMetric } from '@/components/day/add-metric'
+import { MetricCard } from '@/components/day/metric-card'
+import { MetricForm } from '@/components/day/metric-form'
+import { metricKinds } from '@/components/day/metric-kinds'
 import { useMessages } from '@/i18n/messages'
 
-// digits are the decimals a kind of measurement is shown with.
-const digits: Partial<Record<Metric['kind'], number>> = {
-  weight: 1,
-  body_fat: 1,
-  lean_mass: 1,
-  sleep_h: 1,
-  vo2max: 1,
-}
-
-// DayMetrics are the day's measurements, each in its unit.
-export function DayMetrics({ metrics }: { metrics: Metric[] }) {
+// DayMetrics are the measurements of day date, each in its unit, to
+// correct or delete; a field for the weight while the day has none, the
+// one given most, and the others to add. A day to come takes none
+// (canLog).
+export function DayMetrics({
+  date,
+  metrics,
+  canLog = true,
+}: {
+  date: string
+  metrics: Metric[]
+  canLog?: boolean
+}) {
   const t = useMessages()
-  const f = useFormat()
-
-  // value is a measurement in its unit, as the language writes it: the
-  // steps without one, which the label says.
-  function value(m: Metric): string {
-    if (m.unit === '%') {
-      return f.percent(m.value)
-    }
-    const n = f.number(m.value, digits[m.kind] ?? 0)
-    return m.kind === 'steps' ? n : `${n} ${m.unit}`
-  }
+  const has = new Set(metrics.map((m) => m.kind))
+  const others = metricKinds.filter((k) => k !== 'weight' && !has.has(k))
 
   return (
     <section aria-labelledby="day-measurements" className="space-y-2">
       <h2 id="day-measurements" className="font-medium">
         {t.day.measurements}
       </h2>
+      {canLog && !has.has('weight') && (
+        <div className="rounded-lg border p-3">
+          <MetricForm date={date} kind="weight" label={t.day.metric.weight} />
+        </div>
+      )}
       {metrics.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t.day.noMeasurements}</p>
       ) : (
-        <dl className="grid grid-cols-2 gap-2 text-sm">
+        <ul className="grid grid-cols-2 gap-2">
           {metrics.map((m) => (
-            <div key={m.kind} className="rounded-lg border p-3">
-              <dt className="text-muted-foreground">{t.day.metric[m.kind]}</dt>
-              <dd className="text-lg font-semibold tabular-nums">{value(m)}</dd>
-            </div>
+            <MetricCard key={m.kind} date={date} metric={m} canLog={canLog} />
           ))}
-        </dl>
+        </ul>
       )}
+      {canLog && <AddMetric date={date} kinds={others} />}
     </section>
   )
 }

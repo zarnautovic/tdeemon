@@ -1,4 +1,4 @@
-import type { Messages } from './en'
+import { scale, type Messages } from './en'
 import { plural } from './plural'
 
 // wait says how long, rounded up to whole minutes from a minute on.
@@ -40,6 +40,10 @@ export const hr: Messages = {
     noMethod: 'Ovaj server ne nudi način prijave. Javi se njegovom adminu.',
   },
   loading: 'Učitavanje…',
+  saving: 'Spremanje…',
+  saved: 'Spremljeno',
+  notSaved: (why: string) => `Nije spremljeno. ${why}`,
+  refused: 'Server to nije prihvatio.',
   // Amounts in their units, which every language here writes the same.
   unit: {
     kcal: (n: string) => `${n} kcal`,
@@ -82,6 +86,30 @@ export const hr: Messages = {
       vo2max: 'VO₂ max',
       exercise_min: 'Vježbanje',
     },
+    checkIn: 'Check-in',
+    mood: 'Osjećaj',
+    moods: scale('loše', 'slabije', 'solidno', 'dobro', 'odlično'),
+    hunger: 'Glad',
+    hungers: scale('sit', 'mirno', 'umjereno', 'gladan', 'stalno gladan'),
+    note: 'Napomena',
+    notePlaceholder: 'restoran, bolest, putovanje…',
+    dayType: 'Tip dana',
+    dayTypes: { training: 'Trening', rest: 'Odmor', plan: 'Po planu' },
+    calibration: 'Kalibracija',
+    counted: 'Dan ulazi u kalibraciju.',
+    leaveOut: 'Izostavi iz kalibracije',
+    countAgain: 'Vrati u kalibraciju',
+    reason: 'Razlog',
+    reasons: ['restoran', 'bolest', 'nije sve upisano'],
+    cancel: 'Odustani',
+    save: 'Spremi',
+    delete: 'Obriši',
+    change: (what: string) => `Promijeni: ${what}`,
+    addMetric: 'Dodaj mjerenje',
+    kind: 'Mjerenje',
+    value: 'Vrijednost',
+    notANumber: 'Upiši broj, npr. 72,5.',
+    outOfRange: 'Server ne prima ovu vrijednost.',
   },
   foods: {
     title: 'Hrana',

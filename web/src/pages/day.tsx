@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
+import { CheckIn } from '@/components/day/check-in'
 import { DayMetrics } from '@/components/day/day-metrics'
 import { DayTotals } from '@/components/day/day-totals'
 import { MealCard } from '@/components/day/meal-card'
@@ -13,8 +14,9 @@ import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
 // DayPage is a day of the user's: today at /, another at /?date=YYYY-MM-DD.
-// It shows what was eaten against the target, the meals and the
-// measurements, and moves a day back or ahead, up to today.
+// It shows what was eaten against the target, the check-in, the meals and
+// the measurements, takes the check-in and the measurements, and moves a
+// day back or ahead, up to today.
 export function DayPage() {
   const t = useMessages()
   const f = useFormat()
@@ -47,6 +49,11 @@ export function DayPage() {
   const todayDate = date === undefined && !waiting ? day.data.date : today
   const shown = date ?? todayDate ?? day.data.date
   const isToday = date === undefined || shown === todayDate
+  // A day to come, which an address may name though the arrows stop at
+  // today, takes its type and exclusion only, as the server has it. A day
+  // an address names may be one until the app knows today; if it cannot
+  // learn it, the server says what it refuses.
+  const future = todayDate === undefined ? date !== undefined && me.isPending : shown > todayDate
   const before = addDays(shown, -1)
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.
@@ -88,13 +95,15 @@ export function DayPage() {
           <span className="size-9" />
         )}
       </header>
-      {day.data.status === 'excluded' && (
-        <p className="rounded-lg bg-muted px-3 py-2 text-sm">
-          {t.day.excluded(day.data.excluded_reason ?? '')}
-        </p>
-      )}
-      <div aria-busy={waiting} className={`space-y-4 ${waiting ? 'opacity-60' : ''}`}>
+      <div
+        aria-busy={waiting}
+        // What is changed while it waits would be the day before's.
+        inert={waiting}
+        className={`space-y-4 ${waiting ? 'opacity-60' : ''}`}
+      >
         <DayTotals day={day.data} />
+        {/* Its fields start again with each day. */}
+        <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
         <section aria-labelledby="day-meals" className="space-y-2">
           <h2 id="day-meals" className="font-medium">
             {t.day.meals}
@@ -107,7 +116,12 @@ export function DayPage() {
             ))
           )}
         </section>
-        <DayMetrics metrics={day.data.metrics} />
+        <DayMetrics
+          key={`metrics ${day.data.date}`}
+          date={day.data.date}
+          metrics={day.data.metrics}
+          canLog={!future}
+        />
       </div>
       {!isToday && (
         <Link

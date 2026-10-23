@@ -47,6 +47,27 @@ function dateFormat(locale: string, options: Intl.DateTimeFormatOptions): Intl.D
   return f
 }
 
+// parseNumber reads a number a person typed in locale's language, or
+// undefined for anything else. A comma or a full stop before digits is
+// the decimal point, whichever the keyboard gave, except that groups of
+// three digits after the language's group separator are thousands, which
+// the language's decimal point may follow: 8,042 is 8042 in English and
+// 8.042 in Croatian, 1,834.5 and 1.834,5 are 1834.5, 72,5 and 72.5 are
+// 72.5 in both.
+export function parseNumber(s: string, locale: string): number | undefined {
+  const typed = s.replaceAll(/\s/g, '')
+  const parts = numberFormat(locale, {}).formatToParts(1_000_000.5)
+  const group = parts.find((p) => p.type === 'group')?.value
+  const decimal = parts.find((p) => p.type === 'decimal')?.value ?? '.'
+  const grouped =
+    group !== undefined &&
+    new RegExp(`^\\d{1,3}(\\${group}\\d{3})+(\\${decimal}\\d+)?$`).test(typed)
+  if (grouped) {
+    return Number(typed.replaceAll(group, '').replace(decimal, '.'))
+  }
+  return /^\d+([.,]\d+)?$/.test(typed) ? Number(typed.replace(',', '.')) : undefined
+}
+
 // useFormat formats numbers, dates and times in the app's language.
 export function useFormat() {
   const locale = useLocale()
@@ -54,6 +75,12 @@ export function useFormat() {
     // number rounds to at most digits decimals.
     number: (n: number, digits = 0) =>
       numberFormat(locale, { maximumFractionDigits: digits }).format(n),
+    // field is a number as a field starts with it: every decimal, near
+    // enough, and no group separators, which typing around would break.
+    field: (n: number) =>
+      numberFormat(locale, { maximumFractionDigits: 3, useGrouping: false }).format(n),
+    // parse reads a number typed in the language (parseNumber).
+    parse: (s: string) => parseNumber(s, locale),
     // percent is a percentage, 18.2 for 18.2 %, as the language writes it.
     percent: (n: number, digits = 1) =>
       numberFormat(locale, { style: 'percent', maximumFractionDigits: digits }).format(n / 100),
