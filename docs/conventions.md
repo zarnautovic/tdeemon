@@ -619,7 +619,8 @@ generator writes it.
   message in `src/i18n/en.ts` and the same key in every other language
   (`hr.ts`), which the type checker holds to it, read with
   `useMessages()`. A text with values in it is a function of them. The
-  language is the one chosen last in the browser, or the browser's own.
+  language is the signed-in user's (`locale`); before the app knows the
+  user, the one chosen last in the browser, or the browser's own.
 
 ### Tests
 

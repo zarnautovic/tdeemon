@@ -18,8 +18,8 @@ on a phase), the tool registry with `get_profile`, `get_day`,
 `get_summary`, `find_foods`, `get_food`, `upsert_food`, `log_meal`,
 `update_meal`, `delete_meal`, `log_metric`, `delete_metric`, `checkin`
 and `undo_last`, the MCP server that serves them at `/mcp`, the API
-contract and the web app's frame (its sections, in English and Croatian)
-exist.
+contract and the web app's frame (signing in and out, its sections, in
+English and Croatian) exist.
 
 | Path | What |
 | --- | --- |

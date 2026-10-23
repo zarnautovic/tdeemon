@@ -180,9 +180,10 @@ kubectl exec deploy/tdeemon -- /tdeemon user create --admin --email you@example.
 - The commands read the same `TDEEMON_*` variables as the server, and
   they refuse a database the server has not migrated to their version.
 
-Signing in goes through the API (`POST /api/v1/auth/login`), which sets
-an HttpOnly session cookie for 30 days; the web app's sign-in page comes
-with the web UI. Cross-origin browser requests that change something are
+Signing in goes through the web app's sign-in page (`/login`), with a
+password or the OpenID Connect provider, or straight through the API
+(`POST /api/v1/auth/login`); either sets an HttpOnly session cookie for
+30 days. Cross-origin browser requests that change something are
 refused (Go's `http.CrossOriginProtection`), and over HTTPS the cookie is
 a `__Host-` cookie.
 
