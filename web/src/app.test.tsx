@@ -86,6 +86,7 @@ test('an unknown path shows the not-found page with a way back, without the sect
   renderAt('/no/such/page')
 
   expect(await screen.findByRole('heading', { name: 'Page not found' })).toBeDefined()
+  expect(screen.getByRole('main')).toBeDefined()
   expect(screen.getByRole('link', { name: 'Back to the start' }).getAttribute('href')).toBe('/')
   expect(screen.queryByRole('navigation')).toBeNull()
 })

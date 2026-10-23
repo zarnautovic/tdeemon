@@ -187,8 +187,8 @@ the change. The floors fail `make test`, and so CI.
   - 75 % of lines and functions. Branches and statements have no
     threshold: the React Compiler adds a cache branch, and the statements
     around it, to every memoised value, and a test takes it only one way;
-  - the entry point `main.tsx` and the shadcn registry components are
-    excluded.
+  - the entry point `main.tsx`, the shadcn registry components and the
+    tests' own helpers (`src/test`) are excluded.
 
 ### Definition of Done
 
