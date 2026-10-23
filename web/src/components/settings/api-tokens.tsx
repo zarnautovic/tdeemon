@@ -322,38 +322,39 @@ function NewToken({
       <Button type="submit" disabled={create.isPending || name.trim() === '' || chosen.size === 0}>
         {t.settings.create}
       </Button>
-      {/* There before the token comes, so a screen reader says it, as
-          the focus stays on the form. */}
-      <div aria-live="polite">
-        {create.isSuccess && (
-          <div className="space-y-1 rounded-lg bg-muted p-2 text-sm">
-            <p id={`${id}-made`}>{t.settings.created}</p>
-            <div className="flex items-center gap-2">
-              <code
-                ref={code}
-                aria-describedby={`${id}-made`}
-                className="min-w-0 flex-1 break-all select-all"
-              >
-                {create.data.token}
-              </code>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void copy(create.data.token)
-                }}
-              >
-                {copied === 'yes' ? t.settings.copied : t.settings.copy}
-              </Button>
-            </div>
-            {copied === 'failed' && (
-              <p role="alert" className="text-destructive">
-                {t.settings.copyFailed}
-              </p>
-            )}
+      {/* There before the token comes, so a screen reader says that it
+          did, as the focus stays on the form; the token itself it does not
+          read out. */}
+      <output id={`${id}-made`} className="block text-sm">
+        {create.isSuccess && t.settings.created}
+      </output>
+      {create.isSuccess && (
+        <div className="space-y-1 rounded-lg bg-muted p-2 text-sm">
+          <div className="flex items-center gap-2">
+            <code
+              ref={code}
+              aria-describedby={`${id}-made`}
+              className="min-w-0 flex-1 break-all select-all"
+            >
+              {create.data.token}
+            </code>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void copy(create.data.token)
+              }}
+            >
+              {copied === 'yes' ? t.settings.copied : t.settings.copy}
+            </Button>
           </div>
-        )}
-      </div>
+          {copied === 'failed' && (
+            <p role="alert" className="text-destructive">
+              {t.settings.copyFailed}
+            </p>
+          )}
+        </div>
+      )}
     </form>
   )
 }

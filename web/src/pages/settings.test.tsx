@@ -204,18 +204,17 @@ test("the notes are the server's, not those a cache kept from before", async () 
 })
 
 test('a setting changed elsewhere shows, and is not sent back', async () => {
+  // The user as the server has them: another tab moved the zone, and
+  // later renames them, which the answers bring.
+  let user = { ...session().user, timezone: 'Europe/London' }
   const server = settingsServer({
-    // Another tab moved the zone meanwhile, which the answer brings.
     'PATCH /api/v1/me': async (r) => {
       const body: unknown = await r.json()
       ;(server.sent['PATCH /api/v1/me'] ??= []).push(body)
-      return Response.json({
-        user: {
-          ...session().user,
-          timezone: 'Europe/London',
-          ...(typeof body === 'object' ? body : {}),
-        },
-      })
+      user = { ...user, ...(typeof body === 'object' ? body : {}) }
+      const answer = { user }
+      user = { ...user, name: 'Ana K.' }
+      return Response.json(answer)
     },
   })
   renderAt('/settings')
@@ -231,6 +230,41 @@ test('a setting changed elsewhere shows, and is not sent back', async () => {
   await waitFor(() => {
     expect(server.sent['PATCH /api/v1/me']).toEqual([{ name: 'Ana M.' }, { day_start_hour: 3 }])
   })
+  // The name the other tab gave shows, and the next change leaves it.
+  await waitFor(() => {
+    expect(you.getByLabelText('Name')).toHaveProperty('value', 'Ana K.')
+  })
+  fireEvent.change(you.getByLabelText('The day starts at'), { target: { value: '5' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(server.sent['PATCH /api/v1/me']).toEqual([
+      { name: 'Ana M.' },
+      { day_start_hour: 3 },
+      { day_start_hour: 5 },
+    ])
+  })
+})
+
+test('notes typed stay when the user cannot be asked again', async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  const notes = await screen.findByLabelText('Notes for a coach')
+  fireEvent.change(notes, { target: { value: 'Knees: no running. Shoulder too.' } })
+  // A change of the name asks for the user again, which fails.
+  server.failMe()
+  const before = asked(server.fetch, 'GET /api/v1/me')
+  const you = within(screen.getByRole('form', { name: 'You' }))
+  fireEvent.change(you.getByLabelText('Name'), { target: { value: 'Ana M.' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+  await screen.findByText('Signed in as Ana M. (ana@example.com).')
+  await waitFor(() => {
+    expect(asked(server.fetch, 'GET /api/v1/me')).toBeGreaterThan(before)
+  })
+  expect(screen.getByLabelText('Notes for a coach')).toHaveProperty(
+    'value',
+    'Knees: no running. Shoulder too.',
+  )
 })
 
 test("notes the server failed to give again are not the cache's", async () => {
@@ -301,8 +335,9 @@ test('the tokens are listed with their use, and one is made and shown once', asy
   expect(await tokens.findByText('iPhone')).toBeDefined()
   expect(tokens.getByText('Send health data · Last used Oct 22 11:00 PM')).toBeDefined()
   expect(tokens.getByText('Read · Read, log and change · Not used yet')).toBeDefined()
-  // The region the token comes in is there before it, so it is said.
-  const live = document.querySelector('form [aria-live="polite"]')
+  // The region that says the token came is there before it, so it is
+  // said; the token itself is not read out.
+  const live = document.querySelector('form output[id$="-made"]')
   expect(live?.textContent).toBe('')
   fireEvent.change(tokens.getByLabelText('Name of the token'), { target: { value: 'Laptop' } })
   fireEvent.click(tokens.getByLabelText('Read'))
@@ -310,7 +345,7 @@ test('the tokens are listed with their use, and one is made and shown once', asy
 
   expect(await tokens.findByText('tdm_made_up')).toBeDefined()
   expect(live?.isConnected).toBe(true)
-  expect(live?.textContent).toContain('tdm_made_up')
+  expect(live?.textContent).toBe('The token, shown only now: copy it to the device.')
   expect(tokens.getByText('The token, shown only now: copy it to the device.')).toBeDefined()
   expect(server.sent['POST /api/v1/tokens']).toEqual([
     { name: 'Laptop', scopes: ['ingest', 'read'] },
@@ -334,11 +369,16 @@ test('a token is revoked after it asks, and all of them too', async () => {
   })
   expect(server.sent[`DELETE /api/v1/tokens/${phone.id}`]).toHaveLength(1)
 
+  // What revoking all comes to is said in a region there before it.
+  const said = document.querySelector('section[aria-labelledby="settings-tokens"] > output')
+  expect(said?.textContent).toBe('')
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke all tokens' }))
   expect(tokens.getByText(/Revoke every token\?/)).toBeDefined()
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
 
   expect(await tokens.findByText('1 token revoked.')).toBeDefined()
+  expect(said?.isConnected).toBe(true)
+  expect(said?.textContent).toBe('1 token revoked.')
   expect(await tokens.findByText('No tokens yet.')).toBeDefined()
 })
 
