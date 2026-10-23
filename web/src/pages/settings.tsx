@@ -3,13 +3,20 @@ import { useNavigate } from '@tanstack/react-router'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
+import { ApiTokens } from '@/components/settings/api-tokens'
+import { CoachNotes } from '@/components/settings/coach-notes'
+import { YouForm } from '@/components/settings/you-form'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 
+// SettingsPage is the user's own: their name, language, time zone and
+// day's start, their notes for a coach, their API tokens, signing out,
+// and what the server is.
 export function SettingsPage() {
   const t = useMessages()
   const session = useQuery(sessionQuery)
   const info = $api.useQuery('get', '/api/v1/info')
+  const me = $api.useQuery('get', '/api/v1/me')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const signOut = $api.useMutation('post', '/api/v1/auth/logout', {
@@ -23,6 +30,10 @@ export function SettingsPage() {
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold">{t.settings.title}</h1>
+      {session.data && <YouForm key={session.data.user.id} user={session.data.user} />}
+      {/* The notes the page opened with: what is typed stays, saved or not. */}
+      {me.data && <CoachNotes notes={me.data.notes} />}
+      <ApiTokens />
       <section className="space-y-2">
         <h2 className="font-medium">{t.settings.account}</h2>
         {session.data && (
