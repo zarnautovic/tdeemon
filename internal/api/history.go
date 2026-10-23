@@ -15,16 +15,20 @@ import (
 )
 
 // The span of a history: by default the 90 days up to today, at most a
-// year and a day.
+// year and a day, and of no day before historySince.
 const (
 	historyDays    = 90
 	maxHistoryDays = 366
 )
 
+// historySince is the first day a history can be of: no one's days are
+// older, and a date before year 1 has no RFC 3339 form.
+var historySince = day.Date{Year: 1900, Month: 1, Day: 1}
+
 type historyInput struct {
 	From        string `query:"from" format:"date" doc:"The first day; left out, 89 days before to."`
 	To          string `query:"to" format:"date" doc:"The last day, today at the latest; left out, today."`
-	Granularity string `query:"granularity" enum:"day,week" default:"day" doc:"day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from."`
+	Granularity string `query:"granularity" enum:"day,week" default:"day" doc:"day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow."`
 }
 
 type historyOutput struct {
@@ -71,9 +75,11 @@ type dayTotalBody struct {
 }
 
 type dayTDEEBody struct {
-	Kcal      float64 `json:"kcal" doc:"In kcal a day."`
-	HalfWidth float64 `json:"half_width" doc:"Half its 80 % interval."`
-	Trusted   bool    `json:"trusted" doc:"Whether its interval and data are enough for a verdict."`
+	Kcal        float64 `json:"kcal" doc:"In kcal a day."`
+	HalfWidth   float64 `json:"half_width" doc:"Half its 80 % interval."`
+	Trusted     bool    `json:"trusted" doc:"Whether its interval and data are enough to trust it."`
+	BeforePhase bool    `json:"before_phase" doc:"The estimate is of the days before the phase the day is in, whose own are too few yet: the same estimate for some weeks after the intake changed."`
+	To          string  `json:"to" format:"date" doc:"The last day of its window."`
 }
 
 func (s *sessions) getHistory(ctx context.Context, in *historyInput) (*historyOutput, error) {
@@ -132,6 +138,8 @@ func historySpan(in *historyInput, today day.Date) (from, to day.Date, err error
 		return from, to, huma.Error422UnprocessableEntity("to: " + to.String() + " is a day to come; a history is of today or the days before")
 	case to.Before(from):
 		return from, to, huma.Error422UnprocessableEntity("from: " + from.String() + " is after to, " + to.String())
+	case from.Before(historySince):
+		return from, to, huma.Error422UnprocessableEntity("from: a history is of " + historySince.String() + " or after")
 	case to.DaysSince(from) >= maxHistoryDays:
 		return from, to, huma.Error422UnprocessableEntity("from: a history is of at most 366 days")
 	}
@@ -160,6 +168,7 @@ func (data summaryData) historyDay(d day.Date, trend []calibration.Point) histor
 	if e := calibration.Calibrate(data.calDays, data.phases, d, data.params); e.Measured {
 		b.TDEE = &dayTDEEBody{
 			Kcal: noNegativeZero(math.Round(e.TDEE)), HalfWidth: math.Round(e.HalfWidth), Trusted: e.Trusted,
+			BeforePhase: e.BeforePhase, To: e.To.String(),
 		}
 	}
 	return b

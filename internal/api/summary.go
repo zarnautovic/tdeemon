@@ -347,7 +347,9 @@ func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekB
 		if c.Weighed() {
 			weights = append(weights, c.WeightKg)
 		}
-		if c.Stepped() {
+		// An open day's steps still grow (a summary's weeks have none; a
+		// history's may end today).
+		if c.Stepped() && c.Status != day.Open {
 			steps = append(steps, c.Steps)
 		}
 		for _, v := range data.values[d] {

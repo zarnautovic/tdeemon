@@ -28,9 +28,11 @@ type historyDay struct {
 	Steps          *float64 `json:"steps"`
 	SleepH         *float64 `json:"sleep_h"`
 	TDEE           *struct {
-		Kcal      float64 `json:"kcal"`
-		HalfWidth float64 `json:"half_width"`
-		Trusted   bool    `json:"trusted"`
+		Kcal        float64 `json:"kcal"`
+		HalfWidth   float64 `json:"half_width"`
+		Trusted     bool    `json:"trusted"`
+		BeforePhase bool    `json:"before_phase"`
+		To          string  `json:"to"`
 	} `json:"tdee"`
 }
 
@@ -135,6 +137,8 @@ func TestGetHistoryRefuses(t *testing.T) {
 		"more than 366 days": "?from=" + today.AddDays(-366).String(),
 		"no date":            "?from=yesterday",
 		"another grain":      "?granularity=month",
+		"before 1900":        "?from=1899-12-31&to=1900-01-02",
+		"year 0":             "?to=0000-01-01",
 	} {
 		if code, _, body := getHistory(t, in, session, query); code != http.StatusUnprocessableEntity {
 			t.Errorf("%s: %d %s, want 422", name, code, body)
@@ -184,5 +188,37 @@ func checkHistoryMeasures(t *testing.T, d historyDay) {
 	// 0.35 kg a week less, on 2000 kcal: a TDEE near 2000 + 0.35 × 7700 / 7.
 	if d.TDEE == nil || d.TDEE.Kcal < 2200 || d.TDEE.Kcal > 2600 || d.TDEE.HalfWidth <= 0 {
 		t.Errorf("the TDEE = %+v, want one near 2385", d.TDEE)
+	}
+}
+
+// A week of today leaves today's steps out, which still grow; its other
+// days' count.
+func TestGetHistoryWeekOfToday(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveHistory(t, in)
+	if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, today, []metric.Value{
+		{Kind: metric.Steps, Value: 500, Source: metric.Import},
+	}, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/history?granularity=week&from="+today.AddDays(-6).String(), "", []*http.Cookie{session}, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"steps":8000`) {
+		t.Errorf("%d %s, want the 6 days' 8000 steps", rec.Code, rec.Body.String())
+	}
+}
+
+// After the intake changes, the TDEE is the one of the days before, for
+// some weeks, and says so.
+func TestGetHistoryBeforePhase(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveHistory(t, in)
+	saveIsolationPlan(t, in.db, in.user, in.clock.Now()) // a phase from today
+	_, days, body := getHistory(t, in, session, "?from="+today.String())
+	if len(days) != 1 || days[0].TDEE == nil || !days[0].TDEE.BeforePhase || days[0].TDEE.To != today.AddDays(-1).String() {
+		t.Errorf("today's TDEE in a phase begun today: %s, want the days before's, said so", body)
 	}
 }

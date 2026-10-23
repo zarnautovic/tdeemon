@@ -653,6 +653,8 @@ export interface components {
             type: "training" | "rest";
         };
         DayTDEEBody: {
+            /** @description The estimate is of the days before the phase the day is in, whose own are too few yet: the same estimate for some weeks after the intake changed. */
+            before_phase: boolean;
             /**
              * Format: double
              * @description Half its 80 % interval.
@@ -663,7 +665,12 @@ export interface components {
              * @description In kcal a day.
              */
             kcal: number;
-            /** @description Whether its interval and data are enough for a verdict. */
+            /**
+             * Format: date
+             * @description The last day of its window.
+             */
+            to: string;
+            /** @description Whether its interval and data are enough to trust it. */
             trusted: boolean;
         };
         DayTargetBody: {
@@ -2956,7 +2963,7 @@ export interface operations {
                 from?: string;
                 /** @description The last day, today at the latest; left out, today. */
                 to?: string;
-                /** @description day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. */
+                /** @description day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow. */
                 granularity?: "day" | "week";
             };
             header?: never;
