@@ -17,6 +17,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
@@ -265,5 +266,37 @@ func TestAlarmRecordFails(t *testing.T) {
 	}
 	if got := sent(); len(got) != 1 {
 		t.Errorf("alarms = %d, want one", len(got))
+	}
+}
+
+// Over days of one stop, run each hour, the watchdog alarms once, and
+// keeps 48 hours of its own runs, not the alarms' record.
+func TestOneStopOverDays(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	bot, sent := fakeBot(t)
+	u := newUser(t, db, "ana@example.com", "en", 853)
+	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
+	weigh(t, db, u, 80, last)
+	s := &scheduler.Scheduler{
+		DB: db, Jobs: []scheduler.Job{watchdog.Job(db, bot, slog.New(slog.DiscardHandler))},
+		Logger: slog.New(slog.DiscardHandler),
+	}
+	at := last
+	s.Now = func() time.Time { return at }
+	for range 5 * 24 {
+		at = at.Add(time.Hour)
+		if err := s.Tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := sent(); len(got) != 1 {
+		t.Errorf("alarms over 5 days of one stop = %d, want 1", len(got))
+	}
+	old, _ := db.JobRan(t.Context(), u.ID, "watchdog", last.Add(time.Hour).UTC().Format("2006-01-02T15"))
+	recent, _ := db.JobRan(t.Context(), u.ID, "watchdog", at.Add(-time.Hour).UTC().Format("2006-01-02T15"))
+	if old || !recent {
+		t.Errorf("runs kept: the first %v, the last but one %v", old, recent)
 	}
 }

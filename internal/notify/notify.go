@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
@@ -13,11 +14,13 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
 
-// Blocked reports whether err is Telegram's refusal of a chat that
-// blocked the bot (403): trying again does not help.
+// Blocked reports whether err is Telegram's refusal of a chat that will
+// not take a message: one that blocked the bot (403), or one that is not
+// there (400, chat not found). Trying again does not help.
 func Blocked(err error) bool {
 	te, ok := errors.AsType[*telegram.Error](err)
-	return ok && te.Code == http.StatusForbidden
+	return ok && (te.Code == http.StatusForbidden ||
+		te.Code == http.StatusBadRequest && strings.Contains(strings.ToLower(te.Description), "chat not found"))
 }
 
 // Send sends text to u's Telegram chat through bot, and reports whether

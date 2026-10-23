@@ -28,6 +28,9 @@ const NoMetricsAfter = 26 * time.Hour
 // alarm: the device that sends with it has stopped.
 const TokenUnusedAfter = 72 * time.Hour
 
+// jobName is the watchdog's name in the scheduler's record of its runs.
+const jobName = "watchdog"
+
 // alarmJob is the name the store records an alarm sent under, with the
 // stop it is of as the occurrence, so each stop alarms once.
 const alarmJob = "watchdog_alarm"
@@ -41,7 +44,7 @@ func Job(db *store.DB, bot *telegram.Bot, logger *slog.Logger) scheduler.Job {
 	}
 	w := &watcher{db: db, bot: bot, logger: logger, sent: map[string]bool{}}
 	return scheduler.Job{
-		Name: "watchdog",
+		Name: jobName,
 		// Each hour, by the clock, whatever the user's zone.
 		Due: func(_ user.User, now time.Time) (string, bool) { return now.UTC().Format("2006-01-02T15"), true },
 		Run: w.run,
@@ -72,8 +75,9 @@ type alarm struct {
 }
 
 func (w *watcher) run(ctx context.Context, u user.User, _ string, now time.Time) error {
-	if err := w.db.DeleteJobRuns(ctx, u.ID, "watchdog", now.Add(-keepRuns)); err != nil {
-		return err
+	// Upkeep, which must not keep the alarms from going out.
+	if err := w.db.DeleteJobRuns(ctx, u.ID, jobName, now.Add(-keepRuns)); err != nil {
+		w.logger.Warn("removing the watchdog's old runs failed", "user_id", u.ID, "error", err)
 	}
 	alarms, err := alarmsOf(ctx, w.db, u, now)
 	if err != nil {

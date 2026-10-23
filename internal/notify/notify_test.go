@@ -76,14 +76,17 @@ func TestSend(t *testing.T) {
 	}
 }
 
-// Blocked is a 403 of Telegram's, and nothing else.
+// Blocked is Telegram's 403, or its 400 of a chat not found, and nothing
+// else.
 func TestBlocked(t *testing.T) {
 	t.Parallel()
 
-	if !notify.Blocked(fmt.Errorf("sending: %w", &telegram.Error{Code: 403})) {
-		t.Error("a 403 is not blocked")
+	for _, err := range []error{fmt.Errorf("sending: %w", &telegram.Error{Code: 403}), &telegram.Error{Code: 400, Description: "Bad Request: chat not found"}} {
+		if !notify.Blocked(err) {
+			t.Errorf("%v is not blocked", err)
+		}
 	}
-	for _, err := range []error{nil, &telegram.Error{Code: 400}, errors.New("403")} {
+	for _, err := range []error{nil, &telegram.Error{Code: 400, Description: "Bad Request: message is too long"}, errors.New("403")} {
 		if notify.Blocked(err) {
 			t.Errorf("%v is blocked", err)
 		}
