@@ -11,8 +11,16 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
 // MetricCard is a measurement of the day in its unit, which can be
-// corrected or deleted.
-export function MetricCard({ date, metric }: { date: string; metric: Metric }) {
+// corrected or deleted, but on a day to come (canLog false).
+export function MetricCard({
+  date,
+  metric,
+  canLog = true,
+}: {
+  date: string
+  metric: Metric
+  canLog?: boolean
+}) {
   const t = useMessages()
   const f = useFormat()
   const [editing, setEditing] = useState(false)
@@ -71,17 +79,19 @@ export function MetricCard({ date, metric }: { date: string; metric: Metric }) {
     <li className="relative rounded-lg border p-3 text-sm">
       <p className="text-muted-foreground">{label}</p>
       <p className="text-lg font-semibold tabular-nums">{value}</p>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label={t.day.change(label)}
-        className="absolute top-2 right-2"
-        onClick={() => {
-          setEditing(true)
-        }}
-      >
-        <Pencil aria-hidden />
-      </Button>
+      {canLog && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t.day.change(label)}
+          className="absolute top-2 right-2"
+          onClick={() => {
+            setEditing(true)
+          }}
+        >
+          <Pencil aria-hidden />
+        </Button>
+      )}
     </li>
   )
 }

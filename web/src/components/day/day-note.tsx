@@ -23,8 +23,42 @@ export function DayNote({ day }: { day: Day }) {
   // What is typed and not saved yet; undefined, the day's note.
   const [draft, setDraft] = useState<string | undefined>(undefined)
 
+  // save sends what is typed, typed, and once it is saved the field shows
+  // the day's note again, unless more was typed meanwhile.
+  function save(typed: string) {
+    // The server keeps no space at a note's ends (a keyboard's suggestion
+    // leaves one).
+    const text = typed.trim()
+    if (text === note) {
+      setDraft((now) => (now === typed ? undefined : now))
+      return
+    }
+    change.mutate(
+      { params: { path: { date: day.date } }, body: { note: text } },
+      {
+        onSuccess: () => {
+          setDraft((now) => (now === typed ? undefined : now))
+        },
+      },
+    )
+  }
+
   return (
-    <Field label={t.day.note} htmlFor={id} status={<SaveStatus change={change} />}>
+    <Field
+      label={t.day.note}
+      htmlFor={id}
+      status={
+        <SaveStatus
+          change={change}
+          // Again, with what is typed now.
+          onRetry={() => {
+            if (draft !== undefined) {
+              save(draft)
+            }
+          }}
+        />
+      }
+    >
       <textarea
         id={id}
         value={draft ?? note}
@@ -36,26 +70,9 @@ export function DayNote({ day }: { day: Day }) {
           setDraft(event.currentTarget.value)
         }}
         onBlur={() => {
-          if (draft === undefined) {
-            return
+          if (draft !== undefined) {
+            save(draft)
           }
-          // The server keeps no space at a note's ends (a keyboard's
-          // suggestion leaves one).
-          const typed = draft.trim()
-          if (typed === note) {
-            setDraft(undefined)
-            return
-          }
-          change.mutate(
-            { params: { path: { date: day.date } }, body: { note: typed } },
-            {
-              // Saved, the field shows the day's note, unless more was
-              // typed meanwhile.
-              onSuccess: () => {
-                setDraft((now) => (now === draft ? undefined : now))
-              },
-            },
-          )
         }}
       />
     </Field>

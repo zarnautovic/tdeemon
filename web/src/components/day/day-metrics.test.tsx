@@ -267,3 +267,19 @@ test("a field's unit is said with it", async () => {
   const unit = document.getElementById(weight.getAttribute('aria-describedby') ?? '')
   expect(unit?.textContent).toBe('kg')
 })
+
+test('a measurement of a day to come is not offered to correct', async () => {
+  fakeServer({
+    ...signedIn(),
+    ...dayServer(
+      day({
+        date: '2026-10-25',
+        metrics: [{ kind: 'steps', value: 120, unit: 'steps', source: 'import' }],
+      }),
+    ).routes,
+  })
+  renderAt('/?date=2026-10-25')
+
+  expect(await screen.findByText('120')).toBeDefined()
+  expect(measurements().queryByRole('button', { name: 'Change: Steps' })).toBeNull()
+})

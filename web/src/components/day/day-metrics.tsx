@@ -37,7 +37,7 @@ export function DayMetrics({
       ) : (
         <ul className="grid grid-cols-2 gap-2">
           {metrics.map((m) => (
-            <MetricCard key={m.kind} date={date} metric={m} />
+            <MetricCard key={m.kind} date={date} metric={m} canLog={canLog} />
           ))}
         </ul>
       )}

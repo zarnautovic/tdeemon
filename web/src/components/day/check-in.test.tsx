@@ -1,3 +1,4 @@
+import { focusManager } from '@tanstack/react-query'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
@@ -347,5 +348,40 @@ test('what is typed in the note while an earlier note is saved stays', async () 
   answers[1]?.()
   await waitFor(() => {
     expect(server.day().note).toBe('long walk, then pizza')
+  })
+})
+
+test('a note sent again after it failed leaves the field to follow the day', async () => {
+  const server = dayServer()
+  let up = false
+  // The note as another device left it, once one has.
+  const elsewhere: { note?: string } = {}
+  const patch = server.routes[`PATCH ${path}`]
+  fakeServer({
+    ...signedIn(),
+    ...server.routes,
+    'GET /api/v1/days/today': () => Response.json({ ...server.day(), ...elsewhere }),
+    [`PATCH ${path}`]: (request) =>
+      up && patch ? patch(request) : Promise.reject(new TypeError('Failed to fetch')),
+  })
+  renderAt('/')
+
+  const note = await screen.findByLabelText('Note')
+  fireEvent.change(note, { target: { value: 'long walk' } })
+  fireEvent.blur(note)
+  const alert = await within(checkIn()).findByRole('alert')
+  fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'long walk, then pizza' } })
+  up = true
+  fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
+
+  // Sent again with what is typed now.
+  expect(await within(checkIn()).findByText('Saved')).toBeDefined()
+  expect(server.day().note).toBe('long walk, then pizza')
+  // The note changed elsewhere, the day comes again: the field shows it.
+  elsewhere.note = 'from the phone'
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(screen.getByLabelText('Note')).toHaveProperty('value', 'from the phone')
   })
 })
