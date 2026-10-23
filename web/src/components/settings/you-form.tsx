@@ -15,17 +15,24 @@ import { cn } from '@/lib/utils'
 type User = Session['user']
 
 // zones are the time zones to choose from: the browser's own list, with
-// the user's in it whatever it holds.
-function zones(current: string): string[] {
-  const all = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : []
-  return all.includes(current) ? all : [current, ...all]
+// UTC, the browser's zone and the user's in it whatever it holds (V8's
+// has no UTC); undefined for a browser without a list, where the zone is
+// typed, which the server checks.
+function zones(current: string): string[] | undefined {
+  if (typeof Intl.supportedValuesOf !== 'function') {
+    return undefined
+  }
+  const own = Intl.DateTimeFormat().resolvedOptions().timeZone
+  return [...new Set([...Intl.supportedValuesOf('timeZone'), 'UTC', own, current])].toSorted()
 }
 
 const hours = Array.from({ length: 24 }, (_, h) => h)
 
 // YouForm changes the user's name, the app's language, their time zone
-// and the hour their day starts. Saved, the session holds the user as
-// changed, and the days are asked again, as their bounds may have moved.
+// and the hour their day starts: those changed only, so what another tab
+// changed meanwhile stays. Saved, the session holds the user as changed
+// and the user is asked again; a day, whose bounds may have moved, is
+// asked whenever it is shown.
 export function YouForm({ user }: { user: User }) {
   const t = useMessages()
   const id = useId()
@@ -41,15 +48,21 @@ export function YouForm({ user }: { user: User }) {
       )
       setLocale(answer.user.locale)
       await queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/me'] })
-      await queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/days/{date}'] })
     },
   })
   const refused = save.isError && statusOf(save.error) === 422
+  const choices = zones(user.timezone)
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
+    const typed = name.trim()
     save.mutate({
-      body: { name: name.trim(), locale, timezone: timeZone, day_start_hour: dayStart },
+      body: {
+        ...(typed === user.name ? {} : { name: typed }),
+        ...(locale === user.locale ? {} : { locale }),
+        ...(timeZone === user.timezone ? {} : { timezone: timeZone }),
+        ...(dayStart === user.day_start_hour ? {} : { day_start_hour: dayStart }),
+      },
     })
   }
 
@@ -91,19 +104,32 @@ export function YouForm({ user }: { user: User }) {
       </label>
       <label className="block space-y-1">
         <span className={cn(fieldLabel, 'block')}>{t.settings.timeZone}</span>
-        <select
-          value={timeZone}
-          className={inputClass}
-          onChange={(e) => {
-            setTimeZone(e.currentTarget.value)
-          }}
-        >
-          {zones(user.timezone).map((z) => (
-            <option key={z} value={z}>
-              {z}
-            </option>
-          ))}
-        </select>
+        {choices ? (
+          <select
+            value={timeZone}
+            className={inputClass}
+            onChange={(e) => {
+              setTimeZone(e.currentTarget.value)
+            }}
+          >
+            {choices.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            value={timeZone}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="Europe/Zagreb"
+            className={inputClass}
+            onChange={(e) => {
+              setTimeZone(e.currentTarget.value.trim())
+            }}
+          />
+        )}
       </label>
       <div className="space-y-1">
         <label className="block space-y-1">

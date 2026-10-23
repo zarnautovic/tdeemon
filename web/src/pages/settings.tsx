@@ -31,8 +31,10 @@ export function SettingsPage() {
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold">{t.settings.title}</h1>
       {session.data && <YouForm key={session.data.user.id} user={session.data.user} />}
-      {/* The notes the page opened with: what is typed stays, saved or not. */}
-      {me.data && <CoachNotes notes={me.data.notes} />}
+      {/* The notes as the server has them when the page opens, not as a
+          cache kept them: an undo or another tab may have changed them.
+          What is typed then stays, saved or not. */}
+      {me.isFetchedAfterMount && me.data && <CoachNotes notes={me.data.notes} />}
       <ApiTokens />
       <section className="space-y-2">
         <h2 className="font-medium">{t.settings.account}</h2>

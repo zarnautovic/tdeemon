@@ -1,7 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useId, useState, type SubmitEvent } from 'react'
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
+import { flushSync } from 'react-dom'
 
 import { $api } from '@/api/client'
+import { statusOf } from '@/api/errors'
 import { sessionQuery } from '@/api/session'
 import { SaveStatus } from '@/components/day/save-status'
 import { LoadError } from '@/components/load-error'
@@ -16,9 +18,19 @@ type Scope = (typeof scopes)[number]
 
 const tokens = ['get', '/api/v1/tokens']
 
+// useCreateToken makes a token, and asks for the list again.
+function useCreateToken() {
+  const queryClient = useQueryClient()
+  return $api.useMutation('post', '/api/v1/tokens', {
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: tokens }),
+  })
+}
+
 // ApiTokens are the user's tokens, with when each was used last: one is
 // made, shown once, or revoked, and all at once, as after a password
-// reset.
+// reset. A question before a revoke takes the focus to its safe answer,
+// and the focus comes back to what asked it, or to the heading once the
+// token is gone.
 export function ApiTokens() {
   const t = useMessages()
   const f = useFormat()
@@ -27,11 +39,54 @@ export function ApiTokens() {
   const timeZone = session.data?.user.timezone ?? 'UTC'
   const list = $api.useQuery('get', '/api/v1/tokens')
   const asked = () => queryClient.invalidateQueries({ queryKey: tokens })
-  const revoke = $api.useMutation('delete', '/api/v1/tokens/{id}', { onSuccess: asked })
-  const revokeAll = $api.useMutation('delete', '/api/v1/tokens', { onSuccess: asked })
+  const heading = useRef<HTMLHeadingElement>(null)
+  // Each token's button that asks to revoke it, and the one for all.
+  const openers = useRef(new Map<string, HTMLButtonElement>())
+  const all = useRef<HTMLButtonElement>(null)
   // The token asked to be revoked, until it is or is kept; all of them.
   const [asking, setAsking] = useState<string | undefined>(undefined)
   const [askingAll, setAskingAll] = useState(false)
+  const done = () => {
+    setAsking(undefined)
+    setAskingAll(false)
+    heading.current?.focus()
+  }
+  // The token just made, shown until it no longer works, and what
+  // revoking all of them came to, until a new one is made.
+  const create = useCreateToken()
+  const revokeAll = $api.useMutation('delete', '/api/v1/tokens', {
+    onSuccess: async () => {
+      create.reset()
+      done()
+      await asked()
+    },
+  })
+  const revoke = $api.useMutation('delete', '/api/v1/tokens/{id}', {
+    onSuccess: async (_, { params }) => {
+      if (create.data?.id === params.path.id) {
+        create.reset()
+      }
+      done()
+      await asked()
+    },
+    // Revoked elsewhere already: it is gone all the same.
+    onError: async (error) => {
+      if (statusOf(error) === 404) {
+        done()
+        await asked()
+      }
+    },
+  })
+
+  // keep closes the question, and gives the focus to what focus finds
+  // once the button that asked it is back.
+  const keep = (focus: () => HTMLElement | null | undefined) => {
+    flushSync(() => {
+      setAsking(undefined)
+      setAskingAll(false)
+    })
+    focus()?.focus()
+  }
 
   let body
   if (list.isPending) {
@@ -49,11 +104,20 @@ export function ApiTokens() {
               <span className="font-medium">{tok.name}</span>
               {asking === tok.id ? null : (
                 <Button
+                  ref={(el) => {
+                    if (el) {
+                      openers.current.set(tok.id, el)
+                    }
+                    return () => {
+                      openers.current.delete(tok.id)
+                    }
+                  }}
                   variant="ghost"
                   size="sm"
                   aria-label={t.settings.revoke(tok.name)}
                   onClick={() => {
                     setAsking(tok.id)
+                    setAskingAll(false)
                   }}
                 >
                   {t.settings.yesRevoke}
@@ -69,35 +133,16 @@ export function ApiTokens() {
                 : t.settings.neverUsed}
             </p>
             {asking === tok.id && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span>{t.settings.confirmRevoke(tok.name)}</span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={revoke.isPending}
-                  onClick={() => {
-                    revoke.mutate(
-                      { params: { path: { id: tok.id } } },
-                      {
-                        onSuccess: () => {
-                          setAsking(undefined)
-                        },
-                      },
-                    )
-                  }}
-                >
-                  {t.settings.yesRevoke}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setAsking(undefined)
-                  }}
-                >
-                  {t.settings.keep}
-                </Button>
-              </div>
+              <Ask
+                question={t.settings.confirmRevoke(tok.name)}
+                pending={revoke.isPending}
+                onYes={() => {
+                  revoke.mutate({ params: { path: { id: tok.id } } })
+                }}
+                onKeep={() => {
+                  keep(() => openers.current.get(tok.id) ?? heading.current)
+                }}
+              />
             )}
           </li>
         ))}
@@ -107,48 +152,38 @@ export function ApiTokens() {
 
   return (
     <section aria-labelledby="settings-tokens" className="space-y-3">
-      <h2 id="settings-tokens" className="font-medium">
+      <h2 id="settings-tokens" ref={heading} tabIndex={-1} className="font-medium outline-none">
         {t.settings.tokens}
       </h2>
       <p className="text-sm text-muted-foreground">{t.settings.tokensHint}</p>
       {body}
-      {revoke.isError && <SaveStatus change={revoke} />}
-      <NewToken />
+      {revoke.isError && statusOf(revoke.error) !== 404 && <SaveStatus change={revoke} />}
+      <NewToken
+        create={create}
+        onCreated={() => {
+          revokeAll.reset()
+        }}
+      />
       {list.isSuccess && list.data.tokens.length > 0 && (
         <div className="space-y-2 border-t pt-3">
           {askingAll ? (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span>{t.settings.confirmRevokeAll}</span>
-              <Button
-                variant="destructive"
-                disabled={revokeAll.isPending}
-                onClick={() => {
-                  revokeAll.mutate(
-                    {},
-                    {
-                      onSuccess: () => {
-                        setAskingAll(false)
-                      },
-                    },
-                  )
-                }}
-              >
-                {t.settings.yesRevoke}
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setAskingAll(false)
-                }}
-              >
-                {t.settings.keep}
-              </Button>
-            </div>
+            <Ask
+              question={t.settings.confirmRevokeAll}
+              pending={revokeAll.isPending}
+              onYes={() => {
+                revokeAll.mutate({})
+              }}
+              onKeep={() => {
+                keep(() => all.current)
+              }}
+            />
           ) : (
             <Button
+              ref={all}
               variant="destructive"
               onClick={() => {
                 setAskingAll(true)
+                setAsking(undefined)
               }}
             >
               {t.settings.revokeAll}
@@ -164,31 +199,83 @@ export function ApiTokens() {
   )
 }
 
-// NewToken makes a token of a name and scopes, and shows it, once.
-function NewToken() {
+// Ask is the question before a revoke, which cannot be taken back: the
+// focus goes to Keep, the safe answer, and the question describes both.
+function Ask({
+  question,
+  pending,
+  onYes,
+  onKeep,
+}: {
+  question: string
+  pending: boolean
+  onYes: () => void
+  onKeep: () => void
+}) {
   const t = useMessages()
   const id = useId()
-  const queryClient = useQueryClient()
+  const keep = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    keep.current?.focus()
+  }, [])
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <span id={id}>{question}</span>
+      <Button
+        variant="destructive"
+        size="sm"
+        aria-describedby={id}
+        disabled={pending}
+        onClick={onYes}
+      >
+        {t.settings.yesRevoke}
+      </Button>
+      <Button ref={keep} variant="ghost" size="sm" aria-describedby={id} onClick={onKeep}>
+        {t.settings.keep}
+      </Button>
+    </div>
+  )
+}
+
+// NewToken makes a token of a name and scopes, and shows it, once. A
+// browser that cannot copy it (no clipboard over plain http, or one
+// refused) selects it for the user to copy.
+function NewToken({
+  create,
+  onCreated,
+}: {
+  create: ReturnType<typeof useCreateToken>
+  onCreated: () => void
+}) {
+  const t = useMessages()
+  const id = useId()
   const [name, setName] = useState('')
   const [chosen, setChosen] = useState<ReadonlySet<Scope>>(new Set(['ingest']))
-  const [copied, setCopied] = useState(false)
-  const create = $api.useMutation('post', '/api/v1/tokens', {
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: tokens }),
-  })
+  const [copied, setCopied] = useState<'yes' | 'failed' | undefined>(undefined)
+  const code = useRef<HTMLElement>(null)
 
   async function copy(token: string) {
-    await navigator.clipboard.writeText(token)
-    setCopied(true)
+    try {
+      await navigator.clipboard.writeText(token)
+      setCopied('yes')
+    } catch {
+      if (code.current) {
+        window.getSelection()?.selectAllChildren(code.current)
+      }
+      setCopied('failed')
+    }
   }
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    setCopied(false)
+    setCopied(undefined)
     create.mutate(
       { body: { name: name.trim(), scopes: scopes.filter((s) => chosen.has(s)) } },
       {
         onSuccess: () => {
           setName('')
+          onCreated()
         },
       },
     )
@@ -236,9 +323,16 @@ function NewToken() {
       </Button>
       {create.isSuccess && (
         <div className="space-y-1 rounded-lg bg-muted p-2 text-sm">
-          <p id={`${id}-made`}>{t.settings.created}</p>
+          {/* Said as it comes, as the focus stays on the form. */}
+          <output id={`${id}-made`} className="block">
+            {t.settings.created}
+          </output>
           <div className="flex items-center gap-2">
-            <code aria-describedby={`${id}-made`} className="min-w-0 flex-1 break-all">
+            <code
+              ref={code}
+              aria-describedby={`${id}-made`}
+              className="min-w-0 flex-1 break-all select-all"
+            >
               {create.data.token}
             </code>
             <Button
@@ -248,9 +342,14 @@ function NewToken() {
                 void copy(create.data.token)
               }}
             >
-              {copied ? t.settings.copied : t.settings.copy}
+              {copied === 'yes' ? t.settings.copied : t.settings.copy}
             </Button>
           </div>
+          {copied === 'failed' && (
+            <p role="alert" className="text-destructive">
+              {t.settings.copyFailed}
+            </p>
+          )}
         </div>
       )}
     </form>

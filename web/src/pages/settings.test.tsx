@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import type { components } from '@/api/schema'
 import { setLocale } from '@/i18n/locale'
 import { fakeServer, me, problem, renderAt, session, signedIn } from '@/test/app'
 
@@ -11,12 +12,20 @@ afterEach(() => {
   localStorage.clear()
 })
 
-const phone = {
+type Token = components['schemas']['TokenBody']
+
+const phone: Token = {
   id: '0193c3a5-0000-7000-8000-0000000000c1',
   name: 'iPhone',
   scopes: ['ingest' as const],
   created_at: '2026-10-01T08:00:00Z',
   last_used_at: '2026-10-23T06:00:00Z',
+}
+const laptop = {
+  id: '0193c3a5-0000-7000-8000-0000000000c3',
+  name: 'Laptop',
+  scopes: ['ingest' as const, 'read' as const],
+  created_at: '2026-10-23T08:00:00Z',
 }
 const claude = {
   id: '0193c3a5-0000-7000-8000-0000000000c2',
@@ -28,8 +37,9 @@ const claude = {
 // bodiesOf are the bodies a server was sent, by "METHOD /path".
 function settingsServer(over: Record<string, (r: Request) => Response | Promise<Response>> = {}) {
   const sent: Record<string, unknown[]> = {}
-  // The notes as the server keeps them.
+  // The notes and the tokens as the server keeps them.
   let notes = 'Knees: no running.'
+  let tokens = [phone, claude]
   const keep = (key: string) => async (r: Request) => {
     const text = await r.text()
     ;(sent[key] ??= []).push(text === '' ? undefined : JSON.parse(text))
@@ -37,7 +47,7 @@ function settingsServer(over: Record<string, (r: Request) => Response | Promise<
   const fetch = fakeServer({
     ...signedIn(),
     'GET /api/v1/me': () => Response.json({ ...me(), notes }),
-    'GET /api/v1/tokens': () => Response.json({ tokens: [phone, claude] }),
+    'GET /api/v1/tokens': () => Response.json({ tokens }),
     'GET /api/v1/info': () => Response.json({ name: 'tdeemon', version: 'v0.9.0' }),
     'PATCH /api/v1/me': async (r) => {
       await keep('PATCH /api/v1/me')(r.clone())
@@ -61,27 +71,44 @@ function settingsServer(over: Record<string, (r: Request) => Response | Promise<
     },
     'POST /api/v1/tokens': async (r) => {
       await keep('POST /api/v1/tokens')(r)
-      return Response.json(
-        {
-          ...phone,
-          id: '0193c3a5-0000-7000-8000-0000000000c3',
-          name: 'Laptop',
-          token: 'tdm_made_up',
+      tokens = [...tokens, laptop]
+      return Response.json({ ...laptop, token: 'tdm_made_up' }, { status: 201 })
+    },
+    ...Object.fromEntries(
+      [phone, claude, laptop].map((tok) => [
+        `DELETE /api/v1/tokens/${tok.id}`,
+        async (r: Request) => {
+          await keep(`DELETE /api/v1/tokens/${tok.id}`)(r)
+          if (!tokens.some((x) => x.id === tok.id)) {
+            return problem(404)
+          }
+          tokens = tokens.filter((x) => x.id !== tok.id)
+          return new Response(null, { status: 204 })
         },
-        { status: 201 },
-      )
-    },
-    [`DELETE /api/v1/tokens/${phone.id}`]: async (r) => {
-      await keep(`DELETE /api/v1/tokens/${phone.id}`)(r)
-      return new Response(null, { status: 204 })
-    },
+      ]),
+    ),
     'DELETE /api/v1/tokens': async (r) => {
       await keep('DELETE /api/v1/tokens')(r)
-      return Response.json({ revoked: 2 })
+      const revoked = tokens.length
+      tokens = []
+      return Response.json({ revoked })
     },
     ...over,
   })
-  return { fetch, sent }
+  return {
+    fetch,
+    sent,
+    setNotes: (n: string) => (notes = n),
+    setTokens: (ts: Token[]) => (tokens = ts),
+  }
+}
+
+// asked counts the requests a server was sent, by "METHOD /path".
+function asked(fetch: ReturnType<typeof fakeServer>, key: string): number {
+  return fetch.mock.calls.filter(([input, init]) => {
+    const request = input instanceof Request ? input : new Request(input, init)
+    return `${request.method} ${new URL(request.url).pathname}` === key
+  }).length
 }
 
 test("the user's name, language, time zone and day's start are changed, and the app follows", async () => {
@@ -102,6 +129,74 @@ test("the user's name, language, time zone and day's start are changed, and the 
   expect(server.sent['PATCH /api/v1/me']).toEqual([
     { name: 'Ana M.', locale: 'hr', timezone: 'Europe/Zagreb', day_start_hour: 3 },
   ])
+})
+
+test('only the settings changed are sent, and the days and the user asked again', async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  const you = within(await screen.findByRole('form', { name: 'You' }))
+  const before = asked(server.fetch, 'GET /api/v1/me')
+  fireEvent.change(you.getByLabelText('Name'), { target: { value: 'Ana M.' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+
+  await screen.findByText('Signed in as Ana M. (ana@example.com).')
+  expect(server.sent['PATCH /api/v1/me']).toEqual([{ name: 'Ana M.' }])
+  await waitFor(() => {
+    expect(asked(server.fetch, 'GET /api/v1/me')).toBeGreaterThan(before)
+  })
+  // The day, asked when it is shown again: its bounds may have moved.
+  const days = asked(server.fetch, 'GET /api/v1/days/today')
+  fireEvent.click(screen.getByRole('link', { name: 'Day' }))
+  await waitFor(() => {
+    expect(asked(server.fetch, 'GET /api/v1/days/today')).toBeGreaterThan(days)
+  })
+})
+
+test("the time zones offer UTC and the browser's own, or a field without a list", async () => {
+  settingsServer()
+  renderAt('/settings')
+
+  const zone = within(await screen.findByRole('form', { name: 'You' })).getByLabelText('Time zone')
+  const options = within(zone)
+    .getAllByRole('option')
+    .map((o) => o.textContent)
+  expect(options).toContain('UTC')
+  expect(options).toContain(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  expect(options).toContain('America/Los_Angeles')
+  cleanup()
+
+  vi.stubGlobal('Intl', { ...Intl, supportedValuesOf: undefined })
+  const server = settingsServer()
+  renderAt('/settings')
+  const typed = within(await screen.findByRole('form', { name: 'You' })).getByRole('textbox', {
+    name: 'Time zone',
+  })
+  expect(typed).toHaveProperty('value', 'America/Los_Angeles')
+  fireEvent.change(typed, { target: { value: 'Europe/Zagreb' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(server.sent['PATCH /api/v1/me']).toEqual([{ timezone: 'Europe/Zagreb' }])
+  })
+})
+
+test("the notes are the server's, not those a cache kept from before", async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  expect(await screen.findByLabelText('Notes for a coach')).toHaveProperty(
+    'value',
+    'Knees: no running.',
+  )
+  fireEvent.click(screen.getByRole('link', { name: 'Day' }))
+  await screen.findByRole('heading', { name: 'Today' })
+  // An undo through a model took them back meanwhile.
+  server.setNotes('')
+  fireEvent.click(screen.getByRole('link', { name: 'Settings' }))
+  await screen.findByRole('heading', { name: 'Settings' })
+  await waitFor(() => {
+    expect(screen.getByLabelText('Notes for a coach')).toHaveProperty('value', '')
+  })
 })
 
 test('a setting the server refuses says why', async () => {
@@ -157,7 +252,7 @@ test('the tokens are listed with their use, and one is made and shown once', asy
   const tokens = within(await screen.findByRole('region', { name: 'API tokens' }))
   expect(await tokens.findByText('iPhone')).toBeDefined()
   expect(tokens.getByText('Send health data · Last used Oct 22 11:00 PM')).toBeDefined()
-  expect(tokens.getByText('Read · Log and change · Not used yet')).toBeDefined()
+  expect(tokens.getByText('Read · Read, log and change · Not used yet')).toBeDefined()
   fireEvent.change(tokens.getByLabelText('Name of the token'), { target: { value: 'Laptop' } })
   fireEvent.click(tokens.getByLabelText('Read'))
   fireEvent.click(tokens.getByRole('button', { name: 'Create a token' }))
@@ -180,15 +275,118 @@ test('a token is revoked after it asks, and all of them too', async () => {
   expect(server.sent[`DELETE /api/v1/tokens/${phone.id}`]).toBeUndefined()
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke: iPhone' }))
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
+  // Revoked, the list is asked again, without it.
   await waitFor(() => {
-    expect(server.sent[`DELETE /api/v1/tokens/${phone.id}`]).toHaveLength(1)
+    expect(tokens.queryByText('iPhone')).toBeNull()
   })
+  expect(server.sent[`DELETE /api/v1/tokens/${phone.id}`]).toHaveLength(1)
 
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke all tokens' }))
   expect(tokens.getByText(/Revoke every token\?/)).toBeDefined()
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
 
-  expect(await tokens.findByText('2 tokens revoked.')).toBeDefined()
+  expect(await tokens.findByText('1 token revoked.')).toBeDefined()
+  expect(await tokens.findByText('No tokens yet.')).toBeDefined()
+})
+
+test('a question to revoke takes the focus to Keep, and gives it back', async () => {
+  settingsServer()
+  renderAt('/settings')
+
+  const tokens = within(await screen.findByRole('region', { name: 'API tokens' }))
+  fireEvent.click(await tokens.findByRole('button', { name: 'Revoke: iPhone' }))
+  const keep = tokens.getByRole('button', { name: 'Keep' })
+  expect(document.activeElement).toBe(keep)
+  expect(keep.getAttribute('aria-describedby')).toBeTruthy()
+  expect(document.getElementById(keep.getAttribute('aria-describedby') ?? '')?.textContent).toBe(
+    'Revoke iPhone? It stops working at once.',
+  )
+  fireEvent.click(keep)
+  expect(document.activeElement).toBe(tokens.getByRole('button', { name: 'Revoke: iPhone' }))
+
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke all tokens' }))
+  expect(document.activeElement).toBe(tokens.getByRole('button', { name: 'Keep' }))
+  fireEvent.click(tokens.getByRole('button', { name: 'Keep' }))
+  expect(document.activeElement).toBe(tokens.getByRole('button', { name: 'Revoke all tokens' }))
+
+  // A token revoked is gone, and the focus goes to the heading.
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke: iPhone' }))
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(tokens.getByRole('heading', { name: 'API tokens' }))
+  })
+})
+
+test('a token revoked elsewhere already is gone, not a failure', async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  const tokens = within(await screen.findByRole('region', { name: 'API tokens' }))
+  fireEvent.click(await tokens.findByRole('button', { name: 'Revoke: iPhone' }))
+  server.setTokens([claude])
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
+
+  await waitFor(() => {
+    expect(tokens.queryByText('iPhone')).toBeNull()
+  })
+  expect(tokens.queryByRole('alert')).toBeNull()
+  expect(tokens.queryByText('Revoke iPhone? It stops working at once.')).toBeNull()
+})
+
+test('a token made is in the list, and shown until it no longer works', async () => {
+  settingsServer()
+  renderAt('/settings')
+
+  const tokens = within(await screen.findByRole('region', { name: 'API tokens' }))
+  fireEvent.change(await tokens.findByLabelText('Name of the token'), {
+    target: { value: 'Laptop' },
+  })
+  fireEvent.click(tokens.getByRole('button', { name: 'Create a token' }))
+  expect(await tokens.findByText('tdm_made_up')).toBeDefined()
+  expect(await tokens.findByRole('button', { name: 'Revoke: Laptop' })).toBeDefined()
+
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke all tokens' }))
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
+  expect(await tokens.findByText('3 tokens revoked.')).toBeDefined()
+  expect(tokens.queryByText('tdm_made_up')).toBeNull()
+
+  // A new one, and what revoking came to is no longer said.
+  fireEvent.change(tokens.getByLabelText('Name of the token'), { target: { value: 'Laptop' } })
+  fireEvent.click(tokens.getByRole('button', { name: 'Create a token' }))
+  expect(await tokens.findByText('tdm_made_up')).toBeDefined()
+  expect(tokens.queryByText('3 tokens revoked.')).toBeNull()
+
+  // Revoking it hides it too.
+  fireEvent.click(await tokens.findByRole('button', { name: 'Revoke: Laptop' }))
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
+  await waitFor(() => {
+    expect(tokens.queryByText('tdm_made_up')).toBeNull()
+  })
+})
+
+test('a token is copied, or selected where the browser cannot copy it', async () => {
+  settingsServer()
+  const writeText = vi.fn<(s: string) => Promise<void>>(() => Promise.resolve())
+  Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+  renderAt('/settings')
+
+  const tokens = within(await screen.findByRole('region', { name: 'API tokens' }))
+  fireEvent.change(await tokens.findByLabelText('Name of the token'), {
+    target: { value: 'Laptop' },
+  })
+  fireEvent.click(tokens.getByRole('button', { name: 'Create a token' }))
+  fireEvent.click(await tokens.findByRole('button', { name: 'Copy' }))
+  expect(await tokens.findByRole('button', { name: 'Copied' })).toBeDefined()
+  expect(writeText).toHaveBeenCalledWith('tdm_made_up')
+
+  // Over plain http there is no clipboard.
+  Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+  fireEvent.click(tokens.getByRole('button', { name: 'Copied' }))
+  expect((await tokens.findByRole('alert')).textContent).toBe(
+    'Copying failed: the token is selected, copy it by hand.',
+  )
+  expect(window.getSelection()?.toString()).toBe('tdm_made_up')
+  Reflect.deleteProperty(navigator, 'clipboard')
 })
 
 test('no tokens says so, and offers no revoke of all', async () => {
