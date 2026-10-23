@@ -65,9 +65,11 @@ type evalCase struct {
 }
 
 type expect struct {
-	// Meals are the user's after the case, of any day; Items, today's.
-	Meals *int `json:"meals,omitempty"`
-	Items *int `json:"items,omitempty"`
+	// Meals are the user's after the case, of any day; Items, today's,
+	// and KnownItems those of the foods the user starts with.
+	Meals      *int `json:"meals,omitempty"`
+	KnownItems *int `json:"known_items,omitempty"`
+	Items      *int `json:"items,omitempty"`
 	// Kcal is the range the day's total falls in.
 	Kcal []float64 `json:"kcal,omitempty"`
 	// NewFoods are words a food made in the case has in its name;
@@ -113,9 +115,14 @@ func TestEval(t *testing.T) {
 	t.Logf("the tools and instructions: ~%d input tokens a request; first sent, %d not from the cache", warm.tokens-base, warm.fresh)
 	var rows []string
 	for _, c := range cases {
+		row := ""
 		t.Run(c.Name, func(t *testing.T) {
-			rows = append(rows, runCase(t, c, model))
+			row = runCase(t, c, model)
 		})
+		if row == "" {
+			row = fmt.Sprintf("%-32s stopped  FAIL", c.Name)
+		}
+		rows = append(rows, row)
 	}
 	t.Logf("\n%-32s %6s %6s %8s %8s  %s\n%s", "case", "calls", "rounds", "input", "uncached", "ok", strings.Join(rows, "\n"))
 }
@@ -147,6 +154,8 @@ type instance struct {
 	cal   day.Calendar
 	url   string
 	token string
+	// foods are the user's foods the instance starts with.
+	foods []uuid.UUID
 }
 
 var actor = event.Actor{Kind: event.User, Client: "eval"}
@@ -203,10 +212,12 @@ func newInstance(t *testing.T, seedMeal bool, lang string) instance {
 			Nutrients: food.Nutrients{Kcal: 143, Protein: 12.6, Carbs: 0.7, Fat: 9.5}, Servings: []food.Serving{{Name: n[4], Amount: 60}},
 		},
 	}
+	var ids []uuid.UUID
 	for i := range foods {
 		if _, err := db.SaveFood(ctx, u.ID, actor, foods[i], now); err != nil {
 			t.Fatal(err)
 		}
+		ids = append(ids, foods[i].ID)
 	}
 	if seedMeal {
 		soup, err := meal.Estimate(n[5], food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
@@ -232,7 +243,7 @@ func newInstance(t *testing.T, seedMeal bool, lang string) instance {
 	must(err)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return instance{db: db, user: u, cal: cal, url: srv.URL + api.MCPPath, token: token}
+	return instance{db: db, user: u, cal: cal, url: srv.URL + api.MCPPath, token: token, foods: ids}
 }
 
 // turn is what the client did for one message: its rounds of tool calls,
@@ -274,6 +285,7 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 	var cur turn
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 1<<20), 16<<20)
+	started := false
 	for sc.Scan() {
 		var ev streamLine
 		if json.Unmarshal(sc.Bytes(), &ev) != nil {
@@ -281,11 +293,16 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 		}
 		if ev.Type == "system" && ev.Subtype == "init" {
 			checkInit(t, &ev, mcpConfig != "")
+			started = true
 			continue
 		}
 		if ev.Type != "result" {
 			cur.add(t, &ev)
 			continue
+		}
+		// The checks of the client's tools stand on its first line.
+		if !started {
+			t.Fatal("an answer before the session's start: the client's output is not what the eval reads")
 		}
 		if ev.IsError {
 			t.Errorf("the client failed: %s", ev.Result)
@@ -300,6 +317,9 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 		} else {
 			_ = stdin.Close()
 		}
+	}
+	if err := sc.Err(); err != nil {
+		t.Fatalf("reading the client: %v", err)
 	}
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("claude: %v: %s", err, errOut.String())
@@ -408,6 +428,9 @@ func (cur *turn) add(t *testing.T, ev *streamLine) {
 			t.Logf("the tool answered an error: %s", oneLine(string(c.Content)))
 		}
 	}
+	if calls > 0 && ev.Message.ID == "" {
+		t.Fatal("a call in a message without an id: rounds are counted by it")
+	}
 	if calls > 0 {
 		cur.calls += calls
 		if ev.Message.ID != cur.message {
@@ -444,6 +467,9 @@ func warmUp(t *testing.T, model string) turn {
 	turns := run(t, model, mcpConfig(t, newInstance(t, false, "en")), []map[string]any{{"content": []map[string]any{{"type": "text", "text": "Hi"}}}})
 	if len(turns) != 1 {
 		t.Fatalf("the warm-up: %d turns", len(turns))
+	}
+	if turns[0].calls > 0 {
+		t.Fatalf("the warm-up called %v: its tokens are of more than one request", turns[0].tools)
 	}
 	return turns[0]
 }
@@ -520,6 +546,17 @@ func check(t *testing.T, in instance, e expect, foodsBefore []string, turns []tu
 	for i := range meals {
 		items += len(meals[i].Items)
 	}
+	known := 0
+	for i := range meals {
+		for j := range meals[i].Items {
+			if slices.Contains(in.foods, meals[i].Items[j].FoodID) {
+				known++
+			}
+		}
+	}
+	if e.KnownItems != nil && known != *e.KnownItems {
+		t.Errorf("%d items of the user's foods today, want %d", known, *e.KnownItems)
+	}
 	if n := count(t, in, "SELECT count(*) FROM meals WHERE user_id = ?"); e.Meals != nil && n != *e.Meals {
 		t.Errorf("%d meals, want %d", n, *e.Meals)
 	}
@@ -537,7 +574,7 @@ func check(t *testing.T, in instance, e expect, foodsBefore []string, turns []tu
 // checkCalls holds the client's changes and the tools it called to e.
 func checkCalls(t *testing.T, in instance, e expect, turns []turn) {
 	t.Helper()
-	if n := count(t, in, "SELECT count(*) FROM events WHERE user_id = ? AND client = 'mcp'"); e.Writes != nil && n != *e.Writes {
+	if n := count(t, in, "SELECT count(*) FROM events WHERE user_id = ? AND client = ?", auth.ClientMCP); e.Writes != nil && n != *e.Writes {
 		t.Errorf("%d changes, want %d", n, *e.Writes)
 	}
 	var called []string
@@ -551,11 +588,11 @@ func checkCalls(t *testing.T, in instance, e expect, turns []turn) {
 	}
 }
 
-// count runs a query of a count of the user's rows.
-func count(t *testing.T, in instance, query string) int {
+// count runs a query of a count of the user's rows, of more args.
+func count(t *testing.T, in instance, query string, args ...any) int {
 	t.Helper()
 	var n int
-	if err := in.db.Read().QueryRowContext(t.Context(), query, in.user.ID.String()).Scan(&n); err != nil {
+	if err := in.db.Read().QueryRowContext(t.Context(), query, append([]any{in.user.ID.String()}, args...)...).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	return n

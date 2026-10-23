@@ -12,7 +12,8 @@
         290,
         345
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "known_items": 2
     }
   },
   {
@@ -28,7 +29,8 @@
         155,
         190
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "known_items": 1
     }
   },
   {
@@ -91,7 +93,12 @@
         100,
         120
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "known_items": 1,
+      "tools": [
+        "update_meal"
+      ],
+      "writes": 2
     }
   },
   {
@@ -171,7 +178,8 @@
         290,
         345
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "known_items": 2
     }
   },
   {
@@ -187,7 +195,8 @@
         155,
         190
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "known_items": 1
     }
   },
   {
@@ -250,7 +259,12 @@
         100,
         120
       ],
-      "no_new_foods": true
+      "no_new_foods": true,
+      "known_items": 1,
+      "tools": [
+        "update_meal"
+      ],
+      "writes": 2
     }
   },
   {
