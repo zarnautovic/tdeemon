@@ -2,7 +2,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { setLocale } from '@/i18n/locale'
-import { day, fakeServer, problem, renderAt, signedIn, today } from '@/test/app'
+import { day, fakeServer, me, problem, renderAt, signedIn, today } from '@/test/app'
 import { dayServer } from '@/test/day-server'
 
 afterEach(() => {
@@ -287,4 +287,65 @@ test('a day to come takes its type and exclusion only', async () => {
   expect(screen.queryByLabelText('Note')).toBeNull()
   expect(screen.queryByLabelText('Weight')).toBeNull()
   expect(screen.queryByRole('button', { name: 'Add a measurement' })).toBeNull()
+})
+
+test('until the app knows which day today is, a day an address names takes no mood', async () => {
+  let answer: ((r: Response) => void) | undefined
+  fakeServer({
+    ...signedIn(),
+    ...dayServer(day({ date: '2026-10-21' })).routes,
+    'GET /api/v1/me': () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve
+      }),
+  })
+  renderAt('/?date=2026-10-21')
+
+  expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
+  expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
+  expect(screen.queryByLabelText('Weight')).toBeNull()
+
+  answer?.(Response.json(me()))
+
+  // A day before today takes it all.
+  expect(await screen.findByRole('group', { name: 'Mood' })).toBeDefined()
+  expect(screen.getByLabelText('Weight')).toBeDefined()
+})
+
+test('what is typed in the note while an earlier note is saved stays', async () => {
+  const server = dayServer()
+  const patch = server.routes[`PATCH ${path}`]
+  const answers: (() => void)[] = []
+  fakeServer({
+    ...signedIn(),
+    ...server.routes,
+    [`PATCH ${path}`]: async (request) => {
+      await new Promise<void>((resolve) => {
+        answers.push(resolve)
+      })
+      return patch ? patch(request) : Response.error()
+    },
+  })
+  renderAt('/')
+
+  const note = await screen.findByLabelText('Note')
+  fireEvent.change(note, { target: { value: 'long walk' } })
+  fireEvent.blur(note)
+  await waitFor(() => {
+    expect(answers).toHaveLength(1)
+  })
+  fireEvent.focus(note)
+  fireEvent.change(note, { target: { value: 'long walk, then pizza' } })
+  answers[0]?.()
+
+  expect(await within(checkIn()).findByText('Saved')).toBeDefined()
+  expect(screen.getByLabelText('Note')).toHaveProperty('value', 'long walk, then pizza')
+  fireEvent.blur(screen.getByLabelText('Note'))
+  await waitFor(() => {
+    expect(answers).toHaveLength(2)
+  })
+  answers[1]?.()
+  await waitFor(() => {
+    expect(server.day().note).toBe('long walk, then pizza')
+  })
 })

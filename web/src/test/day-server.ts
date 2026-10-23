@@ -80,8 +80,16 @@ export function dayServer(start: Day = emptyDay()) {
     ...(start.date === today ? { 'GET /api/v1/days/today': () => Response.json(current) } : {}),
     [`PATCH ${path}`]: async (request) => {
       const body = await record(request)
-      // The server keeps no space at a note's ends (text.CheckLines).
+      // The server keeps no space at a note's ends (text.CheckLines), and
+      // a day to come takes no mood, hunger or note.
       if (isObject(body) && typeof body.note === 'string' && body.note !== body.note.trim()) {
+        return problem(422)
+      }
+      if (
+        isObject(body) &&
+        start.date > today &&
+        (body.mood !== undefined || body.hunger !== undefined || body.note !== undefined)
+      ) {
         return problem(422)
       }
       current = checkedIn(current, isObject(body) ? body : {})
@@ -91,6 +99,10 @@ export function dayServer(start: Day = emptyDay()) {
   for (const kind of metricKinds) {
     routes[`PUT ${path}/metrics/${kind}`] = async (request) => {
       const body = await record(request)
+      // A measurement is of today or a day before.
+      if (start.date > today) {
+        return problem(422)
+      }
       const value = isObject(body) && typeof body.value === 'number' ? body.value : Number.NaN
       const metric: Metric = { kind, value, unit: units[kind], source: 'manual' }
       const others = current.metrics.filter((m) => m.kind !== kind)

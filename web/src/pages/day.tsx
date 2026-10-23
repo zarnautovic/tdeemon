@@ -50,8 +50,10 @@ export function DayPage() {
   const shown = date ?? todayDate ?? day.data.date
   const isToday = date === undefined || shown === todayDate
   // A day to come, which an address may name though the arrows stop at
-  // today, takes its type and exclusion only, as the server has it.
-  const future = todayDate !== undefined && shown > todayDate
+  // today, takes its type and exclusion only, as the server has it. A day
+  // an address names may be one until the app knows today; if it cannot
+  // learn it, the server says what it refuses.
+  const future = todayDate === undefined ? date !== undefined && me.isPending : shown > todayDate
   const before = addDays(shown, -1)
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.

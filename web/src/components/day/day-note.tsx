@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useId, useState } from 'react'
 
 import { useCheckIn } from '@/api/day'
 import type { Day } from '@/api/types'
@@ -13,32 +13,49 @@ import { cn } from '@/lib/utils'
 const maxNote = 2000
 
 // DayNote is what the user says of the day in words, saved when the field
-// is left.
+// is left. What is typed stays in the field until it is saved, though the
+// day comes back (with an earlier change) in between.
 export function DayNote({ day }: { day: Day }) {
   const t = useMessages()
   const id = useId()
   const change = useCheckIn(day.date)
   const note = day.note ?? ''
+  // What is typed and not saved yet; undefined, the day's note.
+  const [draft, setDraft] = useState<string | undefined>(undefined)
 
   return (
     <Field label={t.day.note} htmlFor={id} status={<SaveStatus change={change} />}>
       <textarea
         id={id}
-        // A note the day comes back with (saved, or changed elsewhere)
-        // starts the field again.
-        key={note}
-        defaultValue={note}
+        value={draft ?? note}
         maxLength={maxNote}
         rows={2}
         placeholder={t.day.notePlaceholder}
         className={cn(inputClass, 'h-auto py-2')}
-        onBlur={(event) => {
+        onChange={(event) => {
+          setDraft(event.currentTarget.value)
+        }}
+        onBlur={() => {
+          if (draft === undefined) {
+            return
+          }
           // The server keeps no space at a note's ends (a keyboard's
           // suggestion leaves one).
-          const typed = event.currentTarget.value.trim()
-          if (typed !== note) {
-            change.mutate({ params: { path: { date: day.date } }, body: { note: typed } })
+          const typed = draft.trim()
+          if (typed === note) {
+            setDraft(undefined)
+            return
           }
+          change.mutate(
+            { params: { path: { date: day.date } }, body: { note: typed } },
+            {
+              // Saved, the field shows the day's note, unless more was
+              // typed meanwhile.
+              onSuccess: () => {
+                setDraft((now) => (now === draft ? undefined : now))
+              },
+            },
+          )
         }}
       />
     </Field>
