@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { focusManager } from '@tanstack/react-query'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
@@ -26,9 +27,10 @@ function planServer(
   const sent: Record<string, unknown[]> = {}
   let profile: Profile = start.profile ?? { missing: ['sex', 'birth_date', 'height_cm'] }
   let limits = start.limits ?? limitsBody()
+  let profileFails = false
   const fetch = fakeServer({
     ...signedIn(),
-    'GET /api/v1/profile': () => Response.json(profile),
+    'GET /api/v1/profile': () => (profileFails ? problem(503) : Response.json(profile)),
     'GET /api/v1/limits': () => Response.json(limits),
     'PUT /api/v1/profile': async (r) => {
       const body: unknown = await r.json()
@@ -83,6 +85,7 @@ function planServer(
     sent,
     setLimits: (l: LimitsBody) => (limits = l),
     setProfile: (p: Profile) => (profile = p),
+    failProfile: (fails: boolean) => (profileFails = fails),
   }
 }
 
@@ -168,6 +171,33 @@ test("the profile is the server's, not one a cache kept from before", async () =
   await waitFor(() => {
     expect(screen.getByRole('radio', { name: 'Male' })).toHaveProperty('checked', true)
   })
+})
+
+test('a profile typed stays when it cannot be asked again', async () => {
+  const { fetch, failProfile } = planServer()
+  renderAt('/settings/plan')
+  const form = await screen.findByRole('form', { name: 'Profile' })
+  type(within(form).getByRole('textbox', { name: /Height/ }), '181')
+  // The page comes back to the front while the server is down: the
+  // profile is asked again, and fails.
+  const failed = () =>
+    fetch.mock.calls.filter(([input]) =>
+      String(input instanceof Request ? input.url : input).endsWith('/api/v1/profile'),
+    ).length
+  const before = failed()
+  failProfile(true)
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(failed()).toBeGreaterThan(before)
+  })
+  await act(async () => {
+    await fetch.mock.results.at(-1)?.value
+  })
+  expect(screen.getByRole('textbox', { name: /Height/ })).toHaveProperty('value', '181')
+  failProfile(false)
+  focusManager.setFocused(undefined)
+  expect(screen.getByRole('textbox', { name: /Height/ })).toHaveProperty('value', '181')
 })
 
 test('a height that is no number, or none the server takes, is not sent', async () => {
@@ -339,6 +369,17 @@ test('the question to loosen takes the focus, and a change of a field closes it'
   )
   type(limit('Bulk, fastest gain'), '0.45')
   expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+})
+
+test('a loosening on its way cannot be taken back', async () => {
+  planServer({}, { 'PUT /api/v1/limits': () => new Promise<Response>(() => undefined) })
+  renderAt('/settings/plan')
+  type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
+  save('Limits of the plan')
+  fireEvent.click(await screen.findByRole('button', { name: 'Loosen' }))
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: 'Back' }).matches(':disabled')).toBe(true)
+  })
 })
 
 test('a loosening confirmed and refused says why, the question answered', async () => {

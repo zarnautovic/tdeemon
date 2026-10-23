@@ -237,7 +237,14 @@ function Loosen({
         <Button variant="destructive" aria-describedby={id} disabled={pending} onClick={onYes}>
           {t.plan.yesLoosen}
         </Button>
-        <Button ref={back} variant="ghost" aria-describedby={id} onClick={onBack}>
+        {/* Not while the loosening is sent: it may be taken all the same. */}
+        <Button
+          ref={back}
+          variant="ghost"
+          aria-describedby={id}
+          disabled={pending}
+          onClick={onBack}
+        >
           {t.plan.keep}
         </Button>
       </div>

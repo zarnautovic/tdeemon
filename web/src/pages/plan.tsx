@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { ChevronLeft } from 'lucide-react'
+import { useState } from 'react'
 
 import { $api } from '@/api/client'
 import { LoadError } from '@/components/load-error'
@@ -14,6 +15,9 @@ import { useMessages } from '@/i18n/messages'
 export function PlanPage() {
   const t = useMessages()
   const profile = $api.useQuery('get', '/api/v1/profile')
+  // The profile as the server gave it since the page opened, not before.
+  const [opened] = useState(Date.now)
+  const fresh = profile.data !== undefined && profile.dataUpdatedAt >= opened
   const limits = $api.useQuery('get', '/api/v1/limits')
 
   return (
@@ -24,12 +28,16 @@ export function PlanPage() {
       </Link>
       <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
       {profile.isPending && <output className="block text-muted-foreground">{t.loading}</output>}
-      {profile.isError && (
-        <LoadError error={profile.error} onRetry={() => void profile.refetch()} />
-      )}
       {/* The profile as the server has it when the page opens, not as a
-          cache kept it. What is typed then stays, saved or not. */}
-      {profile.isSuccess && profile.isFetchedAfterMount && <ProfileForm profile={profile.data} />}
+          cache kept it. Once shown, what is typed stays, saved or not,
+          whatever a later ask comes to. */}
+      {fresh ? (
+        <ProfileForm profile={profile.data} />
+      ) : (
+        profile.isError && (
+          <LoadError error={profile.error} onRetry={() => void profile.refetch()} />
+        )
+      )}
       {limits.isPending && <output className="block text-muted-foreground">{t.loading}</output>}
       {limits.isError && <LoadError error={limits.error} onRetry={() => void limits.refetch()} />}
       {limits.data && <LimitsForm body={limits.data} />}
