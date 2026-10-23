@@ -84,3 +84,40 @@ func TestListFoods(t *testing.T) {
 		t.Errorf("without anyone: %d, want 401", rec.Code)
 	}
 }
+
+// create-food makes a new food only, and names the food in the way of
+// its name and brand, archived too, which upsert-food would correct.
+func TestCreateFood(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := sessionOf(t, in)
+	cookies := []*http.Cookie{session}
+	saveIsolationFoods(t, in.db, in.user, in.clock.Now()) // and an archived stew
+	body := `{"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 41, "protein": 3.4, "carbs": 4, "fat": 1.5}}`
+	rec := in.do(t, http.MethodPost, "/api/v1/foods/new", body, cookies, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"name":"Kefir"`) {
+		t.Fatalf("a new food: %d %s", rec.Code, rec.Body.String())
+	}
+	for name, sent := range map[string]string{
+		"the same again": body,
+		"the archived stew's name": `{"name": "ana's CANTEEN stew", "basis": "portion", "source": "estimate",
+			"nutrients": {"kcal": 700, "protein": 30, "carbs": 80, "fat": 25}}`,
+	} {
+		rec := in.do(t, http.MethodPost, "/api/v1/foods/new", sent, cookies, nil)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "the name and brand are taken by food") {
+			t.Errorf("%s: %d %s, want 409 naming the food", name, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods/new", `{"name": "Bad", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 900, "protein": 90, "carbs": 90, "fat": 90}}`, cookies, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("a food no food can be: %d %s, want 422", rec.Code, rec.Body.String())
+	}
+	tok, created := in.createToken(t, session, `{"name":"phone","scopes":["read","tools"]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("a token: %d %s", created.Code, created.Body.String())
+	}
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods/new", body, nil, bearer(tok.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("with a token: %d, want 403", rec.Code)
+	}
+}

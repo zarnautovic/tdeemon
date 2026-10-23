@@ -135,7 +135,14 @@ func nullable(p *float64) any {
 // food goes by is refused (ErrAliasTaken). The save is recorded as a's
 // event, with the food before (none for a new one) and after.
 func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, now time.Time) (food.Food, error) {
-	return db.saveFood(ctx, userID, a, f, false, now)
+	return db.saveFood(ctx, userID, a, f, saveOrCorrect, now)
+}
+
+// CreateFood saves f as a new food of userID's, and only that: a food of
+// its name and brand (food.Key), archived too, is in the way, a
+// *FoodConflictError of ErrNameTaken, in the save's own transaction.
+func (db *DB) CreateFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, now time.Time) (food.Food, error) {
+	return db.saveFood(ctx, userID, a, f, createOnly, now)
 }
 
 // CorrectFood saves f as SaveFood does, as a correction of userID's food
@@ -144,11 +151,24 @@ func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 // and brand. A client correcting a food by an id it has, mistyped or
 // made up, or of a food undone meanwhile, changes nothing.
 func (db *DB) CorrectFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, now time.Time) (food.Food, error) {
-	return db.saveFood(ctx, userID, a, f, true, now)
+	return db.saveFood(ctx, userID, a, f, correctOnly, now)
 }
 
-// saveFood is SaveFood, and CorrectFood when correcting.
-func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, correcting bool, now time.Time) (food.Food, error) {
+// saveMode is what a save of a food may do.
+type saveMode int
+
+const (
+	// saveOrCorrect saves a new food, or corrects the food of the id or
+	// of the name and brand (SaveFood).
+	saveOrCorrect saveMode = iota
+	// correctOnly corrects the food of the id (CorrectFood).
+	correctOnly
+	// createOnly saves a new food (CreateFood).
+	createOnly
+)
+
+// saveFood is SaveFood, CorrectFood or CreateFood, as mode says.
+func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, mode saveMode, now time.Time) (food.Food, error) {
 	if err := f.Validate(); err != nil {
 		return food.Food{}, fmt.Errorf("invalid food: %w", err)
 	}
@@ -158,7 +178,7 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 	var stored food.Food
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var err error
-		stored, err = saveFoodInTx(ctx, tx, userID, a, f, correcting, now)
+		stored, err = saveFoodInTx(ctx, tx, userID, a, f, mode, now)
 		return err
 	})
 	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
@@ -170,11 +190,11 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 	return stored, nil
 }
 
-// saveFoodInTx saves f in tx as SaveFood does (CorrectFood when
-// correcting) and returns it as stored. f and a are valid.
-func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, f food.Food, correcting bool, now time.Time) (food.Food, error) {
+// saveFoodInTx saves f in tx as saveFood does in mode, and returns it as
+// stored. f and a are valid.
+func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, f food.Food, mode saveMode, now time.Time) (food.Food, error) {
 	nameKey, brandKey := food.Key(f.Name), food.Key(f.Brand)
-	target, exists, err := saveTarget(ctx, tx, userID, f.ID, nameKey, brandKey, correcting)
+	target, exists, err := saveTarget(ctx, tx, userID, f.ID, nameKey, brandKey, mode)
 	if err != nil {
 		return food.Food{}, err
 	}
@@ -226,7 +246,7 @@ func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 		if !named[f.ID] {
 			continue
 		}
-		target, exists, err := saveTarget(ctx, tx, userID, f.ID, food.Key(f.Name), food.Key(f.Brand), false)
+		target, exists, err := saveTarget(ctx, tx, userID, f.ID, food.Key(f.Name), food.Key(f.Brand), saveOrCorrect)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -238,7 +258,7 @@ func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 			ids[f.ID], kept[target] = target, had
 			continue
 		}
-		stored, err := saveFoodInTx(ctx, tx, userID, a, *f, false, now)
+		stored, err := saveFoodInTx(ctx, tx, userID, a, *f, saveOrCorrect, now)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -307,12 +327,16 @@ func validFoods(foods []food.Food) error {
 }
 
 // saveTarget returns the id SaveFood writes to and whether that row
-// exists; when correcting, the row with id, or ErrNotFound.
-func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, brandKey string, correcting bool) (uuid.UUID, bool, error) {
+// exists; when correcting only, the row with id, or ErrNotFound; when
+// creating only, a new row, or the food of the name and brand in the way.
+func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, brandKey string, mode saveMode) (uuid.UUID, bool, error) {
 	uid := userID.String()
 	var one int
 	err := tx.QueryRowContext(ctx, "SELECT 1 FROM foods WHERE user_id = ? AND id = ?", uid, id.String()).Scan(&one)
 	switch {
+	case err == nil && mode == createOnly:
+		// A new food under the id of one the user has corrects nothing.
+		return uuid.Nil(), false, conflict(ctx, tx, userID, ErrNameTaken, id.String(), "")
 	case err == nil:
 		var other string
 		err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
@@ -326,7 +350,7 @@ func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, 
 		return id, true, nil
 	case !errors.Is(err, sql.ErrNoRows):
 		return uuid.Nil(), false, err
-	case correcting:
+	case mode == correctOnly:
 		return uuid.Nil(), false, ErrNotFound
 	}
 	var same string
@@ -337,6 +361,9 @@ func saveTarget(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey, 
 	}
 	if err != nil {
 		return uuid.Nil(), false, err
+	}
+	if mode == createOnly {
+		return uuid.Nil(), false, conflict(ctx, tx, userID, ErrNameTaken, same, "")
 	}
 	existing, err := uuid.Parse(same)
 	return existing, true, err

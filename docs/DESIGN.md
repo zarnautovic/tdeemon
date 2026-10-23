@@ -248,7 +248,10 @@ which a search would not find but `get_food` gives. Beside the tools,
 the web app lists the foods with `GET /api/v1/foods/list`, a web
 session's only: a page (`limit`, `offset`) of the archived foods or the
 others (`archived`), by name or by their last use (`order=name|use`),
-each with its last use, and how many there are (`total`). `log_meal` is
+each with its last use, and how many there are (`total`); and makes a
+new food with `POST /api/v1/foods/new`, also a web session's only, which
+refuses a name and brand the user has (409, naming the food, archived
+too) where `upsert_food` would correct that food. `log_meal` is
 `POST /api/v1/meals` (201, or 200 for a retry), `update_meal` is
 `PATCH /api/v1/meals/{id}` (ops: add, replace, remove an item; an item
 no op touches keeps what it brought when logged), and `delete_meal` is

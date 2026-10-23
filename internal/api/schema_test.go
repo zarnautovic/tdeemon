@@ -181,6 +181,12 @@ func answerCases() map[string]answerCase {
 			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
 			in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", []*http.Cookie{session}, nil)
 		},
+		"create-food": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPost, "/api/v1/foods/new", `{"name": "Rolls", "brand": "Bakery", "basis": "100g", "source": "label",
+				"nutrients": {"kcal": 262.5, "protein": 8.75, "carbs": 50, "fat": 2.5, "fiber": 3},
+				"servings": [{"name": "roll", "amount": 80}], "aliases": ["morning rolls"], "note": "from the bakery"}`, []*http.Cookie{session}, nil)
+		},
 		"list-foods": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			now := in.clock.Now()

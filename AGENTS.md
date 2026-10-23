@@ -13,16 +13,17 @@ API. It is early: the skeleton, the database layer, users, sign-in
 (password, sessions, OpenID Connect), API tokens with scopes, foods,
 meals, metrics and the plan (profile, phases, targets, limits) in the
 domain and the database with an event log and undo, the API for the
-profile, the limits and the list of foods, calibration (the measured
-TDEE and the verdict on a phase), the tool registry with `get_profile`,
-`get_day`,
-`get_summary`, `find_foods`, `get_food`, `upsert_food`, `log_meal`,
+profile, the limits, the list of foods and a new food, calibration (the
+measured TDEE and the verdict on a phase), the tool registry with
+`get_profile`, `get_day`, `get_summary`, `find_foods`, `get_food`,
+`upsert_food`, `log_meal`,
 `update_meal`, `delete_meal`, `log_metric`, `delete_metric`, `checkin`
 and `undo_last`, the MCP server that serves them at `/mcp`, the API
 contract and the web app's frame (signing in and out, its sections, in
 English and Croatian) with the day (what was eaten against the target,
 the meals, the measurements, and the check-in and measurements taken
-there) exist.
+there) and the foods (their list and search, a food made, corrected or
+archived) exist.
 
 | Path | What |
 | --- | --- |
@@ -38,7 +39,7 @@ there) exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan and the list of foods (web session only), the imports (API token only), and the tools (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the list of foods and a new food (web session only), the imports (API token only), and the tools (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |

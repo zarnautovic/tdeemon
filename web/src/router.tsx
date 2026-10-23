@@ -15,8 +15,10 @@ import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
 import { ChartsPage } from '@/pages/charts'
 import { DayPage } from '@/pages/day'
+import { FoodPage } from '@/pages/food'
 import { FoodsPage } from '@/pages/foods'
 import { LoginPage } from '@/pages/login'
+import { NewFoodPage } from '@/pages/new-food'
 import { NotFoundPage } from '@/pages/not-found'
 import { RootLayout } from '@/pages/root-layout'
 import { SettingsPage } from '@/pages/settings'
@@ -92,10 +94,27 @@ const dayRoute = createRoute({
   }),
   component: DayPage,
 })
+// The foods: a search (q), or the list in use or archived, by name or by
+// the last use.
 const foodsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/foods',
+  validateSearch: (search: Record<string, unknown>): FoodsSearch => ({
+    q: typeof search.q === 'string' && search.q !== '' ? search.q : undefined,
+    archived: search.archived === true || search.archived === 'true' ? true : undefined,
+    order: search.order === 'use' ? 'use' : undefined,
+  }),
   component: FoodsPage,
+})
+const newFoodRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/foods/new',
+  component: NewFoodPage,
+})
+const foodRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/foods/$id',
+  component: FoodPage,
 })
 const chartsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -109,7 +128,7 @@ const settingsRoute = createRoute({
 })
 
 const routeTree = rootRoute.addChildren([
-  appRoute.addChildren([dayRoute, foodsRoute, chartsRoute, settingsRoute]),
+  appRoute.addChildren([dayRoute, foodsRoute, newFoodRoute, foodRoute, chartsRoute, settingsRoute]),
   loginRoute,
 ])
 
@@ -159,5 +178,20 @@ export type AppRouter = ReturnType<typeof createAppRouter>
 declare module '@tanstack/react-router' {
   interface Register {
     router: AppRouter
+  }
+}
+
+// FoodsSearch is what the foods page shows: its search, its list and its
+// order.
+export interface FoodsSearch {
+  q?: string | undefined
+  archived?: true | undefined
+  order?: 'use' | undefined
+}
+
+declare module '@tanstack/history' {
+  interface HistoryState {
+    // The foods page a food's page was opened from, to go back to.
+    foods?: FoodsSearch
   }
 }
