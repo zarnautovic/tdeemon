@@ -3,6 +3,7 @@ package store_test
 import (
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
@@ -42,6 +43,51 @@ func TestTelegramChat(t *testing.T) {
 	}
 	if _, ok, err := db.TelegramChat(t.Context(), ana.ID); ok || err != nil {
 		t.Errorf("after 0 = %v, %v", ok, err)
+	}
+}
+
+// The users of a chat are those whose notifications go there, in the
+// order they were created; a chat that is no one's has none.
+func TestTelegramChatUsers(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	now := time.Date(2026, 10, 23, 8, 0, 0, 0, time.UTC)
+	ids := func(chat int64) []string {
+		t.Helper()
+		us, err := db.TelegramChatUsers(t.Context(), chat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, u := range us {
+			out = append(out, u.Email)
+		}
+		return out
+	}
+	if got := ids(853); got != nil {
+		t.Errorf("a chat that is no one's = %v", got)
+	}
+	if err := db.SetTelegramChat(t.Context(), ana, 853, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(853); len(got) != 1 || got[0] != "ana@example.com" {
+		t.Errorf("Ana's chat = %v", got)
+	}
+	if got := ids(-100123); got != nil {
+		t.Errorf("another chat = %v", got)
+	}
+	// A group both are in.
+	for _, id := range []uuid.UUID{ivo, ana} {
+		if err := db.SetTelegramChat(t.Context(), id, -100123, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := ids(-100123); len(got) != 2 || got[0] != "ana@example.com" || got[1] != "ivo@example.com" {
+		t.Errorf("the group = %v", got)
+	}
+	if got := ids(853); got != nil {
+		t.Errorf("Ana's old chat = %v", got)
 	}
 }
 

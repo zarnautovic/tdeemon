@@ -476,7 +476,8 @@ in `web/`.
     secret's hash (touching or ending a session). The only reads without
     it are how a request learns its user (by the hash of a session's or
     an API token's secret; by the provider's subject for OpenID Connect;
-    by address for the sign-in and the admin's commands), and the only
+    by address for the sign-in and the admin's commands; by the
+    Telegram chat for the bot's commands), and the only
     other exception is housekeeping that shows or changes no one's data
     (removing expired sessions);
   - a handler takes the user from the request's principal

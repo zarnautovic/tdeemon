@@ -213,11 +213,16 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		return fmt.Errorf("api: %w", err)
 	}
 
-	// The scheduler stops before the database closes, as the snapshots:
-	// its wait is deferred after the Close, and before stopBackground.
-	sched := &scheduler.Scheduler{DB: db, Logger: logger, Jobs: jobs(cfg, apiCfg)}
+	// The scheduler and the bot stop before the database closes, as the
+	// snapshots: their waits are deferred after the Close, and before
+	// stopBackground.
+	bot := telegramBot(cfg)
+	sched := &scheduler.Scheduler{DB: db, Logger: logger, Jobs: jobs(apiCfg, bot)}
 	wait := sched.Start(background, time.Minute)
 	defer wait()
+	if bot != nil {
+		defer listen(background, bot, apiCfg)()
+	}
 	defer stopBackground()
 
 	ln, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.Listen)
@@ -227,14 +232,38 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 	return server.Run(ctx, ln, handler, logger)
 }
 
-// jobs are the scheduler's: the morning summary and the watchdog, with a
-// Telegram bot to send them.
-func jobs(cfg config.Config, apiCfg api.Config) []scheduler.Job {
+// telegramBot is the instance's Telegram bot; nil without a token.
+func telegramBot(cfg config.Config) *telegram.Bot {
 	if cfg.TelegramBotToken == "" {
 		return nil
 	}
-	bot := &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
+	return &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
+}
+
+// jobs are the scheduler's: the morning summary and the watchdog, with a
+// Telegram bot to send them; none without one.
+func jobs(apiCfg api.Config, bot *telegram.Bot) []scheduler.Job {
+	if bot == nil {
+		return nil
+	}
 	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(apiCfg.DB, bot, apiCfg.Logger)}
+}
+
+// listen sets the bot's commands in Telegram's menu and answers them
+// until ctx ends (api.TelegramCommands), in the background; the function
+// it returns waits for it to stop.
+func listen(ctx context.Context, bot *telegram.Bot, apiCfg api.Config) func() {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for language, commands := range api.BotCommands() {
+			if err := bot.SetCommands(ctx, commands, language); err != nil {
+				apiCfg.Logger.Warn("setting the Telegram bot's commands failed", "language", language, "error", err)
+			}
+		}
+		bot.Listen(ctx, apiCfg.Logger, api.TelegramCommands(apiCfg, bot))
+	}()
+	return func() { <-done }
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {
