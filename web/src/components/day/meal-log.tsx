@@ -255,9 +255,9 @@ function Composer({
           {t.log.noItems}
         </p>
       )}
-      {wrong.size > 0 && (
+      {entries.some((e) => wrong.has(e.key)) && (
         <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
-          {t.day.notANumber}
+          {t.log.wrong}
         </p>
       )}
       {refused ? (
@@ -280,7 +280,7 @@ function Composer({
         <Button type="submit" size="lg" disabled={held}>
           {t.log.save}
         </Button>
-        <Button variant="ghost" size="lg" onClick={onCancel}>
+        <Button variant="ghost" size="lg" disabled={log.isPending} onClick={onCancel}>
           {t.log.cancel}
         </Button>
       </div>

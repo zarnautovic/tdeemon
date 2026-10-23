@@ -168,6 +168,7 @@ export const en = {
     remove: (name: string) => `Remove: ${name}`,
     anEstimate: 'an estimate',
     noItems: 'Add a food or an estimate first.',
+    wrong: 'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
     save: 'Log the meal',
     cancel: 'Cancel',
     logged: 'The meal is logged.',

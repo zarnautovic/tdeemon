@@ -150,7 +150,9 @@ test('a meal without items, or with an amount that is no number, is not sent', a
   fireEvent.change(composer().getByLabelText('Amount: Rye bread'), { target: { value: 'a few' } })
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
 
-  expect(composer().getByRole('alert').textContent).toBe('Write a number, such as 72.5.')
+  expect(composer().getByRole('alert').textContent).toBe(
+    'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+  )
   expect(composer().getByLabelText('Amount: Rye bread').getAttribute('aria-invalid')).toBe('true')
   expect(server.sent).toEqual([])
 })
@@ -371,4 +373,36 @@ test("a food's brand tells it apart in the meal", async () => {
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
 
   expect(composer().getByLabelText('Amount: Rye bread · Mill')).toBeDefined()
+})
+
+test('what is wrong with an entry is no longer said once it is removed', async () => {
+  logServer()
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+  expect(composer().getByRole('alert').textContent).toContain('an estimate has a name')
+
+  fireEvent.click(composer().getByRole('button', { name: 'Remove: an estimate' }))
+
+  expect(composer().queryByText(/an estimate has a name/)).toBeNull()
+})
+
+test('a meal being sent cannot be given up', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods': () => Response.json({ foods: [bread] }),
+    'POST /api/v1/meals': () => new Promise<Response>(() => undefined),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  await waitFor(() => {
+    expect(composer().getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')).toBe(true)
+  })
 })

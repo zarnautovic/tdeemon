@@ -156,6 +156,7 @@ export const hr: Messages = {
     remove: (name: string) => `Ukloni: ${name}`,
     anEstimate: 'procjena',
     noItems: 'Prvo dodaj namirnicu ili procjenu.',
+    wrong: 'Količina je veća od 0, a procjena ima naziv i vrijednosti, npr. 72,5.',
     save: 'Upiši obrok',
     cancel: 'Odustani',
     logged: 'Obrok je upisan.',
