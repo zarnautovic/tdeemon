@@ -43,6 +43,7 @@ export const hr: Messages = {
   saving: 'Spremanje…',
   saved: 'Spremljeno',
   notSaved: (why: string) => `Nije spremljeno. ${why}`,
+  refused: 'Server to nije prihvatio.',
   // Amounts in their units, which every language here writes the same.
   unit: {
     kcal: (n: string) => `${n} kcal`,
@@ -91,7 +92,7 @@ export const hr: Messages = {
     hunger: 'Glad',
     hungers: scale('sit', 'mirno', 'umjereno', 'gladan', 'stalno gladan'),
     note: 'Napomena',
-    notePlaceholder: 'restoran, bolestan, putovanje…',
+    notePlaceholder: 'restoran, bolest, putovanje…',
     dayType: 'Tip dana',
     dayTypes: { training: 'Trening', rest: 'Odmor', plan: 'Po planu' },
     calibration: 'Kalibracija',
@@ -99,7 +100,7 @@ export const hr: Messages = {
     leaveOut: 'Izostavi iz kalibracije',
     countAgain: 'Vrati u kalibraciju',
     reason: 'Razlog',
-    reasons: ['restoran', 'bolestan', 'nije sve upisano'],
+    reasons: ['restoran', 'bolest', 'nije sve upisano'],
     cancel: 'Odustani',
     save: 'Spremi',
     delete: 'Obriši',

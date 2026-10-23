@@ -118,7 +118,7 @@ test('a measurement is corrected, starting from its value', async () => {
 
   fireEvent.click(await screen.findByRole('button', { name: 'Change: Steps' }))
   const steps = screen.getByLabelText('Steps')
-  expect(steps).toHaveProperty('value', '8,042')
+  expect(steps).toHaveProperty('value', '8042')
   fireEvent.change(steps, { target: { value: '9,100' } })
   fireEvent.click(within(formOf(steps)).getByRole('button', { name: 'Save' }))
 
@@ -228,4 +228,42 @@ test('a change refused for want of a session sends the browser to sign in', asyn
   await waitFor(() => {
     expect(router.state.location.pathname).toBe('/login')
   })
+})
+
+test.each([
+  ['en', 'Change: Resting energy', 'Resting energy', '1834.27'],
+  ['hr', 'Promijeni: Energija u mirovanju', 'Energija u mirovanju', '1834,27'],
+] as const)(
+  'a value of thousands with decimals is corrected as it is, in %s',
+  async (locale, change, label, initial) => {
+    const server = dayServer(
+      day({ metrics: [{ kind: 'basal_kcal', value: 1834.27, unit: 'kcal', source: 'import' }] }),
+    )
+    fakeServer({ ...signedIn(locale), ...server.routes })
+    renderAt('/')
+
+    fireEvent.click(await screen.findByRole('button', { name: change }))
+    const field = screen.getByLabelText(label)
+    expect(field).toHaveProperty('value', initial)
+    fireEvent.click(
+      within(formOf(field)).getByRole('button', { name: locale === 'en' ? 'Save' : 'Spremi' }),
+    )
+
+    await waitFor(() => {
+      expect(server.sent.map((s) => s.body)).toEqual([{ value: 1834.27 }])
+    })
+    expect(server.day().metrics[0]?.value).toBe(1834.27)
+    await waitFor(() => {
+      expect(screen.queryByLabelText(label)).toBeNull()
+    })
+  },
+)
+
+test("a field's unit is said with it", async () => {
+  fakeServer({ ...signedIn(), ...dayServer().routes })
+  renderAt('/')
+
+  const weight = await screen.findByLabelText('Weight')
+  const unit = document.getElementById(weight.getAttribute('aria-describedby') ?? '')
+  expect(unit?.textContent).toBe('kg')
 })

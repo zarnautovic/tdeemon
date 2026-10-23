@@ -7,8 +7,17 @@ import { useMessages } from '@/i18n/messages'
 
 // DayMetrics are the measurements of day date, each in its unit, to
 // correct or delete; a field for the weight while the day has none, the
-// one given most, and the others to add.
-export function DayMetrics({ date, metrics }: { date: string; metrics: Metric[] }) {
+// one given most, and the others to add. A day to come takes none
+// (canLog).
+export function DayMetrics({
+  date,
+  metrics,
+  canLog = true,
+}: {
+  date: string
+  metrics: Metric[]
+  canLog?: boolean
+}) {
   const t = useMessages()
   const has = new Set(metrics.map((m) => m.kind))
   const others = metricKinds.filter((k) => k !== 'weight' && !has.has(k))
@@ -18,7 +27,7 @@ export function DayMetrics({ date, metrics }: { date: string; metrics: Metric[] 
       <h2 id="day-measurements" className="font-medium">
         {t.day.measurements}
       </h2>
-      {!has.has('weight') && (
+      {canLog && !has.has('weight') && (
         <div className="rounded-lg border p-3">
           <MetricForm date={date} kind="weight" label={t.day.metric.weight} />
         </div>
@@ -32,7 +41,7 @@ export function DayMetrics({ date, metrics }: { date: string; metrics: Metric[] 
           ))}
         </ul>
       )}
-      <AddMetric date={date} kinds={others} />
+      {canLog && <AddMetric date={date} kinds={others} />}
     </section>
   )
 }

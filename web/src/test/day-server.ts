@@ -1,7 +1,7 @@
 import type { Day, Metric } from '@/api/types'
 import { metricKinds } from '@/components/day/metric-kinds'
 
-import { day as emptyDay, today, type Handler } from './app'
+import { day as emptyDay, problem, today, type Handler } from './app'
 
 // A request the day server got: its method, its path and its body.
 export interface Sent {
@@ -80,6 +80,10 @@ export function dayServer(start: Day = emptyDay()) {
     ...(start.date === today ? { 'GET /api/v1/days/today': () => Response.json(current) } : {}),
     [`PATCH ${path}`]: async (request) => {
       const body = await record(request)
+      // The server keeps no space at a note's ends (text.CheckLines).
+      if (isObject(body) && typeof body.note === 'string' && body.note !== body.note.trim()) {
+        return problem(422)
+      }
       current = checkedIn(current, isObject(body) ? body : {})
       return Response.json(current)
     },

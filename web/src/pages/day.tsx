@@ -49,6 +49,9 @@ export function DayPage() {
   const todayDate = date === undefined && !waiting ? day.data.date : today
   const shown = date ?? todayDate ?? day.data.date
   const isToday = date === undefined || shown === todayDate
+  // A day to come, which an address may name though the arrows stop at
+  // today, takes its type and exclusion only, as the server has it.
+  const future = todayDate !== undefined && shown > todayDate
   const before = addDays(shown, -1)
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.
@@ -98,7 +101,7 @@ export function DayPage() {
       >
         <DayTotals day={day.data} />
         {/* Its fields start again with each day. */}
-        <CheckIn key={day.data.date} day={day.data} />
+        <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
         <section aria-labelledby="day-meals" className="space-y-2">
           <h2 id="day-meals" className="font-medium">
             {t.day.meals}
@@ -111,7 +114,12 @@ export function DayPage() {
             ))
           )}
         </section>
-        <DayMetrics key={day.data.date} date={day.data.date} metrics={day.data.metrics} />
+        <DayMetrics
+          key={`metrics ${day.data.date}`}
+          date={day.data.date}
+          metrics={day.data.metrics}
+          canLog={!future}
+        />
       </div>
       {!isToday && (
         <Link

@@ -2,7 +2,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { setLocale } from '@/i18n/locale'
-import { day, fakeServer, renderAt, signedIn, today } from '@/test/app'
+import { day, fakeServer, problem, renderAt, signedIn, today } from '@/test/app'
 import { dayServer } from '@/test/day-server'
 
 afterEach(() => {
@@ -241,4 +241,50 @@ test('the check-in speaks Croatian', async () => {
   ])
   const hunger = within(screen.getByRole('group', { name: 'Glad' }))
   expect(hunger.getByRole('button', { name: '5 stalno gladan' })).toBeDefined()
+})
+
+test('the note is saved without the spaces at its ends, which the server refuses', async () => {
+  const server = dayServer()
+  fakeServer({ ...signedIn(), ...server.routes })
+  renderAt('/')
+
+  const note = await screen.findByLabelText('Note')
+  fireEvent.change(note, { target: { value: ' long walk \n' } })
+  fireEvent.blur(note)
+
+  expect(await within(checkIn()).findByText('Saved')).toBeDefined()
+  expect(server.sent.map((s) => s.body)).toEqual([{ note: 'long walk' }])
+  // Only spaces are no change of an empty note.
+  fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'long walk  ' } })
+  fireEvent.blur(screen.getByLabelText('Note'))
+  expect(server.sent).toHaveLength(1)
+})
+
+test('a check-in the server refuses says so, with nothing to try again', async () => {
+  fakeServer({ ...signedIn(), ...dayServer().routes, [`PATCH ${path}`]: () => problem(422) })
+  renderAt('/')
+
+  fireEvent.click(
+    within(await screen.findByRole('group', { name: 'Mood' })).getByRole('button', {
+      name: '4 good',
+    }),
+  )
+
+  expect((await within(checkIn()).findByRole('alert')).textContent).toBe(
+    'Not saved. The server did not take it.',
+  )
+  expect(within(checkIn()).queryByRole('button', { name: 'Try again' })).toBeNull()
+})
+
+test('a day to come takes its type and exclusion only', async () => {
+  fakeServer({ ...signedIn(), ...dayServer(day({ date: '2026-10-25' })).routes })
+  renderAt('/?date=2026-10-25')
+
+  expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Leave out of calibration' })).toBeDefined()
+  expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
+  expect(screen.queryByRole('group', { name: 'Hunger' })).toBeNull()
+  expect(screen.queryByLabelText('Note')).toBeNull()
+  expect(screen.queryByLabelText('Weight')).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Add a measurement' })).toBeNull()
 })

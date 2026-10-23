@@ -26,9 +26,7 @@ export function MetricCard({ date, metric }: { date: string; metric: Metric }) {
           date={date}
           kind={metric.kind}
           label={label}
-          // Every decimal the value has, near enough, so saving it
-          // unchanged keeps it.
-          initial={f.number(metric.value, 3)}
+          initial={f.field(metric.value)}
           onSaved={() => {
             setEditing(false)
           }}

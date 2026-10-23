@@ -52,6 +52,7 @@ export const en = {
   saving: 'Saving…',
   saved: 'Saved',
   notSaved: (why: string) => `Not saved. ${why}`,
+  refused: 'The server did not take it.',
   // Amounts in their units, which every language here writes the same.
   unit: {
     kcal: (n: string) => `${n} kcal`,

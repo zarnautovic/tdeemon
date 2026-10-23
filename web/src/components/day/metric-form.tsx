@@ -69,10 +69,14 @@ export function MetricForm({
             autoComplete="off"
             defaultValue={initial}
             aria-invalid={notNumber || log.isError}
+            aria-describedby={unit ? `${id}-unit` : undefined}
             className={cn(inputClass, 'tabular-nums', unit && 'pr-20')}
           />
           {unit && (
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
+            <span
+              id={`${id}-unit`}
+              className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground"
+            >
               {unit}
             </span>
           )}

@@ -33,7 +33,9 @@ export function DayNote({ day }: { day: Day }) {
         placeholder={t.day.notePlaceholder}
         className={cn(inputClass, 'h-auto py-2')}
         onBlur={(event) => {
-          const typed = event.currentTarget.value
+          // The server keeps no space at a note's ends (a keyboard's
+          // suggestion leaves one).
+          const typed = event.currentTarget.value.trim()
           if (typed !== note) {
             change.mutate({ params: { path: { date: day.date } }, body: { note: typed } })
           }

@@ -10,8 +10,8 @@ import { useMessages } from '@/i18n/messages'
 
 // CheckIn is what the user says of a day: their mood and hunger, a note,
 // the day's type, and whether calibration counts it. Each is saved as it
-// is given.
-export function CheckIn({ day }: { day: Day }) {
+// is given. A day to come (future) takes its type and exclusion only.
+export function CheckIn({ day, future = false }: { day: Day; future?: boolean }) {
   const t = useMessages()
 
   return (
@@ -19,15 +19,19 @@ export function CheckIn({ day }: { day: Day }) {
       <h2 id="day-check-in" className="font-medium">
         {t.day.checkIn}
       </h2>
-      <ScaleField day={day} field="mood" label={t.day.mood} words={t.day.moods} tone="good" />
-      <ScaleField
-        day={day}
-        field="hunger"
-        label={t.day.hunger}
-        words={t.day.hungers}
-        tone="signal"
-      />
-      <DayNote day={day} />
+      {!future && (
+        <>
+          <ScaleField day={day} field="mood" label={t.day.mood} words={t.day.moods} tone="good" />
+          <ScaleField
+            day={day}
+            field="hunger"
+            label={t.day.hunger}
+            words={t.day.hungers}
+            tone="signal"
+          />
+          <DayNote day={day} />
+        </>
+      )}
       <DayTypePicker day={day} />
       <Exclusion day={day} />
     </section>

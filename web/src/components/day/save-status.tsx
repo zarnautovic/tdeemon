@@ -1,3 +1,4 @@
+import { statusOf } from '@/api/errors'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 import { problem } from '@/i18n/problem'
@@ -13,8 +14,8 @@ interface Change<V> {
 }
 
 // SaveStatus says where a change of the day stands: being saved, saved,
-// or not saved and why, with a way to send it again; nothing is lost
-// without a word.
+// or not saved and why, with a way to send it again unless the server
+// refused it; nothing is lost without a word.
 export function SaveStatus<V>({
   change,
   onRetry,
@@ -25,6 +26,14 @@ export function SaveStatus<V>({
 }) {
   const t = useMessages()
 
+  // A change the server refused (422) would be refused again.
+  if (change.isError && statusOf(change.error) === 422) {
+    return (
+      <span role="alert" className="text-xs text-destructive">
+        {t.notSaved(t.refused)}
+      </span>
+    )
+  }
   if (change.isError) {
     return (
       <span
