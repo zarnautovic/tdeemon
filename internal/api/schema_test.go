@@ -175,6 +175,20 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodGet, "/api/v1/days/today", "", []*http.Cookie{session}, nil)
 			in.do(t, http.MethodGet, "/api/v1/days/"+day.DateOf(now).AddDays(-1).String(), "", []*http.Cookie{session}, nil)
 		},
+		"set-settings": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPatch, "/api/v1/me", `{"name": "Ana M.", "locale": "hr", "timezone": "Europe/Zagreb", "day_start_hour": 3}`,
+				[]*http.Cookie{session}, nil)
+		},
+		"set-notes": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPut, "/api/v1/me/notes", `{"notes": "Knees: no running."}`, []*http.Cookie{session}, nil)
+		},
+		"revoke-tokens": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.createToken(t, session, `{"name":"phone","scopes":["read"]}`)
+			in.do(t, http.MethodDelete, "/api/v1/tokens", "", []*http.Cookie{session}, nil)
+		},
 		"get-history": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			saveHistory(t, in)

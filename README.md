@@ -372,8 +372,10 @@ curl -b cookies.txt -H 'Content-Type: application/json' \
 curl -H 'Authorization: Bearer tdm_…' https://tdeemon.example.com/api/v1/auth/whoami
 ```
 
-`GET /api/v1/tokens` lists them (name, scopes, when last used) and
-`DELETE /api/v1/tokens/{id}` revokes one at once. A token reaches only
+`GET /api/v1/tokens` lists them (name, scopes, when last used),
+`DELETE /api/v1/tokens/{id}` revokes one at once, and
+`DELETE /api/v1/tokens` all of them, as after a password reset. A token
+reaches only
 the operations open to its scopes: `GET /api/v1/auth/whoami` and
 `GET /api/v1/info` with any scope, the imports below with `ingest`, and
 the tools: those that read with `read` or `tools` (`GET /api/v1/me`,

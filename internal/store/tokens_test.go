@@ -159,3 +159,56 @@ func TestAPITokensTableChecks(t *testing.T) {
 		t.Error("a second token with the same hash was stored")
 	}
 }
+
+// RevokeAPITokens revokes every token of the user's, and none of
+// another's.
+func TestRevokeAPITokens(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	for i, u := range []uuid.UUID{ana, ana, ivo} {
+		if err := db.CreateAPIToken(t.Context(), newToken(u, "device", t0), sid(string(rune('a'+i)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := db.RevokeAPITokens(t.Context(), ana); err != nil || n != 2 {
+		t.Errorf("RevokeAPITokens = %d, %v; want Ana's 2", n, err)
+	}
+	if got, err := db.APITokens(t.Context(), ivo); err != nil || len(got) != 1 {
+		t.Errorf("Ivo's tokens after = %v, %v; want his one", got, err)
+	}
+	if n, err := db.RevokeAPITokens(t.Context(), ana); err != nil || n != 0 {
+		t.Errorf("RevokeAPITokens again = %d, %v; want 0", n, err)
+	}
+}
+
+// ChangeSettings changes the settings given, on the user as stored,
+// held to the user's rules, of a user there is.
+func TestChangeSettings(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	name, zone, hour := "Ana M.", "Europe/Zagreb", 3
+	u, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{Name: &name, TimeZone: &zone, DayStartHour: &hour}, t0)
+	if err != nil || u.Name != "Ana M." || u.TimeZone != "Europe/Zagreb" || u.DayStartHour != 3 {
+		t.Fatalf("ChangeSettings = %+v, %v", u, err)
+	}
+	// Another change keeps the first's: it changes the user as stored.
+	// The user returned is the one stored, to the second it keeps.
+	locale := "hr"
+	second, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{Locale: &locale}, t0.Add(1500*time.Millisecond))
+	if err != nil || second.Name != "Ana M." || second.Locale != "hr" || second.TimeZone != "Europe/Zagreb" {
+		t.Errorf("a second change = %+v, %v; want the first's kept", second, err)
+	}
+	if got, err := db.UserByEmail(t.Context(), "ana@example.com"); err != nil || got.Name != "Ana M." || got.Locale != "hr" ||
+		!got.UpdatedAt.Equal(second.UpdatedAt) {
+		t.Errorf("the user stored = %+v, %v; want %v updated", got, err, second.UpdatedAt)
+	}
+	if _, err := db.ChangeSettings(t.Context(), uuid.NewV7(), store.SettingsChange{Name: &name}, t0); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("no such user: %v, want ErrNotFound", err)
+	}
+	mars := "Mars/Olympus"
+	if _, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{TimeZone: &mars}, t0); !errors.Is(err, store.ErrInvalidSettings) {
+		t.Errorf("a zone no one has: %v, want ErrInvalidSettings", err)
+	}
+}

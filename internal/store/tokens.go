@@ -131,6 +131,25 @@ func (db *DB) RevokeAPIToken(ctx context.Context, userID, id uuid.UUID) error {
 	})
 }
 
+// RevokeAPITokens deletes every token of the user with userID, and
+// returns how many there were: after a password reset, the devices and
+// clients that had one need a new one.
+func (db *DB) RevokeAPITokens(ctx context.Context, userID uuid.UUID) (int, error) {
+	var n int64
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, "DELETE FROM api_tokens WHERE user_id = ?", userID.String())
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
+	if err != nil {
+		return 0, fmt.Errorf("revoke API tokens: %w", err)
+	}
+	return int(n), nil
+}
+
 // TouchAPIToken records that userID's token with id was used at now.
 func (db *DB) TouchAPIToken(ctx context.Context, userID, id uuid.UUID, now time.Time) error {
 	return db.WriteTx(ctx, func(tx *sql.Tx) error {

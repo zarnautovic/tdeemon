@@ -1,6 +1,7 @@
 package user
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +65,13 @@ func TestValidate(t *testing.T) {
 		{"name with a line separator", func(u *User) { u.Name = "Ana\u2028Marić" }, "control or invisible"},
 		{"name of a Hangul filler", func(u *User) { u.Name = "\u3164" }, "control or invisible"},
 		{"name not UTF-8", func(u *User) { u.Name = "Ana\xff" }, "not valid UTF-8"},
+		{"name of a joiner only", func(u *User) { u.Name = "\u200d" }, "control or invisible"},
+		{"name with a joiner at its start", func(u *User) { u.Name = "\u200dAna" }, "control or invisible"},
+		{"name with a non-joiner at its end", func(u *User) { u.Name = "Ana\u200c" }, "control or invisible"},
+		{"name with a selector first", func(u *User) { u.Name = "\ufe0fAna" }, "control or invisible"},
+		{"name with a joiner by a space", func(u *User) { u.Name = "Ana \u200dMarić" }, "control or invisible"},
+		{"name too long with its joiners", func(u *User) { u.Name = strings.Repeat("a", MaxNameLen-1) + "\u200da" }, "101 characters long"},
+		{"name said as it came", func(u *User) { u.Name = "Ana\ufe0f\u200d\u200bB" }, strconv.Quote("Ana\ufe0f\u200d\u200bB")},
 		{"unknown role", func(u *User) { u.Role = "owner" }, `role "owner"`},
 		{"unknown locale", func(u *User) { u.Locale = "de" }, `locale "de"`},
 		{"no time zone", func(u *User) { u.TimeZone = "" }, "IANA name"},
@@ -119,6 +127,11 @@ func TestValidateAcceptsEdges(t *testing.T) {
 		{"plain user", func(u *User) { u.Role = RoleUser }},
 		{"longest name", func(u *User) { u.Name = strings.Repeat("ž", MaxNameLen) }},
 		{"name with spaces and marks", func(u *User) { u.Name = "Ana-Marija O'Brien Ćosić" }},
+		// What writing needs between what shows.
+		{"name with an emoji of a family", func(u *User) { u.Name = "Ana \U0001f468\u200d\U0001f469\u200d\U0001f467" }},
+		{"name in Persian, with a non-joiner", func(u *User) { u.Name = "\u0646\u06cc\u200c\u0645\u0627" }},
+		{"name in Devanagari, with a joiner", func(u *User) { u.Name = "\u0915\u094d\u200d\u0937" }},
+		{"name in Japanese, with a variant selector", func(u *User) { u.Name = "\u845b\U000e0100\u57ce" }},
 		{"accented address", func(u *User) { u.Email = "jos\u00e9@example.com" }},
 		{"plus address", func(u *User) { u.Email = "ana+tdeemon@example.com" }},
 		{"no dot in the domain", func(u *User) { u.Email = "ana@localhost" }},

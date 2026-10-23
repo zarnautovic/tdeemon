@@ -191,3 +191,79 @@ func parseTime(s string) (time.Time, error) {
 	}
 	return t, nil
 }
+
+// Settings are what a user changes of their account themselves: the name
+// the app shows, its language, their time zone and the hour their day
+// starts.
+type Settings struct {
+	Name         string
+	Locale       string
+	TimeZone     string
+	DayStartHour int
+}
+
+// Validate reports every setting that breaks the rules of user.Validate,
+// joined into one error.
+func (s Settings) Validate() error {
+	return errors.Join(user.ValidateName(s.Name), user.ValidateLocale(s.Locale),
+		user.ValidateTimeZone(s.TimeZone), user.ValidateDayStartHour(s.DayStartHour))
+}
+
+// SettingsChange is a change of some settings: each one given, and only
+// those.
+type SettingsChange struct {
+	Name, Locale, TimeZone *string
+	DayStartHour           *int
+}
+
+// ErrInvalidSettings is a change that would leave settings the rules
+// refuse; the error that wraps it says which.
+var ErrInvalidSettings = errors.New("invalid settings")
+
+// ChangeSettings changes the settings of the user with id as c says, on
+// the user as they are in the same transaction, so changes made at once
+// each keep what they change; and returns the user as changed. It returns
+// ErrNotFound for no such user, and an error that wraps
+// ErrInvalidSettings for settings the rules refuse. A day's start or a
+// time zone changed moves no meal or measurement logged before: each
+// keeps the day it was logged on.
+func (db *DB) ChangeSettings(ctx context.Context, id uuid.UUID, c SettingsChange, now time.Time) (user.User, error) {
+	var u user.User
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		u, err = scanUser(tx.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE id = ?", id.String()).Scan)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if c.Name != nil {
+			u.Name = *c.Name
+		}
+		if c.Locale != nil {
+			u.Locale = *c.Locale
+		}
+		if c.TimeZone != nil {
+			u.TimeZone = *c.TimeZone
+		}
+		if c.DayStartHour != nil {
+			u.DayStartHour = *c.DayStartHour
+		}
+		s := Settings{Name: u.Name, Locale: u.Locale, TimeZone: u.TimeZone, DayStartHour: u.DayStartHour}
+		if err := s.Validate(); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidSettings, err)
+		}
+		u.UpdatedAt = now.UTC().Truncate(time.Second)
+		_, err = tx.ExecContext(ctx, `UPDATE users SET name = ?, locale = ?, timezone = ?, day_start_hour = ?, updated_at = ?
+			WHERE id = ?`, u.Name, u.Locale, u.TimeZone, u.DayStartHour, formatTime(now), id.String())
+		return err
+	})
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidSettings) {
+		return user.User{}, err
+	}
+	if err != nil {
+		return user.User{}, fmt.Errorf("change settings: %w", err)
+	}
+	return u, nil
+}

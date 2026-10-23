@@ -258,7 +258,11 @@ only for now: every day of a span of at most 366 days up to today (the
 day's target, the measurements, the trend weight and the TDEE
 calibration measures up to each day, as the summary computes them; it is
 the table `get_history` (§8) is to give a model, once the tool's bytes
-fit MCP's budget. `log_meal` is
+fit MCP's budget. The settings, a web session's only too: `PATCH
+/api/v1/me` changes the name, the language, the time zone and the day's
+start hour, those given (what was logged keeps its day), and `PUT
+/api/v1/me/notes` the notes for a coach, an event undo takes back (the
+tool `update_profile_notes` waits for MCP's budget too). `log_meal` is
 `POST /api/v1/meals` (201, or 200 for a retry), `update_meal` is
 `PATCH /api/v1/meals/{id}` (ops: add, replace, remove an item; an item
 no op touches keeps what it brought when logged), and `delete_meal` is
