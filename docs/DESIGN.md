@@ -707,6 +707,10 @@ the first spec.
   run and its record runs it again; a job that fails is tried again
   after 10 minutes. It also refreshes the query
   planner's statistics once a day (`PRAGMA optimize`).
+- **Telegram:** the instance's bot sends, and only sends
+  (`internal/telegram`); a user's chat is in `telegram_chats`, which an
+  admin sets (`tdeemon user set-telegram`, after the user starts the bot)
+  until the web app's settings link it with a code.
 - **Morning summary:** a deterministic template (sleep, yesterday vs
   target, weight trend, calibration line, recovery flags). Delivered by
   Telegram send (no LLM), web push or ntfy. An optional AI comment is
@@ -718,8 +722,8 @@ the first spec.
   - Docker image with one volume, `/data`.
   - Env, all prefixed `TDEEMON_`: `BASE_URL`, `SECRET_KEY`, `LISTEN`,
     `DATA_DIR`, `BACKUP_KEEP`, `LOG_LEVEL`, `LOG_FORMAT`, the optional
-    `OIDC_*`, `LIMIT_*`, later `TELEGRAM_BOT_TOKEN`; plus the standard
-    `TZ`. The README has the current table.
+    `OIDC_*`, `LIMIT_*`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_API_URL`;
+    plus the standard `TZ`. The README has the current table.
   - Ships a `docker-compose.yml`; the homelab gets its own manifests.
 - **Backup:** a built-in daily `VACUUM INTO` snapshot with retention
   (`TDEEMON_BACKUP_KEEP`, 7 by default; plus one before every migration),

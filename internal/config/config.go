@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -54,6 +55,12 @@ type Config struct {
 	// BackupKeep is how many daily snapshots of the database are kept in
 	// DataDir/backups; 0 takes none.
 	BackupKeep int
+	// TelegramBotToken is the token of the bot that sends the morning
+	// summary and the watchdog's alarms; empty for none. Never log it.
+	TelegramBotToken string
+	// TelegramAPIURL is the Bot API's base URL: Telegram's, or a Bot API
+	// server of one's own.
+	TelegramAPIURL string
 	// LogLevel is the minimum level that gets logged.
 	LogLevel slog.Level
 	// LogFormat is the log encoding.
@@ -143,11 +150,37 @@ func Load(lookup LookupFunc) (Config, error) {
 		func() (err error) { cfg.Location, err = loadLocation(lookup); return err },
 		func() (err error) { cfg.Limits, err = loadLimits(get); return err },
 		func() (err error) { cfg.BackupKeep, err = loadBackupKeep(get); return err },
+		func() (err error) { cfg.TelegramBotToken, err = loadTelegramBotToken(get); return err },
+		func() (err error) { cfg.TelegramAPIURL, err = loadTelegramAPIURL(get); return err },
 	} {
 		errs = append(errs, load())
 	}
 
 	return cfg, errors.Join(errs...)
+}
+
+// telegramBotToken is the shape of a bot's token from BotFather: the
+// bot's id, a colon and a secret.
+var telegramBotToken = regexp.MustCompile(`^\d+:[A-Za-z0-9_-]{30,}$`)
+
+// loadTelegramBotToken reads the Telegram bot's token, which may be unset.
+func loadTelegramBotToken(get func(name, fallback string) string) (string, error) {
+	t := get("TELEGRAM_BOT_TOKEN", "")
+	if t != "" && !telegramBotToken.MatchString(t) {
+		// The value stays out of the error: it is a secret, if a wrong one.
+		return "", fmt.Errorf("%sTELEGRAM_BOT_TOKEN: want a bot token from BotFather, <bot id>:<secret>", Prefix)
+	}
+	return t, nil
+}
+
+// loadTelegramAPIURL reads the Bot API's base URL, Telegram's unless set.
+func loadTelegramAPIURL(get func(name, fallback string) string) (string, error) {
+	raw := get("TELEGRAM_API_URL", "https://api.telegram.org")
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("%sTELEGRAM_API_URL %q: want an http or https URL of the Bot API", Prefix, raw)
+	}
+	return strings.TrimSuffix(raw, "/"), nil
 }
 
 // loadBackupKeep reads how many daily snapshots to keep, 7 unless set.
@@ -316,10 +349,20 @@ func (c Config) LogValue() slog.Value {
 		slog.String("log_format", string(c.LogFormat)),
 		slog.String("tz", tz),
 		slog.String("secret_key", "[redacted]"),
+		slog.String("telegram_bot_token", redactedIfSet(c.TelegramBotToken)),
+		slog.String("telegram_api_url", c.TelegramAPIURL),
 		slog.Any("oidc", c.OIDC),
 		slog.Any("trusted_proxies", c.TrustedProxies),
 		slog.Any("limits", limitsValue(c.Limits)),
 	)
+}
+
+// redactedIfSet says whether a secret is set, without it.
+func redactedIfSet(s string) string {
+	if s == "" {
+		return ""
+	}
+	return "[redacted]"
 }
 
 // limitsValue logs the instance's limits by their names.

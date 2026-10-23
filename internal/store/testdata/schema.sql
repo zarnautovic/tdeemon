@@ -331,6 +331,14 @@ CREATE TABLE targets (
     PRIMARY KEY (user_id, effective_from)
 ) STRICT;
 
+CREATE TABLE telegram_chats (
+    user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    -- Telegram's id of the chat with the bot; a private chat's is the
+    -- user's id there, a group's is below zero.
+    chat_id INTEGER NOT NULL CHECK (chat_id <> 0),
+    updated_at TEXT NOT NULL
+) STRICT;
+
 CREATE TABLE user_identities (
     issuer TEXT NOT NULL CHECK (issuer <> ''),
     subject TEXT NOT NULL CHECK (subject <> ''),

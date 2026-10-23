@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"uuid"
@@ -18,6 +19,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
+	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
 
 // maxPasswordInput is the longest password line read from standard
@@ -37,6 +39,8 @@ func userCommand(ctx context.Context, args []string, lookup config.LookupFunc, i
 		return createUser(ctx, args[1:], lookup, in, out)
 	case "set-password":
 		return setPassword(ctx, args[1:], lookup, in, out)
+	case "set-telegram":
+		return setTelegram(ctx, args[1:], lookup, out)
 	}
 	return fmt.Errorf("%w: user: unknown subcommand %q", errUsage, args[0])
 }
@@ -188,6 +192,99 @@ func setPassword(ctx context.Context, args []string, lookup config.LookupFunc, i
 		return err
 	}
 	return printPassword(out, password, generated)
+}
+
+type setTelegramFlags struct {
+	email  string
+	chatID int64
+}
+
+func parseSetTelegramFlags(args []string) (setTelegramFlags, error) {
+	var f setTelegramFlags
+	set := flag.NewFlagSet("user set-telegram", flag.ContinueOnError)
+	set.SetOutput(io.Discard) // exitCode prints the error and the usage.
+	set.StringVar(&f.email, "email", "", "")
+	chatID := set.String("chat-id", "", "")
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return f, err
+	} else if err != nil {
+		return f, fmt.Errorf("%w: user set-telegram: %w", errUsage, err)
+	}
+	if set.NArg() > 0 {
+		return f, fmt.Errorf("%w: user set-telegram: unexpected argument %q", errUsage, set.Arg(0))
+	}
+	if f.email == "" || *chatID == "" {
+		return f, fmt.Errorf("%w: user set-telegram: --email and --chat-id are required", errUsage)
+	}
+	var err error
+	if f.chatID, err = strconv.ParseInt(*chatID, 10, 64); err != nil {
+		return f, fmt.Errorf("%w: user set-telegram: --chat-id %q: want Telegram's id of the chat, 0 to remove it", errUsage, *chatID)
+	}
+	return f, nil
+}
+
+// telegramHello is the message that tells a chat it is the user's for
+// notifications, by the user's locale; English for another.
+var telegramHello = map[string]string{
+	"en": "tdeemon is connected: your morning summary and the alerts when data stop coming arrive here.",
+	"hr": "tdeemon je spojen: ovdje stižu jutarnji sažetak i upozorenja kad podaci prestanu stizati.",
+}
+
+// helloIn returns telegramHello in locale, or in English.
+func helloIn(locale string) string {
+	if h, ok := telegramHello[locale]; ok {
+		return h
+	}
+	return telegramHello["en"]
+}
+
+// setTelegram sets the Telegram chat the user with --email gets their
+// notifications in, or with --chat-id 0 removes it. With a bot configured
+// it first sends the chat a message, so a wrong id fails here and is not
+// saved. Like createUser, it never migrates.
+func setTelegram(ctx context.Context, args []string, lookup config.LookupFunc, out io.Writer) error {
+	f, err := parseSetTelegramFlags(args)
+	if errors.Is(err, flag.ErrHelp) {
+		_, err = io.WriteString(out, usage)
+		return err
+	} else if err != nil {
+		return err
+	}
+	cfg, err := config.Load(lookup)
+	if err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	email := user.NormalizeEmail(f.email)
+	var said string
+	err = withDatabase(ctx, cfg.DataDir, func(db *store.DB) error {
+		u, err := db.UserByEmail(ctx, email)
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("no user with the address %q", email)
+		} else if err != nil {
+			return err
+		}
+		switch {
+		case f.chatID == 0:
+			said = fmt.Sprintf("Removed the Telegram chat of %s.\n", email)
+		case cfg.TelegramBotToken == "":
+			said = fmt.Sprintf("Set the Telegram chat of %s; no message was sent, as %sTELEGRAM_BOT_TOKEN is not set.\n", email, config.Prefix)
+		default:
+			bot := telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
+			if err := bot.Send(ctx, f.chatID, helloIn(u.Locale)); err != nil {
+				if _, refused := errors.AsType[*telegram.Error](err); refused {
+					return fmt.Errorf("the chat %d did not take a message, so it is not set: %w", f.chatID, err)
+				}
+				return fmt.Errorf("telegram did not answer, so the chat is not set; try again: %w", err)
+			}
+			said = fmt.Sprintf("Set the Telegram chat of %s, and sent it a message.\n", email)
+		}
+		return db.SetTelegramChat(ctx, u.ID, f.chatID, time.Now())
+	})
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(out, said)
+	return err
 }
 
 // choosePassword reads the password from in with --password-stdin, and

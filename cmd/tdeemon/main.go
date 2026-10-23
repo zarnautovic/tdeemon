@@ -37,6 +37,8 @@ const usage = `Usage:
   tdeemon user create [flags]       add a user
   tdeemon user set-password [flags] give a user a new password and end
                                     their sessions
+  tdeemon user set-telegram [flags] set the Telegram chat a user's
+                                    notifications go to
   tdeemon import-history [flags]    import a user's history from the
                                     predecessor, once
   tdeemon help                      show this help
@@ -55,6 +57,13 @@ Flags of user create:
 Flags of user set-password:
   --email ADDRESS    the user's address (required)
   --password-stdin   as for user create
+
+Flags of user set-telegram:
+  --email ADDRESS    the user's address (required)
+  --chat-id ID       Telegram's id of the chat with the bot (required); 0
+                     removes it. With a bot configured, the chat gets a
+                     message first, and a chat that does not take it is
+                     not set
 
 Flags of import-history (--health-db, --foods, --plan, or more):
   --email ADDRESS    the user's address (required)
