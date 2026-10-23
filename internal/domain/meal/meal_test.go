@@ -78,8 +78,8 @@ func TestFromFood(t *testing.T) {
 }
 
 // TestFromFoodAmountInTheFoodsUnit holds an amount without its unit to
-// the food's: grams of one by weight or per portion, ml of one by
-// volume. The item keeps the unit, as if given.
+// the food's: grams of one by weight, ml of one by volume. The item keeps
+// the quantity as given, so a retry of it is the same.
 func TestFromFoodAmountInTheFoodsUnit(t *testing.T) {
 	t.Parallel()
 
@@ -90,14 +90,13 @@ func TestFromFoodAmountInTheFoodsUnit(t *testing.T) {
 	}{
 		{egg(), "g", 150},
 		{milk(), "ml", 150},
-		{canteen(300), "g", 0.5},
 	} {
 		it, err := FromFood(tc.f, Quantity{Amount: 150}, "")
 		if err != nil {
 			t.Fatalf("%s: %v", tc.f.Name, err)
 		}
-		if it.Quantity != (Quantity{Amount: 150, Unit: tc.wantUnit}) || !near(it.Amount, tc.wantAmount) {
-			t.Errorf("%s: %+v, want 150 %s as given, %v in its unit", tc.f.Name, it, tc.wantUnit, tc.wantAmount)
+		if it.Quantity != (Quantity{Amount: 150}) || it.Unit != tc.wantUnit || !near(it.Amount, tc.wantAmount) {
+			t.Errorf("%s: %+v, want 150 as given, %v %s in its unit", tc.f.Name, it, tc.wantAmount, tc.wantUnit)
 		}
 	}
 }
@@ -161,6 +160,7 @@ func TestFromFoodRefuses(t *testing.T) {
 		{"ml of a portion", canteen(500), Quantity{Amount: 250, Unit: "ml"}, "", "not ml"},
 		{"grams making too many portions", canteen(100), Quantity{Amount: 6000, Unit: "g"}, "", "60 portions: want at most 50"},
 		{"grams of a portion of unknown weight", canteen(0), Quantity{Amount: 300, Unit: "g"}, "", "weight of a portion is not known"},
+		{"an amount of a portion without its unit", canteen(300), Quantity{Amount: 1}, "", "takes portions, or an amount in g"},
 		{"servings of a portion", canteen(0), Quantity{Servings: 1, Serving: "piece"}, "", "takes portions"},
 		{"a note with a control character", egg(), Quantity{Amount: 10, Unit: "g"}, "a\x00b", "control or invisible"},
 	} {

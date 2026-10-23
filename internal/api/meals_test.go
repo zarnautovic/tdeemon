@@ -935,13 +935,25 @@ func TestLogMealOfAFoodTheUserHasSaysSo(t *testing.T) {
 	}
 }
 
-// An amount without its unit is in the food's, as a model may send it.
+// An amount without its unit is in the food's, as a model may send it;
+// sent again, a log, a new food's and an add are retries.
 func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
 	t.Parallel()
 
 	e := newMealsEnv(t)
-	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"items": [{"food_id": %q, "amount": 80}]}`, e.bread), e.session, nil)
-	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"quantity":{"amount":80,"unit":"g"}`) {
-		t.Errorf("80 of the bread: %d %s, want 80 g", rec.Code, rec.Body.String())
+	id := meal.NewIDAt(e.now).String()
+	log := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 80}, {"food": {"name": "Oat flakes", "basis": "100g", "source": "label",
+		"nutrients": {"kcal": 372, "protein": 13, "carbs": 59, "fat": 7}}, "amount": 50}]}`, id, e.bread)
+	for _, want := range []int{http.StatusCreated, http.StatusOK} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", log, e.session, nil)
+		if rec.Code != want || !strings.Contains(rec.Body.String(), `"quantity":{"amount":80},"amount":80,"unit":"g"`) {
+			t.Fatalf("80 of the bread and 50 of new oats: %d %s, want %d and 80 g", rec.Code, rec.Body.String(), want)
+		}
+	}
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "amount": 40}}]}`, uuid.NewV7(), e.bread)
+	for range 2 {
+		if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+			t.Fatalf("an add of 40 of the bread: %d %s, want 200", rec.Code, rec.Body.String())
+		}
 	}
 }

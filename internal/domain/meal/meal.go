@@ -44,11 +44,14 @@ const (
 
 // Quantity is how much of a food was eaten: an amount in grams or ml, a
 // number of a named serving ("4 × piece", "0.5 × roll"), or a number of
-// portions of a food per portion. Exactly one is given. The amount names
-// its unit, so 250 ml of a food by weight is refused, not taken for 250 g.
+// portions of a food per portion. Exactly one is given. A unit given must
+// be the food's, so 250 ml of a food by weight is refused, not taken for
+// 250 g; an amount without one is in the food's unit, g or ml (FromFood),
+// and a food per portion takes its grams by name.
 type Quantity struct {
 	Amount float64
-	// Unit is "g" or "ml", the unit of Amount; empty without an amount.
+	// Unit is "g" or "ml", the unit of Amount; empty without an amount,
+	// or for the food's own.
 	Unit     string
 	Servings float64
 	Serving  string
@@ -90,15 +93,17 @@ func FromFood(f food.Food, q Quantity, note string) (Item, error) {
 	if err := validateNote(note); err != nil {
 		return Item{}, err
 	}
-	// An amount without its unit is in the food's: grams of a food per
-	// portion, whose portion may have a weight.
-	if q.Amount > 0 && q.Unit == "" {
-		q.Unit = f.Basis.Unit()
-		if f.Basis == food.PerPortion {
-			q.Unit = "g"
-		}
+	// An amount without its unit is in the food's, g or ml; the item
+	// keeps it as given, so a retry of it is the same.
+	in := q
+	switch {
+	case q.Amount == 0 || q.Unit != "":
+	case f.Basis == food.PerPortion:
+		return Item{}, fmt.Errorf("%s: a food per portion takes portions, or an amount in g when its portion's weight is known", f.Name)
+	default:
+		in.Unit = f.Basis.Unit()
 	}
-	amount, err := resolve(f, q)
+	amount, err := resolve(f, in)
 	if err != nil {
 		return Item{}, fmt.Errorf("%s: %w", f.Name, err)
 	}
