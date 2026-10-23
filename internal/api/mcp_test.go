@@ -190,6 +190,19 @@ func TestMCPCallsATool(t *testing.T) {
 	}
 }
 
+// TestMCPListInAString takes a list a model sends as a string of JSON as
+// the list, not as one query of its brackets and words.
+func TestMCPListInAString(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
+	if text, isErr := callTool(t, cs, "find_foods", map[string]any{"query": `["rye", "nothing"]`}); isErr || !strings.Contains(text, `"queries":["rye"]`) {
+		t.Errorf("find_foods of a list in a string: %v %s", isErr, text)
+	}
+}
+
 // What the operation refuses, and arguments it does not take, are errors
 // of the tool, which say why.
 func TestMCPToolErrors(t *testing.T) {

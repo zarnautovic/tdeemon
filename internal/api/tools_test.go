@@ -727,6 +727,11 @@ func TestFindFoodsOfSeveralQueries(t *testing.T) {
 	if !slices.Equal(have, want) {
 		t.Errorf("foods = %v, want %v", have, want)
 	}
+	// A query sent twice, in another case, is one.
+	rec = in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=Rye+", "", []*http.Cookie{session}, nil)
+	if !strings.Contains(rec.Body.String(), `"queries":["rye"]`) {
+		t.Errorf("a query twice: %d %s, want it once", rec.Code, rec.Body.String())
+	}
 	// The limit is of each query.
 	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=greek&limit=1", "", []*http.Cookie{session}, nil); !strings.Contains(rec.Body.String(), yoghurt.ID.String()) {
 		t.Errorf("a limit of 1 of two queries: %d %s, want the yoghurt too", rec.Code, rec.Body.String())

@@ -240,9 +240,10 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 			body[name] = raw
 			continue
 		}
-		// A list goes as the parameter repeated.
+		// A list goes as the parameter repeated; a model may send it as
+		// a string of JSON.
 		var many []json.RawMessage
-		if prm.list && json.Unmarshal(raw, &many) == nil {
+		if prm.list && (json.Unmarshal(raw, &many) == nil || listInString(raw, &many)) {
 			for _, r := range many {
 				v, err := paramValue(r)
 				if err != nil {
@@ -288,6 +289,16 @@ func paramValue(raw json.RawMessage) (string, error) {
 		return strconv.FormatBool(v), nil
 	}
 	return "", errors.New("want a string, a number or a boolean")
+}
+
+// listInString reports whether raw is a string of a JSON list, and puts
+// the list in many.
+func listInString(raw json.RawMessage, many *[]json.RawMessage) bool {
+	var s string
+	if json.Unmarshal(raw, &s) != nil || !strings.HasPrefix(strings.TrimSpace(s), "[") {
+		return false
+	}
+	return json.Unmarshal([]byte(s), many) == nil
 }
 
 // recorder keeps what a handler answers a call of a tool.

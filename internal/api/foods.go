@@ -129,11 +129,17 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		return nil, err
 	}
 	// The foods of each query, in the order of the queries; a food two
-	// find, once, with both.
+	// find, once, with both. A query sent twice, in any case, is one.
 	var foods []food.Food
 	var queries [][]string
 	at := map[uuid.UUID]int{}
+	asked := map[string]bool{}
 	for _, q := range in.Query {
+		key := strings.ToLower(strings.TrimSpace(q))
+		if asked[key] {
+			continue
+		}
+		asked[key] = true
 		found, err := s.db.FindFoods(ctx, p.User.ID, q, in.Limit)
 		if err != nil {
 			return nil, internalError("finding foods failed", err)

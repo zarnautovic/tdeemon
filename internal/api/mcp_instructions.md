@@ -48,7 +48,8 @@ rather than log.
   eaten twice, and delete the one that was not.
 - A correction ("150 g, not 200") is `update_meal` on that meal: replace
   or remove items by their `item_id`, add one under a new `id`, any
-  random UUID never used before (a version 4 is fine). The ids are in
+  random UUID never used before (a version 4 is fine: unlike a meal's,
+  it holds no time). The ids are in
   the answer of `log_meal` and in `get_day`. A meal not eaten after all
   is `delete_meal`. Never log the meal again.
 - "Undo" is `undo_last`, under a new `id` each time as for a meal; it
