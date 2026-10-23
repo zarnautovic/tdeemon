@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react'
-import { useId, useRef, useState, type SubmitEvent } from 'react'
+import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { detailOf, statusOf } from '@/api/errors'
 import { useLogMeal } from '@/api/meals'
@@ -33,6 +33,14 @@ export function MealLog(day: Day) {
   const [open, setOpen] = useState(false)
   // What the server warned of the meal logged last.
   const [logged, setLogged] = useState<Warning[] | undefined>(undefined)
+  // The button takes the focus back when the form closes.
+  const button = useRef<HTMLButtonElement>(null)
+  const [closed, setClosed] = useState(false)
+  useEffect(() => {
+    if (closed) {
+      button.current?.focus()
+    }
+  }, [closed])
 
   if (open) {
     return (
@@ -40,10 +48,12 @@ export function MealLog(day: Day) {
         {...day}
         onDone={(warnings) => {
           setOpen(false)
+          setClosed(true)
           setLogged(warnings)
         }}
         onCancel={() => {
           setOpen(false)
+          setClosed(true)
         }}
       />
     )
@@ -51,11 +61,13 @@ export function MealLog(day: Day) {
   return (
     <div className="space-y-1">
       <Button
+        ref={button}
         variant="outline"
         size="lg"
         className="w-full"
         onClick={() => {
           setOpen(true)
+          setClosed(false)
           setLogged(undefined)
         }}
       >
@@ -79,7 +91,9 @@ export function MealLog(day: Day) {
 }
 
 // Composer is a meal being logged. Its id is made when it opens, so the
-// meal sent again (no answer came) is the same meal, not another.
+// meal sent again (no answer came) is the same meal, not another: the
+// form holds still until it is sent again, or given up, as other content
+// under the id is a conflict.
 function Composer({
   date,
   today,
@@ -92,11 +106,18 @@ function Composer({
   const f = useFormat()
   const id = useId()
   const log = useLogMeal(date)
-  const form = useRef<HTMLFormElement>(null)
   const [mealId] = useState(uuidv7)
   const [description, setDescription] = useState('')
-  // Now on today's, noon on another day's.
+  // Now on today's, noon on another day's. Today's time left as it is
+  // is the instant the meal is sent: the page may have been open a while.
   const [time, setTime] = useState(() => (today ? clockAt(Date.now(), timeZone) : '12:00'))
+  const [timeSet, setTimeSet] = useState(false)
+  const first = useRef<HTMLInputElement>(null)
+  // The entry just added, whose amount takes the focus.
+  const [added, setAdded] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    first.current?.focus()
+  }, [])
   const [entries, setEntries] = useState<Entry[]>([])
   // The entries that cannot be sent as they are, and whether there are
   // none to send.
@@ -104,6 +125,19 @@ function Composer({
   const [empty, setEmpty] = useState(false)
   const status = statusOf(log.error)
   const refused = log.isError && (status === 409 || status === 422)
+  // Sent, and no answer said whether it was taken: the meal stays as sent.
+  const held = log.isPending || (log.isError && !refused)
+
+  function send(body: Parameters<typeof log.mutate>[0]['body']) {
+    log.mutate(
+      { body },
+      {
+        onSuccess: (answer) => {
+          onDone(answer.warnings)
+        },
+      },
+    )
+  }
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -122,26 +156,17 @@ function Composer({
       return
     }
     const what = description.trim()
-    log.mutate(
-      {
-        body: {
-          id: mealId,
-          ...(what ? { description: what } : {}),
-          eaten_at: mealInstant(date, time, timeZone, startHour),
-          items,
-        },
-      },
-      {
-        onSuccess: (answer) => {
-          onDone(answer.warnings)
-        },
-      },
-    )
+    send({
+      id: mealId,
+      ...(what ? { description: what } : {}),
+      eaten_at:
+        today && !timeSet ? new Date().toISOString() : mealInstant(date, time, timeZone, startHour),
+      items,
+    })
   }
 
   return (
     <form
-      ref={form}
       onSubmit={submit}
       noValidate
       aria-labelledby={`${id}-title`}
@@ -150,78 +175,88 @@ function Composer({
       <h3 id={`${id}-title`} className="font-medium">
         {t.log.title}
       </h3>
-      <div className="flex gap-3">
-        <label className="flex-1 space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
-          <input
-            value={description}
-            maxLength={200}
-            placeholder={t.log.descriptionHint}
-            autoComplete="off"
-            className={inputClass}
-            onChange={(e) => {
-              setDescription(e.currentTarget.value)
+      <fieldset disabled={held} className="min-w-0 space-y-4">
+        <div className="flex gap-3">
+          <label className="flex-1 space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
+            <input
+              ref={first}
+              value={description}
+              maxLength={200}
+              placeholder={t.log.descriptionHint}
+              autoComplete="off"
+              className={inputClass}
+              onChange={(e) => {
+                setDescription(e.currentTarget.value)
+              }}
+            />
+          </label>
+          <label className="w-28 space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
+            <input
+              type="time"
+              value={time}
+              required
+              className={cn(inputClass, 'tabular-nums')}
+              onChange={(e) => {
+                // A cleared field keeps the time it had.
+                const typed = e.currentTarget.value
+                if (/^\d{2}:\d{2}$/.test(typed)) {
+                  setTime(typed)
+                  setTimeSet(true)
+                }
+              }}
+            />
+          </label>
+        </div>
+        <section aria-label={t.log.items} className="space-y-2">
+          {entries.length > 0 && (
+            <ul className="divide-y">
+              {entries.map((entry) => (
+                <EntryRow
+                  key={entry.key}
+                  entry={entry}
+                  wrong={wrong.has(entry.key)}
+                  describedBy={wrong.has(entry.key) ? `${id}-wrong` : undefined}
+                  focus={entry.key === added}
+                  onChange={(changed) => {
+                    setEntries((es) => es.map((e) => (e.key === entry.key ? changed : e)))
+                  }}
+                  onRemove={() => {
+                    setEntries((es) => es.filter((e) => e.key !== entry.key))
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+          <FoodPicker
+            onPick={(food) => {
+              const entry = foodEntry(food, f.field)
+              setEntries((es) => [...es, entry])
+              setAdded(entry.key)
+              setEmpty(false)
             }}
           />
-        </label>
-        <label className="w-28 space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
-          <input
-            type="time"
-            value={time}
-            required
-            className={cn(inputClass, 'tabular-nums')}
-            onChange={(e) => {
-              // A cleared field keeps the time it had.
-              const typed = e.currentTarget.value
-              if (/^\d{2}:\d{2}$/.test(typed)) {
-                setTime(typed)
-              }
+          <Button
+            variant="outline"
+            onClick={() => {
+              const entry = estimateEntry()
+              setEntries((es) => [...es, entry])
+              setAdded(entry.key)
+              setEmpty(false)
             }}
-          />
-        </label>
-      </div>
-      <section aria-label={t.log.items} className="space-y-2">
-        {entries.length > 0 && (
-          <ul className="divide-y">
-            {entries.map((entry) => (
-              <EntryRow
-                key={entry.key}
-                entry={entry}
-                wrong={wrong.has(entry.key)}
-                onChange={(changed) => {
-                  setEntries((es) => es.map((e) => (e.key === entry.key ? changed : e)))
-                }}
-                onRemove={() => {
-                  setEntries((es) => es.filter((e) => e.key !== entry.key))
-                }}
-              />
-            ))}
-          </ul>
-        )}
-        <FoodPicker
-          onPick={(food) => {
-            setEntries((es) => [...es, foodEntry(food, f.field)])
-            setEmpty(false)
-          }}
-        />
-        <Button
-          variant="outline"
-          onClick={() => {
-            setEntries((es) => [...es, estimateEntry()])
-            setEmpty(false)
-          }}
-        >
-          {t.log.estimate}
-        </Button>
-      </section>
+          >
+            {t.log.estimate}
+          </Button>
+        </section>
+      </fieldset>
       {empty && (
         <p role="alert" className="text-sm text-destructive">
           {t.log.noItems}
         </p>
       )}
       {wrong.size > 0 && (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
           {t.day.notANumber}
         </p>
       )}
@@ -232,15 +267,17 @@ function Composer({
       ) : (
         <SaveStatus
           change={log}
-          // Again, as the meal is now, under its id: the server takes the
-          // same meal sent again for the one it has.
+          // Again, as it was sent, under its id: the server takes the same
+          // meal sent again for the one it has.
           onRetry={() => {
-            form.current?.requestSubmit()
+            if (log.variables) {
+              send(log.variables.body)
+            }
           }}
         />
       )}
       <div className="flex gap-2">
-        <Button type="submit" size="lg" disabled={log.isPending}>
+        <Button type="submit" size="lg" disabled={held}>
           {t.log.save}
         </Button>
         <Button variant="ghost" size="lg" onClick={onCancel}>

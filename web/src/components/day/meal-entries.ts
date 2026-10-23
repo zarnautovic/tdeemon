@@ -68,14 +68,15 @@ export function estimateEntry(): Entry {
 }
 
 // itemOf is the item an entry sends, with parse reading its numbers; or
-// undefined when one is not a number, or the estimate has no name.
+// undefined when one is not a number, a food's amount is 0, or the
+// estimate has no name.
 export function itemOf(
   entry: Entry,
   parse: (s: string) => number | undefined,
 ): ItemInput | undefined {
   if (entry.kind === 'food') {
     const n = parse(entry.amount)
-    if (n === undefined) {
+    if (n === undefined || n <= 0) {
       return undefined
     }
     const base = { id: entry.key, food_id: entry.food.id }

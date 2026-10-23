@@ -12,6 +12,10 @@ test.each([
   ['2026-03-29', '02:30', 'Europe/Zagreb', '2026-03-29T01:30:00.000Z'],
   // It ends at 03:00 on October 25: 02:30 comes twice, the second is taken.
   ['2026-10-25', '02:30', 'Europe/Zagreb', '2026-10-25T01:30:00.000Z'],
+  // West of UTC the other way: in Los Angeles 02:30 on March 8 is skipped
+  // and comes an hour before, 01:30 on November 1 twice and is the first.
+  ['2026-03-08', '02:30', 'America/Los_Angeles', '2026-03-08T09:30:00.000Z'],
+  ['2026-11-01', '01:30', 'America/Los_Angeles', '2026-11-01T08:30:00.000Z'],
 ])('%s %s in %s is %s', (date, time, zone, want) => {
   expect(instantAt(date, time, zone)).toBe(want)
 })

@@ -74,6 +74,8 @@ test('an entry sends its item, or nothing while a number is not one', () => {
     portions: 1.5,
   })
   expect(itemOf(entry('g', 'lots'), parse)).toBeUndefined()
+  // Nothing of a food is no item: the server refuses it.
+  expect(itemOf(entry('g', '0'), parse)).toBeUndefined()
   const plate: Entry = {
     key: 'p',
     kind: 'estimate',

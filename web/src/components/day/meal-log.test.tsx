@@ -257,3 +257,118 @@ test('a day to come has no meal to log', async () => {
   expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
   expect(screen.queryByRole('button', { name: 'Log a meal' })).toBeNull()
 })
+
+test('Enter in the search picks the first food, and sends nothing', async () => {
+  const server = logServer()
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  const search = composer().getByLabelText('Find a food of yours')
+  fireEvent.change(search, { target: { value: 'rye' } })
+  await composer().findByRole('button', { name: /Rye bread/ })
+  fireEvent.keyDown(search, { key: 'Enter' })
+
+  expect(composer().getByLabelText('Amount: Rye bread')).toBeDefined()
+  expect(server.sent).toEqual([])
+})
+
+test("today's meal is logged now when its time is left as it was", async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  // 08:20 in Los Angeles.
+  vi.setSystemTime(new Date('2026-10-23T15:20:00Z'))
+  try {
+    const server = logServer()
+    renderAt('/')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+    expect(composer().getByLabelText('Time')).toHaveProperty('value', '08:20')
+    fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
+    fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Tea' } })
+    for (const label of ['Energy (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)']) {
+      fireEvent.change(composer().getByLabelText(label), { target: { value: '1' } })
+    }
+    // Some minutes later.
+    vi.setSystemTime(new Date('2026-10-23T15:27:00Z'))
+    fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+    await waitFor(() => {
+      expect(server.sent).toHaveLength(1)
+    })
+    expect(server.sent[0]).toMatchObject({ eaten_at: '2026-10-23T15:27:00.000Z' })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a meal sent without an answer holds still, and goes again as it was', async () => {
+  let up = false
+  const bodies: unknown[] = []
+  let gets = 0
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () => {
+      gets++
+      return Response.json(day())
+    },
+    'GET /api/v1/foods': () => Response.json({ foods: [bread] }),
+    'POST /api/v1/meals': async (request) => {
+      bodies.push(await request.json())
+      return up ? problem(503) : Promise.reject(new TypeError('Failed to fetch'))
+    },
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+  await composer().findByRole('button', { name: 'Try again' })
+
+  // It may have been logged: the day is asked again, and the form holds.
+  await waitFor(() => {
+    expect(gets).toBe(2)
+  })
+  expect(composer().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(true)
+  expect(composer().getByRole('button', { name: 'Log the meal' }).hasAttribute('disabled')).toBe(
+    true,
+  )
+  up = true
+  fireEvent.click(composer().getByRole('button', { name: 'Try again' }))
+
+  await waitFor(() => {
+    expect(bodies).toHaveLength(2)
+  })
+  expect(bodies[1]).toEqual(bodies[0])
+})
+
+test('the focus goes into the form, to a food picked, and back to the button', async () => {
+  logServer()
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(composer().getByLabelText('What it was'))
+  })
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(composer().getByLabelText('Amount: Rye bread'))
+  })
+  fireEvent.click(composer().getByRole('button', { name: 'Cancel' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Log a meal' }))
+  })
+})
+
+test("a food's brand tells it apart in the meal", async () => {
+  logServer('2026-10-23', {
+    'GET /api/v1/foods': () => Response.json({ foods: [{ ...bread, brand: 'Mill' }] }),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
+
+  expect(composer().getByLabelText('Amount: Rye bread · Mill')).toBeDefined()
+})

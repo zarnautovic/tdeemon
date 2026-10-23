@@ -24,7 +24,10 @@ test('a meal is logged by hand, of a food and an estimate', async ({ page }) => 
   await form.getByLabel('What it was').fill('Dinner')
   await form.getByLabel('Time').fill('19:30')
   await form.getByLabel('Find a food of yours').fill('basm')
-  await form.getByRole('button', { name: /Basmati rice/ }).click()
+  await expect(form.getByRole('button', { name: /Basmati rice/ })).toBeVisible()
+  // Enter picks the food found; it does not send the meal yet.
+  await form.getByLabel('Find a food of yours').press('Enter')
+  await expect(form).toBeVisible()
   await form.getByLabel('Unit: Basmati rice').selectOption({ label: 'cup' })
   await form.getByLabel('Amount: Basmati rice').fill('2')
   await form.getByRole('button', { name: 'Add an estimate' }).click()

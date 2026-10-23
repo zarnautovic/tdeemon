@@ -32,6 +32,17 @@ export function FoodPicker({ onPick }: { onPick: (food: Food) => void }) {
         onChange={(event) => {
           setQuery(event.currentTarget.value)
         }}
+        onKeyDown={(event) => {
+          // Enter picks the first food found; it does not send the meal.
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            const firstFound = found.data?.foods[0]
+            if (searching && firstFound) {
+              onPick(firstFound)
+              setQuery('')
+            }
+          }
+        }}
       />
       {searching && found.isSuccess && found.data.foods.length === 0 && (
         <p className="text-sm text-muted-foreground">{t.log.noFood}</p>

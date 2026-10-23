@@ -34,8 +34,9 @@ function offsetOf(instant: number, timeZone: string): number {
 
 // instantAt is the instant at which timeZone's clock shows date
 // (YYYY-MM-DD) at time (HH:MM), as an ISO 8601 instant in UTC. A time the
-// clock skips (summer time begins) is the instant an hour later; one it
-// shows twice (summer time ends), the second.
+// clock skips (summer time begins) comes an hour off, after it in a zone
+// east of UTC, before it west of it; one it shows twice (summer time
+// ends) is the second east of UTC, the first west of it.
 export function instantAt(date: string, time: string, timeZone: string): string {
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
   const t = /^(\d{2}):(\d{2})$/.exec(time)
