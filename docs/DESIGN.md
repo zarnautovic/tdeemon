@@ -279,6 +279,21 @@ left.
      connectors work.
    - **Photos:** the image stays in the client; the model sends
      structured items.
+   - **Cost:** every request of a log, a round of tool calls or the
+     answer, carries the client's prompt, the tools and the
+     instructions, so a log of two rounds sends them three times. The
+     target is in two parts:
+     - **A log pays under ~10k input tokens in full**, the cache warm:
+       what a client that caches the prompt does not read from the
+       cache. The first log after the cache has expired (five minutes
+       with Anthropic's) pays for the tools and instructions once more.
+     - **The tools and the instructions are a budget of their own**,
+       which every request carries, cached or not: ~10k tokens in
+       October 2026, to bring down, as a client that does not cache
+       pays it in full with each request.
+
+     The eval of MCP (`internal/eval`) measures both, and a log's whole
+     input.
 2. **Built-in chat** at `/api/chat`, used by the web UI/PWA.
    - Server-side agent loop over the tool registry, with vision for
      photos.
@@ -288,7 +303,7 @@ left.
      sessions (§8).
    - **Keys are per user** (BYO), encrypted at rest with the instance
      secret. An admin may set an instance default.
-   - **Cost target:** under ~10k input tokens per food log.
+   - **Cost target:** under ~10k input tokens per food log, as for MCP.
 3. **Telegram adapter.** One bot per instance; users link their account
    with `/start <code>`, which maps chat_id → user_id. It feeds the same
    loop as the built-in chat, using the user's key.

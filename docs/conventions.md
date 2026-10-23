@@ -135,6 +135,31 @@ for the author and the reviewer.
   parameters and body, from the OpenAPI document, and a call is a
   request of the operation with the caller's principal, so MCP and REST
   cannot drift.
+- **The eval of MCP** (`internal/eval`) has Claude Code log what a user
+  says through `/mcp`, against a seeded tdeemon of one user, and checks
+  what each case leaves (its meals, foods, metrics and changes), the
+  rounds of tool calls of each message (two for a log, DESIGN.md §5) and
+  the input tokens not read from the cache (the cost target, §6). Claude
+  Code runs with tdeemon's tools alone, none of its own nor of the
+  developer's settings, and the eval stops if it has any other.
+  - It spends the Claude account's quota, so it runs only by hand, after
+    a change to the tools or the instructions (`mcp_instructions.md`):
+    `TDEEMON_EVAL=1 go test ./internal/eval -run TestEval -v -timeout 30m`
+    (the default timeout of 10 minutes is too short for it).
+    `TDEEMON_EVAL_MODEL` picks another model than `sonnet`.
+  - Its cases (`testdata/cases.json`) are made up, in English and in
+    Croatian, and so is the label of their photo.
+  - Real ones stay out of git: keep them in
+    `internal/eval/testdata/private/` (ignored), name their file in
+    `TDEEMON_EVAL_CASES`, and a photo's `image` by its path; both are
+    read from `internal/eval`. With `-v` the eval prints every call and
+    answer, so the output of real cases stays out of issues and pull
+    requests too.
+  - A model slips now and then: a call whose input is not JSON, which
+    the client refuses before tdeemon ("the client, before tdeemon,
+    answered an error"), costs a round and may fail a case. Such a
+    failure asks for the eval to run again, not for a change to
+    tdeemon.
 - **The web app:** components and hooks with Vitest and Testing Library.
 - End-to-end tests of the main flows (Playwright) come later.
 
