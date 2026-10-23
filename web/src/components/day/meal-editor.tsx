@@ -18,29 +18,37 @@ type Change = components['schemas']['UpdateMealBody']
 
 // An amount is how much of an item was given, as it was given (grams,
 // portions, servings), and the item that puts another number in its
-// place: the same food, worked out again from the food as it is now, so a
-// food corrected since gives its new values. Only an item of a food has
-// one: an estimate is of a whole plate.
+// place, given the same way: the item's food (as it is when it is sent)
+// worked out again from the food as it is now, so a food corrected since
+// gives its new values. Only an item of a food has one: an estimate is of
+// a whole plate.
 interface Amount {
   n: number
   unit: string | undefined
-  with: (n: number) => ItemInput
+  with: (item: Item & { food_id: string }, n: number) => ItemInput
+}
+
+function base(item: Item & { food_id: string }): ItemInput {
+  return item.note === undefined
+    ? { food_id: item.food_id }
+    : { food_id: item.food_id, note: item.note }
 }
 
 function amountOf(item: Item, portions: string): Amount | undefined {
-  const foodId = item.food_id
-  if (foodId === undefined) {
+  if (item.food_id === undefined) {
     return undefined
   }
   const q = item.quantity
-  const base: ItemInput =
-    item.note === undefined ? { food_id: foodId } : { food_id: foodId, note: item.note }
   if (q.servings !== undefined && q.serving !== undefined) {
     const serving = q.serving
-    return { n: q.servings, unit: serving, with: (n) => ({ ...base, serving, servings: n }) }
+    return {
+      n: q.servings,
+      unit: serving,
+      with: (it, n) => ({ ...base(it), serving, servings: n }),
+    }
   }
   if (q.portions !== undefined) {
-    return { n: q.portions, unit: portions, with: (n) => ({ ...base, portions: n }) }
+    return { n: q.portions, unit: portions, with: (it, n) => ({ ...base(it), portions: n }) }
   }
   if (q.amount !== undefined) {
     // Given without a unit, it is the food's, and stays so.
@@ -48,16 +56,20 @@ function amountOf(item: Item, portions: string): Amount | undefined {
     return {
       n: q.amount,
       unit: given ?? (item.unit === 'portion' ? undefined : item.unit),
-      with: (n) =>
-        given === undefined ? { ...base, amount: n } : { ...base, amount: n, unit: given },
+      with: (it, n) =>
+        given === undefined ? { ...base(it), amount: n } : { ...base(it), amount: n, unit: given },
     }
   }
   return undefined
 }
 
+// A start is an item's amount as the editor opened with it, of its food
+// then, and the note it had.
 interface Start {
   text: string
   amount: Amount
+  foodId: string | undefined
+  note: string | undefined
 }
 
 // MealEditor changes a meal's items, the amount of each of a food and
@@ -81,10 +93,11 @@ export function MealEditor({
   const remove = useDeleteMeal(date)
   // Each amount as the editor opened with it: what its field starts with,
   // and what a number typed in it means, though the item changes
-  // elsewhere meanwhile. An item added since starts as it is.
+  // elsewhere meanwhile. An item added since, or of another food now,
+  // starts as it is.
   const start = (item: Item): Start | undefined => {
     const amount = amountOf(item, t.meal.portions)
-    return amount && { text: f.field(amount.n), amount }
+    return amount && { text: f.field(amount.n), amount, foodId: item.food_id, note: item.note }
   }
   const [initial] = useState(
     () =>
@@ -95,7 +108,10 @@ export function MealEditor({
         }),
       ),
   )
-  const startOf = (item: Item) => initial.get(item.id) ?? start(item)
+  const startOf = (item: Item) => {
+    const opened = initial.get(item.id)
+    return opened?.foodId === item.food_id ? opened : start(item)
+  }
   // The items to remove, and those whose amount is not a number.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
@@ -134,6 +150,10 @@ export function MealEditor({
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
+    // A meal keeps an item: the save is off, and so is sending it again.
+    if (none) {
+      return
+    }
     const typedIn = new FormData(event.currentTarget)
     const ops: Op[] = []
     const notNumbers = new Set<string>()
@@ -144,16 +164,17 @@ export function MealEditor({
       }
       const was = startOf(item)
       const typed = typedIn.get(item.id)
-      if (was === undefined || typeof typed !== 'string') {
+      if (was === undefined || item.food_id === undefined || typeof typed !== 'string') {
         continue
       }
+      const food = { ...item, food_id: item.food_id }
       const n = f.parse(typed)
       if (n === undefined) {
         notNumbers.add(item.id)
       } else if (n !== f.parse(was.text)) {
         // Only an amount typed anew: one left as it started, rounded to
         // what the field shows, is not sent rounded.
-        ops.push({ op: 'replace', item_id: item.id, item: was.amount.with(n) })
+        ops.push({ op: 'replace', item_id: item.id, item: was.amount.with(food, n) })
       }
     }
     setWrong(notNumbers)
@@ -176,8 +197,13 @@ export function MealEditor({
           const gone = removed.has(item.id)
           // Changed elsewhere since the editor opened: its field keeps what
           // it opened with.
+          const opened = initial.get(item.id)
           const moved =
-            was !== undefined && (now?.text !== was.text || now.amount.unit !== was.amount.unit)
+            opened !== undefined &&
+            (now?.text !== opened.text ||
+              now.amount.unit !== opened.amount.unit ||
+              now.foodId !== opened.foodId ||
+              now.note !== opened.note)
           return (
             <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
               <span className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}>
@@ -192,6 +218,8 @@ export function MealEditor({
               {was && !gone && (
                 <span className="relative w-32">
                   <input
+                    // Of another food now, the field starts again.
+                    key={was.foodId}
                     name={item.id}
                     aria-label={t.meal.amount(item.name)}
                     inputMode="decimal"

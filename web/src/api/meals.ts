@@ -36,11 +36,14 @@ export function useDeleteMeal(date: string) {
 
 // useUndo takes back the user's latest change, made anywhere: after the
 // changes of day date made before it. What it took back may be of any
-// day, a food or the notes, so everything is asked again.
+// day, a food or the notes, so everything is asked again, whatever the
+// answer.
 export function useUndo(date: string) {
   const queryClient = useQueryClient()
   return $api.useMutation('post', '/api/v1/undo', {
     scope: dayScope(date),
-    onSuccess: () => queryClient.invalidateQueries(),
+    // Failed too: without an answer it may have taken back a change all
+    // the same, and the day shows whether it did.
+    onSettled: () => queryClient.invalidateQueries(),
   })
 }

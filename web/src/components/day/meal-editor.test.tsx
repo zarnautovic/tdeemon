@@ -639,3 +639,94 @@ test('a change of a meal deleted elsewhere (404) asks the day again, and the mea
 
   expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
 })
+
+test('an item of another food now, changed elsewhere, is sent as it is now', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // A model puts rice in the oats' place, under the item's id.
+  const rice = '0193c3a5-0000-7000-8000-0000000000f7'
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) => (i.id === oats.id ? { ...i, food_id: rice, name: 'Rice' } : i)),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  const field = await meal().findByLabelText('Amount: Rice')
+  expect(meal().getByText('Changed elsewhere since this opened.')).toBeDefined()
+  fireEvent.change(field, { target: { value: '100' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: rice, amount: 100, unit: 'g' },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('a try again keeps the meal its one item', async () => {
+  const server = mealServer({ [`PATCH /api/v1/meals/${mealId}`]: () => problem(503) })
+  const fetch = fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await meal().findByRole('button', { name: 'Try again' })
+  for (const name of ['Oats', 'Banana bread', 'Salad from the canteen']) {
+    fireEvent.click(meal().getByRole('button', { name: `Remove: ${name}` }))
+  }
+  fireEvent.click(meal().getByRole('button', { name: 'Try again' }))
+
+  // Nothing is sent: a change sent would be saving at once.
+  expect(meal().queryByText('Saving…')).toBeNull()
+  expect(meal().getByRole('button', { name: 'Try again' })).toBeDefined()
+  expect(
+    fetch.mock.calls.filter(([r]) => r instanceof Request && r.method === 'PATCH'),
+  ).toHaveLength(1)
+  expect(meal().getByText('A meal keeps at least one item: delete the meal instead.')).toBeDefined()
+})
+
+test('an item of another food now starts its field as it is now', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // Two portions of a stew in the oats' place, under the item's id.
+  const stew = '0193c3a5-0000-7000-8000-0000000000f8'
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) =>
+      i.id === oats.id
+        ? { ...i, food_id: stew, name: 'Stew', note: 'spicy', quantity: { portions: 2 } }
+        : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  const field = await meal().findByLabelText('Amount: Stew')
+  expect(field).toHaveProperty('value', '2')
+  fireEvent.change(field, { target: { value: '3' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          { op: 'replace', item_id: oats.id, item: { food_id: stew, note: 'spicy', portions: 3 } },
+        ],
+      },
+    ])
+  })
+})

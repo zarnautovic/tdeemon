@@ -147,3 +147,23 @@ test('an undo without an id that got no answer is not offered again', async () =
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
   expect(bodies).toHaveLength(2)
 })
+
+test('after an undo that got no answer, the day is asked again', async () => {
+  let gets = 0
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () => {
+      gets++
+      return Response.json(day())
+    },
+    'POST /api/v1/undo': () => Promise.reject(new TypeError('Failed to fetch')),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+  await screen.findByRole('alert')
+
+  await waitFor(() => {
+    expect(gets).toBe(2)
+  })
+})
