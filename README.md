@@ -102,6 +102,8 @@ All settings come from environment variables:
 | `TDEEMON_OIDC_NAME` | `Single sign-on` | what the sign-in page calls the provider |
 | `TDEEMON_TRUSTED_PROXIES` | — | reverse proxies whose `X-Forwarded-For` names the client, as addresses or CIDR ranges (`10.42.0.0/16, fd00::/8`); set it behind a proxy, or the limits on failed sign-ins count the proxy's address, that is everyone together |
 | `TDEEMON_LIMIT_<NAME>` | the column "Hard limit" of [docs/limits.md](docs/limits.md) | the instance's limits of a plan, such as `TDEEMON_LIMIT_KCAL_FLOOR_FEMALE=1000` for a clinician's patient; the names are in docs/limits.md, "The names of the limits". Never below the floor in the code, and some only tighter |
+| `TDEEMON_TELEGRAM_BOT_TOKEN` | — | the token of a Telegram bot (from @BotFather) that sends users their notifications ([Telegram](#telegram)) |
+| `TDEEMON_TELEGRAM_API_URL` | `https://api.telegram.org` | the Bot API, Telegram's or a [Bot API server](https://github.com/tdlib/telegram-bot-api) of your own |
 | `TZ` | system | default time zone of the instance |
 
 Every invalid or missing variable is reported at startup in one go.
@@ -213,6 +215,30 @@ Against guessing and floods:
   that loads nothing from other sites and forbids framing
   (`default-src 'self'; frame-ancestors 'none'`), `nosniff`,
   `Referrer-Policy: no-referrer`, and HSTS over HTTPS.
+
+### Telegram
+
+tdeemon sends a user's notifications, the morning summary and the
+watchdog's alarms, to a Telegram chat through a bot of the instance. It
+only sends: it reads no messages, so no link from Telegram reaches it,
+and another program may poll the same bot.
+
+1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and
+   set its token as `TDEEMON_TELEGRAM_BOT_TOKEN`.
+2. The user opens the bot in Telegram and presses **Start**: a bot may
+   only write to someone who has written to it first.
+3. Find the chat's id, the user's id in Telegram for a private chat, for
+   example in the bot's updates
+   (`https://api.telegram.org/bot<token>/getUpdates`, `message.chat.id`).
+4. Set it for the user:
+
+   ```sh
+   kubectl exec deploy/tdeemon -- /tdeemon user set-telegram \
+     --email you@example.com --chat-id 123456789
+   ```
+
+   The chat gets a message first; a chat that does not take it (a wrong
+   id, a bot not started) is not set. `--chat-id 0` removes it.
 
 ### Single sign-on (OpenID Connect)
 

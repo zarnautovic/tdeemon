@@ -181,6 +181,11 @@ func TestLoadErrors(t *testing.T) {
 			want: []string{"TDEEMON_BACKUP_KEEP", "0 (none) to 366"},
 		},
 		{
+			name: "a Telegram token of another shape",
+			set:  map[string]string{"TDEEMON_TELEGRAM_BOT_TOKEN": "not-a-token"},
+			want: []string{"TDEEMON_TELEGRAM_BOT_TOKEN: want a bot token"},
+		},
+		{
 			name: "unknown time zone",
 			set:  map[string]string{"TZ": "Mars/Olympus_Mons"},
 			want: []string{"TZ:"},
@@ -233,6 +238,45 @@ func TestConfigLogValueRedactsSecret(t *testing.T) {
 	}
 	if !strings.Contains(out, "config.backup_keep=7") {
 		t.Errorf("log output is missing the backups kept: %s", out)
+	}
+}
+
+// A Telegram bot token is read, and logged only as set.
+func TestLoadTelegramBotToken(t *testing.T) {
+	t.Parallel()
+
+	vars := required()
+	cfg, err := config.Load(env(vars))
+	if err != nil || cfg.TelegramBotToken != "" {
+		t.Fatalf("without one: %q, %v", cfg.TelegramBotToken, err)
+	}
+	const tok = "123456:made-up-token-for-tests-only-0123"
+	vars["TDEEMON_TELEGRAM_BOT_TOKEN"] = tok
+	if cfg, err = config.Load(env(vars)); err != nil || cfg.TelegramBotToken != tok {
+		t.Fatalf("with one: %q, %v", cfg.TelegramBotToken, err)
+	}
+	var buf bytes.Buffer
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("starting", "config", cfg)
+	if out := buf.String(); strings.Contains(out, tok) || !strings.Contains(out, "config.telegram_bot_token=[redacted]") {
+		t.Errorf("log output: %s", out)
+	}
+	if cfg.TelegramAPIURL != "https://api.telegram.org" {
+		t.Errorf("TelegramAPIURL = %q, want Telegram's", cfg.TelegramAPIURL)
+	}
+	vars["TDEEMON_TELEGRAM_API_URL"] = "http://bot-api.local:8081/"
+	if cfg, err = config.Load(env(vars)); err != nil || cfg.TelegramAPIURL != "http://bot-api.local:8081" {
+		t.Errorf("a Bot API of one's own: %q, %v", cfg.TelegramAPIURL, err)
+	}
+	for _, bad := range []string{"ftp://bot-api.local", "https://", "https://bot-api.local/?a=1", "::"} {
+		vars["TDEEMON_TELEGRAM_API_URL"] = bad
+		if _, err := config.Load(env(vars)); err == nil || !strings.Contains(err.Error(), "TDEEMON_TELEGRAM_API_URL") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+	delete(vars, "TDEEMON_TELEGRAM_API_URL")
+	vars["TDEEMON_TELEGRAM_BOT_TOKEN"] = "123456:short"
+	if _, err := config.Load(env(vars)); err == nil || strings.Contains(err.Error(), "short") {
+		t.Errorf("a token too short: %v", err)
 	}
 }
 

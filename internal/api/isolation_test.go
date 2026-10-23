@@ -290,6 +290,9 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	if err := db.RecordJobRun(ctx, u.ID, "morning_summary", today.String(), now); err != nil {
 		t.Fatalf("save %s's run of a job: %v", u.Name, err)
 	}
+	if err := db.SetTelegramChat(ctx, u.ID, 1000+int64(n), now); err != nil {
+		t.Fatalf("save %s's Telegram chat: %v", u.Name, err)
+	}
 	if err := db.SetProfileNotes(ctx, u.ID, isolationActor, "Notes of "+u.Name+": no fish, trains at dawn.", now); err != nil {
 		t.Fatalf("save %s's notes: %v", u.Name, err)
 	}
