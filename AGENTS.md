@@ -38,11 +38,11 @@ English and Croatian) exist.
 | `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan (web session only), the imports (API token only), and the tools (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
-| `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n` |
+| `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
 | `docs/` | the design, the conventions, and the limits of a plan with their sources (`limits.md`) |
 | `.github/` | the CI workflows, the ruleset for `main`, issue and PR templates |
-| `scripts/` | `next-version.sh` for releases and `image-tags.sh` for their image, with their tests; `apply-github-settings.sh`, for the maintainer only |
+| `scripts/` | `next-version.sh` for releases and `image-tags.sh` for their image, with their tests; `e2e-server.sh`, the server of the end-to-end tests; `apply-github-settings.sh`, for the maintainer only |
 
 ## Commands
 
@@ -50,6 +50,7 @@ English and Croatian) exist.
 mise install       # every tool at the pinned version (mise.toml, mise.lock)
 lefthook install   # git hooks, once per clone
 make check         # what CI checks, except a few that only CI runs
+make e2e           # the end-to-end tests in Chromium (make e2e-browser once)
 make fmt           # Go and the web app; a new migration: sqlfluff fix <file>
 make help          # the other targets
 ```

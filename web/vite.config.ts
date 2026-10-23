@@ -26,6 +26,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // The end-to-end tests in e2e/ are Playwright's (npm run e2e).
+    include: ['src/**/*.test.{ts,tsx}'],
     setupFiles: ['src/test/setup.ts'],
     coverage: {
       provider: 'v8',

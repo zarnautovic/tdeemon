@@ -18,6 +18,8 @@
 internal/webui/dist
 web/codegen
 web/coverage
+web/test-results
+web/playwright-report
 **/data/backups
 **/testdata/private
 **/.env*

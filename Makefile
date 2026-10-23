@@ -13,7 +13,7 @@ LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,Blue
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json
 
-.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build api audit audit-go audit-npm licenses secrets next-version test-scripts
+.PHONY: help check fmt lint lint-go lint-web lint-webui lint-other test test-go test-web test-webui webui-build e2e e2e-browser api audit audit-go audit-npm licenses secrets next-version test-scripts
 
 help: ## list the targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## / {printf "%-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -72,6 +72,13 @@ api: $(CODEGEN_DEPS) ## the generated TypeScript types match api/openapi.json
 
 test-webui: webui-build ## the Go tests behind the webui tag, against a fresh build
 	$(MISE) go test -tags webui ./internal/webui/...
+
+e2e: webui-build ## the end-to-end tests: the app in Chromium as on a phone, against the binary with it (Chromium first: make e2e-browser)
+	$(MISE) go build -tags webui -o .e2e/tdeemon ./cmd/tdeemon
+	cd web && $(MISE) npm run --silent e2e
+
+e2e-browser: $(WEB_DEPS) ## Chromium for make e2e, at Playwright's version; CI adds its system libraries (E2E_BROWSER_FLAGS=--with-deps)
+	cd web && $(MISE) npx playwright install $(E2E_BROWSER_FLAGS) chromium
 
 # One build of the web app per make run, shared by the webui targets, so
 # make -j never empties dist under a running one.

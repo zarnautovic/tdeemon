@@ -61,6 +61,9 @@ npm test        # Vitest
 npm run lint    # oxlint; npm run format for Prettier
 ```
 
+The end-to-end tests run the app in Chromium against the binary built
+with it: `make e2e-browser` once, then `make e2e`.
+
 A binary with the app inside:
 
 ```sh
