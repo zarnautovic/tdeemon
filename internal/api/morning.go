@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +24,12 @@ import (
 // catching up), it sends a user with a Telegram chat the summary of last
 // night and yesterday (morningText). A user without a chat gets nothing.
 func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
+	}
 	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, instance: cfg.Limits}
 	return scheduler.Job{
 		Name: "morning_summary",
@@ -34,19 +43,30 @@ func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 			if err != nil {
 				return err
 			}
-			return bot.Send(ctx, chat, text)
+			err = bot.Send(ctx, chat, text)
+			if te, ok := errors.AsType[*telegram.Error](err); ok && te.Code == http.StatusForbidden {
+				// The user blocked the bot: trying again would not help.
+				s.logger.Warn("the morning summary's chat refuses the bot", "user_id", u.ID, "error", err)
+				return nil
+			}
+			return err
 		},
 	}
 }
 
 // morning reads what the morning summary of u shows at now, and writes it.
+// Last night's sleep and this morning's weighing are of the calendar date
+// now, as a night is dated by the morning it ends: the logical day may be
+// still yesterday's for a day that starts late. Yesterday is the last
+// day that ended.
 func (s *sessions) morning(ctx context.Context, u user.User, now time.Time) (string, error) {
 	p := auth.Principal{User: u}
-	_, today, err := userDay(p, now)
+	cal, today, err := userDay(p, now)
 	if err != nil {
 		return "", err
 	}
-	td, err := s.readDay(ctx, p, today, now)
+	date := day.DateOf(now.In(cal.Location))
+	td, err := s.readDay(ctx, p, date, now)
 	if err != nil {
 		return "", err
 	}
@@ -58,7 +78,7 @@ func (s *sessions) morning(ctx context.Context, u user.User, now time.Time) (str
 	if err != nil {
 		return "", err
 	}
-	return morningText(today, td, yd, sum, u.Locale), nil
+	return morningText(date, td, yd, sum, u.Locale), nil
 }
 
 // morningText is the morning summary of today, from today so far (last
@@ -100,7 +120,7 @@ var english = phrases{
 	title: "Morning summary", sleep: "Sleep", weight: "Weight", trend: "trend", since: "since", bodyFat: "body fat",
 	yesterday: "Yesterday", trainingDay: "training day", excluded: "excluded from calibration", nothingLogged: "nothing logged",
 	activity: "Activity yesterday", steps: "steps", active: "active", exercise: "exercise",
-	calibration: "Calibration", noPlan: "no plan (phase and target), so no estimate of the rate",
+	calibration: "Calibration", noPlan: "no plan (a phase and a target), so no rate to judge",
 	noEstimate: "no estimate to trust yet", pace: "rate", perWeek: "%/wk", target: "target",
 	onTarget: "on plan", below: "below plan", above: "above plan", proposal: "proposed", perDay: "kcal/day",
 	moreProteinOrKcal: "more protein or kcal", smallerSurplus: "a smaller surplus", toMaintenance: "move to maintenance",
@@ -113,10 +133,10 @@ var english = phrases{
 }
 
 var croatian = phrases{
-	title: "Jutarnji sažetak", sleep: "San", weight: "Težina", trend: "trend", since: "od", bodyFat: "masnoća",
+	title: "Jutarnji sažetak", sleep: "San", weight: "Težina", trend: "trend", since: "od", bodyFat: "tjelesna mast",
 	yesterday: "Jučer", trainingDay: "dan treninga", excluded: "izuzet iz kalibracije", nothingLogged: "ništa upisano",
 	activity: "Aktivnost jučer", steps: "koraci", active: "aktivne", exercise: "vježbanje",
-	calibration: "Kalibracija", noPlan: "nema plana (faze i cilja), pa nema ni procjene tempa",
+	calibration: "Kalibracija", noPlan: "nema plana (faze i cilja), pa nema tempa za ocijeniti",
 	noEstimate: "još nema pouzdane procjene", pace: "tempo", perWeek: "%/tj", target: "cilj",
 	onTarget: "u planu", below: "ispod plana", above: "iznad plana", proposal: "prijedlog", perDay: "kcal/dan",
 	moreProteinOrKcal: "više proteina ili kcal", smallerSurplus: "manji suficit", toMaintenance: "prijeđi na održavanje",
@@ -142,9 +162,11 @@ func (w writer) date(d day.Date) string { return w.phrases.date(w.phrases, d) }
 
 func (w writer) shortDate(d day.Date) string { return w.short(w.phrases, d) }
 
+// metricOf returns the day's value of kind, and whether it has one: a 0
+// is none, as calibration reads it (no sleep, no steps).
 func metricOf(d dayBody, kind string) (float64, bool) {
 	for _, m := range d.Metrics {
-		if m.Kind == kind {
+		if m.Kind == kind && m.Value > 0 {
 			return m.Value, true
 		}
 	}
@@ -183,11 +205,15 @@ func (w writer) weightLine(td dayBody, sum summaryBody, today day.Date) string {
 
 func (w writer) yesterdayLine(yd dayBody) string {
 	label := w.yesterday
+	var notes []string
 	if yd.Type == "training" {
-		label += " (" + w.trainingDay + ")"
+		notes = append(notes, w.trainingDay)
 	}
 	if yd.Status == "excluded" {
-		label += " (" + w.excluded + ")"
+		notes = append(notes, w.excluded)
+	}
+	if len(notes) > 0 {
+		label += " (" + strings.Join(notes, ", ") + ")"
 	}
 	if len(yd.Meals) == 0 {
 		return label + ": " + w.nothingLogged
@@ -241,7 +267,7 @@ func (w writer) calibrationLine(v verdictBody) string {
 	case v.Rate == "none" || v.MeasuredPctWeek == nil || v.TargetPctWeek == nil:
 		return label + w.noEstimate
 	}
-	line := label + w.pace + " " + w.signed(*v.MeasuredPctWeek, 2) + " " + w.perWeek + ", " + w.target + " " + w.signed(*v.TargetPctWeek, 2) + " %"
+	line := label + w.pace + " " + w.signed(*v.MeasuredPctWeek, 2) + " " + w.perWeek + ", " + w.target + " " + w.signed(*v.TargetPctWeek, 2) + " " + w.perWeek
 	switch v.Rate {
 	case "on_target":
 		line += ", " + w.onTarget
@@ -278,7 +304,7 @@ func (w writer) recoveryLine(r recoveryBody) string {
 		case f == "short_sleep" && r.SleepH != nil:
 			parts = append(parts, w.shortSleep+" ("+w.average+" "+w.num(*r.SleepH, 1)+" h)")
 		case f == "high_resting_hr" && r.RestingHR != nil:
-			parts = append(parts, w.highRestingHR+" ("+w.num(*r.RestingHR, 0)+")")
+			parts = append(parts, w.highRestingHR+" ("+w.num(*r.RestingHR, 0)+" bpm)")
 		case f == "low_hrv" && r.HRV != nil:
 			parts = append(parts, w.lowHRV+" ("+w.num(*r.HRV, 0)+" ms)")
 		}
@@ -289,10 +315,11 @@ func (w writer) recoveryLine(r recoveryBody) string {
 	return w.recovery + ": " + strings.Join(parts, " · ")
 }
 
-// num writes v with prec decimals, with a decimal comma where the
-// language has one.
+// num writes v rounded to prec decimals, halves away from 0 as the rest
+// of tdeemon rounds, with a decimal comma where the language has one.
 func (w writer) num(v float64, prec int) string {
-	s := strconv.FormatFloat(v, 'f', prec, 64)
+	p := math.Pow(10, float64(prec))
+	s := strconv.FormatFloat(math.Round(v*p)/p, 'f', prec, 64)
 	if w.decimalComma {
 		s = strings.Replace(s, ".", ",", 1)
 	}

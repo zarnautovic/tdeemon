@@ -246,7 +246,8 @@ that morning, if the server was down at 10:00), once a day, without an
 LLM. In the user's language (English, or Croatian for `hr`), it has a
 line for each of these that came:
 
-- last night's sleep (the night that ended today, never yesterday's);
+- last night's sleep (the night that ended this morning, never the one
+  before, whatever hour the user's day starts);
 - this morning's weight, the trend weight and body fat;
 - yesterday against its target: kcal, protein, carbs and fat, the day's
   type, and whether it is excluded; or that nothing was logged;

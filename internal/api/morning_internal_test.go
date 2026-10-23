@@ -48,11 +48,11 @@ func TestMorningText(t *testing.T) {
 			},
 			want: `Jutarnji sažetak, petak 23. 10.
 San: 7 h 12 min
-Težina: 132,4 kg · trend 133,1 kg · masnoća 31,2 %
+Težina: 132,4 kg · trend 133,1 kg · tjelesna mast 31,2 %
 Jučer (dan treninga): 2310/2400 kcal · P 176/175 g · UH 210/230 g · M 70/75 g
 Aktivnost jučer: koraci 6512 · aktivne 520 kcal · vježbanje 45 min
-Kalibracija: tempo −0,62 %/tj, cilj −0,70 %, u planu
-Oporavak: kratak san (prosjek 6,1 h) · nizak HRV (38 ms) · povišen puls u mirovanju (61)`,
+Kalibracija: tempo −0,62 %/tj, cilj −0,70 %/tj, u planu
+Oporavak: kratak san (prosjek 6,1 h) · nizak HRV (38 ms) · povišen puls u mirovanju (61 bpm)`,
 		},
 		{
 			name: "nothing came",
@@ -60,19 +60,19 @@ Oporavak: kratak san (prosjek 6,1 h) · nizak HRV (38 ms) · povišen puls u mir
 			sum:  summaryBody{Verdict: verdictBody{Rate: "none", Reasons: []string{"no_phase", "no_target"}}},
 			want: `Jutarnji sažetak, petak 23. 10.
 Jučer: ništa upisano
-Kalibracija: nema plana (faze i cilja), pa nema ni procjene tempa`,
+Kalibracija: nema plana (faze i cilja), pa nema tempa za ocijeniti`,
 		},
 		{
-			name: "no target, an old trend, a day excluded, too few data",
-			td:   dayBody{},
+			name: "no target, an old trend, a day excluded, zeros, too few data",
+			td:   dayBody{Metrics: metrics("sleep_h", 0.0)},
 			yd: dayBody{
-				Type: "rest", Status: "excluded", Total: nutrientsBody{Kcal: 1800, Protein: 120, Carbs: 150, Fat: 60},
-				Meals: []mealBody{{}},
+				Type: "training", Status: "excluded", Total: nutrientsBody{Kcal: 1800, Protein: 120.5, Carbs: 150, Fat: 60},
+				Meals: []mealBody{{}}, Metrics: metrics("steps", 0.0),
 			},
 			sum: summaryBody{Trend: &trendBody{Kg: 80, Date: "2026-10-20"}, Verdict: verdictBody{Rate: "none", Reasons: []string{"not_trusted"}}},
 			want: `Jutarnji sažetak, petak 23. 10.
 Težina: trend 80,0 kg (od 20. 10.)
-Jučer (izuzet iz kalibracije): 1800 kcal · P 120 g · UH 150 g · M 60 g
+Jučer (dan treninga, izuzet iz kalibracije): 1800 kcal · P 121 g · UH 150 g · M 60 g
 Kalibracija: još nema pouzdane procjene`,
 		},
 	} {
@@ -93,15 +93,15 @@ func TestCalibrationLine(t *testing.T) {
 	}{
 		{
 			verdictBody{Rate: "below", MeasuredPctWeek: new(-1.1), TargetPctWeek: new(-0.7), Action: "raise_kcal", GapKcal: 149.6},
-			"tempo −1,10 %/tj, cilj −0,70 %, ispod plana; prijedlog: +150 kcal/dan",
+			"tempo −1,10 %/tj, cilj −0,70 %/tj, ispod plana; prijedlog: +150 kcal/dan",
 		},
 		{
 			verdictBody{Rate: "above", MeasuredPctWeek: new(-0.2), TargetPctWeek: new(-0.7), Action: "lower_kcal", GapKcal: -200},
-			"tempo −0,20 %/tj, cilj −0,70 %, iznad plana; prijedlog: −200 kcal/dan",
+			"tempo −0,20 %/tj, cilj −0,70 %/tj, iznad plana; prijedlog: −200 kcal/dan",
 		},
 		{
 			verdictBody{Rate: "above", MeasuredPctWeek: new(0.4), TargetPctWeek: new(0.25), Action: "shrink_surplus"},
-			"tempo +0,40 %/tj, cilj +0,25 %, iznad plana; prijedlog: manji suficit",
+			"tempo +0,40 %/tj, cilj +0,25 %/tj, iznad plana; prijedlog: manji suficit",
 		},
 		{
 			verdictBody{Rate: "below", MeasuredPctWeek: new(-0.9), TargetPctWeek: new(-0.7), Action: "raise_protein_or_kcal"},
@@ -109,7 +109,7 @@ func TestCalibrationLine(t *testing.T) {
 		},
 		{
 			verdictBody{Rate: "on_target", MeasuredPctWeek: new(-0.001), TargetPctWeek: new(0.0), Action: "maintain"},
-			"tempo 0,00 %/tj, cilj 0,00 %, u planu; prijedlog: prijeđi na održavanje",
+			"tempo 0,00 %/tj, cilj 0,00 %/tj, u planu; prijedlog: prijeđi na održavanje",
 		},
 	} {
 		if got := (writer{croatian}).calibrationLine(tc.v); !strings.Contains(got, tc.want) {
@@ -139,10 +139,10 @@ func TestMorningTextInEnglish(t *testing.T) {
 	}
 	want := `Morning summary, Friday Oct 23
 Sleep: 6 h 45 min
-Weight: 80.2 kg · trend 80.6 kg (since Oct 19)
+Weight: 80.3 kg · trend 80.6 kg (since Oct 19)
 Yesterday (training day): 2010/2100 kcal · P 150/150 g · C 200/220 g · F 60/65 g
 Activity yesterday: steps 8000
-Calibration: rate −1.05 %/wk, target −0.70 %, below plan; proposed: +120 kcal/day
+Calibration: rate −1.05 %/wk, target −0.70 %/wk, below plan; proposed: +120 kcal/day
 Recovery: short sleep (average 6.2 h)`
 	for _, locale := range []string{"en", "de"} {
 		if got := morningText(today, td, yd, sum, locale); got != want {

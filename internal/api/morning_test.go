@@ -97,3 +97,64 @@ func TestMorningSummaryJob(t *testing.T) {
 		t.Errorf("yesterday's sleep in\n%s", text)
 	}
 }
+
+// For a day that starts after 10:00, last night is still of the calendar
+// date: the summary shows tonight's sleep and today's date, not those of
+// the logical day; and a chat that blocked the bot is no error to retry.
+func TestMorningSummaryJobLateDay(t *testing.T) {
+	t.Parallel()
+
+	status := http.StatusOK
+	var mu sync.Mutex
+	var texts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		text, _ := body["text"].(string)
+		mu.Lock()
+		defer mu.Unlock()
+		texts = append(texts, text)
+		w.WriteHeader(status)
+		if status == http.StatusOK {
+			_, _ = io.WriteString(w, `{"ok":true}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"ok":false,"error_code":403,"description":"Forbidden: bot was blocked by the user"}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	db := storetest.Open(t)
+	zagreb, _ := time.LoadLocation("Europe/Zagreb")
+	now := time.Date(2026, 10, 23, 10, 5, 0, 0, zagreb)
+	ana := user.User{
+		ID: uuid.NewV7(), Email: "ana@example.com", Name: "Ana", Role: user.RoleUser, Locale: "en",
+		TimeZone: "Europe/Zagreb", DayStartHour: 12, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetTelegramChat(t.Context(), ana.ID, 853, now); err != nil {
+		t.Fatal(err)
+	}
+	today := day.Date{Year: 2026, Month: 10, Day: 23}
+	for d, h := range map[day.Date]float64{today: 7.5, today.AddDays(-1): 4} {
+		if _, err := db.MergeMetrics(t.Context(), ana.ID, isolationActor, d, []metric.Value{{Kind: metric.Sleep, Value: h, Source: metric.Import}}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := api.MorningSummaryJob(api.Config{DB: db}, &telegram.Bot{Token: "123456:made-up-token-for-tests-only-0123", BaseURL: srv.URL})
+	if err := job.Run(t.Context(), ana, "2026-10-22", now); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	text := texts[0]
+	status = http.StatusForbidden
+	mu.Unlock()
+	if !strings.Contains(text, "Morning summary, Friday Oct 23") || !strings.Contains(text, "Sleep: 7 h 30 min") {
+		t.Errorf("text:\n%s", text)
+	}
+	if err := job.Run(t.Context(), ana, "2026-10-22", now); err != nil {
+		t.Errorf("a chat that blocked the bot: %v", err)
+	}
+}
