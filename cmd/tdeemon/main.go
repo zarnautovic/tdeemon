@@ -22,6 +22,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
+	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/webui"
@@ -160,14 +161,18 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 	if err := db.Migrate(ctx, logger); err != nil {
 		return fmt.Errorf("database: %w", err)
 	}
-	// The daily snapshots stop before the database closes: the defers run
-	// in reverse, cancel, then wait, then Close.
-	snapshots, stopSnapshots := context.WithCancel(ctx)
+	// The work in the background, the daily snapshots and the scheduler,
+	// stops before the database closes: the defers run in reverse, cancel,
+	// then wait, then Close.
+	background, stopBackground := context.WithCancel(ctx)
 	if cfg.BackupKeep > 0 {
-		wait := db.StartDailySnapshots(snapshots, cfg.BackupKeep, time.Hour, logger)
+		wait := db.StartDailySnapshots(background, cfg.BackupKeep, time.Hour, logger)
 		defer wait()
 	}
-	defer stopSnapshots()
+	sched := &scheduler.Scheduler{DB: db, Logger: logger}
+	wait := sched.Start(background, time.Minute)
+	defer wait()
+	defer stopBackground()
 
 	app, embedded, err := webui.New()
 	if err != nil {

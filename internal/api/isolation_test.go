@@ -287,6 +287,9 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	if _, _, err := db.SetWorkoutDays(ctx, u.ID, isolationActor, store.Strong, []day.Date{today.AddDays(-1)}, now); err != nil {
 		t.Fatalf("save %s's days of workouts: %v", u.Name, err)
 	}
+	if err := db.RecordJobRun(ctx, u.ID, "morning_summary", today.String(), now); err != nil {
+		t.Fatalf("save %s's run of a job: %v", u.Name, err)
+	}
 	if err := db.SetProfileNotes(ctx, u.ID, isolationActor, "Notes of "+u.Name+": no fish, trains at dawn.", now); err != nil {
 		t.Fatalf("save %s's notes: %v", u.Name, err)
 	}

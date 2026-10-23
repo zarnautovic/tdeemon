@@ -699,6 +699,12 @@ the first spec.
     the same weighing, and each value is checked on its own.
   - Caveat: HAE is iOS-only and its automated export is a paid tier.
     Native HealthKit is the long-term answer (§11).
+- **Scheduler:** a minute's tick runs the jobs due in each user's day,
+  on their wall clock (a job at 10:00 is due from 10:00 for a while, so a
+  server down then catches up); each occurrence (such as the day) once,
+  recorded in `job_runs`, so a restart does not run it again; a job that
+  fails is tried again after 10 minutes. It also refreshes the query
+  planner's statistics once a day (`PRAGMA optimize`).
 - **Morning summary:** a deterministic template (sleep, yesterday vs
   target, weight trend, calibration line, recovery flags). Delivered by
   Telegram send (no LLM), web push or ntfy. An optional AI comment is
