@@ -1,8 +1,10 @@
 package watchdog_test
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +28,12 @@ var actor = event.Actor{Kind: event.User, Client: "web"}
 // fakeBot returns a bot whose Bot API keeps the texts it was sent.
 func fakeBot(t *testing.T) (*telegram.Bot, func() []string) {
 	t.Helper()
+	return fakeBotAnswering(t, http.StatusOK, `{"ok":true}`)
+}
+
+// fakeBotAnswering is fakeBot with the Bot API's answer.
+func fakeBotAnswering(t *testing.T, status int, answer string) (*telegram.Bot, func() []string) {
+	t.Helper()
 	var mu sync.Mutex
 	var texts []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +44,8 @@ func fakeBot(t *testing.T) (*telegram.Bot, func() []string) {
 		mu.Lock()
 		texts = append(texts, text)
 		mu.Unlock()
-		_, _ = io.WriteString(w, `{"ok":true}`)
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, answer)
 	}))
 	t.Cleanup(srv.Close)
 	return &telegram.Bot{Token: "123456:made-up-token-for-tests-only-0123", BaseURL: srv.URL},
@@ -76,7 +85,7 @@ func TestNoMetrics(t *testing.T) {
 	db := storetest.Open(t)
 	bot, sent := fakeBot(t)
 	u := newUser(t, db, "ana@example.com", "hr", 853)
-	job := watchdog.Job(db, bot)
+	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
 	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
 	weigh(t, db, u, 80, last)
 	run := func(at time.Time) {
@@ -128,7 +137,13 @@ func TestTokenUnused(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	job := watchdog.Job(db, bot)
+	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	if err := job.Run(t.Context(), u, "", created.Add(24*time.Hour+watchdog.TokenUnusedAfter)); err != nil {
+		t.Fatal(err)
+	}
+	if got := sent(); len(got) != 0 {
+		t.Fatalf("an alarm at exactly 3 days: %q", got)
+	}
 	now := created.Add(24*time.Hour + watchdog.TokenUnusedAfter + time.Hour)
 	for _, who := range []user.User{u, u, silent} {
 		if err := job.Run(t.Context(), who, "", now); err != nil {
@@ -145,7 +160,7 @@ func TestTokenUnused(t *testing.T) {
 func TestDue(t *testing.T) {
 	t.Parallel()
 
-	job := watchdog.Job(nil, nil)
+	job := watchdog.Job(nil, nil, nil)
 	a, _ := job.Due(user.User{}, time.Date(2026, 10, 23, 10, 5, 0, 0, time.UTC))
 	b, _ := job.Due(user.User{}, time.Date(2026, 10, 23, 10, 55, 0, 0, time.UTC))
 	c, ok := job.Due(user.User{}, time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC))
@@ -164,7 +179,7 @@ func TestAlarmAfterAChatIsSet(t *testing.T) {
 	u := newUser(t, db, "ana@example.com", "en", 0)
 	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
 	weigh(t, db, u, 80, last)
-	job := watchdog.Job(db, bot)
+	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
 	at := last.Add(watchdog.NoMetricsAfter + time.Hour)
 	if err := job.Run(t.Context(), u, "", at); err != nil {
 		t.Fatal(err)
@@ -177,5 +192,78 @@ func TestAlarmAfterAChatIsSet(t *testing.T) {
 	}
 	if got := sent(); len(got) != 1 || !strings.Contains(got[0], "no metric for 28 h") {
 		t.Errorf("alarms = %q", got)
+	}
+}
+
+// A token never used counts from its creation: no alarm before 3 days,
+// one after.
+func TestTokenNeverUsed(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	bot, sent := fakeBot(t)
+	u := newUser(t, db, "ana@example.com", "hr", 853)
+	created := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	tok := store.APIToken{ID: uuid.NewV7(), UserID: u.ID, Name: "iPhone", Scopes: "ingest", CreatedAt: created}
+	if err := db.CreateAPIToken(t.Context(), tok, strings.Repeat("0", 64)); err != nil {
+		t.Fatal(err)
+	}
+	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	for _, at := range []time.Time{created.Add(time.Hour), created.Add(watchdog.TokenUnusedAfter), created.Add(21*24*time.Hour + time.Hour)} {
+		if err := job.Run(t.Context(), u, "", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := sent(); len(got) != 1 || !strings.Contains(got[0], `token "iPhone" nije korišten 21 dan.`) {
+		t.Errorf("alarms = %q", got)
+	}
+}
+
+// A chat that blocked the bot counts the alarm sent: it is not tried
+// again, and the job does not fail.
+func TestBlockedBot(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	bot, sent := fakeBotAnswering(t, http.StatusForbidden, `{"ok":false,"error_code":403,"description":"Forbidden: bot was blocked by the user"}`)
+	u := newUser(t, db, "ana@example.com", "en", 853)
+	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
+	weigh(t, db, u, 80, last)
+	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	for h := range 3 {
+		if err := job.Run(t.Context(), u, "", last.Add(watchdog.NoMetricsAfter+time.Duration(h+1)*time.Hour)); err != nil {
+			t.Fatalf("run %d: %v", h, err)
+		}
+	}
+	if got := sent(); len(got) != 1 {
+		t.Errorf("tries = %d, want one", len(got))
+	}
+}
+
+// An alarm sent whose record fails is not sent again by the same job.
+func TestAlarmRecordFails(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	bot, sent := fakeBot(t)
+	u := newUser(t, db, "ana@example.com", "en", 853)
+	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
+	weigh(t, db, u, 80, last)
+	err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(t.Context(), `CREATE TRIGGER full BEFORE INSERT ON job_runs
+			WHEN NEW.job = 'watchdog_alarm' BEGIN SELECT RAISE(ABORT, 'database or disk is full'); END`)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	for h := range 3 {
+		if err := job.Run(t.Context(), u, "", last.Add(watchdog.NoMetricsAfter+time.Duration(h+1)*time.Hour)); err != nil {
+			t.Fatalf("run %d: %v", h, err)
+		}
+	}
+	if got := sent(); len(got) != 1 {
+		t.Errorf("alarms = %d, want one", len(got))
 	}
 }

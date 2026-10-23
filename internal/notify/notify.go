@@ -5,12 +5,20 @@ package notify
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
+
+// Blocked reports whether err is Telegram's refusal of a chat that
+// blocked the bot (403): trying again does not help.
+func Blocked(err error) bool {
+	te, ok := errors.AsType[*telegram.Error](err)
+	return ok && te.Code == http.StatusForbidden
+}
 
 // Send sends text to u's Telegram chat through bot, and reports whether
 // u has one: a user without a chat gets nothing, without an error. A

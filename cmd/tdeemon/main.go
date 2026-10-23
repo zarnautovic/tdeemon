@@ -227,7 +227,7 @@ func jobs(cfg config.Config, apiCfg api.Config) []scheduler.Job {
 		return nil
 	}
 	bot := &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
-	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(apiCfg.DB, bot)}
+	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(apiCfg.DB, bot, apiCfg.Logger)}
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

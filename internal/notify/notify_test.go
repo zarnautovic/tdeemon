@@ -2,6 +2,8 @@ package notify_test
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,5 +73,19 @@ func TestSend(t *testing.T) {
 	defer mu.Unlock()
 	if len(chats) != 2 || chats[1] != -1001234 {
 		t.Errorf("sent to %v", chats)
+	}
+}
+
+// Blocked is a 403 of Telegram's, and nothing else.
+func TestBlocked(t *testing.T) {
+	t.Parallel()
+
+	if !notify.Blocked(fmt.Errorf("sending: %w", &telegram.Error{Code: 403})) {
+		t.Error("a 403 is not blocked")
+	}
+	for _, err := range []error{nil, &telegram.Error{Code: 400}, errors.New("403")} {
+		if notify.Blocked(err) {
+			t.Errorf("%v is blocked", err)
+		}
 	}
 }

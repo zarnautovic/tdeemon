@@ -7,7 +7,9 @@ package watchdog
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
@@ -30,16 +32,38 @@ const TokenUnusedAfter = 72 * time.Hour
 // stop it is of as the occurrence, so each stop alarms once.
 const alarmJob = "watchdog_alarm"
 
-// Job is the watchdog, the scheduler's job each hour.
-func Job(db *store.DB, bot *telegram.Bot) scheduler.Job {
+// Job is the watchdog, the scheduler's job each hour. logger takes what
+// it does not return: a chat that blocked the bot. It keeps in memory the
+// alarms it sent whose record failed, so it does not send them again.
+func Job(db *store.DB, bot *telegram.Bot, logger *slog.Logger) scheduler.Job {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	w := &watcher{db: db, bot: bot, logger: logger, sent: map[string]bool{}}
 	return scheduler.Job{
 		Name: "watchdog",
 		// Each hour, by the clock, whatever the user's zone.
 		Due: func(_ user.User, now time.Time) (string, bool) { return now.UTC().Format("2006-01-02T15"), true },
-		Run: func(ctx context.Context, u user.User, _ string, now time.Time) error {
-			return run(ctx, db, bot, u, now)
-		},
+		Run: w.run,
 	}
+}
+
+// keepRuns is how long the watchdog's record of its hourly runs is kept:
+// long enough for a restart not to run an hour again.
+const keepRuns = 48 * time.Hour
+
+// recordTimeout bounds the record of an alarm sent, which is written even
+// as the scheduler stops.
+const recordTimeout = 10 * time.Second
+
+type watcher struct {
+	db     *store.DB
+	bot    *telegram.Bot
+	logger *slog.Logger
+
+	mu sync.Mutex
+	// sent holds the alarms sent whose record failed, by user and key.
+	sent map[string]bool
 }
 
 // alarm is one stop of a user's data: what to say, and the stop's key.
@@ -47,28 +71,49 @@ type alarm struct {
 	key, text string
 }
 
-func run(ctx context.Context, db *store.DB, bot *telegram.Bot, u user.User, now time.Time) error {
-	if _, ok, err := db.TelegramChat(ctx, u.ID); err != nil || !ok {
+func (w *watcher) run(ctx context.Context, u user.User, _ string, now time.Time) error {
+	if err := w.db.DeleteJobRuns(ctx, u.ID, "watchdog", now.Add(-keepRuns)); err != nil {
 		return err
 	}
-	alarms, err := alarmsOf(ctx, db, u, now)
+	alarms, err := alarmsOf(ctx, w.db, u, now)
 	if err != nil {
 		return err
 	}
 	for _, a := range alarms {
-		sent, err := db.JobRan(ctx, u.ID, alarmJob, a.key)
-		if err != nil || sent {
-			if err != nil {
-				return err
-			}
-			continue
-		}
-		if _, err := notify.Send(ctx, db, bot, u, a.text, now); err != nil {
+		if err := w.raise(ctx, u, a, now); err != nil {
 			return err
 		}
-		if err := db.RecordJobRun(context.WithoutCancel(ctx), u.ID, alarmJob, a.key, now); err != nil {
-			return err
-		}
+	}
+	return nil
+}
+
+// raise sends a once: not when it was sent before, nor to a user without
+// a chat, whom it is kept for. A chat that blocked the bot counts it sent.
+func (w *watcher) raise(ctx context.Context, u user.User, a alarm, now time.Time) error {
+	key := u.ID.String() + "/" + a.key
+	w.mu.Lock()
+	sentHere := w.sent[key]
+	w.mu.Unlock()
+	if sentHere {
+		return nil
+	}
+	if sent, err := w.db.JobRan(ctx, u.ID, alarmJob, a.key); err != nil || sent {
+		return err
+	}
+	sent, err := notify.Send(ctx, w.db, w.bot, u, a.text, now)
+	switch {
+	case notify.Blocked(err):
+		w.logger.Warn("the watchdog's chat refuses the bot", "user_id", u.ID, "error", err)
+	case err != nil || !sent:
+		return err
+	}
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	if err := w.db.RecordJobRun(rctx, u.ID, alarmJob, a.key, now); err != nil {
+		w.mu.Lock()
+		w.sent[key] = true
+		w.mu.Unlock()
+		w.logger.Error("recording a watchdog alarm failed", "user_id", u.ID, "error", err)
 	}
 	return nil
 }
@@ -104,7 +149,7 @@ func alarmsOf(ctx context.Context, db *store.DB, u user.User, now time.Time) ([]
 		if now.Sub(used) > TokenUnusedAfter {
 			out = append(out, alarm{
 				key:  "token:" + t.ID.String() + ":" + used.UTC().Format("20060102T150405"),
-				text: fmt.Sprintf(w.silentDevice, t.Name, days(now.Sub(used))),
+				text: fmt.Sprintf(w.silentDevice, t.Name, w.days(days(now.Sub(used)))),
 			})
 		}
 	}
@@ -117,6 +162,8 @@ func days(d time.Duration) int  { return int(d / (24 * time.Hour)) }
 // phrases are the alarms' words in a language.
 type phrases struct {
 	noMetrics, silentDevice string
+	// days writes a number of days with its word.
+	days func(n int) string
 }
 
 // phrasesOf returns the phrases of locale: Croatian for hr, English for
@@ -125,11 +172,23 @@ func phrasesOf(locale string) phrases {
 	if locale == "hr" {
 		return phrases{
 			noMetrics:    "Upozorenje: tdeemon već %d h nije primio nijednu metriku. Provjeri Health Auto Export na telefonu.",
-			silentDevice: "Upozorenje: token %q nije korišten %d dana. Uređaj koji šalje s njim je stao?",
+			silentDevice: "Upozorenje: token %q nije korišten %s. Je li uređaj koji šalje s njim stao?",
+			days: func(n int) string {
+				if n%10 == 1 && n%100 != 11 {
+					return fmt.Sprintf("%d dan", n)
+				}
+				return fmt.Sprintf("%d dana", n)
+			},
 		}
 	}
 	return phrases{
 		noMetrics:    "Alert: tdeemon has had no metric for %d h. Check Health Auto Export on the phone.",
-		silentDevice: "Alert: the token %q has not been used for %d days. Has the device that sends with it stopped?",
+		silentDevice: "Alert: the token %q has not been used for %s. Has the device that sends with it stopped?",
+		days: func(n int) string {
+			if n == 1 {
+				return "1 day"
+			}
+			return fmt.Sprintf("%d days", n)
+		},
 	}
 }

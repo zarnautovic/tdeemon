@@ -2,11 +2,9 @@ package api
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math"
-	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,7 +42,7 @@ func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 				return err
 			}
 			_, err = notify.Send(ctx, s.db, bot, u, text, now)
-			if te, ok := errors.AsType[*telegram.Error](err); ok && te.Code == http.StatusForbidden {
+			if notify.Blocked(err) {
 				// The user blocked the bot: trying again would not help.
 				s.logger.Warn("the morning summary's chat refuses the bot", "user_id", u.ID, "error", err)
 				return nil

@@ -58,6 +58,19 @@ func (db *DB) RecordJobRun(ctx context.Context, userID uuid.UUID, job, occurrenc
 	})
 }
 
+// DeleteJobRuns removes the record of the runs of job for userID made
+// before before: a job that runs often keeps only what it needs.
+func (db *DB) DeleteJobRuns(ctx context.Context, userID uuid.UUID, job string, before time.Time) error {
+	return db.WriteTx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "DELETE FROM job_runs WHERE user_id = ? AND job = ? AND ran_at < ?",
+			userID.String(), job, formatTime(before))
+		if err != nil {
+			return fmt.Errorf("delete job runs: %w", err)
+		}
+		return nil
+	})
+}
+
 // Optimize refreshes the query planner's statistics where they are stale,
 // as SQLite advises a long-lived connection to do now and then (PRAGMA
 // optimize); Migrate does it at the start.
