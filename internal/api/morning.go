@@ -15,6 +15,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/notify"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
@@ -35,15 +36,14 @@ func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 		Name: "morning_summary",
 		Due:  scheduler.DailyAt(10*time.Hour, 4*time.Hour),
 		Run: func(ctx context.Context, u user.User, _ string, now time.Time) error {
-			chat, ok, err := s.db.TelegramChat(ctx, u.ID)
-			if err != nil || !ok {
+			if _, ok, err := s.db.TelegramChat(ctx, u.ID); err != nil || !ok {
 				return err
 			}
 			text, err := s.morning(ctx, u, now)
 			if err != nil {
 				return err
 			}
-			err = bot.Send(ctx, chat, text)
+			_, err = notify.Send(ctx, s.db, bot, u, text, now)
 			if te, ok := errors.AsType[*telegram.Error](err); ok && te.Code == http.StatusForbidden {
 				// The user blocked the bot: trying again would not help.
 				s.logger.Warn("the morning summary's chat refuses the bot", "user_id", u.ID, "error", err)

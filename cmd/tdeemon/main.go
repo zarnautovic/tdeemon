@@ -26,6 +26,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
+	"github.com/zarnautovic/tdeemon/internal/watchdog"
 	"github.com/zarnautovic/tdeemon/internal/webui"
 )
 
@@ -219,14 +220,14 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 	return server.Run(ctx, ln, handler, logger)
 }
 
-// jobs are the scheduler's: the morning summary, with a Telegram bot to
-// send it.
+// jobs are the scheduler's: the morning summary and the watchdog, with a
+// Telegram bot to send them.
 func jobs(cfg config.Config, apiCfg api.Config) []scheduler.Job {
 	if cfg.TelegramBotToken == "" {
 		return nil
 	}
 	bot := &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
-	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot)}
+	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(apiCfg.DB, bot)}
 }
 
 func newLogger(cfg config.Config, w io.Writer) *slog.Logger {

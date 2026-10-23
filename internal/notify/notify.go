@@ -1,0 +1,32 @@
+// Package notify sends a user a notification in their Telegram chat:
+// the morning summary, the watchdog's alarms.
+package notify
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/store"
+	"github.com/zarnautovic/tdeemon/internal/telegram"
+)
+
+// Send sends text to u's Telegram chat through bot, and reports whether
+// u has one: a user without a chat gets nothing, without an error. A
+// group that became a supergroup gets the text in the new chat, which
+// becomes u's.
+func Send(ctx context.Context, db *store.DB, bot *telegram.Bot, u user.User, text string, now time.Time) (bool, error) {
+	chat, ok, err := db.TelegramChat(ctx, u.ID)
+	if err != nil || !ok {
+		return false, err
+	}
+	err = bot.Send(ctx, chat, text)
+	if te, moved := errors.AsType[*telegram.Error](err); moved && te.MigrateTo != 0 {
+		if err := db.SetTelegramChat(ctx, u.ID, te.MigrateTo, now); err != nil {
+			return true, err
+		}
+		err = bot.Send(ctx, te.MigrateTo, text)
+	}
+	return true, err
+}
