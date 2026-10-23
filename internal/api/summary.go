@@ -8,6 +8,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/calibration"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
@@ -131,19 +132,28 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
-	cal, today, err := userDay(p, now)
+	b, err := s.summary(ctx, p, in.Weeks, s.now())
 	if err != nil {
 		return nil, internalError("reading the summary failed", err)
+	}
+	return &summaryOutput{CacheControl: "no-store", Body: b}, nil
+}
+
+// summary is p's user's summary of the weeks up to yesterday, as it
+// stands at now: get_summary's, and the morning summary's.
+func (s *sessions) summary(ctx context.Context, p auth.Principal, weeks int, now time.Time) (summaryBody, error) {
+	cal, today, err := userDay(p, now)
+	if err != nil {
+		return summaryBody{}, err
 	}
 	last := today.AddDays(-1)
 	data, err := s.readSummary(ctx, p.User.ID, cal, today, now)
 	if err != nil {
-		return nil, internalError("reading the summary failed", err)
+		return summaryBody{}, err
 	}
 	pr, err := s.db.Profile(ctx, p.User.ID)
 	if err != nil {
-		return nil, internalError("reading the summary failed", err)
+		return summaryBody{}, err
 	}
 	e := calibration.Calibrate(data.calDays, data.phases, last, data.params)
 	var ph *plan.Phase
@@ -163,12 +173,12 @@ func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOu
 		b.Trend = &trendBody{Kg: round2(e.TrendKg), Date: e.TrendDate.String()}
 	}
 	trend := calibration.Trend(data.calDays, data.params.TrendAlpha)
-	for w := in.Weeks - 1; w >= 0; w-- {
+	for w := weeks - 1; w >= 0; w-- {
 		to := last.AddDays(-7 * w)
 		b.Weeks = append(b.Weeks, data.week(to.AddDays(-6), to, trend))
 	}
-	b.IncompleteDays = data.incomplete(last.AddDays(1-7*in.Weeks), last)
-	return &summaryOutput{CacheControl: "no-store", Body: b}, nil
+	b.IncompleteDays = data.incomplete(last.AddDays(1-7*weeks), last)
+	return b, nil
 }
 
 // readSummary reads the user's plan and limits, their days up to

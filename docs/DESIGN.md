@@ -712,7 +712,12 @@ the first spec.
   admin sets (`tdeemon user set-telegram`, after the user starts the bot)
   until the web app's settings link it with a code.
 - **Morning summary:** a deterministic template (sleep, yesterday vs
-  target, weight trend, calibration line, recovery flags). Delivered by
+  target, weight trend, calibration line, recovery flags), the
+  scheduler's job at 10:00 on the user's clock, sent to their Telegram
+  chat (`internal/api/morning.go`, from the same reads as `get_day` and
+  `get_summary`). The sleep is only the night that ended today; what did
+  not come is left out. In the user's language: English, or Croatian
+  for `hr`. Delivered by
   Telegram send (no LLM), web push or ntfy. An optional AI comment is
   off by default.
 - **Watchdog**, configurable per user: no metrics for > 26 h, nothing
