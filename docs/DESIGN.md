@@ -290,9 +290,21 @@ left.
        cache. The first log after the cache has expired (five minutes
        with Anthropic's) pays for the tools and instructions once more.
      - **The tools and the instructions are a budget of their own**,
-       which every request carries, cached or not: ~10k tokens in
-       October 2026, to bring down, as a client that does not cache
-       pays it in full with each request.
+       which every request carries, cached or not: ~6k tokens, as a
+       client that does not cache pays it in full with each request
+       (~10.5k until October 2026). So a tool's schema carries what a
+       model needs to call it, not the format of a number, examples or
+       bounds, which the operation checks; a schema two tools take is
+       said in full in its own tool's (a new food in `upsert_food`'s, an
+       item in `log_meal`'s) and named in a word in the other's, beside
+       the field's own words; a tool's description in MCP is its brief,
+       what it does and answers, the policy of logging being the
+       instructions', while its operation's description in the OpenAPI
+       document says it all. `TestMCPFitsItsBudget` holds them to a
+       budget in bytes. A schema named in a word is an object without
+       properties, which a client that takes only the OpenAPI subset of
+       JSON Schema (Gemini's function declarations, which do not take
+       `additionalProperties` either) would refuse.
 
      The eval of MCP (`internal/eval`) measures both, and a log's whole
      input.

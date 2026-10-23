@@ -13,11 +13,12 @@ import (
 
 // A tool's definition comes from the document whole, or not at all: a
 // $ref to nothing, a body not of JSON, a name both a parameter and a
-// property of the body, an operation the document lacks.
+// property of the body, an operation the document lacks; and a tool
+// with no brief description for a model.
 func TestMCPToolOfABadDocument(t *testing.T) {
 	t.Parallel()
 
-	tl := tool{name: "a_tool", scopes: []auth.Scope{auth.ScopeTools}, op: huma.Operation{Method: http.MethodPut, Path: "/x/{id}"}}
+	tl := tool{name: "a_tool", scopes: []auth.Scope{auth.ScopeTools}, op: huma.Operation{Method: http.MethodPut, Path: "/x/{id}"}, brief: "A tool."}
 	param := `"parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}]`
 	for name, tc := range map[string]struct{ doc, want string }{
 		"a $ref to nothing": {`{"paths": {"/x/{id}": {"put": {` + param + `, "requestBody": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Gone"}}}}}}}}`, "a $ref to nothing"},
@@ -34,6 +35,11 @@ func TestMCPToolOfABadDocument(t *testing.T) {
 	}
 	if _, err := newMCPServer([]tool{tl}, []byte(`not json`), nil, ServerInfo{}, nil); err == nil {
 		t.Error("a document that is no JSON was taken")
+	}
+	tl.brief = ""
+	doc := `{"paths": {"/x/{id}": {"put": {` + param + `}}}}`
+	if _, err := newMCPServer([]tool{tl}, []byte(doc), nil, ServerInfo{}, nil); err == nil || !strings.Contains(err.Error(), "no brief") {
+		t.Errorf("a tool without a brief: %v, want an error", err)
 	}
 }
 

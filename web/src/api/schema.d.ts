@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * Get a day
-         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded).
+         * @description A day of yours: its meals with what each item brought, the total against the target of the day's type, what remains, its metrics, its check-in, its type and where it stands (open, complete or excluded). today is the user's day now, by their day's start hour.
          */
         get: operations["get-day"];
         put?: never;
@@ -167,7 +167,7 @@ export interface paths {
         put?: never;
         /**
          * Save a food
-         * @description Saves a food, or corrects one: the food with the id, or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
+         * @description Saves a food, or corrects one: the food with the id (404 for an id the user has no food of), or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
          */
         post: operations["upsert-food"];
         delete?: never;
@@ -331,7 +331,7 @@ export interface paths {
         put?: never;
         /**
          * Log a meal
-         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another, so after a timeout, look at get_day before sending it again. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
+         * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another (or a 409, when its items carry ids of their own), so after a timeout, look at get_day before sending it again. eaten_at left out is the id's time, so a retry has the same. An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
          */
         post: operations["log-meal"];
         delete?: never;
@@ -477,7 +477,7 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         CheckInBody: {
-            /** @description Takes the day out of calibration for this reason (restaurant, sick, forgot to log); empty brings it back. */
+            /** @description Why the day is out of calibration (restaurant, sick, not logged); empty brings it back. */
             excluded_reason?: string;
             /**
              * Format: int64
@@ -492,7 +492,7 @@ export interface components {
             /** @description What the user says of the day; empty clears it. */
             note?: string;
             /**
-             * @description training or rest sets the day's type, which picks its target; plan leaves it to the training weekdays.
+             * @description The day's type, which picks its target; plan: by the training weekdays.
              * @enum {string}
              */
             training_day?: "training" | "rest" | "plan";
@@ -660,16 +660,16 @@ export interface components {
             type?: string;
         };
         FoodBody: {
-            /** @description Other names the user calls the food by; search finds them. */
+            /** @description Other names search finds. */
             aliases?: string[];
             /** @description An archived food stays out of a search, and keeps its name and aliases. */
             archived: boolean;
             /**
-             * @description What the nutrients are for: 100 g, 100 ml, or a portion.
+             * @description What the nutrients are for.
              * @enum {string}
              */
             basis: "100g" | "100ml" | "portion";
-            /** @description The same name and brand are the same food. */
+            /** @description The same name and brand are one food. */
             brand?: string;
             /** Format: uuid */
             id: string;
@@ -681,28 +681,28 @@ export interface components {
             nutrients: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
+             * @description The grams of a portion, when known.
              */
             portion_grams?: number;
             /** @description The queries of find_foods that found the food, of those it was sent. */
             queries?: string[];
-            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
+            /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from: a label is exact, an estimate a judgement.
+             * @description Where the values come from.
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
         };
         FoodFields: {
-            /** @description Other names the user calls the food by; search finds them. */
+            /** @description Other names search finds. */
             aliases?: string[];
             /**
-             * @description What the nutrients are for: 100 g, 100 ml, or a portion.
+             * @description What the nutrients are for.
              * @enum {string}
              */
             basis: "100g" | "100ml" | "portion";
-            /** @description The same name and brand are the same food. */
+            /** @description The same name and brand are one food. */
             brand?: string;
             /** @example Greek yoghurt 2 % */
             name: string;
@@ -710,13 +710,13 @@ export interface components {
             nutrients: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
+             * @description The grams of a portion, when known.
              */
             portion_grams?: number;
-            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
+            /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from: a label is exact, an estimate a judgement.
+             * @description Where the values come from.
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
@@ -726,7 +726,7 @@ export interface components {
             alcohol?: number;
             /**
              * Format: double
-             * @description Polyols are part of them, as on an EU label.
+             * @description With polyols, as on an EU label.
              */
             carbs: number;
             /** Format: double */
@@ -827,7 +827,7 @@ export interface components {
              * @description How much of the food, in unit.
              */
             amount?: number;
-            /** @description A new food, saved as it is logged; one of the same name and brand as a food the user has is that food, as the user has it, unchanged (upsert_food corrects a food). */
+            /** @description A new food, saved; one of the name and brand of the user's food is that food, unchanged. */
             food?: components["schemas"]["FoodFields"];
             /**
              * Format: uuid
@@ -836,20 +836,20 @@ export interface components {
             food_id?: string;
             /**
              * Format: uuid
-             * @description The client's id for the item; a new one when left out.
+             * @description The item's id; made when left out.
              */
             id?: string;
-            /** @description A one-off estimate of a whole plate: its name, with its nutrients. */
+            /** @description A whole plate's estimate: its name, with nutrients. */
             name?: string;
             note?: string;
             /** @description The estimate's values, for the whole plate. */
             nutrients?: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description How many portions of a food per portion.
+             * @description Portions of a food per portion.
              */
             portions?: number;
-            /** @description A serving the food names: a slice, a piece. */
+            /** @description A serving the food names. */
             serving?: string;
             /**
              * Format: double
@@ -857,7 +857,7 @@ export interface components {
              */
             servings?: number;
             /**
-             * @description The amount's unit, the food's own: g or ml, or grams of a food per portion whose portion's weight is known. Left out for a food of the user's (food_id), its g or ml; a new food's amount and a food per portion need it.
+             * @description The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it.
              * @enum {string}
              */
             unit?: "g" | "ml";
@@ -902,21 +902,21 @@ export interface components {
             description?: string;
             /**
              * Format: date-time
-             * @description When the meal was eaten; the time of the id when left out, so a retry has the same.
+             * @description When eaten; left out, the time of the id.
              */
             eaten_at?: string;
             /**
              * Format: uuid
-             * @description A UUIDv7 the client makes when the meal is logged, no more than a day before and five minutes ahead of the clock: the same meal sent again under it is a retry. Left out (not sent empty) by a client that cannot make one, the server makes one, and the meal sent again is another (or a 409, when its items carry ids of their own).
+             * @description A UUIDv7 made now (a day back to five minutes ahead): the meal sent again under it is a retry. Left out (not empty), the server makes one, and a meal sent again is another.
              */
             id?: string;
-            items: components["schemas"]["ItemInput"][] | null;
+            items: components["schemas"]["ItemInput"][];
             note?: string;
         };
         LogMetricInputBody: {
             /**
              * Format: double
-             * @description In the kind's unit: weight and lean_mass kg, body_fat %, steps a count, active_kcal and basal_kcal kcal, sleep_h hours, rhr bpm, hrv ms, vo2max ml/kg/min, exercise_min minutes.
+             * @description kg (weight, lean_mass), % (body_fat), count (steps), kcal (active_kcal, basal_kcal), h (sleep_h), bpm (rhr), ms (hrv), ml/kg/min (vo2max), min (exercise_min).
              */
             value: number;
         };
@@ -1365,7 +1365,7 @@ export interface components {
         UndoInputBody: {
             /**
              * Format: uuid
-             * @description A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change. Left out (not sent empty) by a client that cannot make one, the server makes one, and the undo sent again takes back another change.
+             * @description A UUIDv7 made now (a day back to five minutes ahead): the undo sent again under it takes back nothing more. Left out (not empty), the server makes one, and an undo sent again takes back another change.
              */
             id?: string;
         };
@@ -1417,20 +1417,20 @@ export interface components {
             ops?: components["schemas"]["MealOp"][];
         };
         UpsertFoodInputBody: {
-            /** @description Other names the user calls the food by; search finds them. */
+            /** @description Other names search finds. */
             aliases?: string[];
-            /** @description Archives the food, or keeps it so: out of a search, keeping its name and aliases. Left out, a save brings an archived food back. */
+            /** @description Archives the food (out of search, its names kept); left out, a save brings it back. */
             archived?: boolean;
             /**
-             * @description What the nutrients are for: 100 g, 100 ml, or a portion.
+             * @description What the nutrients are for.
              * @enum {string}
              */
             basis: "100g" | "100ml" | "portion";
-            /** @description The same name and brand are the same food. */
+            /** @description The same name and brand are one food. */
             brand?: string;
             /**
              * Format: uuid
-             * @description The food to correct, by its id (404 for one the user has no food of); without one, the food of the same name and brand, or a new one.
+             * @description The food to correct; without it, the food of the name and brand, or a new one.
              */
             id?: string;
             /** @example Greek yoghurt 2 % */
@@ -1439,13 +1439,13 @@ export interface components {
             nutrients: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description The weight of a portion of a food per portion, when known: it can then be logged in grams.
+             * @description The grams of a portion, when known.
              */
             portion_grams?: number;
-            /** @description Named amounts of a food by weight or volume: a piece, a slice. */
+            /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from: a label is exact, an estimate a judgement.
+             * @description Where the values come from.
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
@@ -1986,7 +1986,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                /** @description YYYY-MM-DD, or today: the user's day now. */
                 date: string;
             };
             cookie?: never;
@@ -2055,7 +2055,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                /** @description YYYY-MM-DD, or today: the user's day now. */
                 date: string;
             };
             cookie?: never;
@@ -2163,7 +2163,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                /** @description YYYY-MM-DD, or today: the user's day now. */
                 date: string;
                 kind: "weight" | "body_fat" | "lean_mass" | "steps" | "active_kcal" | "basal_kcal" | "sleep_h" | "rhr" | "hrv" | "vo2max" | "exercise_min";
             };
@@ -2272,7 +2272,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description The day, YYYY-MM-DD, or today: the user's day now, by their day's start hour. */
+                /** @description YYYY-MM-DD, or today: the user's day now. */
                 date: string;
                 kind: "weight" | "body_fat" | "lean_mass" | "steps" | "active_kcal" | "basal_kcal" | "sleep_h" | "rhr" | "hrv" | "vo2max" | "exercise_min";
             };
@@ -2348,7 +2348,7 @@ export interface operations {
     "find-foods": {
         parameters: {
             query: {
-                /** @description Words the name, the brand or an alias starts with, in any case and without the diacritics; one query a food, several at once for a meal's. */
+                /** @description The start of words of the name, brand or an alias, in any case, without diacritics; one a food. */
                 query: string[];
                 /** @description The most foods of each query. */
                 limit?: number;

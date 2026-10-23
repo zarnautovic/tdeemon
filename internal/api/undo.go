@@ -24,7 +24,7 @@ type undoneBody struct {
 
 type undoInput struct {
 	Body struct {
-		ID string `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 the client makes for the undo, no more than a day before and five minutes ahead of the clock: the same undo sent again under it takes back no other change. Left out (not sent empty) by a client that cannot make one, the server makes one, and the undo sent again takes back another change."`
+		ID string `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 made now (a day back to five minutes ahead): the undo sent again under it takes back nothing more. Left out (not empty), the server makes one, and an undo sent again takes back another change."`
 	}
 }
 

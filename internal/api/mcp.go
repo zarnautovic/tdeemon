@@ -352,6 +352,16 @@ type openAPIDoc struct {
 	Components struct {
 		Schemas map[string]json.RawMessage `json:"schemas"`
 	} `json:"components"`
+	// tool is the tool whose schema is being made.
+	tool string
+}
+
+// saidOnce are schemas two tools take, said in full in their own tool's
+// alone: a model has each tool's schema with each request, so another
+// that takes it names it in a word. The operation checks it in full.
+var saidOnce = map[string]struct{ of, description string }{
+	"FoodFields": {"upsert_food", "The fields upsert_food takes, but its id and archived."},
+	"ItemInput":  {"log_meal", "An item, as log_meal's items take it."},
 }
 
 type openAPIOp struct {
@@ -378,6 +388,10 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 	if !ok {
 		return mcpTool{}, fmt.Errorf("no %s %s in the document", t.op.Method, t.op.Path)
 	}
+	d.tool = t.name
+	if t.brief == "" {
+		return mcpTool{}, errors.New("no brief description")
+	}
 	mt := mcpTool{tool: t, params: map[string]param{}}
 	props := map[string]any{}
 	required, err := d.params(op, &mt, props)
@@ -393,7 +407,7 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 		mt.body = true
 	}
 	slices.Sort(required)
-	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	schema := map[string]any{"type": "object", "properties": forModel(props, true), "additionalProperties": false}
 	if len(required) > 0 {
 		schema["required"] = required
 	}
@@ -404,13 +418,45 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 	// says so (tool.destroys).
 	readOnly := t.op.Method == http.MethodGet
 	mt.def = &mcp.Tool{
-		Name: t.name, Title: t.op.Summary, Description: t.op.Description, InputSchema: schema,
+		Name: t.name, Title: t.op.Summary, Description: t.brief, InputSchema: schema,
 		Annotations: &mcp.ToolAnnotations{
 			Title: t.op.Summary, ReadOnlyHint: readOnly, DestructiveHint: new(t.destructive),
 			IdempotentHint: !t.writesAgain, OpenWorldHint: new(false),
 		},
 	}
 	return mt, nil
+}
+
+// A tool's schema goes with each request a model makes, so it carries
+// what the model needs to call the tool: not the format of a number, nor
+// examples, nor the bounds of a number, a string or a list, which the
+// operation checks and answers in its error.
+var (
+	droppedKeywords = []string{"examples", "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum", "minLength", "maxLength", "minItems", "maxItems"}
+	keptFormats     = []string{"uuid", "date", "date-time"}
+)
+
+// forModel returns schema v without what a model does not need; names
+// says v is a map of properties by name, whose keys are no keywords.
+func forModel(v any, names bool) any {
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			if f, isString := e.(string); !names && (slices.Contains(droppedKeywords, k) || k == "format" && (!isString || !slices.Contains(keptFormats, f))) {
+				continue
+			}
+			out[k] = forModel(e, !names && k == "properties")
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = forModel(e, false)
+		}
+		return out
+	}
+	return v
 }
 
 // params adds op's path and query parameters to props and to mt, and
@@ -490,7 +536,17 @@ func (d openAPIDoc) inlineValue(v any, depth int) (any, error) {
 			if !found || !known {
 				return nil, fmt.Errorf("a $ref to nothing: %s", ref)
 			}
-			return d.inline(s, depth+1)
+			// A field's words stand by its $ref: they say what the field is
+			// where the schema says what it holds.
+			words, _ := v["description"].(string)
+			if once, ok := saidOnce[name]; ok && once.of != d.tool {
+				return map[string]any{"type": "object", "description": strings.TrimSpace(words + " " + once.description)}, nil
+			}
+			in, err := d.inline(s, depth+1)
+			if m, isMap := in.(map[string]any); isMap && words != "" {
+				m["description"] = words
+			}
+			return in, err
 		}
 		out := make(map[string]any, len(v))
 		for k, e := range v {
