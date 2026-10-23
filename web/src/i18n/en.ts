@@ -24,6 +24,8 @@ export const en = {
   soon: 'This part is on its way.',
   unreachable: 'The server cannot be reached.',
   serverFailed: 'The server failed to answer.',
+  failed: 'Something went wrong.',
+  connecting: 'Connecting to the server…',
   retry: 'Try again',
   signIn: {
     title: 'Sign in',
@@ -55,7 +57,6 @@ export const en = {
     signOut: 'Sign out',
     signOutFailed: 'Signing out failed. Try again.',
     about: 'About',
-    connecting: 'Connecting to the server…',
   },
   notFound: {
     title: 'Page not found',

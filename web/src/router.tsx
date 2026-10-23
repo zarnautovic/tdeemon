@@ -7,7 +7,8 @@ import {
   type RouterHistory,
 } from '@tanstack/react-router'
 
-import { isStatus, safeTarget, sessionQuery } from '@/api/session'
+import { statusOf } from '@/api/errors'
+import { safeTarget, sessionQuery } from '@/api/session'
 import { setLocale } from '@/i18n/locale'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
@@ -29,6 +30,9 @@ interface RouterContext {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
   notFoundComponent: NotFoundPage,
+  // Any error a page does not handle, in the app's words, not the
+  // router's own page.
+  errorComponent: AppError,
 })
 
 // The app's sections share a layout with the navigation between them,
@@ -45,7 +49,7 @@ const appRoute = createRoute({
       setLocale(session.user.locale)
       return { session }
     } catch (error) {
-      if (isStatus(error, 401)) {
+      if (statusOf(error) === 401) {
         // oxlint-disable-next-line typescript/only-throw-error -- the router's redirect is thrown by design
         throw redirect({ to: '/login', search: { redirect: location.href } })
       }

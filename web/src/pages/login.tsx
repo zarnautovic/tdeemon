@@ -3,8 +3,9 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import type { SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
+import { HttpError } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
-import { signIn, SignInError } from '@/api/sign-in'
+import { signIn } from '@/api/sign-in'
 import { Button, buttonVariants } from '@/components/ui/button'
 import type { Messages } from '@/i18n/en'
 import { useMessages } from '@/i18n/messages'
@@ -20,7 +21,7 @@ function text(form: FormData, name: string): string {
 
 // problem is what to tell a person whose sign-in failed.
 function problem(t: Messages, error: unknown): string {
-  if (error instanceof SignInError) {
+  if (error instanceof HttpError) {
     if (error.status === 401) {
       return t.signIn.wrong
     }
@@ -46,7 +47,10 @@ export function LoginPage() {
   const login = useMutation({
     mutationFn: signIn,
     onSuccess: async (session) => {
-      // The sections take the user's language from it.
+      // Nothing another user left in the app (a session that ended
+      // rather than signed out) stays for this one; the sections take
+      // the user's language from the session.
+      queryClient.clear()
       queryClient.setQueryData(sessionQuery.queryKey, session)
       await navigate({ href: target, replace: true })
     },
@@ -62,6 +66,7 @@ export function LoginPage() {
   return (
     <main className="mx-auto max-w-sm space-y-6 pt-10">
       <h1 className="text-2xl font-semibold">{t.signIn.title}</h1>
+      {methods.isPending && <p className="text-muted-foreground">{t.connecting}</p>}
       {methods.isError && (
         <p role="alert" className="text-destructive">
           {methods.error instanceof TypeError ? t.unreachable : t.serverFailed}

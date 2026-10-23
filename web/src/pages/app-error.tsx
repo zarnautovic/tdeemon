@@ -1,22 +1,33 @@
 import { useRouter, type ErrorComponentProps } from '@tanstack/react-router'
 
+import { statusOf } from '@/api/errors'
 import { Button } from '@/components/ui/button'
+import type { Messages } from '@/i18n/en'
 import { useMessages } from '@/i18n/messages'
 
-// AppError is what the app's sections show when the server cannot say
-// who is signed in: it is down or unreachable, or failed.
+// problem says what failed: no answer from the server, an answer that is
+// an error, or the app itself.
+function problem(t: Messages, error: unknown): string {
+  if (error instanceof TypeError) {
+    return t.unreachable
+  }
+  return statusOf(error) === undefined ? t.failed : t.serverFailed
+}
+
+// AppError is what a page shows for an error it does not handle; mostly,
+// that the server cannot say who is signed in, being down or failing.
 export function AppError({ error }: ErrorComponentProps) {
   const t = useMessages()
   const router = useRouter()
 
   return (
-    <section className="space-y-4">
+    <main className="space-y-4">
       <p role="alert" className="text-destructive">
-        {error instanceof TypeError ? t.unreachable : t.serverFailed}
+        {problem(t, error)}
       </p>
       <Button variant="outline" onClick={() => void router.invalidate()}>
         {t.retry}
       </Button>
-    </section>
+    </main>
   )
 }

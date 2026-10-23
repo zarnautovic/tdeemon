@@ -21,6 +21,8 @@ export const hr: Messages = {
   soon: 'Ovaj dio stiže uskoro.',
   unreachable: 'Server nije dostupan.',
   serverFailed: 'Server nije uspio odgovoriti.',
+  failed: 'Nešto je pošlo po zlu.',
+  connecting: 'Spajanje na server…',
   retry: 'Pokušaj ponovno',
   signIn: {
     title: 'Prijava',
@@ -29,7 +31,7 @@ export const hr: Messages = {
     submit: 'Prijavi se',
     submitting: 'Prijava…',
     or: 'ili',
-    with: (provider: string) => `Prijavi se preko ${provider}`,
+    with: (provider: string) => `Prijavi se putem usluge ${provider}`,
     wrong: 'Pogrešan email ili lozinka.',
     tooMany: (seconds: number) =>
       `Previše neuspjelih prijava. Pokušaj ponovno za ${wait(seconds)}.`,
@@ -53,7 +55,6 @@ export const hr: Messages = {
     signOut: 'Odjavi se',
     signOutFailed: 'Odjava nije uspjela. Pokušaj ponovno.',
     about: 'O aplikaciji',
-    connecting: 'Spajanje na server…',
   },
   notFound: {
     title: 'Stranica ne postoji',

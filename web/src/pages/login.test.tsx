@@ -231,3 +231,56 @@ test('a section says when the server failed to say who is signed in', async () =
     expect(screen.queryByRole('navigation')).toBeNull()
   })
 })
+
+test('signing in forgets what the app kept of whoever was signed in before', async () => {
+  server(() => Response.json(session()))
+  const router = renderAt('/login')
+  const { queryClient } = router.options.context
+  queryClient.setQueryData(['get', '/api/v1/days/{date}'], { meals: ['of another user'] })
+
+  await signIn()
+
+  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(queryClient.getQueryData(['get', '/api/v1/days/{date}'])).toBeUndefined()
+})
+
+test('a 401 without a body, as a proxy may send, still asks to sign in', async () => {
+  fakeServer({
+    ...signedOut,
+    'GET /api/v1/auth/session': () => new Response(null, { status: 401 }),
+  })
+
+  const router = renderAt('/foods')
+
+  expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeDefined()
+  expect(router.state.location.pathname).toBe('/login')
+})
+
+test('a target the server would refuse is the start page, not an error', async () => {
+  fakeServer(signedIn())
+
+  const router = renderAt('/login?redirect=%2F%09%2Fevil.example')
+
+  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(router.state.location.href).toBe('/')
+})
+
+test('the sign-in page says it is connecting until the server answers', async () => {
+  fakeServer({
+    ...signedOut,
+    'GET /api/v1/auth/methods': () => new Promise<Response>(() => undefined),
+  })
+
+  renderAt('/login')
+
+  expect(await screen.findByText('Connecting to the server…')).toBeDefined()
+  expect(screen.queryByLabelText('Password')).toBeNull()
+})
+
+test('a failure of the app itself is not blamed on the server', async () => {
+  fakeServer({ 'GET /api/v1/auth/session': () => Promise.reject(new Error('a bug')) })
+
+  renderAt('/charts')
+
+  expect((await screen.findByRole('alert')).textContent).toBe('Something went wrong.')
+})

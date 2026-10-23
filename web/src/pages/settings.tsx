@@ -47,7 +47,7 @@ export function SettingsPage() {
       </section>
       <section className="space-y-1">
         <h2 className="font-medium">{t.settings.about}</h2>
-        {info.isPending && <p className="text-muted-foreground">{t.settings.connecting}</p>}
+        {info.isPending && <p className="text-muted-foreground">{t.connecting}</p>}
         {info.isError && <p className="text-destructive">{t.unreachable}</p>}
         {info.data && (
           <p className="text-muted-foreground">
