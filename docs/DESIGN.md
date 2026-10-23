@@ -707,10 +707,15 @@ the first spec.
   run and its record runs it again; a job that fails is tried again
   after 10 minutes. It also refreshes the query
   planner's statistics once a day (`PRAGMA optimize`).
-- **Telegram:** the instance's bot sends, and only sends
-  (`internal/telegram`); a user's chat is in `telegram_chats`, which an
-  admin sets (`tdeemon user set-telegram`, after the user starts the bot)
-  until the web app's settings link it with a code.
+- **Telegram:** the instance's bot (`internal/telegram`) sends, and
+  reads its messages by long polling (`getUpdates`, no webhook, as the
+  instance may be private); a user's chat is in `telegram_chats`, which
+  an admin sets (`tdeemon user set-telegram`, after the user starts the
+  bot) until the web app's settings link it with a code. The commands
+  (`internal/api/commands.go`): `/sazetak` (`/summary`) sends the morning
+  summary as it is now, `/pomoc` (`/help`) lists them; only a chat in
+  `telegram_chats` is answered, and a command writes nothing. The
+  adapter with the agent loop (§6) will take the bot's other messages.
 - **Morning summary:** a deterministic template (sleep, yesterday vs
   target, weight trend, calibration line, recovery flags), the
   scheduler's job at 10:00 on the user's clock, sent to their Telegram

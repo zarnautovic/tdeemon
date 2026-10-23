@@ -284,10 +284,17 @@ func TestRunTrustsTheConfiguredProxies(t *testing.T) {
 func TestJobs(t *testing.T) {
 	t.Parallel()
 
-	if js := jobs(config.Config{}, api.Config{}); len(js) != 0 {
+	if bot := telegramBot(config.Config{}); bot != nil {
+		t.Errorf("a bot without a token = %v", bot)
+	}
+	if js := jobs(api.Config{}, nil); len(js) != 0 {
 		t.Errorf("jobs without a bot = %v", js)
 	}
-	js := jobs(config.Config{TelegramBotToken: testBotToken, TelegramAPIURL: "http://localhost"}, api.Config{})
+	bot := telegramBot(config.Config{TelegramBotToken: testBotToken, TelegramAPIURL: "http://localhost"})
+	if bot == nil || bot.Token != testBotToken || bot.BaseURL != "http://localhost" {
+		t.Fatalf("the bot = %+v", bot)
+	}
+	js := jobs(api.Config{}, bot)
 	if len(js) != 2 || js[0].Name != "morning_summary" || js[1].Name != "watchdog" {
 		t.Errorf("jobs with a bot = %v", js)
 	}

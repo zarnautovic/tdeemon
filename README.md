@@ -102,7 +102,7 @@ All settings come from environment variables:
 | `TDEEMON_OIDC_NAME` | `Single sign-on` | what the sign-in page calls the provider |
 | `TDEEMON_TRUSTED_PROXIES` | — | reverse proxies whose `X-Forwarded-For` names the client, as addresses or CIDR ranges (`10.42.0.0/16, fd00::/8`); set it behind a proxy, or the limits on failed sign-ins count the proxy's address, that is everyone together |
 | `TDEEMON_LIMIT_<NAME>` | the column "Hard limit" of [docs/limits.md](docs/limits.md) | the instance's limits of a plan, such as `TDEEMON_LIMIT_KCAL_FLOOR_FEMALE=1000` for a clinician's patient; the names are in docs/limits.md, "The names of the limits". Never below the floor in the code, and some only tighter |
-| `TDEEMON_TELEGRAM_BOT_TOKEN` | — | the token of a Telegram bot (from @BotFather) that sends users their notifications ([Telegram](#telegram)) |
+| `TDEEMON_TELEGRAM_BOT_TOKEN` | — | the token of a Telegram bot (from @BotFather) that sends users their notifications and answers their commands ([Telegram](#telegram)) |
 | `TDEEMON_TELEGRAM_API_URL` | `https://api.telegram.org` | the Bot API, Telegram's or a [Bot API server](https://github.com/tdlib/telegram-bot-api) of your own; `http` only for one in your network, as the token is in every request |
 | `TZ` | system | default time zone of the instance |
 
@@ -221,17 +221,20 @@ Against guessing and floods:
 ### Telegram
 
 tdeemon sends a user's notifications to a Telegram chat through a bot of
-the instance, in the user's language (English, or Croatian for `hr`). It
-only sends: it reads no messages, so no link from Telegram reaches it.
+the instance, in the user's language (English, or Croatian for `hr`), and
+answers the commands sent to it there. It reads the bot's messages by
+asking Telegram for them (long polling), so no link from Telegram
+reaches it; no other program may poll the same bot.
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) (`/newbot`) and
    set its token as `TDEEMON_TELEGRAM_BOT_TOKEN`.
 2. The user opens the bot in Telegram and presses **Start**: a bot may
    only write to someone who has written to it first.
-3. Find the chat's id, the user's id in Telegram for a private chat, for
-   example in the bot's updates
-   (`https://api.telegram.org/bot<token>/getUpdates`, `message.chat.id`),
-   which work while no other program polls the bot.
+3. Find the chat's id, the user's id in Telegram for a private chat: a
+   running tdeemon logs it for a message from a chat that is no user's
+   (`a message to the Telegram bot from a chat that is no user's`,
+   `chat_id`). Without one running, the bot's updates have it
+   (`https://api.telegram.org/bot<token>/getUpdates`, `message.chat.id`).
 4. Set it for the user:
 
    ```sh
@@ -259,6 +262,18 @@ line for each of these that came:
 - recovery's flags, with their averages.
 
 A value that did not come is left out; nothing is guessed.
+
+**Commands**, in the user's chat with the bot, which Telegram's menu
+lists:
+
+- `/sazetak` or `/summary`: the morning summary, as it is now;
+- `/pomoc`, `/help` or `/start`, or any other message: the commands.
+
+The answer is in the user's language, and in a group set for several
+users, one for each. A chat that is no user's gets no answer, and
+neither does a command older than 5 minutes (one sent while the server
+was down). A command changes nothing: the morning summary still comes
+at 10:00.
 
 **The watchdog** looks each hour and tells the user, in the same chat,
 when their data stop coming:
