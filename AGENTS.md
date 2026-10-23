@@ -18,7 +18,8 @@ on a phase), the tool registry with `get_profile`, `get_day`,
 `get_summary`, `find_foods`, `get_food`, `upsert_food`, `log_meal`,
 `update_meal`, `delete_meal`, `log_metric`, `delete_metric`, `checkin`
 and `undo_last`, the MCP server that serves them at `/mcp`, the API
-contract and an empty web app exist.
+contract and the web app's frame (its sections, in English and Croatian)
+exist.
 
 | Path | What |
 | --- | --- |
@@ -37,7 +38,7 @@ contract and an empty web app exist.
 | `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan (web session only), the imports (API token only), and the tools (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
-| `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind) |
+| `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n` |
 | `web/codegen` | generates `web/src/api/schema.d.ts` from the spec |
 | `docs/` | the design, the conventions, and the limits of a plan with their sources (`limits.md`) |
 | `.github/` | the CI workflows, the ruleset for `main`, issue and PR templates |

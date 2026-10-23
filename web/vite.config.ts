@@ -26,12 +26,13 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
     coverage: {
       provider: 'v8',
       include: ['src/**'],
-      // Generated types, the entry point that mounts the app, and the
-      // components copied from the shadcn registry.
-      exclude: ['src/api/schema.d.ts', 'src/main.tsx', 'src/components/ui/**'],
+      // Generated types, the entry point that mounts the app, the
+      // components copied from the shadcn registry, and the tests' setup.
+      exclude: ['src/api/schema.d.ts', 'src/main.tsx', 'src/components/ui/**', 'src/test/**'],
       reporter: ['text-summary', 'lcov'],
       // Lines and functions only: the React Compiler adds a cache branch,
       // and the statements around it, to every memoised value, and a test

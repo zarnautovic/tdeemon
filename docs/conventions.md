@@ -615,7 +615,11 @@ generator writes it.
 - **Imports** from another directory of `src` go through `@/`, never
   `../` (`import/no-relative-parent-imports`). `./` is for a neighbour in
   the same directory, such as `./schema` in `src/api`.
-- **Text:** user-facing text goes through i18n once it is set up.
+- **Text:** user-facing text is never written in a component: it is a
+  message in `src/i18n/en.ts` and the same key in every other language
+  (`hr.ts`), which the type checker holds to it, read with
+  `useMessages()`. A text with values in it is a function of them. The
+  language is the one chosen last in the browser, or the browser's own.
 
 ### Tests
 
