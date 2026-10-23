@@ -205,36 +205,65 @@ type Settings struct {
 // Validate reports every setting that breaks the rules of user.Validate,
 // joined into one error.
 func (s Settings) Validate() error {
-	var errs []error
-	errs = append(errs, user.ValidateName(s.Name), user.ValidateTimeZone(s.TimeZone))
-	if !slices.Contains(user.Locales(), s.Locale) {
-		errs = append(errs, fmt.Errorf("locale %q: want one of %s", s.Locale, strings.Join(user.Locales(), ", ")))
-	}
-	if s.DayStartHour < 0 || s.DayStartHour > 23 {
-		errs = append(errs, fmt.Errorf("day start hour %d: want 0 to 23", s.DayStartHour))
-	}
-	return errors.Join(errs...)
+	return errors.Join(user.ValidateName(s.Name), user.ValidateLocale(s.Locale),
+		user.ValidateTimeZone(s.TimeZone), user.ValidateDayStartHour(s.DayStartHour))
 }
 
-// SetSettings stores s as the settings of the user with id, each held to
-// the rules of user.Validate, or returns ErrNotFound. A day's start or a
-// time zone changed moves no meal or measurement logged before: each keeps
-// the day it was logged on.
-func (db *DB) SetSettings(ctx context.Context, id uuid.UUID, s Settings, now time.Time) error {
-	if err := s.Validate(); err != nil {
-		return fmt.Errorf("set settings: %w", err)
-	}
-	return db.WriteTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE users SET name = ?, locale = ?, timezone = ?, day_start_hour = ?, updated_at = ?
-			WHERE id = ?`, s.Name, s.Locale, s.TimeZone, s.DayStartHour, formatTime(now), id.String())
-		if err != nil {
-			return fmt.Errorf("set settings: %w", err)
-		}
-		if n, err := res.RowsAffected(); err != nil {
-			return fmt.Errorf("set settings: %w", err)
-		} else if n == 0 {
+// SettingsChange is a change of some settings: each one given, and only
+// those.
+type SettingsChange struct {
+	Name, Locale, TimeZone *string
+	DayStartHour           *int
+}
+
+// ErrInvalidSettings is a change that would leave settings the rules
+// refuse; the error that wraps it says which.
+var ErrInvalidSettings = errors.New("invalid settings")
+
+// ChangeSettings changes the settings of the user with id as c says, on
+// the user as they are in the same transaction, so changes made at once
+// each keep what they change; and returns the user as changed. It returns
+// ErrNotFound for no such user, and an error that wraps
+// ErrInvalidSettings for settings the rules refuse. A day's start or a
+// time zone changed moves no meal or measurement logged before: each
+// keeps the day it was logged on.
+func (db *DB) ChangeSettings(ctx context.Context, id uuid.UUID, c SettingsChange, now time.Time) (user.User, error) {
+	var u user.User
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		u, err = scanUser(tx.QueryRowContext(ctx, "SELECT "+userColumns+" FROM users WHERE id = ?", id.String()).Scan)
+		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
-		return nil
+		if err != nil {
+			return err
+		}
+		if c.Name != nil {
+			u.Name = *c.Name
+		}
+		if c.Locale != nil {
+			u.Locale = *c.Locale
+		}
+		if c.TimeZone != nil {
+			u.TimeZone = *c.TimeZone
+		}
+		if c.DayStartHour != nil {
+			u.DayStartHour = *c.DayStartHour
+		}
+		s := Settings{Name: u.Name, Locale: u.Locale, TimeZone: u.TimeZone, DayStartHour: u.DayStartHour}
+		if err := s.Validate(); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidSettings, err)
+		}
+		u.UpdatedAt = now.UTC()
+		_, err = tx.ExecContext(ctx, `UPDATE users SET name = ?, locale = ?, timezone = ?, day_start_hour = ?, updated_at = ?
+			WHERE id = ?`, u.Name, u.Locale, u.TimeZone, u.DayStartHour, formatTime(now), id.String())
+		return err
 	})
+	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidSettings) {
+		return user.User{}, err
+	}
+	if err != nil {
+		return user.User{}, fmt.Errorf("change settings: %w", err)
+	}
+	return u, nil
 }

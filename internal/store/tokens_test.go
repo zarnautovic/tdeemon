@@ -182,26 +182,31 @@ func TestRevokeAPITokens(t *testing.T) {
 	}
 }
 
-// SetSettings stores the settings, held to the user's rules, of a user
-// there is.
-func TestSetSettings(t *testing.T) {
+// ChangeSettings changes the settings given, on the user as stored,
+// held to the user's rules, of a user there is.
+func TestChangeSettings(t *testing.T) {
 	t.Parallel()
 
 	db, ana, _ := withTwoUsers(t)
-	s := store.Settings{Name: "Ana M.", Locale: "hr", TimeZone: "Europe/Zagreb", DayStartHour: 3}
-	if err := db.SetSettings(t.Context(), ana, s, t0); err != nil {
-		t.Fatal(err)
+	name, zone, hour := "Ana M.", "Europe/Zagreb", 3
+	u, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{Name: &name, TimeZone: &zone, DayStartHour: &hour}, t0)
+	if err != nil || u.Name != "Ana M." || u.TimeZone != "Europe/Zagreb" || u.DayStartHour != 3 {
+		t.Fatalf("ChangeSettings = %+v, %v", u, err)
 	}
-	if u, err := db.UserByEmail(t.Context(), "ana@example.com"); err != nil || u.Name != "Ana M." || u.Locale != "hr" ||
-		u.TimeZone != "Europe/Zagreb" || u.DayStartHour != 3 {
-		t.Errorf("the user after = %+v, %v", u, err)
+	// Another change keeps the first's: it changes the user as stored.
+	locale := "hr"
+	if u, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{Locale: &locale}, t0); err != nil ||
+		u.Name != "Ana M." || u.Locale != "hr" || u.TimeZone != "Europe/Zagreb" {
+		t.Errorf("a second change = %+v, %v; want the first's kept", u, err)
 	}
-	if err := db.SetSettings(t.Context(), uuid.NewV7(), s, t0); !errors.Is(err, store.ErrNotFound) {
+	if got, err := db.UserByEmail(t.Context(), "ana@example.com"); err != nil || got.Name != "Ana M." || got.Locale != "hr" {
+		t.Errorf("the user stored = %+v, %v", got, err)
+	}
+	if _, err := db.ChangeSettings(t.Context(), uuid.NewV7(), store.SettingsChange{Name: &name}, t0); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("no such user: %v, want ErrNotFound", err)
 	}
-	bad := s
-	bad.TimeZone = "Mars/Olympus"
-	if err := db.SetSettings(t.Context(), ana, bad, t0); err == nil {
-		t.Error("a zone no one has: no error")
+	mars := "Mars/Olympus"
+	if _, err := db.ChangeSettings(t.Context(), ana, store.SettingsChange{TimeZone: &mars}, t0); !errors.Is(err, store.ErrInvalidSettings) {
+		t.Errorf("a zone no one has: %v, want ErrInvalidSettings", err)
 	}
 }

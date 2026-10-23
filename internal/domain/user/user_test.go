@@ -1,6 +1,7 @@
 package user
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +70,8 @@ func TestValidate(t *testing.T) {
 		{"name with a non-joiner at its end", func(u *User) { u.Name = "Ana\u200c" }, "control or invisible"},
 		{"name with a selector first", func(u *User) { u.Name = "\ufe0fAna" }, "control or invisible"},
 		{"name with a joiner by a space", func(u *User) { u.Name = "Ana \u200dMarić" }, "control or invisible"},
+		{"name too long with its joiners", func(u *User) { u.Name = strings.Repeat("a", MaxNameLen-1) + "\u200da" }, "101 characters long"},
+		{"name said as it came", func(u *User) { u.Name = "Ana\ufe0f\u200d\u200bB" }, strconv.Quote("Ana\ufe0f\u200d\u200bB")},
 		{"unknown role", func(u *User) { u.Role = "owner" }, `role "owner"`},
 		{"unknown locale", func(u *User) { u.Locale = "de" }, `locale "de"`},
 		{"no time zone", func(u *User) { u.TimeZone = "" }, "IANA name"},

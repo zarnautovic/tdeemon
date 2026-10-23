@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -26,32 +27,26 @@ type settingsOutput struct {
 	}
 }
 
-// setSettings changes the settings the body gives, and only those.
+// setSettings changes the settings the body gives, and only those, on
+// the user as they are when the change is made.
 func (s *sessions) setSettings(ctx context.Context, in *settingsInput) (*settingsOutput, error) {
 	p, err := requireSession(ctx)
 	if err != nil {
 		return nil, err
 	}
-	u, b := p.User, in.Body
-	if b.Name != nil {
-		u.Name = *b.Name
-	}
-	if b.Locale != nil {
-		u.Locale = *b.Locale
-	}
-	if b.TimeZone != nil {
-		u.TimeZone = *b.TimeZone
-	}
-	if b.DayStartHour != nil {
-		u.DayStartHour = *b.DayStartHour
-	}
-	settings := store.Settings{Name: u.Name, Locale: u.Locale, TimeZone: u.TimeZone, DayStartHour: u.DayStartHour}
-	if err := settings.Validate(); err != nil {
-		return nil, huma.Error422UnprocessableEntity(strings.ReplaceAll(err.Error(), "\n", "; "))
-	}
-	if err := s.db.SetSettings(ctx, u.ID, settings, s.now()); err != nil {
+	b := in.Body
+	u, err := s.db.ChangeSettings(ctx, p.User.ID, store.SettingsChange{
+		Name: b.Name, Locale: b.Locale, TimeZone: b.TimeZone, DayStartHour: b.DayStartHour,
+	}, s.now())
+	switch {
+	case errors.Is(err, store.ErrInvalidSettings):
+		return nil, huma.Error422UnprocessableEntity(
+			strings.ReplaceAll(strings.TrimPrefix(err.Error(), store.ErrInvalidSettings.Error()+": "), "\n", "; "))
+	case err != nil:
 		return nil, internalError("saving the settings failed", err)
 	}
+	// A time zone or a day's start changed moves the days to come.
+	s.logger.InfoContext(ctx, "changed the settings", "user_id", u.ID.String(), "timezone", u.TimeZone, "day_start_hour", u.DayStartHour)
 	out := &settingsOutput{}
 	out.Body.User = newUserBody(u)
 	return out, nil
@@ -103,6 +98,7 @@ func (s *sessions) revokeTokens(ctx context.Context, _ *struct{}) (*revokeTokens
 	if err != nil {
 		return nil, internalError("revoking the tokens failed", err)
 	}
+	s.logger.InfoContext(ctx, "revoked every API token", "user_id", p.User.ID.String(), "revoked", n)
 	out := &revokeTokensOutput{}
 	out.Body.Revoked = n
 	return out, nil

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/mail"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata" // Time zone names must resolve even in images without system tzdata.
@@ -96,19 +97,36 @@ func (u User) Validate() error {
 	if u.Role != RoleAdmin && u.Role != RoleUser {
 		errs = append(errs, fmt.Errorf("role %q: want %s or %s", u.Role, RoleAdmin, RoleUser))
 	}
-	if !slices.Contains(Locales(), u.Locale) {
-		errs = append(errs, fmt.Errorf("locale %q: want one of %s", u.Locale, strings.Join(Locales(), ", ")))
+	if err := ValidateLocale(u.Locale); err != nil {
+		errs = append(errs, err)
 	}
 	if err := ValidateTimeZone(u.TimeZone); err != nil {
 		errs = append(errs, err)
 	}
-	if u.DayStartHour < 0 || u.DayStartHour > 23 {
-		errs = append(errs, fmt.Errorf("day start hour %d: want 0 to 23", u.DayStartHour))
+	if err := ValidateDayStartHour(u.DayStartHour); err != nil {
+		errs = append(errs, err)
 	}
 	if u.CreatedAt.IsZero() || u.UpdatedAt.IsZero() {
 		errs = append(errs, errors.New("created and updated times are required"))
 	}
 	return errors.Join(errs...)
+}
+
+// ValidateLocale reports whether locale is one the app speaks (Locales).
+func ValidateLocale(locale string) error {
+	if !slices.Contains(Locales(), locale) {
+		return fmt.Errorf("locale %q: want one of %s", locale, strings.Join(Locales(), ", "))
+	}
+	return nil
+}
+
+// ValidateDayStartHour reports whether h is an hour a day can start at,
+// 0 to 23.
+func ValidateDayStartHour(h int) error {
+	if h < 0 || h > 23 {
+		return fmt.Errorf("day start hour %d: want 0 to 23", h)
+	}
+	return nil
 }
 
 // ValidateEmail reports whether email is a plain address in
@@ -154,11 +172,13 @@ func ValidateName(name string) error {
 	if !utf8.ValidString(name) {
 		return errors.New("name is not valid UTF-8")
 	}
-	if err := text.Check("name", stripJoins(name), MaxNameLen, true); err != nil {
-		return err
-	}
 	if n := utf8.RuneCountInString(name); n > MaxNameLen {
 		return fmt.Errorf("name is %d characters long, want at most %d", n, MaxNameLen)
+	}
+	stripped := stripJoins(name)
+	if err := text.Check("name", stripped, MaxNameLen, true); err != nil {
+		// Said of the name as it came, joiners and all.
+		return errors.New(strings.Replace(err.Error(), strconv.Quote(stripped), strconv.Quote(name), 1))
 	}
 	return nil
 }
