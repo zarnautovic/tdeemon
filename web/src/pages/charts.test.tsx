@@ -68,7 +68,9 @@ test('the charts say in words what they show, over 90 days by default', async ()
   ).toBeDefined()
   expect(screen.getByText('TDEE 2,400 ± 60 kcal a day, as of the last day.')).toBeDefined()
   expect(screen.getByText('7.5 hours a night on average.')).toBeDefined()
-  expect(screen.getByText('Resting heart rate 58, HRV 50, on average.')).toBeDefined()
+  expect(
+    screen.getByText('Resting heart rate 58 bpm on average. HRV 50 ms on average.'),
+  ).toBeDefined()
   expect(screen.getByText('Body fat 20 %, as of the last day with it.')).toBeDefined()
   expect(screen.getByText('8,000 steps a day on average.')).toBeDefined()
   const asked = fetch.mock.calls
@@ -146,4 +148,70 @@ test('the charts speak Croatian', async () => {
     await screen.findByText('Prosječno 2.000 kcal na dan, kroz 90 upisanih dana.'),
   ).toBeDefined()
   expect(screen.getByRole('button', { name: '30 dana' })).toBeDefined()
+})
+
+test("today's open day and a day left out count in no average, as calibration counts", async () => {
+  historyServer({
+    'GET /api/v1/history': (request) => {
+      const from = new URL(request.url).searchParams.get('from') ?? today
+      const days = historyOf(from)
+      // Today open, the first day left out: the days are made anew for each
+      // answer, so they are changed in place.
+      const [first] = days
+      const now = days.at(-1)
+      if (first && now) {
+        Object.assign(now, {
+          status: 'open',
+          intake: { kcal: 600, protein: 30, carbs: 60, fat: 20 },
+          steps: 1000,
+        })
+        Object.assign(first, {
+          status: 'excluded',
+          intake: { kcal: 5000, protein: 1, carbs: 1, fat: 1 },
+          steps: 30000,
+        })
+      }
+      return Response.json({ from, to: today, days, weeks: [] })
+    },
+  })
+  renderAt('/charts')
+
+  expect(
+    await screen.findByText(
+      '2,000 kcal a day on average, over 88 logged days.',
+      {},
+      { timeout: 10_000 },
+    ),
+  ).toBeDefined()
+  expect(screen.getByText('8,000 steps a day on average.')).toBeDefined()
+})
+
+test('a card says what it has, and an estimate not trusted yet says so', async () => {
+  historyServer({
+    'GET /api/v1/history': () =>
+      Response.json({
+        from: today,
+        to: today,
+        days: [
+          {
+            date: today,
+            status: 'complete',
+            type: 'rest',
+            meals: 0,
+            trend_kg: 80,
+            hrv: 45,
+            tdee: { kcal: 2300, half_width: 300, trusted: false, before_phase: false, to: today },
+          },
+        ],
+        weeks: [],
+      }),
+  })
+  renderAt('/charts')
+
+  const body = await screen.findByRole('region', { name: 'Body' }, { timeout: 10_000 })
+  expect(within(body).getByText('Trend weight from 80 to 80 kg.')).toBeDefined()
+  expect(screen.getByText('HRV 45 ms on average.')).toBeDefined()
+  expect(
+    screen.getByText('TDEE 2,300 ± 300 kcal a day, as of the last day, not to be trusted yet.'),
+  ).toBeDefined()
 })

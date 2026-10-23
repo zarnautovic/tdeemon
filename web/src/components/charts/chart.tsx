@@ -23,6 +23,11 @@ echarts.use([
   SVGRenderer,
 ])
 
+function textStyleOf(option: Option): Record<string, unknown> {
+  const style: unknown = option.textStyle
+  return typeof style === 'object' && style !== null ? { ...style } : {}
+}
+
 // Chart draws an ECharts option, as wide as its card. It is for the eye:
 // its card says in words what it shows.
 export function Chart({ option }: { option: Option }) {
@@ -52,7 +57,12 @@ export function Chart({ option }: { option: Option }) {
   }, [])
 
   useEffect(() => {
-    chart.current?.setOption(option, true)
+    // ECharts measures text by the font's name, which "inherit" is not.
+    const font = getComputedStyle(document.body).fontFamily || 'sans-serif'
+    chart.current?.setOption(
+      { ...option, textStyle: { ...textStyleOf(option), fontFamily: font } },
+      true,
+    )
   }, [option])
 
   return <div ref={box} aria-hidden className="h-[220px] w-full" />

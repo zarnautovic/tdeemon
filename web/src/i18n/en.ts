@@ -297,10 +297,11 @@ export const en = {
       weight: (from: string, to: string) => `Trend weight from ${from} to ${to} kg.`,
       macros: (kcal: string, days: number) =>
         `${kcal} kcal a day on average, over ${String(days)} logged ${plural('en', days, { one: 'day', other: 'days' })}.`,
-      tdee: (kcal: string, half: string) =>
-        `TDEE ${kcal} ± ${half} kcal a day, as of the last day.`,
+      tdee: (kcal: string, half: string, trusted: boolean) =>
+        `TDEE ${kcal} ± ${half} kcal a day, as of the last day${trusted ? '' : ', not to be trusted yet'}.`,
       sleep: (hours: string) => `${hours} hours a night on average.`,
-      recovery: (rhr: string, hrv: string) => `Resting heart rate ${rhr}, HRV ${hrv}, on average.`,
+      rhr: (bpm: string) => `Resting heart rate ${bpm} bpm on average.`,
+      hrv: (ms: string) => `HRV ${ms} ms on average.`,
       body: (fat: string) => `Body fat ${fat} %, as of the last day with it.`,
       activity: (steps: string) => `${steps} steps a day on average.`,
       none: 'No values in these days.',

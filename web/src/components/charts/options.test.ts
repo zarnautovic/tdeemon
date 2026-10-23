@@ -1,3 +1,7 @@
+import { LineChart, ScatterChart } from 'echarts/charts'
+import { GridComponent, LegendComponent, MarkLineComponent } from 'echarts/components'
+import * as echarts from 'echarts/core'
+import { SVGRenderer } from 'echarts/renderers'
 import { expect, test } from 'vitest'
 
 import {
@@ -100,4 +104,28 @@ test('a night is coloured by its length, and the 7 days are averaged', () => {
   expect([7, 6.5, 5.9].map(sleepColor)).toEqual([palette.blue, palette.warn, palette.bad])
   expect(average7([7, null, 5, 8, 8, 8, 8, 8, 2])).toEqual([7, 7, 6, 6.67, 7, 7.2, 7.33, 7.5, 6.71])
   expect(average7([null, null])).toEqual([null, null])
+})
+
+// svgOf is an option drawn as the server would, without a browser.
+function svgOf(option: Record<string, unknown>): string {
+  echarts.use([
+    LineChart,
+    ScatterChart,
+    GridComponent,
+    LegendComponent,
+    MarkLineComponent,
+    SVGRenderer,
+  ])
+  const chart = echarts.init(null, null, { renderer: 'svg', ssr: true, width: 360, height: 220 })
+  chart.setOption(option)
+  const svg = chart.renderToSVGString()
+  chart.dispose()
+  return svg
+}
+
+test('the goal is drawn though it is far below the weights', () => {
+  const svg = svgOf(weightOption(days, words, 75))
+
+  expect(svg).toContain('Goal 75.0')
+  expect(svgOf(weightOption(days, words))).not.toContain('Goal')
 })

@@ -47,7 +47,9 @@ function base(days: HistoryDay[], w: Words, right = false): Option {
   return {
     backgroundColor: 'transparent',
     animation: false,
-    textStyle: { color: palette.muted, fontFamily: 'inherit' },
+    // The font is the page's, which the chart is given when it is drawn
+    // (Chart): ECharts measures text by a font's name.
+    textStyle: { color: palette.muted },
     // The axes' labels fit in, however wide their numbers.
     grid: { left: 4, right: right ? 4 : 12, top: 32, bottom: 4, containLabel: true },
     legend: legend(),
@@ -91,9 +93,17 @@ function axis(extra: Option = {}): Option {
 // weightOption is the weigh-ins as dots and the trend weight as a line,
 // with the phase's goal as a dashed line when it has one.
 export function weightOption(days: HistoryDay[], w: Words, goalKg?: number): Option {
+  // The axis reaches the goal too: it is seldom among the weights.
+  const reach =
+    goalKg === undefined
+      ? {}
+      : {
+          min: (v: { min: number }) => Math.floor(Math.min(v.min, goalKg)),
+          max: (v: { max: number }) => Math.ceil(Math.max(v.max, goalKg)),
+        }
   return {
     ...base(days, w),
-    yAxis: axis({ scale: true }),
+    yAxis: axis({ scale: true, ...reach }),
     series: [
       {
         name: w.names.weighIn,
@@ -116,7 +126,11 @@ export function weightOption(days: HistoryDay[], w: Words, goalKg?: number): Opt
               markLine: {
                 symbol: 'none',
                 lineStyle: { color: palette.warn, type: 'dashed' },
-                label: { color: palette.warn, formatter: `${w.names.goal} ${w.number(goalKg, 1)}` },
+                label: {
+                  color: palette.warn,
+                  position: 'insideEndTop',
+                  formatter: `${w.names.goal} ${w.number(goalKg, 1)}`,
+                },
                 data: [{ yAxis: goalKg }],
               },
             }),
@@ -179,7 +193,10 @@ export function tdeeOption(days: HistoryDay[], w: Words): Option {
         stack: 'interval',
         showSymbol: false,
         lineStyle: { opacity: 0 },
+        itemStyle: { color: palette.series2 },
         areaStyle: { color: palette.series2, opacity: 0.18 },
+        // The band's width, said as what it is: ± half of it.
+        tooltip: { valueFormatter: (v: number) => `± ${w.number(v / 2)}` },
         data: days.map((d): Point => (d.tdee ? 2 * d.tdee.half_width : null)),
       },
       {
