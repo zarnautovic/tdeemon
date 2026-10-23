@@ -41,13 +41,15 @@ func userCommand(ctx context.Context, args []string, lookup config.LookupFunc, i
 		return setPassword(ctx, args[1:], lookup, in, out)
 	case "set-telegram":
 		return setTelegram(ctx, args[1:], lookup, out)
+	case "set-locale":
+		return setLocale(ctx, args[1:], lookup, out)
 	}
 	return fmt.Errorf("%w: user: unknown subcommand %q", errUsage, args[0])
 }
 
 type createUserFlags struct {
-	email, name, timeZone string
-	admin, passwordStdin  bool
+	email, name, timeZone, locale string
+	admin, passwordStdin          bool
 }
 
 func parseCreateUserFlags(args []string) (createUserFlags, error) {
@@ -57,6 +59,7 @@ func parseCreateUserFlags(args []string) (createUserFlags, error) {
 	set.StringVar(&f.email, "email", "", "")
 	set.StringVar(&f.name, "name", "", "")
 	set.StringVar(&f.timeZone, "timezone", "", "")
+	set.StringVar(&f.locale, "locale", user.DefaultLocale, "")
 	set.BoolVar(&f.admin, "admin", false, "")
 	set.BoolVar(&f.passwordStdin, "password-stdin", false, "")
 	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
@@ -287,6 +290,61 @@ func setTelegram(ctx context.Context, args []string, lookup config.LookupFunc, o
 	return err
 }
 
+type setLocaleFlags struct {
+	email, locale string
+}
+
+func parseSetLocaleFlags(args []string) (setLocaleFlags, error) {
+	var f setLocaleFlags
+	set := flag.NewFlagSet("user set-locale", flag.ContinueOnError)
+	set.SetOutput(io.Discard) // exitCode prints the error and the usage.
+	set.StringVar(&f.email, "email", "", "")
+	set.StringVar(&f.locale, "locale", "", "")
+	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
+		return f, err
+	} else if err != nil {
+		return f, fmt.Errorf("%w: user set-locale: %w", errUsage, err)
+	}
+	if set.NArg() > 0 {
+		return f, fmt.Errorf("%w: user set-locale: unexpected argument %q", errUsage, set.Arg(0))
+	}
+	if f.email == "" || f.locale == "" {
+		return f, fmt.Errorf("%w: user set-locale: --email and --locale are required", errUsage)
+	}
+	return f, nil
+}
+
+// setLocale sets the language of the user with --email: of the app, the
+// morning summary and the alerts. Like createUser, it never migrates.
+func setLocale(ctx context.Context, args []string, lookup config.LookupFunc, out io.Writer) error {
+	f, err := parseSetLocaleFlags(args)
+	if errors.Is(err, flag.ErrHelp) {
+		_, err = io.WriteString(out, usage)
+		return err
+	} else if err != nil {
+		return err
+	}
+	cfg, err := config.Load(lookup)
+	if err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	email := user.NormalizeEmail(f.email)
+	err = withDatabase(ctx, cfg.DataDir, func(db *store.DB) error {
+		u, err := db.UserByEmail(ctx, email)
+		if errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("no user with the address %q", email)
+		} else if err != nil {
+			return err
+		}
+		return db.SetLocale(ctx, u.ID, f.locale, time.Now())
+	})
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(out, "Set the language of %s to %s.\n", email, f.locale)
+	return err
+}
+
 // choosePassword reads the password from in with --password-stdin, and
 // generates one otherwise.
 func choosePassword(fromStdin bool, in io.Reader) (password string, generated bool, err error) {
@@ -337,7 +395,7 @@ func newUser(f createUserFlags, instanceZone *time.Location, now time.Time) user
 		Email:        user.NormalizeEmail(f.email),
 		Name:         strings.TrimSpace(f.name),
 		Role:         user.RoleUser,
-		Locale:       user.DefaultLocale,
+		Locale:       f.locale,
 		TimeZone:     f.timeZone,
 		DayStartHour: user.DefaultDayStartHour,
 		CreatedAt:    now,
