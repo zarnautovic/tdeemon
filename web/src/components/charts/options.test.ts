@@ -144,3 +144,10 @@ test('one weigh-in at the goal keeps the axis around it', () => {
   expect(svg).toContain('>79<')
   expect(svg).not.toContain('>40<')
 })
+
+test('one weigh-in without a goal keeps the axis around it too', () => {
+  const svg = svgOf(weightOption([day('2026-10-20', { weight_kg: 80, trend_kg: 80 })], words))
+  expect(svg).toContain('>81<')
+  expect(svg).toContain('>79<')
+  expect(svg).not.toContain('>40<')
+})

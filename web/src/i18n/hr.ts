@@ -285,7 +285,7 @@ export const hr: Messages = {
       macros: (kcal: string, days: number) =>
         `Prosječno ${kcal} kcal na dan, kroz ${String(days)} ${plural('hr', days, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })}.`,
       tdee: (kcal: string, half: string, trust: 'trusted' | 'before' | 'unsure') =>
-        `TDEE ${kcal} ± ${half} kcal na dan, na zadnji dan${{ trusted: '', before: ', iz dana prije ove faze', unsure: ', još nepouzdan' }[trust]}.`,
+        `TDEE ${kcal} ± ${half} kcal na dan, na zadnji dan${{ trusted: '', before: ', iz dana prije zadnje promjene unosa', unsure: ', još nepouzdan' }[trust]}.`,
       sleep: (hours: string) => `Prosječno ${hours} sati sna po noći.`,
       rhr: (bpm: string) => `Puls u mirovanju prosječno ${bpm} bpm.`,
       hrv: (ms: string) => `HRV prosječno ${ms} ms.`,

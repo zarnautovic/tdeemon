@@ -300,7 +300,7 @@ export const en = {
       // trust: trusted; before, the estimate of the days before the phase,
       // whose own are too few yet; unsure, not to be trusted yet.
       tdee: (kcal: string, half: string, trust: 'trusted' | 'before' | 'unsure') =>
-        `TDEE ${kcal} ± ${half} kcal a day, as of the last day${{ trusted: '', before: ', of the days before this phase', unsure: ', not to be trusted yet' }[trust]}.`,
+        `TDEE ${kcal} ± ${half} kcal a day, as of the last day${{ trusted: '', before: ', of the days before the intake last changed', unsure: ', not to be trusted yet' }[trust]}.`,
       sleep: (hours: string) => `${hours} hours a night on average.`,
       rhr: (bpm: string) => `Resting heart rate ${bpm} bpm on average.`,
       hrv: (ms: string) => `HRV ${ms} ms on average.`,

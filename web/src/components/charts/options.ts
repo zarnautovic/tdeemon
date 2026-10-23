@@ -93,20 +93,15 @@ function axis(extra: Option = {}): Option {
 // weightOption is the weigh-ins as dots and the trend weight as a line,
 // with the phase's goal as a dashed line when it has one.
 export function weightOption(days: HistoryDay[], w: Words, goalKg?: number): Option {
-  // The axis reaches the goal too: it is seldom among the weights.
-  const reach =
-    goalKg === undefined
-      ? {}
-      : {
-          // A kilo off each way when the weights and the goal are one
-          // number, which ECharts would stretch the axis around.
-          min: (v: { min: number; max: number }) =>
-            Math.floor(Math.min(v.min, goalKg)) -
-            (Math.min(v.min, goalKg) === Math.max(v.max, goalKg) ? 1 : 0),
-          max: (v: { min: number; max: number }) =>
-            Math.ceil(Math.max(v.max, goalKg)) +
-            (Math.min(v.min, goalKg) === Math.max(v.max, goalKg) ? 1 : 0),
-        }
+  // The axis reaches the goal too, which is seldom among the weights,
+  // and a kilo off each way when they are all one number, which ECharts
+  // would stretch the axis around (a first weigh-in).
+  const lo = (v: { min: number; max: number }) => Math.min(v.min, goalKg ?? v.min)
+  const hi = (v: { min: number; max: number }) => Math.max(v.max, goalKg ?? v.max)
+  const reach = {
+    min: (v: { min: number; max: number }) => Math.floor(lo(v)) - (lo(v) === hi(v) ? 1 : 0),
+    max: (v: { min: number; max: number }) => Math.ceil(hi(v)) + (lo(v) === hi(v) ? 1 : 0),
+  }
   return {
     ...base(days, w),
     yAxis: axis({ scale: true, ...reach }),

@@ -249,7 +249,7 @@ test('a TDEE of the days before the phase says so, and still is one', async () =
 
   expect(
     await screen.findByText(
-      'TDEE 2,300 ± 40 kcal a day, as of the last day, of the days before this phase.',
+      'TDEE 2,300 ± 40 kcal a day, as of the last day, of the days before the intake last changed.',
       {},
       { timeout: 10_000 },
     ),
