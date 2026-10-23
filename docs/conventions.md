@@ -138,7 +138,8 @@ for the author and the reviewer.
 - **The eval of MCP** (`internal/eval`) has Claude Code log what a user
   says through `/mcp`, against a seeded tdeemon of one user, and checks
   what each case leaves (its meals, foods, metrics and changes), the
-  rounds of tool calls of each message (two for a log, DESIGN.md §5) and
+  tools it calls or must not (`get_day` around a log), the rounds of
+  tool calls of each message (two for a log, DESIGN.md §5) and
   the input tokens not read from the cache (the cost target, §6). Claude
   Code runs with tdeemon's tools alone, none of its own nor of the
   developer's settings, and the eval stops if it has any other.

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"uuid"
@@ -332,6 +333,15 @@ func TestMealOfAFoodTheUserHas(t *testing.T) {
 	var fie *store.FoodItemError
 	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, other, []food.Food{guess}, t0); !errors.As(err, &fie) || fie.Food.ID != b.ID {
 		t.Errorf("a meal of 50 ml of a food by weight = %v, want a FoodItemError of the user's food", err)
+	}
+	// 50 without its unit, of the new food: in what unit is not the
+	// user's food's to say.
+	it.Quantity = meal.Quantity{Amount: 50}
+	guess.ID = uuid.NewV7()
+	it.FoodID = guess.ID
+	other.Items = []meal.Item{it}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, other, []food.Food{guess}, t0); !errors.As(err, &fie) || !strings.Contains(err.Error(), "names its unit") {
+		t.Errorf("a meal of 50 of a new food, no unit = %v, want a FoodItemError asking for the unit", err)
 	}
 }
 

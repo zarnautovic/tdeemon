@@ -934,3 +934,71 @@ func TestLogMealOfAFoodTheUserHasSaysSo(t *testing.T) {
 		t.Errorf("an add of 200 ml of the bread by weight: %d %s, want a 422 of op 1 naming it", rec.Code, rec.Body.String())
 	}
 }
+
+// An amount without its unit, of a food of the user's, is in the food's,
+// as a model may send it; sent again, a log, an add and a replace are
+// retries.
+func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	log := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 80}]}`, id, e.bread)
+	for _, want := range []int{http.StatusCreated, http.StatusOK} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", log, e.session, nil)
+		if rec.Code != want || !strings.Contains(rec.Body.String(), `"quantity":{"amount":80},"amount":80,"unit":"g"`) {
+			t.Fatalf("80 of the bread: %d %s, want %d and 80 g", rec.Code, rec.Body.String(), want)
+		}
+	}
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "amount": 40}}]}`, uuid.NewV7(), e.bread)
+	for range 2 {
+		if rec := e.patch(t, id, add); rec.Code != http.StatusOK {
+			t.Fatalf("an add of 40 of the bread: %d %s, want 200", rec.Code, rec.Body.String())
+		}
+	}
+	m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, uuid.MustParse(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	replace := fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": {"food_id": %q, "amount": 120}}]}`, m.Items[0].ID, e.bread)
+	for range 2 {
+		if rec := e.patch(t, id, replace); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"quantity":{"amount":120},"amount":120,"unit":"g"`) {
+			t.Fatalf("a replace by 120 of the bread: %d %s, want 200 and 120 g", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// A new food's amount names its unit, whatever food the user has of its
+// name, in a log, an add and a replace.
+func TestNewFoodAmountNamesItsUnit(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "amount": 80, "unit": "g"}]}`, id, e.bread))
+	m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, uuid.MustParse(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Oat flakes", bread.Name} {
+		for _, basis := range []string{"100g", "portion"} {
+			nf := fmt.Sprintf(`{"food": {"name": %q, "basis": %q, "source": "estimate",
+				"nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 2}`, name, basis)
+			if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+nf+`]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a new food's amount names its unit") {
+				t.Errorf("2 of a new %s by %s: %d %s, want a 422 asking for the unit", name, basis, rec.Code, rec.Body.String())
+			}
+			for _, op := range []string{
+				fmt.Sprintf(`{"ops": [{"op": "add", "item": %s}]}`, strings.Replace(nf, `{"food"`, fmt.Sprintf(`{"id": %q, "food"`, uuid.NewV7()), 1)),
+				fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": %s}]}`, m.Items[0].ID, nf),
+			} {
+				if rec := e.patch(t, id, op); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a new food's amount names its unit") {
+					t.Errorf("%s of 2 of a new %s by %s: %d %s, want a 422 asking for the unit", op[:20], name, basis, rec.Code, rec.Body.String())
+				}
+			}
+		}
+	}
+}

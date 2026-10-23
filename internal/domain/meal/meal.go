@@ -44,11 +44,14 @@ const (
 
 // Quantity is how much of a food was eaten: an amount in grams or ml, a
 // number of a named serving ("4 × piece", "0.5 × roll"), or a number of
-// portions of a food per portion. Exactly one is given. The amount names
-// its unit, so 250 ml of a food by weight is refused, not taken for 250 g.
+// portions of a food per portion. Exactly one is given. A unit given must
+// be the food's, so 250 ml of a food by weight is refused, not taken for
+// 250 g; an amount without one is in the food's unit, g or ml (FromFood),
+// and a food per portion takes its grams by name.
 type Quantity struct {
 	Amount float64
-	// Unit is "g" or "ml", the unit of Amount; empty without an amount.
+	// Unit is "g" or "ml", the unit of Amount; empty without an amount,
+	// or for the food's own.
 	Unit     string
 	Servings float64
 	Serving  string
@@ -90,7 +93,12 @@ func FromFood(f food.Food, q Quantity, note string) (Item, error) {
 	if err := validateNote(note); err != nil {
 		return Item{}, err
 	}
-	amount, err := resolve(f, q)
+	// An amount without its unit is in the food's, g or ml; the item
+	// keeps it as given, so a retry of it is the same.
+	if q.Amount > 0 && q.Unit == "" && f.Basis == food.PerPortion {
+		return Item{}, fmt.Errorf("%s: a food per portion takes portions, or an amount in g when its portion's weight is known", f.Name)
+	}
+	amount, err := resolve(f, q.inUnitOf(f.Basis))
 	if err != nil {
 		return Item{}, fmt.Errorf("%s: %w", f.Name, err)
 	}
@@ -165,6 +173,16 @@ func servingNames(f food.Food) string {
 		names[i] = fmt.Sprintf("%q", s.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+// inUnitOf returns q with an amount's unit, when left out, b's: g or
+// ml, the unit of a food of the user's. A food per portion has none to
+// give.
+func (q Quantity) inUnitOf(b food.Basis) Quantity {
+	if q.Amount > 0 && q.Unit == "" && b != food.PerPortion {
+		q.Unit = b.Unit()
+	}
+	return q
 }
 
 func (q Quantity) validate() error {

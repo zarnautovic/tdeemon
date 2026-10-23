@@ -97,7 +97,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import), note, fingerprint | the fingerprint of the create, for idempotent retries (§9) |
-| `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
+| `meal_items` | id, meal_id, user_id, food_id?, name, quantity as given (amount with its unit g/ml or without it for the food's own, or servings × serving, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
 | `days` | user_id, day, excluded_reason?, training_day?, mood?, hunger?, note? | check-in (mood and hunger 1–5); open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
 | `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
@@ -198,10 +198,12 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `shopping_list(op, items?)` | |
 
 `log_meal` items accept these shapes (field names are illustrative; the
-tool schema is the reference). An amount always names its unit, and it
-must be the food's: 250 ml of a food by weight is refused rather than
-taken for 250 g. Grams of a portion food work when its portion weight
-is known.
+tool schema is the reference). An amount's unit must be the food's: 250
+ml of a food by weight is refused rather than taken for 250 g. Left out
+for a food of the user's (`food_id`), it is the food's, g or ml; a new
+food's amount names it, as the food may turn out to be the user's by
+another basis, and so does a food per portion, whose grams work only
+when its portion weight is known.
 
 ```jsonc
 { "food_id": "0199…", "amount": 150, "unit": "g" }           // known food, in its unit (g or ml)
