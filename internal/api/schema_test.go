@@ -175,6 +175,13 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodGet, "/api/v1/days/today", "", []*http.Cookie{session}, nil)
 			in.do(t, http.MethodGet, "/api/v1/days/"+day.DateOf(now).AddDays(-1).String(), "", []*http.Cookie{session}, nil)
 		},
+		"get-history": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			saveHistory(t, in)
+			saveIsolationPlan(t, in.db, in.user, in.clock.Now())
+			in.do(t, http.MethodGet, "/api/v1/history?from="+day.DateOf(in.clock.Now()).AddDays(-3).String(), "", []*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/history?granularity=week", "", []*http.Cookie{session}, nil)
+		},
 		"find-foods": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			now := in.clock.Now()

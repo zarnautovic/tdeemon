@@ -411,7 +411,8 @@ func TestIntakeOfDays(t *testing.T) {
 	}
 	near := func(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 	n := early.Total()
-	if in := got[day.DateOf(t0)]; len(got) != 2 || in.Meals != 2 || !near(in.Kcal, 2*n.Kcal) || !near(in.Protein, 2*n.Protein) {
+	if in := got[day.DateOf(t0)]; len(got) != 2 || in.Meals != 2 || !near(in.Kcal, 2*n.Kcal) || !near(in.Protein, 2*n.Protein) ||
+		!near(in.Carbs, 2*n.Carbs) || !near(in.Fat, 2*n.Fat) {
 		t.Errorf("IntakeOfDays = %+v; want ana's two meals of t0's day, at %v kcal each, and the one of the day before", got, n.Kcal)
 	}
 	if in := got[late.Day]; in.Meals != 1 || !near(in.Kcal, late.Total().Kcal) {

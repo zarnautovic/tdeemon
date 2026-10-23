@@ -107,24 +107,25 @@ type recoveryBody struct {
 }
 
 // summaryDay is what the summary reads of one of the user's days beside
-// what calibration reads: its protein and its type.
+// what calibration reads: its macronutrients and its type.
 type summaryDay struct {
-	protein float64
-	dayType plan.DayType
+	protein, carbs, fat float64
+	dayType             plan.DayType
 }
 
 // summaryData is what the summary reads of the user: the days and their
 // measurements, today's too; the days as calibration reads them, with
 // what it reads of those before; and the plan.
 type summaryData struct {
-	days     map[day.Date]summaryDay
-	values   map[day.Date][]metric.Value
-	calDays  map[day.Date]calibration.Day
-	phases   []plan.Phase
-	targets  []plan.Target
-	training plan.Weekdays
-	params   calibration.Params
-	lim      limits.Limits
+	days       map[day.Date]summaryDay
+	exclusions map[day.Date]day.Exclusion
+	values     map[day.Date][]metric.Value
+	calDays    map[day.Date]calibration.Day
+	phases     []plan.Phase
+	targets    []plan.Target
+	training   plan.Weekdays
+	params     calibration.Params
+	lim        limits.Limits
 }
 
 func (s *sessions) getSummary(ctx context.Context, in *summaryInput) (*summaryOutput, error) {
@@ -185,6 +186,17 @@ func (s *sessions) summary(ctx context.Context, p auth.Principal, weeks int, now
 // yesterday, as the calendar cal splits them at now, and what calibration
 // reads of the days before them.
 func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Calendar, today day.Date, now time.Time) (summaryData, error) {
+	to := today.AddDays(-1)
+	from := to.AddDays(1 - max(calibration.FullDays(calibration.DefaultParams()), 7*summaryWeeks))
+	// Today's measurements too, for recovery: a night's sleep is dated by
+	// the morning it ends.
+	return s.readDays(ctx, userID, cal, from, to, today, now)
+}
+
+// readDays reads the user's plan and limits, their days from from to to,
+// as the calendar cal splits them at now, their measurements up to
+// valuesTo, and what calibration reads of the days before from.
+func (s *sessions) readDays(ctx context.Context, userID uuid.UUID, cal day.Calendar, from, to, valuesTo day.Date, now time.Time) (summaryData, error) {
 	var data summaryData
 	user, err := s.db.UserLimits(ctx, userID)
 	if err != nil {
@@ -198,8 +210,6 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 	if data.phases, err = s.db.Phases(ctx, userID); err != nil {
 		return data, err
 	}
-	to := today.AddDays(-1)
-	from := to.AddDays(1 - max(calibration.FullDays(data.params), 7*summaryWeeks))
 	if data.calDays, err = s.daysBefore(ctx, userID, cal, from, now); err != nil {
 		return data, err
 	}
@@ -207,13 +217,10 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 	if err != nil {
 		return data, err
 	}
-	// Today's too, for recovery: a night's sleep is dated by the morning
-	// it ends.
-	if data.values, err = s.db.Metrics(ctx, userID, from, today); err != nil {
+	if data.values, err = s.db.Metrics(ctx, userID, from, valuesTo); err != nil {
 		return data, err
 	}
-	exclusions, err := s.db.Exclusions(ctx, userID, from, to)
-	if err != nil {
+	if data.exclusions, err = s.db.Exclusions(ctx, userID, from, to); err != nil {
 		return data, err
 	}
 	if data.targets, err = s.db.Targets(ctx, userID); err != nil {
@@ -232,10 +239,13 @@ func (s *sessions) readSummary(ctx context.Context, userID uuid.UUID, cal day.Ca
 	}
 	data.days = map[day.Date]summaryDay{}
 	for d := from; !to.Before(d); d = d.AddDays(1) {
-		_, excluded := exclusions[d]
+		_, excluded := data.exclusions[d]
 		in := intake[d]
 		data.calDays[d] = calibrationDay(cal.StatusOf(d, now, excluded), in, data.values[d])
-		data.days[d] = summaryDay{protein: in.Protein, dayType: plan.TypeOf(d, data.training, workouts[d], toggleOn(toggles, d))}
+		data.days[d] = summaryDay{
+			protein: in.Protein, carbs: in.Carbs, fat: in.Fat,
+			dayType: plan.TypeOf(d, data.training, workouts[d], toggleOn(toggles, d)),
+		}
 	}
 	return data, nil
 }
@@ -337,7 +347,9 @@ func (data summaryData) week(from, to day.Date, trend []calibration.Point) weekB
 		if c.Weighed() {
 			weights = append(weights, c.WeightKg)
 		}
-		if c.Stepped() {
+		// An open day's steps still grow (a summary's weeks have none; a
+		// history's may end today).
+		if c.Stepped() && c.Status != day.Open {
 			steps = append(steps, c.Steps)
 		}
 		for _, v := range data.values[d] {

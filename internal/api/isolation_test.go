@@ -703,6 +703,9 @@ func isolationCases() map[string]isolationCase {
 		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),
+		"get-history": read("/api/v1/history", false, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
+		}),
 		// The summary holds no text of the user's: the store's queries by
 		// the user keep it theirs.
 		"get-summary": read("/api/v1/summary", true, func(e isolationEnv) []string {

@@ -236,6 +236,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your history
+         * @description Needs a web session. Your days from from to to, at most 366 of them up to today, or their weeks: what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, as the summary computes them. The charts read it.
+         */
+        get: operations["get-history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/info": {
         parameters: {
             query?: never;
@@ -632,6 +652,27 @@ export interface components {
              */
             type: "training" | "rest";
         };
+        DayTDEEBody: {
+            /** @description The estimate is of the days before the phase the day is in, whose own are too few yet: the same estimate for some weeks after the intake changed. */
+            before_phase: boolean;
+            /**
+             * Format: double
+             * @description Half its 80 % interval.
+             */
+            half_width: number;
+            /**
+             * Format: double
+             * @description In kcal a day.
+             */
+            kcal: number;
+            /**
+             * Format: date
+             * @description The last day of its window.
+             */
+            to: string;
+            /** @description Whether its interval and data are enough to trust it. */
+            trusted: boolean;
+        };
         DayTargetBody: {
             /**
              * Format: double
@@ -652,6 +693,16 @@ export interface components {
              * Format: double
              * @description Grams of protein.
              */
+            protein: number;
+        };
+        DayTotalBody: {
+            /** Format: double */
+            carbs: number;
+            /** Format: double */
+            fat: number;
+            /** Format: double */
+            kcal: number;
+            /** Format: double */
             protein: number;
         };
         DeleteMealOutputBody: {
@@ -796,6 +847,58 @@ export interface components {
         };
         FoodsOutputBody: {
             foods: components["schemas"]["FoodBody"][];
+        };
+        HistoryBody: {
+            /** @description For granularity day, every day from from to to, in order; else empty. */
+            days: components["schemas"]["HistoryDayBody"][];
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
+            /** @description For granularity week, the weeks, the latest last; else empty. */
+            weeks: components["schemas"]["WeekBody"][];
+        };
+        HistoryDayBody: {
+            /** Format: double */
+            active_kcal?: number;
+            /** Format: double */
+            body_fat_pct?: number;
+            /** Format: date */
+            date: string;
+            /** @description Why the user left the day out of calibration. */
+            excluded_reason?: string;
+            /** Format: double */
+            hrv?: number;
+            /** @description What the meals add up to; absent for a day without a meal, whose intake is unknown, not 0. */
+            intake?: components["schemas"]["DayTotalBody"];
+            /** Format: double */
+            lean_mass_kg?: number;
+            /** Format: int64 */
+            meals: number;
+            /** Format: double */
+            resting_hr?: number;
+            /**
+             * Format: double
+             * @description The night that ended on the day.
+             */
+            sleep_h?: number;
+            /** @enum {string} */
+            status: "open" | "complete" | "excluded";
+            /** Format: double */
+            steps?: number;
+            /** @description The target of the day's type; absent before the first target. */
+            target?: components["schemas"]["DayTargetBody"];
+            /** @description The TDEE calibration measures over its window up to the day; absent when it measures none. */
+            tdee?: components["schemas"]["DayTDEEBody"];
+            /**
+             * Format: double
+             * @description The trend weight on the day, from the weigh-ins up to it; absent before the first.
+             */
+            trend_kg?: number;
+            /** @enum {string} */
+            type: "training" | "rest";
+            /** Format: double */
+            weight_kg?: number;
         };
         IngestBody: {
             days: components["schemas"]["IngestDay"][];
@@ -2817,6 +2920,79 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-history": {
+        parameters: {
+            query?: {
+                /** @description The first day; left out, 89 days before to. */
+                from?: string;
+                /** @description The last day, today at the latest; left out, today. */
+                to?: string;
+                /** @description day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow. */
+                granularity?: "day" | "week";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
