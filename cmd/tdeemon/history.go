@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,8 +18,8 @@ import (
 )
 
 type importHistoryFlags struct {
-	email, healthDB, foods, plan string
-	dryRun                       bool
+	email, healthDB, foods, plan, splitReport string
+	dryRun                                    bool
 }
 
 func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
@@ -29,6 +30,7 @@ func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
 	set.StringVar(&f.healthDB, "health-db", "", "")
 	set.StringVar(&f.foods, "foods", "", "")
 	set.StringVar(&f.plan, "plan", "", "")
+	set.StringVar(&f.splitReport, "split-report", "", "")
 	set.BoolVar(&f.dryRun, "dry-run", false, "")
 	if err := set.Parse(args); errors.Is(err, flag.ErrHelp) {
 		return f, err
@@ -37,6 +39,16 @@ func parseImportHistoryFlags(args []string) (importHistoryFlags, error) {
 	}
 	if set.NArg() > 0 {
 		return f, fmt.Errorf("%w: import-history: unexpected argument %q", errUsage, set.Arg(0))
+	}
+	if f.splitReport != "" {
+		// A report of the split imports nothing, into no user.
+		switch {
+		case f.plan != "":
+			return f, fmt.Errorf("%w: import-history: --split-report imports nothing; leave out --plan", errUsage)
+		case f.healthDB == "" && f.foods == "":
+			return f, fmt.Errorf("%w: import-history: --split-report splits --health-db, --foods or both", errUsage)
+		}
+		return f, nil
 	}
 	if f.email == "" {
 		return f, fmt.Errorf("%w: import-history: --email is required", errUsage)
@@ -98,6 +110,9 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 	} else if err != nil {
 		return err
 	}
+	if f.splitReport != "" {
+		return writeSplitReport(ctx, f, out)
+	}
 	cfg, err := config.Load(lookup)
 	if err != nil {
 		return fmt.Errorf("invalid configuration:\n%w", err)
@@ -148,6 +163,30 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 	if _, werr := io.WriteString(out, b.String()); werr != nil {
 		return errors.Join(err, werr)
 	}
+	return err
+}
+
+// writeSplitReport writes the split proposed of the predecessor's meals
+// and its food table's combinations to --split-report, a JSON file for
+// the user to review, readable by its owner only as it holds what they
+// ate, and says what it holds. It imports nothing.
+func writeSplitReport(ctx context.Context, f importHistoryFlags, out io.Writer) error {
+	src, err := readSources(ctx, f)
+	if err != nil {
+		return err
+	}
+	r := history.ProposeSplits(src.days, src.foods)
+	body, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return fmt.Errorf("the split report: %w", err)
+	}
+	if err := os.WriteFile(f.splitReport, append(body, '\n'), 0o600); err != nil {
+		return fmt.Errorf("the split report: %w", err)
+	}
+	n := r.Count()
+	_, err = fmt.Fprintf(out, "Wrote the proposed split to %s, and imported nothing: %d meals, %d of them with an amount and a food of the table for each part, "+
+		"%d with an amount for each part, %d with an amount for some, %d with none; %d foods of the table that read as combinations.\n",
+		f.splitReport, len(r.Meals), n[history.Known], n[history.Amounts], n[history.Partial], n[history.Untold], len(r.Foods))
 	return err
 }
 

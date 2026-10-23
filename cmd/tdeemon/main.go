@@ -86,6 +86,12 @@ Flags of import-history (--health-db, --foods, --plan, or more):
                      limits hold the current phase and target, and the
                      ones after them, to the weigh-ins
   --dry-run          say what it would import, and write nothing
+  --split-report PATH
+                     write the split proposed of the meals of --health-db
+                     and the combinations of --foods to PATH, a JSON file
+                     to review: the parts of each, with their amounts and
+                     the foods of the table they read as. It imports
+                     nothing, and needs no --email
 
 An import runs again without changing what it imported: a value merges
 as before, and a meal keeps its id and what it held.

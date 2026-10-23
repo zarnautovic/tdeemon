@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -178,6 +179,65 @@ func TestImportHistoryFoods(t *testing.T) {
 	if !strings.Contains(out.String(), "Would import (a dry run, nothing written) foods for ana@example.com: 0 new; 15 kept") ||
 		!strings.Contains(out.String(), "whose days start at 04:00") {
 		t.Errorf("both, again, dry:\n%s", out.String())
+	}
+}
+
+// A split report writes the parts proposed of the meals and of the food
+// table's combinations, readable by its owner only, imports nothing and
+// needs no user nor configuration.
+func TestImportHistorySplitReport(t *testing.T) {
+	t.Parallel()
+
+	foods := filepath.Join(t.TempDir(), "foods.md")
+	if err := os.WriteFile(foods, []byte(`| Jelo / namirnica | Porcija | kcal | P (g) | UH (g) | M (g) | Napomena |
+|---|---|---:|---:|---:|---:|---|
+| Oats | 100 g | 370 | 13 | 60 | 7 | estimate |
+| Oats + milk | 50 g oats + 200 ml milk | 285 | 13 | 40 | 9 | estimate |
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "split.json")
+	var out bytes.Buffer
+	if err := run(t.Context(), []string{"import-history", "--health-db", predecessor(t), "--foods", foods, "--split-report", path}, lookup(nil), noInput(), &out, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if want := "Wrote the proposed split to " + path + ", and imported nothing: 3 meals, 0 of them with an amount and a food of the table for each part, " +
+		"0 with an amount for each part, 0 with an amount for some, 3 with none; 1 foods of the table that read as combinations.\n"; out.String() != want {
+		t.Errorf("it said %q, want %q", out.String(), want)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("the report: %v, %v; want it readable by its owner only", info, err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var r history.SplitReport
+	if err := json.Unmarshal(body, &r); err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Meals) != 3 || r.Meals[0].Description != "Oats with milk" ||
+		len(r.Foods) != 1 || len(r.Foods[0].Parts) != 2 || r.Foods[0].Parts[0].Food != "Oats" || r.Foods[0].Parts[1].Amount != 200 {
+		t.Errorf("the report = %s", body)
+	}
+}
+
+// A split report refuses a plan, which it would not import, and wants
+// something to split.
+func TestImportHistorySplitReportRefuses(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "split.json")
+	foods := filepath.Join("..", "..", "internal", "history", "testdata", "foods.txt")
+	for args, want := range map[string]string{
+		"--plan x.json --foods " + foods: "leave out --plan",
+		"":                               "splits --health-db, --foods or both",
+	} {
+		err := run(t.Context(), append([]string{"import-history", "--split-report", path}, strings.Fields(args)...), lookup(nil), noInput(), io.Discard, io.Discard)
+		if !errors.Is(err, errUsage) || !strings.Contains(err.Error(), want) {
+			t.Errorf("%q: %v, want %q", args, err, want)
+		}
 	}
 }
 
