@@ -20,6 +20,7 @@ import { FoodsPage } from '@/pages/foods'
 import { LoginPage } from '@/pages/login'
 import { NewFoodPage } from '@/pages/new-food'
 import { NotFoundPage } from '@/pages/not-found'
+import { PlanPage } from '@/pages/plan'
 import { RootLayout } from '@/pages/root-layout'
 import { SettingsPage } from '@/pages/settings'
 
@@ -132,9 +133,22 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsPage,
 })
+const planRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/plan',
+  component: PlanPage,
+})
 
 const routeTree = rootRoute.addChildren([
-  appRoute.addChildren([dayRoute, foodsRoute, newFoodRoute, foodRoute, chartsRoute, settingsRoute]),
+  appRoute.addChildren([
+    dayRoute,
+    foodsRoute,
+    newFoodRoute,
+    foodRoute,
+    chartsRoute,
+    settingsRoute,
+    planRoute,
+  ]),
   loginRoute,
 ])
 

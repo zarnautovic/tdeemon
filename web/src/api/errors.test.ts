@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { HttpError, NoAnswerError, retry, statusOf } from '@/api/errors'
+import { detailOf, HttpError, NoAnswerError, retry, statusOf } from '@/api/errors'
 
 test("a failure's status is the answer's, or its problem's", () => {
   expect(statusOf(new HttpError(401))).toBe(401)
@@ -23,4 +23,20 @@ test('a refusal, or a failure of the app itself, is not asked again', () => {
   expect(retry(0, { status: 404 })).toBe(false)
   expect(retry(0, new Error('a bug'))).toBe(false)
   expect(retry(0, new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(false)
+})
+
+test("a refusal's detail says what its errors say of each field", () => {
+  expect(detailOf({ status: 422, detail: 'name: too long' })).toBe('name: too long')
+  expect(
+    detailOf({
+      status: 422,
+      detail: 'validation failed',
+      errors: [
+        { message: 'expected number >= 50', location: 'body.height_cm' },
+        { message: 'unexpected property' },
+        { location: 'body.x' },
+      ],
+    }),
+  ).toBe('validation failed: height_cm: expected number >= 50; unexpected property')
+  expect(detailOf(new Error('no'))).toBe('')
 })

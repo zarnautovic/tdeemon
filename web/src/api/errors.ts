@@ -53,10 +53,25 @@ export function retry(failures: number, error: unknown): boolean {
 }
 
 // detailOf is what the API's problem (RFC 9457) says of a refusal, in
-// the server's words; empty for anything else.
+// the server's words, with what its errors say of each field: a request
+// the schema refuses says only "validation failed" otherwise. Empty for
+// anything else.
 export function detailOf(error: unknown): string {
-  if (typeof error === 'object' && error !== null && 'detail' in error) {
-    return typeof error.detail === 'string' ? error.detail : ''
+  if (
+    typeof error !== 'object' ||
+    error === null ||
+    !('detail' in error) ||
+    typeof error.detail !== 'string'
+  ) {
+    return ''
   }
-  return ''
+  const errors: unknown[] = 'errors' in error && Array.isArray(error.errors) ? error.errors : []
+  const said = errors.flatMap((e) => {
+    if (typeof e !== 'object' || e === null || !('message' in e) || typeof e.message !== 'string') {
+      return []
+    }
+    const at = 'location' in e && typeof e.location === 'string' ? e.location : ''
+    return [at ? `${at.replace(/^body\./, '')}: ${e.message}` : e.message]
+  })
+  return said.length > 0 ? `${error.detail}: ${said.join('; ')}` : error.detail
 }
