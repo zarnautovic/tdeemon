@@ -9,6 +9,9 @@ const port = 18_080
 
 export default defineConfig({
   testDir: 'e2e',
+  // One at a time: the tests share one user, and the server's limit of
+  // failed sign-ins, ten in 15 minutes for an account or an address.
+  workers: 1,
   forbidOnly: Boolean(process.env.CI),
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {

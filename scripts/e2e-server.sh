@@ -28,14 +28,24 @@ export TDEEMON_SECRET_KEY
 # begin only once the user exists.
 TDEEMON_LISTEN=127.0.0.1:$((port + 1)) "$bin" &
 first=$!
+up=false
 for _ in $(seq 100); do
+  # Stopped (the port taken, a bad setting): it said why on stderr.
+  if ! kill -0 "$first" 2>/dev/null; then
+    break
+  fi
   if curl -fs -o /dev/null "http://127.0.0.1:$((port + 1))/healthz"; then
+    up=true
     break
   fi
   sleep 0.1
 done
-kill "$first"
+kill "$first" 2>/dev/null || true
 wait "$first" || true
+if [[ $up != true ]]; then
+  echo "$0: the server did not start on port $((port + 1))" >&2
+  exit 1
+fi
 
 printf '%s\n' "$E2E_PASSWORD" |
   "$bin" user create --email "$E2E_EMAIL" --name Ana --timezone Europe/Zagreb --password-stdin >/dev/null

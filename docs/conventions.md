@@ -166,8 +166,9 @@ for the author and the reviewer.
     answered an error"), costs a round and may fail a case. Such a
     failure asks for the eval to run again, not for a change to
     tdeemon.
-- **The web app:** components and hooks with Vitest and Testing Library.
-- End-to-end tests of the main flows (Playwright) come later.
+- **The web app:** components and hooks with Vitest and Testing Library;
+  a person's paths through its screens end to end, in a browser, with
+  Playwright (the web app's Tests below).
 
 ### Coverage
 
@@ -220,8 +221,9 @@ A change is done when:
   - no direct pushes, force pushes or deletion;
   - a pull request, squash-merged, with linear history;
   - every required check green on a branch that is up to date with
-    `main`: Go, Web app, Other files, Dependencies and secrets, Docker
-    image and Conventional Commit title, each from GitHub Actions;
+    `main`: Go, Web app, End-to-end, Other files, Dependencies and
+    secrets, Docker image and Conventional Commit title, each from GitHub
+    Actions;
   - no new CodeQL error or high-severity security alert;
   - review threads resolved;
   - no approvals, since the project has one maintainer.
