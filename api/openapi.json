@@ -1561,6 +1561,7 @@
             "type": "number"
           },
           "unit": {
+            "description": "The amount's unit as given; left out, the food's own, as the item's amount and unit say.",
             "enum": [
               "g",
               "ml"

@@ -133,11 +133,17 @@ func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, n
 	default:
 		return sent, nil, nil
 	}
-	it, err := meal.FromFood(f, sent.Quantity, sent.Note)
+	q := sent.Quantity
+	if nf != nil {
+		// An amount without its unit is in the food sent's, though the
+		// user's food of its name is logged.
+		q = q.InUnitOf(nf.Basis)
+	}
+	it, err := meal.FromFood(f, q, sent.Note)
 	if err != nil {
 		return meal.Item{}, nil, huma.Error422UnprocessableEntity(oneLine(err))
 	}
-	it.ID, it.SentFood = sent.ID, sent.SentFood
+	it.ID, it.SentFood, it.Quantity = sent.ID, sent.SentFood, sent.Quantity
 	if nf != nil {
 		// The store finds the food the item is by the new food's id.
 		it.FoodID = nf.ID

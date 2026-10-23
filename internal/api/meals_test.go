@@ -950,6 +950,17 @@ func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
 			t.Fatalf("80 of the bread and 50 of new oats: %d %s, want %d and 80 g", rec.Code, rec.Body.String(), want)
 		}
 	}
+	// 250 of a new food by volume, of the name of the user's food by
+	// weight: ml, as sent, which the bread does not take.
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inML := fmt.Sprintf(`{"items": [{"food": {"name": %q, "basis": "100ml", "source": "estimate",
+		"nutrients": {"kcal": 50, "protein": 3, "carbs": 5, "fat": 1}}, "amount": 250}]}`, bread.Name)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", inML, e.session, nil); rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("250 of a food in ml, the user's by weight: %d %s, want 422", rec.Code, rec.Body.String())
+	}
 	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "amount": 40}}]}`, uuid.NewV7(), e.bread)
 	for range 2 {
 		if rec := e.patch(t, id, add); rec.Code != http.StatusOK {

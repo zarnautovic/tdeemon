@@ -333,6 +333,17 @@ func TestMealOfAFoodTheUserHas(t *testing.T) {
 	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, other, []food.Food{guess}, t0); !errors.As(err, &fie) || fie.Food.ID != b.ID {
 		t.Errorf("a meal of 50 ml of a food by weight = %v, want a FoodItemError of the user's food", err)
 	}
+	// 50 without its unit, of a new food in ml: ml, as sent, not the
+	// bar's g.
+	if it, err = meal.FromFood(guess, meal.Quantity{Amount: 50}, ""); err != nil {
+		t.Fatal(err)
+	}
+	guess.ID = uuid.NewV7()
+	it.FoodID = guess.ID
+	other.Items = []meal.Item{it}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, other, []food.Food{guess}, t0); !errors.As(err, &fie) || fie.Food.ID != b.ID {
+		t.Errorf("a meal of 50 of a food in ml, the user's by weight = %v, want a FoodItemError of the user's food", err)
+	}
 }
 
 // An archived food a new food of its name is comes back: the user eats it

@@ -1153,7 +1153,10 @@ export interface components {
              * @description How many of serving.
              */
             servings?: number;
-            /** @enum {string} */
+            /**
+             * @description The amount's unit as given; left out, the food's own, as the item's amount and unit say.
+             * @enum {string}
+             */
             unit?: "g" | "ml";
         };
         RecoveryBody: {
