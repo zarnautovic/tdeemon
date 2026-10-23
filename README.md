@@ -492,11 +492,17 @@ days, as `TDEEMON_DATA_DIR/ingest/<user>/latest-strong.csv.gz`.
 
 tdeemon replaces the maintainer's earlier service, health-api, and takes
 its history once: the days' metrics and meals from its database (its
-`health.db`, an index of the vault's daily notes). Each meal becomes an
-estimate on its note's day, at its time on your clock (one before 05:00,
-the predecessor's rollover, past midnight); a day whose total in the
-note has more kcal than its meals gets the rest as one estimate, "Rest
-of the day (history import)", so the day's intake is the note's. A day
+`health.db`, an index of the vault's daily notes). Each meal goes on its
+note's day, at its time on your clock (one before 05:00, the
+predecessor's rollover, past midnight), split by its text against your
+foods: a part with an amount and a food of yours becomes an item of
+that food, the rest of the meal's total an estimate, "Rest of the meal
+(history split)", so the meal keeps its total; a meal with no such part,
+or whose items would pass its total, is one estimate. A dry run splits
+against the foods of `--foods` too, which it has not written. A day
+whose total in the note has more kcal than its meals gets the rest as
+one estimate, "Rest of the day (history import)", so the day's intake
+is the note's. A day
 with a remark (a restaurant, an illness, a trip) is excluded from
 calibration for it, and so is a day over without intake ("No intake
 logged in the predecessor", or "Intake of the predecessor not
@@ -523,7 +529,9 @@ portion and the report lists it; any other portion ("1 medium", "400 g
 cooked") is a food per portion, the portion in its note. A food whose
 note names a declaration is a label's, the rest estimates. A name the
 table has twice takes each row's portion, and a food you have already,
-by its name, stays yours.
+by its name, stays yours. A row of several foods eaten together, a plus
+in its name or portion ("Jogurt + Whey + Müsli"), is no food and is left
+out: a meal of them is a meal.
 
 With `--plan`, it takes a plan file you write from the goals note, which
 is prose: the profile, the training weekdays, the phases and the targets
@@ -550,8 +558,8 @@ its text gives them: the part's words, its amount in g, ml or pieces,
 and the food of the table it reads as; and a meal its place in its day
 and its class, `known` (an amount and a food for each part), `amounts`
 (an amount for each), `partial` or `untold`. It reads the words of the
-notes, so it errs at times; the import is to apply it so that a meal
-keeps its total whatever it got wrong.
+notes, so it errs at times; the import applies it so that a meal keeps
+its total whatever it got wrong.
 
 ```sh
 kubectl exec deploy/tdeemon -- /tdeemon import-history \

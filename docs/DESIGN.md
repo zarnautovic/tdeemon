@@ -863,8 +863,9 @@ the first spec.
 
 1. **A one-off import of the history** (`tdeemon import-history`):
    - the predecessor's database, an index of the vault's daily notes →
-     `days`, `metrics` and `meals` (historic meals become one estimate
-     item each, and a day whose total is more than its meals gets the
+     `days`, `metrics` and `meals` (each historic meal split into the
+     user's foods where its text tells them, see below, else one
+     estimate, and a day whose total is more than its meals gets the
      rest as one estimate more); a day with a remark, or without intake
      logged, is excluded, as the predecessor's calibration left it out,
      and the daily notes' mood, hunger and status are left out;
@@ -880,12 +881,12 @@ the first spec.
    no shadow mode and no nightly re-import.
 
    The predecessor kept a meal as a line of text, and a food of its
-   table at times as several eaten together. The import at the cut-over
-   is to split both (`import-history --split-report` shows the split
-   before): a part with an amount and a food of the table becomes an
-   item of that food, the rest of the meal an estimate of its own
-   ("Ostalo"), so the meal keeps its total, and a meal whose parts would
-   pass it stays one estimate; a combination is no food. The split is
+   table at times as several eaten together. The import splits both
+   (`import-history --split-report` shows the split before): a part with
+   an amount and a food of the user's becomes an item of that food, the
+   rest of the meal an estimate of its own, so the meal keeps its total,
+   and a meal whose parts would pass it stays one estimate; a
+   combination is no food, and is not imported. The split is
    the maintainer's own history's, and goes with the import once the
    cut-over is done.
 2. **New inputs for what the predecessor took in:** Health Auto Export

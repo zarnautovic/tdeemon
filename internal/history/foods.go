@@ -238,10 +238,14 @@ type FoodReport struct {
 	PerPortion []string
 	// Skipped are the rows no food could be made of, each with why.
 	Skipped []string
+	// Combinations are the rows of several foods eaten together, a plus
+	// in their name or portion, left out: a food is one food, a meal of
+	// several is a meal.
+	Combinations []string
 }
 
 // ImportFoods adds the foods of rows to u's food database, or with dryRun
-// only counts them. A food whose name u has already (from a run before, or
+// only counts them, the combinations left out. A food whose name u has already (from a run before, or
 // their own) stays as it is, so a run again changes nothing. A name
 // several rows share takes each row's portion.
 func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow, now time.Time, dryRun bool) (FoodReport, error) {
@@ -253,6 +257,10 @@ func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow,
 	seen := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
+		if combination(row) {
+			r.Combinations = append(r.Combinations, fmt.Sprintf("line %d, %s", row.Line, row.Name))
+			continue
+		}
 		name := row.Name
 		if count[food.Key(name)] > 1 {
 			name += " (" + row.Portion + ")"

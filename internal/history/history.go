@@ -183,8 +183,9 @@ type Report struct {
 	Days    int
 	Metrics int
 	// Meals counts the meals the history holds, created now or by a run
-	// before; Rests the estimates of a day's rest among them.
-	Meals, Rests int
+	// before; Rests the estimates of a day's rest among them, and Split
+	// the meals split into items of the user's foods.
+	Meals, Rests, Split int
 	// Excluded are the days excluded, each with why: a remark, or no
 	// intake.
 	Excluded []string
@@ -208,14 +209,44 @@ type Report struct {
 }
 
 // Import writes days into u's history as an import, or with dryRun only
-// counts what it would write. It stops at the first write that fails;
-// running it again picks up where it stopped.
-func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time.Time, dryRun bool) (Report, error) {
+// counts what it would write. Each meal is split against u's foods, and
+// with dryRun those of table too, which a dry run has not written: a part
+// with an amount and a food an item of it, the rest of the meal an
+// estimate. It stops at the first write that fails; running it again
+// picks up where it stopped.
+func Import(ctx context.Context, db *store.DB, u user.User, days []Day, table []FoodRow, now time.Time, dryRun bool) (Report, error) {
 	cal, err := day.NewCalendar(u.TimeZone, u.DayStartHour)
 	if err != nil {
 		return Report{}, fmt.Errorf("the user's calendar: %w", err)
 	}
+	foods, err := splitFoods(ctx, db, u.ID, table, dryRun)
+	if err != nil {
+		return Report{}, err
+	}
+	sp := newSplitter(foods)
 	var r Report
+	if err := importMetrics(ctx, db, u.ID, days, now, dryRun, &r); err != nil {
+		return r, err
+	}
+	for _, d := range days {
+		date, err := day.ParseDate(d.Date)
+		if err != nil {
+			continue
+		}
+		meals, err := importMeals(ctx, db, u.ID, cal, date, d, sp, now, dryRun, &r)
+		if err != nil {
+			return r, err
+		}
+		if err := exclude(ctx, db, u.ID, cal, date, d, meals, now, dryRun, &r); err != nil {
+			return r, err
+		}
+	}
+	return r, nil
+}
+
+// importMetrics writes the days' metrics, or with dryRun only counts
+// them, and the weigh-ins they bring.
+func importMetrics(ctx context.Context, db *store.DB, userID uuid.UUID, days []Day, now time.Time, dryRun bool, r *Report) error {
 	metrics := map[string]map[string]float64{}
 	for _, d := range days {
 		if _, err := day.ParseDate(d.Date); err != nil {
@@ -229,7 +260,7 @@ func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time
 	}
 	res, err := ingest.FromDays(metrics)
 	if err != nil {
-		return r, err
+		return err
 	}
 	r.Rejected = res.Rejected
 	r.Weighed = map[day.Date]float64{}
@@ -243,24 +274,11 @@ func Import(ctx context.Context, db *store.DB, u user.User, days []Day, now time
 		if dryRun {
 			continue
 		}
-		if _, err := db.MergeMetrics(ctx, u.ID, Actor, d.Date, d.Values, now); err != nil {
-			return r, fmt.Errorf("the metrics of %s: %w", d.Date, err)
+		if _, err := db.MergeMetrics(ctx, userID, Actor, d.Date, d.Values, now); err != nil {
+			return fmt.Errorf("the metrics of %s: %w", d.Date, err)
 		}
 	}
-	for _, d := range days {
-		date, err := day.ParseDate(d.Date)
-		if err != nil {
-			continue
-		}
-		meals, err := importMeals(ctx, db, u.ID, cal, date, d, now, dryRun, &r)
-		if err != nil {
-			return r, err
-		}
-		if err := exclude(ctx, db, u.ID, cal, date, d, meals, now, dryRun, &r); err != nil {
-			return r, err
-		}
-	}
-	return r, nil
+	return nil
 }
 
 // exclude excludes date for its remark, or as a day without intake, if
@@ -336,10 +354,10 @@ func exclusionReason(ctx context.Context, db *store.DB, userID uuid.UUID, cal da
 // total was more than its meals, and returns how many it gives the day:
 // written now, by a run before, or deleted since by the user, who decided
 // the day then.
-func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Calendar, date day.Date, d Day, now time.Time,
+func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Calendar, date day.Date, d Day, sp splitter, now time.Time,
 	dryRun bool, r *Report,
 ) (int, error) {
-	ms := buildMeals(userID, cal, date, d, r)
+	ms := buildMeals(userID, cal, date, d, sp, r)
 	if d.Total != nil && !slices.ContainsFunc(ms, func(m meal.Meal) bool { return m.Description == RestName }) && !dryRun {
 		// A rest a run before wrote stays, though the meals reach the
 		// total now.
@@ -370,9 +388,9 @@ func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Ca
 	return len(ms), nil
 }
 
-// buildMeals returns the meals of a day's note, and the estimate of its
-// rest when its total was more than its meals.
-func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, r *Report) []meal.Meal {
+// buildMeals returns the meals of a day's note, each split when sp can,
+// and the estimate of its rest when its total was more than its meals.
+func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, sp splitter, r *Report) []meal.Meal {
 	var sum food.Nutrients
 	ms := make([]meal.Meal, 0, len(d.Meals)+1)
 	for i, m := range d.Meals {
@@ -380,15 +398,21 @@ func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, r *Rep
 		if renamed {
 			r.Renamed = append(r.Renamed, d.Date+": "+desc)
 		}
-		item, err := meal.Estimate(desc, m.Nutrients, "")
-		if err != nil {
-			r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: %v", d.Date, desc, err))
-			continue
+		items, split := sp.items(m.Description, m.Nutrients)
+		if split {
+			r.Split++
+		} else {
+			item, err := meal.Estimate(desc, m.Nutrients, "")
+			if err != nil {
+				r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: %v", d.Date, desc, err))
+				continue
+			}
+			items = []meal.Item{item}
 		}
 		sum = add(sum, m.Nutrients)
 		ms = append(ms, meal.Meal{
 			ID: mealID(userID, date, strconv.Itoa(i)), EatenAt: eatenAt(cal, date, m.Time), Day: date,
-			Description: desc, Client: meal.ClientImport, Items: []meal.Item{item},
+			Description: desc, Client: meal.ClientImport, Items: items,
 		})
 	}
 	if d.Total == nil {
@@ -411,6 +435,39 @@ func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, r *Rep
 		ID: mealID(userID, date, "rest"), EatenAt: cal.End(date).Add(-time.Minute), Day: date,
 		Description: RestName, Client: meal.ClientImport, Items: []meal.Item{item},
 	})
+}
+
+// splitFoods returns the foods a split reads meals as: userID's, not the
+// archived ones, and with dryRun those of table too that userID has not
+// by their name, as a dry run has not written them.
+func splitFoods(ctx context.Context, db *store.DB, userID uuid.UUID, table []FoodRow, dryRun bool) ([]food.Food, error) {
+	var foods []food.Food
+	for offset := 0; ; offset += store.MaxFoodList {
+		page, total, err := db.ListFoods(ctx, userID, false, store.ByName, store.MaxFoodList, offset)
+		if err != nil {
+			return nil, fmt.Errorf("the user's foods: %w", err)
+		}
+		foods = append(foods, page...)
+		if len(page) == 0 || offset+len(page) >= total {
+			break
+		}
+	}
+	if !dryRun {
+		return foods, nil
+	}
+	have := map[string]bool{}
+	for i := range foods {
+		have[food.Key(foods[i].Name)] = true
+	}
+	for i := range table {
+		if have[food.Key(table[i].Name)] || combination(&table[i]) {
+			continue
+		}
+		if f, _, err := toFood(table[i], table[i].Name); err == nil {
+			foods = append(foods, f)
+		}
+	}
+	return foods, nil
 }
 
 // restOf returns what total holds beyond sum, each part at least 0 (a

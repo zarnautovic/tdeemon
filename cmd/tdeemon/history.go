@@ -142,7 +142,7 @@ func importHistory(ctx context.Context, args []string, lookup config.LookupFunc,
 		}
 		var days history.Report
 		if f.healthDB != "" {
-			if days, err = history.Import(ctx, db, u, src.days, now, f.dryRun); err != nil {
+			if days, err = history.Import(ctx, db, u, src.days, src.foods, now, f.dryRun); err != nil {
 				return err
 			}
 			writeReport(&b, u, days, f.dryRun)
@@ -242,6 +242,7 @@ func writeFoodReport(b *strings.Builder, u user.User, r history.FoodReport, dryR
 	list(b, "Foods renamed", r.Renamed)
 	list(b, "Foods per portion though given by weight or volume, as per 100 they would be no food", r.PerPortion)
 	list(b, "Rows skipped", r.Skipped)
+	list(b, "Combinations left out, as a food is one food", r.Combinations)
 }
 
 // writePlanReport writes what an import of a plan into u did, or would
@@ -264,8 +265,8 @@ func writePlanReport(b *strings.Builder, u user.User, r history.PlanReport, dryR
 // writeReport writes what an import into u did, or would do, by u's
 // calendar, and what it left out.
 func writeReport(b *strings.Builder, u user.User, r history.Report, dryRun bool) {
-	fmt.Fprintf(b, "%s for %s, whose days start at %02d:00 in %s: %d days, %d metric values, %d meals, of them %d rests of a day; %d days excluded.\n",
-		verb(dryRun), u.Email, u.DayStartHour, u.TimeZone, r.Days, r.Metrics, r.Meals, r.Rests, len(r.Excluded))
+	fmt.Fprintf(b, "%s for %s, whose days start at %02d:00 in %s: %d days, %d metric values, %d meals, of them %d rests of a day and %d split into foods; %d days excluded.\n",
+		verb(dryRun), u.Email, u.DayStartHour, u.TimeZone, r.Days, r.Metrics, r.Meals, r.Rests, r.Split, len(r.Excluded))
 	rejected := make([]string, len(r.Rejected))
 	for i, x := range r.Rejected {
 		rejected[i] = fmt.Sprintf("%s %s: %s", x.Date, x.Kind, x.Reason)
