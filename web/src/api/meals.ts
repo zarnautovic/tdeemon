@@ -7,6 +7,18 @@ import { statusOf } from './errors'
 // The days' queries, by the prefix of their keys.
 const days = ['get', '/api/v1/days/{date}']
 
+// useLogMeal logs a meal of day date. Its answer has the day's totals but
+// not its meals, so the days are asked again; the meal stands logged once
+// they came. They are when it failed too: without an answer it may have
+// been logged all the same, and the day shows whether it was.
+export function useLogMeal(date: string) {
+  const queryClient = useQueryClient()
+  return $api.useMutation('post', '/api/v1/meals', {
+    scope: dayScope(date),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: days }),
+  })
+}
+
 // useUpdateMeal changes a meal of day date by its ops, in order. Its
 // answer has the day's totals but not its meals, so the days are asked
 // again; the change stands done once they came. So they are for a meal no

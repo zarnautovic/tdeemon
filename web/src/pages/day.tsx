@@ -8,6 +8,7 @@ import { CheckIn } from '@/components/day/check-in'
 import { DayMetrics } from '@/components/day/day-metrics'
 import { DayTotals } from '@/components/day/day-totals'
 import { MealCard } from '@/components/day/meal-card'
+import { MealLog } from '@/components/day/meal-log'
 import { UndoButton } from '@/components/day/undo-button'
 import { LoadError } from '@/components/load-error'
 import { buttonVariants } from '@/components/ui/button'
@@ -120,6 +121,15 @@ export function DayPage() {
                 timeZone={session.data?.user.timezone ?? 'UTC'}
               />
             ))
+          )}
+          {!future && (
+            <MealLog
+              key={`log ${day.data.date}`}
+              date={day.data.date}
+              today={isToday}
+              timeZone={session.data?.user.timezone ?? 'UTC'}
+              startHour={session.data?.user.day_start_hour ?? 0}
+            />
           )}
         </section>
         <DayMetrics
