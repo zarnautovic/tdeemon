@@ -593,11 +593,22 @@ func TestListFoods(t *testing.T) {
 		})
 	}
 	banana := mk(ana, "banana")
-	mk(ana, "Apple")
+	apple := mk(ana, "Apple")
 	cheese := mk(ana, "Cheese")
 	mk(ana, "Dates")
 	old := mk(ana, "Old bread")
 	mk(ivo, "Avocado")
+	// Ivo's food under the id of Ana's apple, eaten last of all: Ana's list
+	// does not go by what Ivo ate.
+	ivosApple := saveFood(t, db, ivo, food.Food{
+		ID: apple.ID, Name: "Ivo's apple", Basis: food.Per100g, Source: food.Estimate,
+		Nutrients: food.Nutrients{Kcal: 50, Protein: 0, Carbs: 12, Fat: 0},
+	})
+	ivosItem, err := meal.FromFood(ivosApple, meal.Quantity{Amount: 100}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	createMeal(t, db, ivo, meal.Meal{ID: uuid.NewV7(), EatenAt: t0, Day: day.DateOf(t0), Client: meal.ClientMCP, Items: []meal.Item{ivosItem}})
 	if err := db.SetFoodArchived(t.Context(), ana, testActor, old.ID, true, t0); err != nil {
 		t.Fatal(err)
 	}
