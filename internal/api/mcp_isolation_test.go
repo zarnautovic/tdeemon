@@ -81,6 +81,12 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 		"get_summary": mcpWorks("get_summary", nil, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user)), fmt.Sprintf(`"kcal":%v`, isolationKcal(e.other.user))}
 		}),
+		"get_history": mcpWorks("get_history", nil, func(e isolationEnv) []string {
+			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
+		}),
+		"update_profile_notes": mcpWorks("update_profile_notes", func(e isolationEnv) map[string]any {
+			return map[string]any{"notes": e.other.user.Name + " avoids nuts."}
+		}, func(e isolationEnv) []string { return []string{e.other.user.Name + " avoids nuts."} }),
 		"find_foods": mcpWorks("find_foods", func(isolationEnv) map[string]any { return map[string]any{"query": "rye"} },
 			func(e isolationEnv) []string { return []string{e.other.user.Name + "'s rye bread"} }),
 		"get_food": mcpOnTheirs("get_food", ownersBread, ownBread, nil),

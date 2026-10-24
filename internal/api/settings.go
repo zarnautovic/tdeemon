@@ -65,16 +65,17 @@ type notesOutput struct {
 }
 
 // setNotes stores the user's notes for a coach, which get_me gives a
-// model; a change of them is an event, which undo takes back.
+// model, from the web app or the tool update_profile_notes; a change of
+// them is an event, which undo takes back.
 func (s *sessions) setNotes(ctx context.Context, in *notesInput) (*notesOutput, error) {
-	p, err := requireSession(ctx)
+	p, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if err := profile.ValidateNotes(in.Body.Notes); err != nil {
 		return nil, huma.Error422UnprocessableEntity(oneLine(err))
 	}
-	if err := s.db.SetProfileNotes(ctx, p.User.ID, webActor, in.Body.Notes, s.now()); err != nil {
+	if err := s.db.SetProfileNotes(ctx, p.User.ID, actorOf(p), in.Body.Notes, s.now()); err != nil {
 		return nil, internalError("saving the notes failed", err)
 	}
 	out := &notesOutput{}
@@ -115,16 +116,6 @@ func (s *sessions) registerSettings(a huma.API) {
 		Tags:   []string{"settings"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
 	}, s.setSettings)
-	huma.Register(a, huma.Operation{
-		OperationID: "set-notes",
-		Method:      http.MethodPut,
-		Path:        Prefix + "/me/notes",
-		Summary:     "Set your notes for a coach",
-		Description: "Needs a web session. What a coach, a model, should know of you, which get_me gives it; empty deletes them. " +
-			"Undo takes a change of them back.",
-		Tags:   []string{"settings"},
-		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
-	}, s.setNotes)
 	huma.Register(a, huma.Operation{
 		OperationID: "revoke-tokens",
 		Method:      http.MethodDelete,

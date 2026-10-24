@@ -199,11 +199,11 @@ answer, so a food log is **1–2 calls**: `find_foods`, then `log_meal`.
 | `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
 | `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
 | `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`, twice its window) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
-| `get_history(window, granularity)` | coaching: compact day/week table across all metrics (§8) |
+| `get_history(from?, to?, granularity?)` | coaching: a day or week table of intake against target, the measurements, the trend weight and the TDEE measured up to each day, at most 366 days up to today (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits, pending proposals |
 | `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/profile/notes + preview; applies nothing |
 | `apply_proposal(id)` / `reject_proposal(id)` / `revert(id)` | **apply only after explicit user consent**; recorded with actor and rationale |
-| `update_profile_notes(...)` | preferences and life context the coach should remember |
+| `update_profile_notes(notes)` | preferences and life context the coach should remember, replaced whole (empty deletes them); undo takes it back |
 | `shopping_list(op, items?)` | |
 
 `log_meal` items accept these shapes (field names are illustrative; the
@@ -261,17 +261,16 @@ each with its last use, and how many there are (`total`); and makes a
 new food with `POST /api/v1/foods/new`, also a web session's only, which
 refuses a name and brand the user has (409, naming the food, archived
 too) where `upsert_food` would correct that food. The charts read
-`GET /api/v1/history?from=&to=&granularity=day|week`, a web session's
-only for now: every day of a span of at most 366 days up to today (the
+`GET /api/v1/history?from=&to=&granularity=day|week`, the tool
+`get_history`: every day of a span of at most 366 days up to today (the
 90 up to it by default), or its weeks, with what was eaten against the
 day's target, the measurements, the trend weight and the TDEE
-calibration measures up to each day, as the summary computes them; it is
-the table `get_history` (§8) is to give a model, once the tool's bytes
-fit MCP's budget. The settings, a web session's only too: `PATCH
-/api/v1/me` changes the name, the language, the time zone and the day's
-start hour, those given (what was logged keeps its day), and `PUT
-/api/v1/me/notes` the notes for a coach, an event undo takes back (the
-tool `update_profile_notes` waits for MCP's budget too). `log_meal` is
+calibration measures up to each day, as the summary computes them, the
+table a coach looks back with (§8). The settings are a web session's
+only: `PATCH /api/v1/me` changes the name, the language, the time zone
+and the day's start hour, those given (what was logged keeps its day).
+`PUT /api/v1/me/notes`, the tool `update_profile_notes`, replaces the
+notes for a coach whole, an event undo takes back. `log_meal` is
 `POST /api/v1/meals` (201, or 200 for a retry), `update_meal` is
 `PATCH /api/v1/meals/{id}` (ops: add, replace, remove an item; an item
 no op touches keeps what it brought when logged), and `delete_meal` is
@@ -317,22 +316,23 @@ left.
        cache. The first log after the cache has expired (five minutes
        with Anthropic's) pays for the tools and instructions once more.
      - **The tools and the instructions are a budget of their own**,
-       which every request carries, cached or not: ~6.5k tokens, as a
+       which every request carries, cached or not: ~7k tokens, as a
        client that does not cache pays it in full with each request
        (~10.5k until October 2026, ~6k then until the rules of a meal's
-       parts). So a tool's schema carries what a
-       model needs to call it, not the format of a number, examples or
-       bounds, which the operation checks; a schema two tools take is
-       said in full in its own tool's (a new food in `upsert_food`'s, an
-       item in `log_meal`'s) and named in a word in the other's, beside
-       the field's own words; a tool's description in MCP is its brief,
-       what it does and answers, the policy of logging being the
-       instructions', while its operation's description in the OpenAPI
-       document says it all. `TestMCPFitsItsBudget` holds them to a
-       budget in bytes. A schema named in a word is an object without
-       properties, which a client that takes only the OpenAPI subset of
-       JSON Schema (Gemini's function declarations, which do not take
-       `additionalProperties` either) would refuse.
+       parts, ~6.5k until the coach's history and notes). So a tool's
+       schema carries what a model needs to call it, not the format of a
+       number, examples or bounds, which the operation checks; a schema
+       two tools take is said in full in its own tool's (a new food in
+       `upsert_food`'s, an item in `log_meal`'s) and named in a word in
+       the other's, beside the field's own words; a tool's description
+       in MCP is its brief, what it does and answers, the policy of
+       logging being the instructions', while its operation's
+       description in the OpenAPI document says it all.
+       `TestMCPFitsItsBudget` holds them to a budget in bytes. A schema
+       named in a word is an object without properties, which a client
+       that takes only the OpenAPI subset of JSON Schema (Gemini's
+       function declarations, which do not take `additionalProperties`
+       either) would refuse.
 
      The eval of MCP (`internal/eval`) measures both, and a log's whole
      input.

@@ -147,12 +147,20 @@ func TestGetHistoryRefuses(t *testing.T) {
 	if code, _, _ := getHistory(t, in, session, "?from="+today.AddDays(-365).String()); code != http.StatusOK {
 		t.Errorf("366 days: %d, want 200", code)
 	}
-	tok, created := in.createToken(t, session, `{"name":"phone","scopes":["read","tools"]}`)
+	// The tool get_history: a token that reads reads it, an ingest one not.
+	tok, created := in.createToken(t, session, `{"name":"claude","scopes":["read"]}`)
 	if created.Code != http.StatusCreated {
 		t.Fatal(created.Body.String())
 	}
-	if rec := in.do(t, http.MethodGet, "/api/v1/history", "", nil, bearer(tok.Token)); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "closed to API tokens") {
-		t.Errorf("with a token: %d %s, want 403", rec.Code, rec.Body.String())
+	if rec := in.do(t, http.MethodGet, "/api/v1/history", "", nil, bearer(tok.Token)); rec.Code != http.StatusOK {
+		t.Errorf("with a read token: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	phone, created := in.createToken(t, session, `{"name":"phone","scopes":["ingest"]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatal(created.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/history", "", nil, bearer(phone.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("with an ingest token: %d %s, want 403", rec.Code, rec.Body.String())
 	}
 }
 
