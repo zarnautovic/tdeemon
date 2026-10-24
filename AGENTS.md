@@ -22,11 +22,11 @@ the verdict on a phase), the tool registry with `get_profile`,
 the API contract and the web app's frame (signing in and out, its
 sections, in English and Croatian) with the day (what was eaten against
 the target, the meals, the measurements, and the check-in, the
-measurements, a meal's corrections and a meal logged by hand taken
-there) and the foods (their list and search, a food made, corrected or
-archived), the charts (ECharts, loaded with them) and the settings (the
-name, language, time zone and day's start, the notes for a coach, the API
-tokens, the profile and the limits of a plan) exist.
+measurements, a meal's corrections, a meal logged by hand and a meal
+repeated taken there) and the foods (their list and search, a food made,
+corrected or archived), the charts (ECharts, loaded with them) and the
+settings (the name, language, time zone and day's start, the notes for a
+coach, the API tokens, the profile and the limits of a plan) exist.
 
 | Path | What |
 | --- | --- |

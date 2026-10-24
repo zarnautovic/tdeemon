@@ -1,7 +1,14 @@
 import { expect, test } from 'vitest'
 
-import type { Food } from '@/api/types'
-import { foodEntry, itemOf, unitsOf, type Entry } from '@/components/day/meal-entries'
+import type { Food, Item, Meal } from '@/api/types'
+import {
+  foodEntry,
+  inputOf,
+  itemOf,
+  repeatOf,
+  unitsOf,
+  type Entry,
+} from '@/components/day/meal-entries'
 
 const field = (n: number) => String(n)
 const parse = (s: string) => (/^\d+(\.\d+)?$/.test(s) ? Number(s) : undefined)
@@ -92,4 +99,81 @@ test('an entry sends its item, or nothing while a number is not one', () => {
   })
   expect(itemOf({ ...plate, name: ' ' }, parse)).toBeUndefined()
   expect(itemOf({ ...plate, fat: '' }, parse)).toBeUndefined()
+})
+
+// item is an item of a food of the user's, given as quantity.
+function item(quantity: Item['quantity'], over: Partial<Item> = {}): Item {
+  return {
+    id: '0193c3a5-0000-7000-8000-0000000000b1',
+    food_id: bread.id,
+    name: 'Rye bread',
+    quantity,
+    amount: 80,
+    unit: 'g',
+    nutrients: { kcal: 207, protein: 7, carbs: 38, fat: 3 },
+    source: 'label',
+    ...over,
+  }
+}
+
+test('an item logged again is given as it was, a food by its id', () => {
+  expect(inputOf(item({ amount: 80, unit: 'g' }))).toEqual({
+    food_id: bread.id,
+    amount: 80,
+    unit: 'g',
+  })
+  // Without a unit, the food's, which stays the food's.
+  expect(inputOf(item({ amount: 80 }))).toEqual({ food_id: bread.id, amount: 80 })
+  expect(inputOf(item({ serving: 'slice', servings: 2 }, { note: 'toasted' }))).toEqual({
+    food_id: bread.id,
+    note: 'toasted',
+    serving: 'slice',
+    servings: 2,
+  })
+  expect(inputOf(item({ portions: 1.5 }, { food_id: stew.id, unit: 'portion' }))).toEqual({
+    food_id: stew.id,
+    portions: 1.5,
+  })
+})
+
+test('an item given without a quantity is logged again in its amount and unit', () => {
+  expect(inputOf(item({}))).toEqual({ food_id: bread.id, amount: 80, unit: 'g' })
+  expect(inputOf(item({}, { amount: 2, unit: 'portion', note: 'big' }))).toEqual({
+    food_id: bread.id,
+    portions: 2,
+    note: 'big',
+  })
+})
+
+test('an estimate is logged again with all its values and its note', () => {
+  const nutrients = { kcal: 250, protein: 8, carbs: 12, fat: 18, fiber: 4, salt: 1.2 }
+  const { food_id: _food, ...ofFood } = item({ portions: 1 })
+  const salad: Item = { ...ofFood, name: 'Salad', nutrients, source: 'estimate', note: 'canteen' }
+  expect(inputOf(salad)).toEqual({ name: 'Salad', nutrients, note: 'canteen' })
+})
+
+test('a meal repeated is a new meal of its items, with its words', () => {
+  const meal: Meal = {
+    id: '0193c3a5-0000-7000-8000-0000000000a1',
+    eaten_at: '2026-10-22T07:00:00Z',
+    description: 'Breakfast',
+    note: 'before the run',
+    client: 'mcp',
+    total: { kcal: 207, protein: 7, carbs: 38, fat: 3 },
+    items: [item({ amount: 80, unit: 'g' })],
+  }
+  const first = repeatOf(meal)
+  // Under an id made now (UUIDv7), and eaten now: the server takes the
+  // time of the id.
+  expect(first).toEqual({
+    id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/) as unknown,
+    description: 'Breakfast',
+    note: 'before the run',
+    items: [{ food_id: bread.id, amount: 80, unit: 'g' }],
+  })
+  expect(repeatOf(meal).id).not.toBe(first.id)
+  // Words it does not have are left out, not sent empty.
+  const { note: _note, ...noNote } = meal
+  const bare = repeatOf({ ...noNote, description: '' })
+  expect('description' in bare || 'note' in bare).toBe(false)
 })

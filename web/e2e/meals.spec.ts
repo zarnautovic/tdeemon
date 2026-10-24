@@ -51,3 +51,21 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
   await expect(page.getByText('Taken back: a meal deleted.')).toBeVisible()
   await expect(porridge).toContainText('100 g')
 })
+
+test('a meal is repeated today in a tap', async ({ page }) => {
+  await signIn(page)
+  const logged = await page.request.post('/api/v1/meals', {
+    data: {
+      description: 'Toast',
+      items: [{ name: 'Toast and jam', nutrients: { kcal: 260, protein: 6, carbs: 48, fat: 4 } }],
+    },
+  })
+  expect(logged.ok()).toBe(true)
+
+  await page.goto('/')
+  const toast = page.getByRole('article').filter({ hasText: 'Toast' })
+  await expect(toast).toHaveCount(1)
+  await toast.getByRole('button', { name: 'Repeat today: Toast' }).click()
+  await expect(page.getByText('Logged again, today at this time.')).toBeVisible()
+  await expect(toast).toHaveCount(2)
+})

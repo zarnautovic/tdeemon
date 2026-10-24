@@ -114,6 +114,9 @@ export const hr: Messages = {
   },
   meal: {
     edit: (what: string) => `Promijeni obrok: ${what}`,
+    repeat: (what: string) => `Ponovi danas: ${what}`,
+    repeated: 'Upisano ponovo, danas u ovo vrijeme.',
+    seeToday: 'Pogledaj danas',
     amount: (name: string) => `Količina: ${name}`,
     remove: (name: string) => `Ukloni: ${name}`,
     keep: (name: string) => `Zadrži: ${name}`,

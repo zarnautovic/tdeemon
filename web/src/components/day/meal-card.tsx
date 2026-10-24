@@ -1,18 +1,34 @@
 import { Pencil } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { useLogMeal } from '@/api/meals'
 import type { Item, Meal, Warning } from '@/api/types'
 import { MealEditor } from '@/components/day/meal-editor'
+import { repeatOf } from '@/components/day/meal-entries'
+import { RepeatButton, RepeatStatus } from '@/components/day/repeat-meal'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
 // MealCard is a meal: when it was eaten and what, its kcal, and each item
 // with how much of it and what it brought. It can be changed (MealEditor),
-// and says what the server warned of the last change.
-export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; timeZone: string }) {
+// and says what the server warned of the last change; or be repeated,
+// today at this time.
+export function MealCard({
+  meal,
+  date,
+  today,
+  timeZone,
+}: {
+  meal: Meal
+  date: string
+  // The user's logical today, which a repeat is of.
+  today: string
+  timeZone: string
+}) {
   const t = useMessages()
   const f = useFormat()
+  const repeat = useLogMeal(today)
   const [editing, setEditing] = useState(false)
   const [warnings, setWarnings] = useState<Warning[]>([])
   // The pencil, which takes the focus back when the editor closes.
@@ -46,6 +62,15 @@ export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; t
         </h3>
         <div className="flex items-baseline gap-1">
           <p className="font-semibold tabular-nums">{t.unit.kcal(f.number(meal.total.kcal))}</p>
+          {!editing && (
+            <RepeatButton
+              label={t.meal.repeat(meal.description || time)}
+              pending={repeat.isPending}
+              onClick={() => {
+                repeat.mutate({ body: repeatOf(meal) })
+              }}
+            />
+          )}
           {!editing && (
             <Button
               ref={pencil}
@@ -90,6 +115,7 @@ export function MealCard({ meal, date, timeZone }: { meal: Meal; date: string; t
           ))}
         </ul>
       )}
+      <RepeatStatus log={repeat} isToday={date === today} />
       {warnings.length > 0 && (
         <output className="block text-sm text-amber-700 dark:text-amber-400">
           <ul className="space-y-1">
