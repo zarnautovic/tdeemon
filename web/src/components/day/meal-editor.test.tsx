@@ -1199,3 +1199,52 @@ test("an item added by a change that got no answer is the meal's, and not added 
   expect(opsOf(retried).map((o) => o.op)).toEqual(['remove'])
   expect(JSON.stringify(retried)).not.toContain('"add"')
 })
+
+test('an item added by a change that got no answer, then removed elsewhere, stays removed', async () => {
+  let up = false
+  let addedId = ''
+  const server = withFoods()
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: async (request) => {
+      if (up && patch) {
+        return patch(request)
+      }
+      // Taken, but its answer is lost: the meal has the bread now.
+      addedId = /"op":"add","item":\{"id":"([^"]+)"/.exec(await request.text())?.[1] ?? ''
+      server.elsewhere((m) => ({
+        ...m,
+        items: [...m.items, { ...oats, id: addedId, food_id: rye.id, name: 'Rye bread' }],
+      }))
+      return problem(503)
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  const again = await meal().findByRole('button', { name: 'Try again' })
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(false)
+  })
+  // A model removes the bread.
+  server.elsewhere((m) => ({ ...m, items: m.items.filter((i) => i.id !== addedId) }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(meal().queryByLabelText('Amount: Rye bread')).toBeNull()
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  up = true
+  fireEvent.click(again)
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent.at(-1)?.body).toEqual({ ops: [{ op: 'remove', item_id: egg.id }] })
+})

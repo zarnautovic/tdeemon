@@ -164,10 +164,15 @@ export function MealEditor({
   // The items added, each under an id made when it was, so the change
   // sent again adds it once; those that cannot be sent as they are; and
   // the one just added, whose first field takes the focus. One the meal
-  // has already (a change that got no answer added it) is the meal's,
-  // changed or removed as its others are, and not added again.
+  // has (a change that got no answer added it) is the meal's from then
+  // on, changed or removed as its others are, and never added again, not
+  // even once it is removed elsewhere.
   const [drafts, setDrafts] = useState<Entry[]>([])
-  const entries = drafts.filter((e) => !meal.items.some((item) => item.id === e.key))
+  const inMeal = (e: Entry) => meal.items.some((item) => item.id === e.key)
+  const entries = drafts.filter((e) => !inMeal(e))
+  if (entries.length < drafts.length) {
+    setDrafts(entries)
+  }
   const [wrongEntries, setWrongEntries] = useState<ReadonlySet<string>>(new Set())
   const [added, setAdded] = useState<string | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
