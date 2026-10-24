@@ -95,6 +95,7 @@ export const hr: Messages = {
     notePlaceholder: 'restoran, bolest, putovanje…',
     dayType: 'Tip dana',
     dayTypes: { training: 'Trening', rest: 'Odmor', plan: 'Po planu' },
+    planDecided: { training: 'trening', rest: 'odmor' },
     calibration: 'Kalibracija',
     counted: 'Dan ulazi u kalibraciju.',
     leaveOut: 'Izostavi iz kalibracije',

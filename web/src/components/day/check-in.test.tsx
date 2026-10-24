@@ -164,14 +164,65 @@ test("the day's type is the user's choice, or the plan's", async () => {
   renderAt('/')
 
   const type = within(await screen.findByRole('group', { name: 'Type of day' }))
-  expect(type.getByRole('button', { name: 'By plan' }).getAttribute('aria-pressed')).toBe('true')
-  fireEvent.click(type.getByRole('button', { name: 'By plan' }))
+  expect(type.getByRole('button', { name: 'By plan · rest' }).getAttribute('aria-pressed')).toBe(
+    'true',
+  )
+  fireEvent.click(type.getByRole('button', { name: 'By plan · rest' }))
   fireEvent.click(type.getByRole('button', { name: 'Training' }))
 
   expect(await screen.findByText('Friday, October 23 · Training day')).toBeDefined()
   expect(type.getByRole('button', { name: 'Training' }).getAttribute('aria-pressed')).toBe('true')
   // The choice already made is not sent again.
   expect(server.sent).toEqual([{ method: 'PATCH', path, body: { training_day: 'training' } }])
+})
+
+test('by plan, the day says what the plan decided', async () => {
+  // A training weekday of the plan's, or a workout the day had.
+  fakeServer({ ...signedIn(), ...dayServer(day({ type: 'training' })).routes })
+  renderAt('/')
+
+  const type = within(await screen.findByRole('group', { name: 'Type of day' }))
+  expect(
+    type.getByRole('button', { name: 'By plan · training' }).getAttribute('aria-pressed'),
+  ).toBe('true')
+})
+
+test("the plan's decision is shown once the server has the plan, not before", async () => {
+  const server = dayServer(day({ type: 'training', training_toggle: true }))
+  const patch = server.routes[`PATCH ${path}`]
+  const answers: (() => void)[] = []
+  fakeServer({
+    ...signedIn(),
+    ...server.routes,
+    [`PATCH ${path}`]: async (request) => {
+      await new Promise<void>((resolve) => {
+        answers.push(resolve)
+      })
+      return patch ? patch(request) : Response.error()
+    },
+  })
+  renderAt('/')
+
+  const type = within(await screen.findByRole('group', { name: 'Type of day' }))
+  // Chosen by hand: the plan decides nothing.
+  expect(type.getByRole('button', { name: 'By plan' })).toBeDefined()
+  fireEvent.click(type.getByRole('button', { name: 'By plan' }))
+  await waitFor(() => {
+    expect(answers).toHaveLength(1)
+  })
+  // On its way, the day's type is still the one chosen by hand.
+  expect(type.getByRole('button', { name: 'By plan' }).getAttribute('aria-pressed')).toBe('true')
+  answers[0]?.()
+
+  expect(await type.findByRole('button', { name: 'By plan · rest' })).toBeDefined()
+})
+
+test("in Croatian the plan's decision is in Croatian", async () => {
+  fakeServer({ ...signedIn('hr'), ...dayServer().routes })
+  renderAt('/')
+
+  const type = within(await screen.findByRole('group', { name: 'Tip dana' }))
+  expect(type.getByRole('button', { name: 'Po planu · odmor' })).toBeDefined()
 })
 
 test('a day is left out of calibration with a reason, and counted again', async () => {
