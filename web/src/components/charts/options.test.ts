@@ -1,49 +1,16 @@
-import { LineChart, ScatterChart } from 'echarts/charts'
-import { GridComponent, LegendComponent, MarkLineComponent } from 'echarts/components'
-import * as echarts from 'echarts/core'
-import { SVGRenderer } from 'echarts/renderers'
 import { expect, test } from 'vitest'
 
 import {
+  activityOption,
   average7,
   intervalText,
   macrosOption,
   sleepColor,
   tdeeOption,
   weightOption,
-  type HistoryDay,
-  type Words,
 } from '@/components/charts/options'
 import { palette } from '@/components/charts/palette'
-
-const words: Words = {
-  date: (d) => d.slice(5),
-  number: (n, digits = 0) => n.toFixed(digits),
-  names: {
-    weighIn: 'Weigh-in',
-    trend: 'Trend',
-    goal: 'Goal',
-    protein: 'Protein',
-    carbs: 'Carbs',
-    fat: 'Fat',
-    target: 'Target',
-    tdee: 'TDEE',
-    interval: 'Interval',
-    intake: 'Eaten',
-    sleep: 'Sleep',
-    average: '7 days',
-    rhr: 'RHR',
-    hrv: 'HRV',
-    weight: 'Weight',
-    bodyFat: 'Body fat',
-    steps: 'Steps',
-    activeKcal: 'Active',
-  },
-}
-
-function day(date: string, over: Partial<HistoryDay> = {}): HistoryDay {
-  return { date, status: 'complete', type: 'rest', meals: 0, ...over }
-}
+import { day, svgOf, words } from '@/test/charts'
 
 const days = [
   day('2026-10-20', {
@@ -107,23 +74,6 @@ test('a night is coloured by its length, and the 7 days are averaged', () => {
   expect(average7([null, null])).toEqual([null, null])
 })
 
-// svgOf is an option drawn as the server would, without a browser.
-function svgOf(option: Record<string, unknown>): string {
-  echarts.use([
-    LineChart,
-    ScatterChart,
-    GridComponent,
-    LegendComponent,
-    MarkLineComponent,
-    SVGRenderer,
-  ])
-  const chart = echarts.init(null, null, { renderer: 'svg', ssr: true, width: 360, height: 220 })
-  chart.setOption(option)
-  const svg = chart.renderToSVGString()
-  chart.dispose()
-  return svg
-}
-
 test('the goal is drawn though it is far below the weights', () => {
   const svg = svgOf(weightOption(days, words, 75))
 
@@ -150,4 +100,42 @@ test('one weigh-in without a goal keeps the axis around it too', () => {
   expect(svg).toContain('>81<')
   expect(svg).toContain('>79<')
   expect(svg).not.toContain('>40<')
+})
+
+// labels are an SVG's texts of a colour, each with where it is anchored.
+function labels(svg: string, fill: string): { x: number; anchor: string; text: string }[] {
+  return [
+    ...svg.matchAll(
+      /<text[^>]*text-anchor="(\w+)"[^>]*translate\(([\d.]+) [\d.]+\)" fill="([^"]+)">([^<]*)</g,
+    ),
+  ].flatMap(([, anchor, x, f, text]) =>
+    f === fill && anchor !== undefined && x !== undefined && text !== undefined
+      ? [{ x: Number(x), anchor, text }]
+      : [],
+  )
+}
+
+test('the labels of both axes fit in the chart, however wide their numbers', () => {
+  const svg = svgOf(
+    activityOption(
+      [
+        day('2026-10-20', { steps: 25000, active_kcal: 1500 }),
+        day('2026-10-21', { steps: 3000, active_kcal: 300 }),
+      ],
+      words,
+    ),
+  )
+  // 12px digits are about 7px wide: the steps' labels end far enough in
+  // from the left for theirs, and the active energy's start far enough
+  // in from the right.
+  const steps = labels(svg, palette.muted).filter((l) => l.anchor === 'end')
+  const active = labels(svg, palette.accent)
+  expect(steps.map((l) => l.text)).toContain('25,000')
+  expect(active.map((l) => l.text)).toContain('1,500')
+  for (const l of steps) {
+    expect(l.x - l.text.length * 6).toBeGreaterThanOrEqual(0)
+  }
+  for (const l of active) {
+    expect(l.x + l.text.length * 6).toBeLessThanOrEqual(360)
+  }
 })

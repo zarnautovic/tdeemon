@@ -50,8 +50,16 @@ function base(days: HistoryDay[], w: Words, right = false): Option {
     // The font is the page's, which the chart is given when it is drawn
     // (Chart): ECharts measures text by a font's name.
     textStyle: { color: palette.muted },
-    // The axes' labels fit in, however wide their numbers.
-    grid: { left: 4, right: right ? 4 : 12, top: 32, bottom: 4, containLabel: true },
+    // The axes' labels fit in, however wide their numbers: the margins
+    // are the bounds of the grid with its labels.
+    grid: {
+      left: 4,
+      right: right ? 4 : 12,
+      top: 32,
+      bottom: 4,
+      outerBoundsMode: 'same',
+      outerBoundsContain: 'axisLabel',
+    },
     legend: legend(),
     tooltip: {
       trigger: 'axis',
