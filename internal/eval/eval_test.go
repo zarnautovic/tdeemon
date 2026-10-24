@@ -60,8 +60,13 @@ type evalCase struct {
 	// a JPEG, its path relative to internal/eval.
 	Image string `json:"image,omitempty"`
 	// SeedMeal logs a meal before the case.
-	SeedMeal bool   `json:"seed_meal,omitempty"`
-	Expect   expect `json:"expect"`
+	SeedMeal bool `json:"seed_meal,omitempty"`
+	// Notes are the notes for a coach the user has before the case.
+	Notes string `json:"notes,omitempty"`
+	// SeedHistory weighs the user and logs a meal on each of the 63
+	// days before today, so there is a history to look back over.
+	SeedHistory bool   `json:"seed_history,omitempty"`
+	Expect      expect `json:"expect"`
 }
 
 type expect struct {
@@ -79,6 +84,11 @@ type expect struct {
 	Weight     float64  `json:"weight,omitempty"`
 	Mood       []int    `json:"mood,omitempty"`
 	Hunger     []int    `json:"hunger,omitempty"`
+	// Answer are words the last answer holds: what it must have read.
+	Answer []string `json:"answer,omitempty"`
+	// Notes are words the notes for a coach hold after the case, in any
+	// case: the old notes' too, so a change keeps them.
+	Notes []string `json:"notes,omitempty"`
 	// MaxRounds bounds the rounds of tool calls of each message; 2 when
 	// not set (DESIGN.md §5: a log is 1-2 calls).
 	MaxRounds int `json:"max_rounds,omitempty"`
@@ -169,11 +179,12 @@ var names = map[string][6]string{
 	"hr": {"Raženi kruh", "šnita", "Grčki jogurt", "Jaje", "komad", "Juha od povrća"},
 }
 
-func newInstance(t *testing.T, seedMeal bool, lang string) instance {
+func newInstance(t *testing.T, c evalCase) instance {
 	t.Helper()
 	ctx := t.Context()
 	db := storetest.Open(t)
 	now := time.Now()
+	lang := c.Lang
 	u := user.User{
 		ID: uuid.NewV7(), Email: "eval@example.com", Name: "Eval", Role: user.RoleUser, Locale: lang,
 		TimeZone: "Europe/Zagreb", DayStartHour: 4, CreatedAt: now, UpdatedAt: now,
@@ -221,7 +232,25 @@ func newInstance(t *testing.T, seedMeal bool, lang string) instance {
 		}
 		ids = append(ids, foods[i].ID)
 	}
-	if seedMeal {
+	if c.Notes != "" {
+		must(db.SetProfileNotes(ctx, u.ID, actor, c.Notes, now))
+	}
+	if c.SeedHistory {
+		for i := 1; i <= 63; i++ {
+			d := today.AddDays(-i)
+			_, err := db.SetMetric(ctx, u.ID, actor, d, metric.Value{Kind: metric.Weight, Value: 82 + float64(i)*0.03, Source: metric.Manual}, now)
+			must(err)
+			dinner, err := meal.Estimate(n[5], food.Nutrients{Kcal: 1900 + float64(i%5)*60, Protein: 140, Carbs: 190, Fat: 60}, "")
+			must(err)
+			at := cal.Start(d).Add(14 * time.Hour)
+			_, _, err = db.CreateMeal(ctx, u.ID, actor, meal.Meal{
+				ID: meal.NewIDAt(at), EatenAt: at, Day: d,
+				Client: meal.ClientWeb, Items: []meal.Item{dinner},
+			}, now)
+			must(err)
+		}
+	}
+	if c.SeedMeal {
 		soup, err := meal.Estimate(n[5], food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
 		must(err)
 		at := now.Add(-time.Hour)
@@ -255,6 +284,8 @@ type turn struct {
 	calls, rounds int
 	tokens, fresh int
 	tools         []string
+	// answer is what the client said last.
+	answer string
 	// message is the id of the model's message whose tool calls were
 	// counted last.
 	message string
@@ -311,6 +342,7 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 		}
 		cur.tokens = ev.Usage.Input + ev.Usage.CacheCreation + ev.Usage.CacheRead
 		cur.fresh = ev.Usage.Input + ev.Usage.CacheCreation
+		cur.answer = ev.Result
 		turns = append(turns, cur)
 		t.Logf("answer: %s", oneLine(ev.Result))
 		cur = turn{}
@@ -472,7 +504,7 @@ func baseline(t *testing.T, model string) int {
 // it read; it returns its turn.
 func warmUp(t *testing.T, model string) turn {
 	t.Helper()
-	turns := run(t, model, mcpConfig(t, newInstance(t, false, "en")), []map[string]any{{"content": []map[string]any{{"type": "text", "text": "Hi"}}}})
+	turns := run(t, model, mcpConfig(t, newInstance(t, evalCase{Lang: "en"})), []map[string]any{{"content": []map[string]any{{"type": "text", "text": "Hi"}}}})
 	if len(turns) != 1 {
 		t.Fatalf("the warm-up: %d turns", len(turns))
 	}
@@ -501,7 +533,7 @@ func mcpConfig(t *testing.T, in instance) string {
 
 func runCase(t *testing.T, c evalCase, model string) string {
 	t.Helper()
-	in := newInstance(t, c.SeedMeal, c.Lang)
+	in := newInstance(t, c)
 	cfg := mcpConfig(t, in)
 	foodsBefore := foodNames(t, in)
 	var messages []map[string]any
@@ -599,6 +631,14 @@ func checkCalls(t *testing.T, in instance, e expect, turns []turn) {
 			t.Errorf("a call of %s among %v, want none", name, called)
 		}
 	}
+	if len(turns) > 0 {
+		last := turns[len(turns)-1].answer
+		for _, w := range e.Answer {
+			if !strings.Contains(last, w) {
+				t.Errorf("the last answer holds no %q: %s", w, oneLine(last))
+			}
+		}
+	}
 }
 
 // count runs a query of a count of the user's rows, of more args.
@@ -655,6 +695,17 @@ func checkDay(t *testing.T, in instance, e expect, today day.Date) {
 		}
 		if !within(c.Hunger, e.Hunger) {
 			t.Errorf("hunger %d, want %v", c.Hunger, e.Hunger)
+		}
+	}
+	if e.Notes != nil {
+		notes, err := in.db.ProfileNotes(ctx, in.user.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range e.Notes {
+			if !strings.Contains(strings.ToLower(notes), strings.ToLower(w)) {
+				t.Errorf("the notes %q hold no %q", notes, w)
+			}
 		}
 	}
 }

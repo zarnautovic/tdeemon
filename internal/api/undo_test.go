@@ -196,3 +196,28 @@ func TestUndoLastWithoutAnID(t *testing.T) {
 		}
 	}
 }
+
+// The notes a coach sets through MCP are the client mcp's, which an undo
+// says and takes back.
+func TestUndoLastTakesBackTheCoachsNotes(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	tok, rec := e.in.createToken(t, e.session[0], `{"name":"Claude","scopes":["tools"]}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("a token: %d %s", rec.Code, rec.Body.String())
+	}
+	cs := mcpSession(t, e.in, tok.Token)
+	if text, isErr := callTool(t, cs, "update_profile_notes", map[string]any{"notes": "Knees: no running."}); isErr {
+		t.Fatalf("the notes: %s", text)
+	}
+	if text, _ := callTool(t, cs, "get_profile", nil); !strings.Contains(text, "Knees: no running.") {
+		t.Errorf("the profile without the notes: %s", text)
+	}
+	if code, got, body := undo(t, e, clientid.NewAt(e.now)); code != http.StatusOK || got != "notes.set notes mcp" {
+		t.Errorf("an undo of them: %d %s, want notes.set of the client mcp", code, body)
+	}
+	if text, _ := callTool(t, cs, "get_profile", nil); strings.Contains(text, "Knees") {
+		t.Errorf("the notes after the undo: %s", text)
+	}
+}

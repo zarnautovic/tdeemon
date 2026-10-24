@@ -225,6 +225,9 @@
       "hunger": [
         1,
         2
+      ],
+      "not_tools": [
+        "update_profile_notes"
       ]
     }
   },
@@ -263,6 +266,45 @@
       ],
       "not_tools": [
         "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a note to keep",
+    "lang": "en",
+    "notes": "Knees: no running. Lactose intolerant.",
+    "say": [
+      "Remember for good that I train at 6 in the morning."
+    ],
+    "expect": {
+      "meals": 0,
+      "writes": 1,
+      "tools": [
+        "update_profile_notes"
+      ],
+      "notes": [
+        "running",
+        "lactose",
+        "6"
+      ]
+    }
+  },
+  {
+    "name": "a look back",
+    "lang": "en",
+    "seed_history": true,
+    "say": [
+      "Show me my weight and how much I ate, week by week, over the last two months."
+    ],
+    "expect": {
+      "meals": 63,
+      "writes": 0,
+      "tools": [
+        "get_history"
+      ],
+      "answer": [
+        "82",
+        "83"
       ]
     }
   },
@@ -491,6 +533,9 @@
       "hunger": [
         1,
         2
+      ],
+      "not_tools": [
+        "update_profile_notes"
       ]
     }
   },
@@ -529,6 +574,45 @@
       ],
       "not_tools": [
         "get_day"
+      ]
+    }
+  },
+  {
+    "name": "bilješka za pamćenje",
+    "lang": "hr",
+    "notes": "Koljena: bez trčanja. Ne podnosi laktozu.",
+    "say": [
+      "Zapamti zauvijek da treniram u 6 ujutro."
+    ],
+    "expect": {
+      "meals": 0,
+      "writes": 1,
+      "tools": [
+        "update_profile_notes"
+      ],
+      "notes": [
+        "trčanja",
+        "laktozu",
+        "6"
+      ]
+    }
+  },
+  {
+    "name": "pogled unatrag",
+    "lang": "hr",
+    "seed_history": true,
+    "say": [
+      "Pokaži mi kilažu i koliko sam jeo, tjedan po tjedan, zadnja dva mjeseca."
+    ],
+    "expect": {
+      "meals": 63,
+      "writes": 0,
+      "tools": [
+        "get_history"
+      ],
+      "answer": [
+        "82",
+        "83"
       ]
     }
   }

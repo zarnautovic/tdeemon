@@ -123,6 +123,33 @@ func (s *sessions) tools() []tool {
 		}, s.getSummary).
 			briefly("Calibration's summary up to yesterday: weekly averages, the trend weight, the measured TDEE with its interval, " +
 				"the phase's verdict, recovery, and days maybe not all logged. Explain it; do not compute it again."),
+		newTool("get_history", readScopes, huma.Operation{
+			OperationID: "get-history",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/history",
+			Summary:     "Get your history",
+			Description: "Your days from from to to, the 90 up to today by default and at most 366 of them up to today, or their weeks: " +
+				"what was eaten against the target, the measurements (weight, body fat, steps, sleep, resting heart rate, HRV), " +
+				"the trend weight and the TDEE measured up to each day, as the summary computes them. " +
+				"The charts read it, and a coach looking back; the verdict on the phase and the averages now are the summary's.",
+			Tags:   []string{"history"},
+			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		}, s.getHistory).
+			briefly("The user's days, or weeks, from from to to (90 days to today by default, 366 at most): intake against target, " +
+				"weight and trend, the TDEE measured to each day, sleep, resting HR, HRV. For a look back (a trend, a month), by week for a long span; " +
+				"the verdict, today's TDEE and the averages now: get_summary."),
+		newTool("update_profile_notes", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "set-notes",
+			Method:      http.MethodPut,
+			Path:        Prefix + "/me/notes",
+			Summary:     "Set your notes for a coach",
+			Description: "What a coach, a model, should know of you, which get_me gives it: an injury, a food you avoid, how you train. " +
+				"The notes are replaced whole, and empty deletes them. Undo takes a change of them back.",
+			Tags:   []string{"settings"},
+			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		}, s.setNotes).
+			briefly("Replaces the notes for a coach whole: read them first (get_profile's notes), then send them all with the change; " +
+				"what you leave out is deleted, empty deletes all.").destroys(),
 		newTool("log_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "log-metric",
 			Method:      http.MethodPut,
@@ -162,7 +189,7 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPost,
 			Path:        Prefix + "/undo",
 			Summary:     "Undo the latest change",
-			Description: "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. " +
+			Description: "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in, the notes for a coach. " +
 				"Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; " +
 				"without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; " +
 				"undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. " +
@@ -170,7 +197,7 @@ func (s *sessions) tools() []tool {
 				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.undoLast).
-			briefly("Takes back the latest change not undone, of any client: a meal, a food, a measurement, a check-in; not the plan nor an import. " +
+			briefly("Takes back the latest change not undone, of any client: a meal, a food, a measurement, a check-in, the notes; not the plan nor an import. " +
 				"Each undo takes a new id; the same id again answers as before. A change that cannot be taken back is a 409 saying why, " +
 				"and the next undo goes past it. Nothing is redone: the next undo takes back the change before. Answers what was taken back; get_day shows the day after it.").destroys().mayWriteAgain(),
 		newTool("find_foods", readScopes, huma.Operation{

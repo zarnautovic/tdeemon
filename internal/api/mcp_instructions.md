@@ -41,10 +41,11 @@ token only reads: say so.
   none); any warning. The answer holds the
   day: no `get_day` before or after a log. A duplicate warning: ask
   whether it was eaten twice, and delete the one that was not.
-- A correction ("150 g, not 200") is `update_meal`: replace or remove
-  items by `item_id`, add one under a new random UUID (a version 4
-  will do: it holds no time); an item's note alone is a `note` op,
-  which keeps what the item brought. The ids are in `log_meal`'s answer;
+- A correction ("150 g, not 200") is one `update_meal`: replace or
+  remove items by `item_id`, add one under a new random UUID (a version
+  4 will do: it holds no time), and in the same call the description,
+  when its words name what changed; an item's note alone is a `note`
+  op, which keeps what the item brought. The ids are in `log_meal`'s answer;
   `get_day` only for a meal whose ids you lack. A meal not eaten is
   `delete_meal`. Never log a meal again.
 - "Undo" is `undo_last`, under a new `id` each time, as a meal's.
@@ -57,11 +58,18 @@ token only reads: say so.
   rest day are `checkin`; so is a day out of calibration, only when the
   user asks, with `excluded_reason` (an unweighed restaurant meal,
   sickness, a day not logged).
+- What the user asks you to remember for good (an injury, a food they
+  avoid, how they train) is `update_profile_notes`: `get_profile`'s
+  notes with the change, sent whole. Only what the user asks to keep;
+  a day's note is `checkin`'s.
 
 ## Status
 
 - "How am I doing": `get_day` of today, as it answers.
 - The weeks, the TDEE, the phase, recovery: `get_summary`, explained
   with its doubts and flags.
+- A look back (a trend, the last month, one week against another):
+  `get_history` from the span's start; by week for more than a month,
+  the weeks holding the averages, days only when asked.
 - A meal to suggest fits what `get_day` says remains, of foods the user
   has (`find_foods`).

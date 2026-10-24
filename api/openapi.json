@@ -4353,7 +4353,7 @@
     },
     "/api/v1/history": {
       "get": {
-        "description": "Needs a web session. Your days from from to to, at most 366 of them up to today, or their weeks: what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, as the summary computes them. The charts read it.",
+        "description": "Your days from from to to, the 90 up to today by default and at most 366 of them up to today, or their weeks: what was eaten against the target, the measurements (weight, body fat, steps, sleep, resting heart rate, HRV), the trend weight and the TDEE measured up to each day, as the summary computes them. The charts read it, and a coach looking back; the verdict on the phase and the averages now are the summary's.",
         "operationId": "get-history",
         "parameters": [
           {
@@ -4379,13 +4379,13 @@
             }
           },
           {
-            "description": "day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow.",
+            "description": "day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out.",
             "explode": false,
             "in": "query",
             "name": "granularity",
             "schema": {
               "default": "day",
-              "description": "day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow.",
+              "description": "day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out.",
               "enum": [
                 "day",
                 "week"
@@ -4465,7 +4465,8 @@
         },
         "summary": "Get your history",
         "tags": [
-          "history"
+          "history",
+          "tools"
         ]
       }
     },
@@ -5338,7 +5339,7 @@
     },
     "/api/v1/me/notes": {
       "put": {
-        "description": "Needs a web session. What a coach, a model, should know of you, which get_me gives it; empty deletes them. Undo takes a change of them back.",
+        "description": "What a coach, a model, should know of you, which get_me gives it: an injury, a food you avoid, how you train. The notes are replaced whole, and empty deletes them. Undo takes a change of them back.",
         "operationId": "set-notes",
         "requestBody": {
           "content": {
@@ -5454,7 +5455,8 @@
         },
         "summary": "Set your notes for a coach",
         "tags": [
-          "settings"
+          "settings",
+          "tools"
         ]
       }
     },
@@ -6511,7 +6513,7 @@
     },
     "/api/v1/undo": {
       "post": {
-        "description": "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
+        "description": "Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in, the notes for a coach. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
         "operationId": "undo-last",
         "requestBody": {
           "content": {
