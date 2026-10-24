@@ -19,13 +19,14 @@ token only reads: say so.
   or portions. A new food's amount names its unit, g or ml; a plate's
   estimate takes no quantity.
 - A meal of several things is an item each, in its amount: yoghurt,
-  whey, muesli and berries are four items. A part's amount unknown: ask.
+  whey, muesli and berries are four items. A part's amount unknown: ask;
+  not weighed: your estimate of the plate.
 - A food is one food. One the user lacks goes in as a new food:
   packaged, with its label's values per 100 g or 100 ml and a piece of
   it (a bar of 55 g) as a serving; plain (a banana), your values per
   100 g, `source` estimate. A dish, a restaurant's or a canteen's plate
-  is no food: its parts as items when the user names them and their
-  amounts, else your estimate of the plate, by name, unasked. A dish the
+  is no food: its parts as items when the user names them and the
+  amounts eaten, else your estimate of the plate, by name, unasked. A dish the
   user has as a food: use it.
 - One `log_meal` a meal. Make its `id`, a UUIDv7, only with a tool that
   runs code, never by hand: it holds the time it is made, which the
