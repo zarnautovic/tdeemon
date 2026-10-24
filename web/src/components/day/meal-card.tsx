@@ -28,7 +28,10 @@ export function MealCard({
 }) {
   const t = useMessages()
   const f = useFormat()
-  const repeat = useLogMeal(today)
+  // A repeat is today's, but goes in turn with the changes of the day
+  // shown, the undo of its page among them: an undo tapped meanwhile
+  // takes back the repeat, not the change before it.
+  const repeat = useLogMeal(date)
   const [editing, setEditing] = useState(false)
   const [warnings, setWarnings] = useState<Warning[]>([])
   // The pencil, which takes the focus back when the editor closes.

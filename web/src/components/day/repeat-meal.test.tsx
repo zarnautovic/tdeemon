@@ -68,7 +68,7 @@ function repeatServer(post?: Handler, meals: Meal[] = []) {
     },
   }
   fakeServer(routes)
-  return { sent }
+  return { sent, routes }
 }
 
 const repeat = () => screen.findByRole('button', { name: 'Repeat today: Breakfast' })
@@ -154,4 +154,48 @@ test("today's meal repeated needs no way to today", async () => {
   await waitFor(() => {
     expect(screen.getAllByRole('article')).toHaveLength(2)
   })
+})
+
+test("an undo tapped while another day's repeat is on its way waits for it", async () => {
+  const server = repeatServer()
+  const post = server.routes['POST /api/v1/meals']
+  const answers: (() => void)[] = []
+  // For each undo, whether the repeat had answered when it came.
+  let answered = false
+  const undos: boolean[] = []
+  fakeServer({
+    ...server.routes,
+    'POST /api/v1/meals': async (request) => {
+      await new Promise<void>((resolve) => {
+        answers.push(resolve)
+      })
+      answered = true
+      return post ? post(request) : Response.error()
+    },
+    'POST /api/v1/undo': () => {
+      undos.push(answered)
+      return Response.json({
+        undone: {
+          action: 'meal.create',
+          entity: breakfast.id,
+          at: '2026-10-23T16:00:00Z',
+          client: 'web',
+        },
+      })
+    },
+  })
+  renderAt(`/?date=${yesterday}`)
+
+  fireEvent.click(await repeat())
+  await waitFor(() => {
+    expect(answers).toHaveLength(1)
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Undo the latest change' }))
+  answers[0]?.()
+
+  // Held behind the repeat: sent once it answered.
+  await waitFor(() => {
+    expect(undos).toEqual([true])
+  })
+  expect(await screen.findByText('Logged again, today at this time.')).toBeDefined()
 })
