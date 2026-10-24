@@ -1743,3 +1743,44 @@ test('an amount not typed is worked out from what it is, not from what its field
     ])
   })
 })
+
+test('a serving chosen that its food no longer has stays chosen, with its amount', async () => {
+  let cup = true
+  let asked = 0
+  const server = mealServer({
+    [`GET /api/v1/foods/${oatsFood}`]: () => {
+      asked++
+      return Response.json(
+        food(oatsFood, { name: 'Oats', servings: cup ? [{ name: 'cup', amount: 90 }] : [] }),
+      )
+    },
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(await meal().findByLabelText('Unit: Oats'), { target: { value: 'serving:cup' } })
+  // The cup is removed from the oats elsewhere; the window gets the focus back.
+  cup = false
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(asked).toBeGreaterThan(1)
+  })
+  expect(meal().getByLabelText('Unit: Oats')).toHaveProperty('value', 'serving:cup')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: oatsFood, serving: 'cup', servings: 80 / 90 },
+          },
+        ],
+      },
+    ])
+  })
+})

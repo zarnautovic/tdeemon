@@ -214,4 +214,14 @@ test('a serving is found as the server finds it, whatever its case and spaces', 
   const piece = { ...bread, servings: [{ name: 'Großes Stück', amount: 120 }] }
   expect(unitGrams(piece, 'serving:GROẞES STÜCK')).toBe(120)
   expect(unitGrams(piece, 'serving:grosses stück')).toBe(120)
+  // A ligature folds to its letters, a final sigma to a sigma.
+  const cup = {
+    ...bread,
+    servings: [
+      { name: 'ﬂ oz', amount: 29.5735 },
+      { name: 'κουπας', amount: 250 },
+    ],
+  }
+  expect(unitGrams(cup, 'serving:FL OZ')).toBe(29.5735)
+  expect(unitGrams(cup, 'serving:ΚΟΥΠΑΣ')).toBe(250)
 })

@@ -464,9 +464,13 @@ export function MealEditor({
           const itsFood = foodOf(was?.foodId)
           // As the food names it: a serving given as Piece is its piece.
           const unitWas = was && itsFood ? unitIn(itsFood, was.amount.key) : was?.amount.key
+          // The one chosen stays among them though its food no longer has
+          // it: the amount is of it, which the server refuses rather than
+          // the amount being taken in another unit.
+          const picked = chosen[field]
           const units =
             unitWas !== undefined && itsFood
-              ? [...new Set([unitWas, ...unitsOf(itsFood)])]
+              ? [...new Set([unitWas, ...(picked ? [picked] : []), ...unitsOf(itsFood)])]
               : undefined
           const choices = units && units.length > 1 ? units : undefined
           return (
