@@ -32,7 +32,6 @@ import { clockAt, mealInstant } from '@/lib/zoned'
 
 type Op = components['schemas']['MealOp']
 type Change = components['schemas']['UpdateMealBody']
-type ItemInput = components['schemas']['ItemInput']
 
 // A start is an item's amount as the editor opened with it, of its food
 // then, and the note it had.
@@ -57,23 +56,15 @@ interface EstimateStart {
 // fieldKey is an item's amount field's key: the item, of its food.
 const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
 
-// fieldOf is the name of the field of an estimate's value, its name, an
-// item's note or its unit.
-const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'note' | 'unit') =>
-  `${item.id}:${v}`
-
-// withNote is an item with note in place of the one it had: none when it
-// is empty.
-function withNote(item: ItemInput, note: string): ItemInput {
-  const { note: _had, ...rest } = item
-  return note === '' ? rest : { ...rest, note }
-}
+// fieldOf is the name of the field of an estimate's value, its name or
+// an item's unit.
+const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'unit') => `${item.id}:${v}`
 
 // MealEditor changes a meal's description, day (today or one before),
 // time and note, and its items: the amount and unit of each of a food,
 // the name and values of each estimate, an estimate saved as a food of
-// the user's, the note of each, another food in the place of any, which
-// stay, and
+// the user's, another food in the place of any (each keeps its note),
+// which stay, and
 // new ones (a food of the user's or an estimate, as a meal logged by hand
 // has them); in one change saved at once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
@@ -234,6 +225,15 @@ export function MealEditor({
   const held = update.isPending || (update.isError && !refused)
   const form = useRef<HTMLFormElement>(null)
   const keep = useRef<HTMLButtonElement>(null)
+  // The meal's note, seldom given, has its field only once it is asked
+  // for, which then takes the focus.
+  const [noting, setNoting] = useState(false)
+  const noteField = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (noting) {
+      noteField.current?.focus()
+    }
+  }, [noting])
 
   // The editor takes the focus from the pencil that opened it.
   useEffect(() => {
@@ -294,23 +294,20 @@ export function MealEditor({
         ops.push({ op: 'remove', item_id: item.id })
         continue
       }
-      // An item's note typed anew, or undefined when it is as it started.
-      const noteTyped = (started: string | undefined) => {
-        const typed = text(fieldOf(item, 'note'))
-        return typed !== undefined && typed !== (started ?? '').trim() ? typed : undefined
-      }
       const estimate = estimateOf(item)
       const swap = swaps[item.id]
       if (swap !== undefined) {
-        // Another food in its place, under its id, with its note: the one
-        // typed anew, or the one it has now.
+        // Another food in its place, under its id, with its note.
         const input = itemOf(swap, f.parse)
         if (input === undefined) {
           bad.add(swap.key)
         } else {
           const { id: _new, ...rest } = input
-          const note = noteTyped(estimate ? estimate.note : startOf(item)?.note) ?? item.note ?? ''
-          ops.push({ op: 'replace', item_id: item.id, item: withNote(rest, note) })
+          ops.push({
+            op: 'replace',
+            item_id: item.id,
+            item: item.note === undefined ? rest : { ...rest, note: item.note },
+          })
         }
         continue
       }
@@ -323,7 +320,6 @@ export function MealEditor({
           nameTyped !== undefined && nameTyped !== '' && nameTyped !== estimate.name.trim()
             ? nameTyped
             : item.name
-        const note = noteTyped(estimate.note)
         const asFood = asFoods.has(item.id)
         let changed = name !== item.name || asFood
         for (const v of values) {
@@ -346,14 +342,7 @@ export function MealEditor({
                 ...had,
               }
             : { name, nutrients, ...had }
-          ops.push({
-            op: 'replace',
-            item_id: item.id,
-            item: note === undefined ? input : withNote(input, note),
-          })
-        } else if (note !== undefined) {
-          // The note alone: what the item brought stays.
-          ops.push({ op: 'note', item_id: item.id, note })
+          ops.push({ op: 'replace', item_id: item.id, item: input })
         }
         continue
       }
@@ -366,7 +355,6 @@ export function MealEditor({
       // As a unit chosen worked it out, while the field shows it rounded.
       const worked = exact[`${item.id} ${String(was.foodId)}`]
       const n = worked ?? f.parse(typed)
-      const note = noteTyped(was.note)
       // A unit chosen anew: the number is of it.
       const unitTyped = text(fieldOf(item, 'unit'))
       const itsFood = foodOf(item.food_id)
@@ -375,26 +363,16 @@ export function MealEditor({
       if (n === undefined) {
         notNumbers.add(item.id)
       } else if (unit !== undefined) {
-        const input = { ...foodItem(food), ...quantityIn(unit, n) }
         ops.push({
           op: 'replace',
           item_id: item.id,
-          item: note === undefined ? input : withNote(input, note),
+          item: { ...foodItem(food), ...quantityIn(unit, n) },
         })
       } else if (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n) {
         // Only an amount typed anew: one left as it started, rounded to
         // what the field shows, is not sent rounded, nor one a unit chosen
         // and chosen back gave back.
-        const input = was.amount.with(food, n)
-        ops.push({
-          op: 'replace',
-          item_id: item.id,
-          item: note === undefined ? input : withNote(input, note),
-        })
-      } else if (note !== undefined) {
-        // The note alone: what the item brought stays, though its food
-        // was corrected since, as its amount changed elsewhere or not.
-        ops.push({ op: 'note', item_id: item.id, note })
+        ops.push({ op: 'replace', item_id: item.id, item: was.amount.with(food, n) })
       }
     }
     for (const entry of entries) {
@@ -453,16 +431,30 @@ export function MealEditor({
           />
         </label>
       </div>
-      <label className="block space-y-1">
-        <span className={cn(fieldLabel, 'block')}>{t.meal.note}</span>
-        <textarea
-          name="note"
-          defaultValue={openedWith.note}
-          maxLength={2000}
-          rows={2}
-          className={cn(inputClass, 'h-auto py-2')}
-        />
-      </label>
+      {noting ? (
+        <label className="block space-y-1">
+          <span className={cn(fieldLabel, 'block')}>{t.meal.note}</span>
+          <textarea
+            ref={noteField}
+            name="note"
+            defaultValue={openedWith.note}
+            maxLength={2000}
+            rows={2}
+            className={cn(inputClass, 'h-auto py-2')}
+          />
+        </label>
+      ) : (
+        <Button
+          variant="link"
+          size="xs"
+          className="h-auto p-0"
+          onClick={() => {
+            setNoting(true)
+          }}
+        >
+          {openedWith.note === '' ? t.meal.addNote : t.meal.changeNote}
+        </Button>
+      )}
       <ul className="divide-y text-sm">
         {meal.items.map((item) => {
           const was = startOf(item)
@@ -696,21 +688,6 @@ export function MealEditor({
                       </label>
                     ))}
                   </span>
-                )}
-                {(was ?? estimate) && (
-                  <textarea
-                    // A note has lines; of another food now, it starts again,
-                    // as the amount's field does.
-                    key={fieldKey(item)}
-                    name={fieldOf(item, 'note')}
-                    aria-label={t.meal.itemNote(item.name)}
-                    placeholder={t.meal.note}
-                    defaultValue={(estimate ? estimate.note : was?.note) ?? ''}
-                    maxLength={2000}
-                    rows={1}
-                    hidden={gone}
-                    className={cn(inputClass, 'h-auto min-h-8 basis-full py-1 text-xs')}
-                  />
                 )}
                 {finding === item.id && !gone && (
                   <span className="basis-full">

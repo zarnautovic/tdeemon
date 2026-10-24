@@ -858,6 +858,7 @@ test("a meal's description, time and note are changed, the time within its day",
   expect(meal().getByLabelText('Time')).toHaveProperty('value', '08:45')
   fireEvent.change(meal().getByLabelText('What it was'), { target: { value: ' Brunch ' } })
   fireEvent.change(meal().getByLabelText('Time'), { target: { value: '10:15' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Add a note' }))
   fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'after the gym\n' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
@@ -891,6 +892,7 @@ test('words left as they were, or only spaced, and a cleared time send nothing',
   await edit()
   fireEvent.change(meal().getByLabelText('What it was'), { target: { value: 'Breakfast ' } })
   fireEvent.change(meal().getByLabelText('Time'), { target: { value: '' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Add a note' }))
   fireEvent.change(meal().getByLabelText('Note'), { target: { value: '  ' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
@@ -909,6 +911,7 @@ test('a description changed elsewhere stays when only the note is changed here',
   server.elsewhere((m) => ({ ...m, description: 'Second breakfast' }))
   focusManager.setFocused(false)
   focusManager.setFocused(true)
+  fireEvent.click(meal().getByRole('button', { name: 'Add a note' }))
   fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'big one' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
@@ -1295,68 +1298,6 @@ test('an estimate whose name is cleared sends nothing', async () => {
   expect(server.sent).toEqual([])
 })
 
-test("an item's note alone is a note op; with its amount, the item's replace", async () => {
-  const server = mealServer()
-  fakeServer(server.routes)
-  renderAt('/')
-
-  await edit()
-  expect(meal().getByLabelText('Note: Banana bread')).toHaveProperty('value', 'home-made')
-  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'soaked ' } })
-  fireEvent.change(meal().getByLabelText('Note: Banana bread'), { target: { value: '' } })
-  fireEvent.change(meal().getByLabelText('Amount: Egg'), { target: { value: '3' } })
-  fireEvent.change(meal().getByLabelText('Note: Egg'), { target: { value: 'boiled' } })
-  fireEvent.change(meal().getByLabelText('Note: Salad from the canteen'), {
-    target: { value: 'no dressing' },
-  })
-  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
-
-  await waitFor(() => {
-    expect(server.sent.map((s) => s.body)).toEqual([
-      {
-        ops: [
-          { op: 'note', item_id: oats.id, note: 'soaked' },
-          { op: 'note', item_id: bread.id, note: '' },
-          {
-            op: 'replace',
-            item_id: egg.id,
-            item: { food_id: egg.food_id, serving: 'egg', servings: 3, note: 'boiled' },
-          },
-          { op: 'note', item_id: salad.id, note: 'no dressing' },
-        ],
-      },
-    ])
-  })
-})
-
-test("an item's note alone keeps what the item has, its amount changed elsewhere too", async () => {
-  const server = mealServer()
-  fakeServer(server.routes)
-  renderAt('/')
-
-  await edit()
-  // A model sets the oats to 120 g; the window gets the focus back.
-  server.elsewhere((m) => ({
-    ...m,
-    items: m.items.map((i) =>
-      i.id === oats.id ? { ...i, amount: 120, quantity: { amount: 120, unit: 'g' } } : i,
-    ),
-  }))
-  focusManager.setFocused(false)
-  focusManager.setFocused(true)
-  expect(await meal().findByText('Changed elsewhere since this opened.')).toBeDefined()
-  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'soaked' } })
-  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
-
-  await waitFor(() => {
-    expect(server.sent.map((s) => s.body)).toEqual([
-      {
-        ops: [{ op: 'note', item_id: oats.id, note: 'soaked' }],
-      },
-    ])
-  })
-})
-
 test('a meal is moved to a day before, at its time or another', async () => {
   const server = mealServer()
   fakeServer(server.routes)
@@ -1669,53 +1610,6 @@ test('a food of the same name the user has already is said to be kept', async ()
   ).toBeDefined()
 })
 
-test("an item's note of lines left as it was sends nothing", async () => {
-  const server = mealServer()
-  server.elsewhere((m) => ({
-    ...m,
-    items: m.items.map((i) => (i.id === oats.id ? { ...i, note: 'soaked\novernight' } : i)),
-  }))
-  fakeServer(server.routes)
-  renderAt('/')
-
-  await edit()
-  expect(meal().getByLabelText('Note: Oats')).toHaveProperty('value', 'soaked\novernight')
-  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
-
-  await waitFor(() => {
-    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
-  })
-  expect(server.sent).toEqual([])
-})
-
-test("a note typed for an item whose food changes elsewhere starts again with the new one's", async () => {
-  const server = mealServer()
-  fakeServer(server.routes)
-  renderAt('/')
-
-  await edit()
-  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'soaked' } })
-  // A model puts a stew in the oats' place, with a note of its own.
-  const stew = '0193c3a5-0000-7000-8000-0000000000f8'
-  server.elsewhere((m) => ({
-    ...m,
-    items: m.items.map((i) =>
-      i.id === oats.id
-        ? { ...i, food_id: stew, name: 'Stew', note: 'spicy', quantity: { portions: 2 } }
-        : i,
-    ),
-  }))
-  focusManager.setFocused(false)
-  focusManager.setFocused(true)
-  expect(await meal().findByLabelText('Note: Stew')).toHaveProperty('value', 'spicy')
-  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
-
-  await waitFor(() => {
-    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
-  })
-  expect(server.sent).toEqual([])
-})
-
 test("a serving given in another case is the food's, worked out from its grams", async () => {
   const server = mealServer({
     ...foodsOf(),
@@ -1795,38 +1689,6 @@ test('a unit chosen for an item whose food changes elsewhere starts again with t
     expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
   })
   expect(server.sent).toEqual([])
-})
-
-test('a note typed for an item another food takes the place of goes with the other food', async () => {
-  const server = withFoods()
-  fakeServer(server.routes)
-  renderAt('/')
-
-  await edit()
-  fireEvent.change(meal().getByLabelText('Note: Banana bread'), { target: { value: 'toasted' } })
-  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'big bowl' } })
-  await swap('Banana bread')
-  await swap('Oats')
-  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
-
-  await waitFor(() => {
-    expect(server.sent.map((s) => s.body)).toEqual([
-      {
-        ops: [
-          {
-            op: 'replace',
-            item_id: oats.id,
-            item: { food_id: rye.id, amount: 100, unit: 'g', note: 'big bowl' },
-          },
-          {
-            op: 'replace',
-            item_id: bread.id,
-            item: { food_id: rye.id, amount: 100, unit: 'g', note: 'toasted' },
-          },
-        ],
-      },
-    ])
-  })
 })
 
 test('an estimate saved as a food is found by a search that was open', async () => {
@@ -2086,4 +1948,51 @@ test('a unit chosen that cannot be worked out from the last asks for the amount 
 
   expect(await meal().findByRole('alert')).toBeDefined()
   expect(server.sent).toEqual([])
+})
+
+test("the meal's note has its field once asked for, and an item's note is kept", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // Seldom given: no field until it is asked for, and none for an item.
+  expect(meal().queryByLabelText('Note')).toBeNull()
+  expect(meal().queryByLabelText(/^Note: /)).toBeNull()
+  fireEvent.click(meal().getByRole('button', { name: 'Add a note' }))
+  expect(document.activeElement).toBe(meal().getByLabelText('Note'))
+  // An item replaced keeps the note it has.
+  fireEvent.change(meal().getByLabelText('Amount: Banana bread'), { target: { value: '2' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: bread.id,
+            item: { food_id: bread.food_id, note: 'home-made', portions: 2 },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test("a meal's note it has is changed from its own button", async () => {
+  const server = mealServer()
+  server.elsewhere((m) => ({ ...m, note: 'before the run' }))
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Change the note' }))
+  expect(meal().getByLabelText('Note')).toHaveProperty('value', 'before the run')
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'after the run' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ note: 'after the run' }])
+  })
 })
