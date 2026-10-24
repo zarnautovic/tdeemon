@@ -105,6 +105,7 @@ export const en = {
     notePlaceholder: 'restaurant, sick, travelling…',
     dayType: 'Type of day',
     dayTypes: { training: 'Training', rest: 'Rest', plan: 'By plan' },
+    planDecided: { training: 'training', rest: 'rest' },
     calibration: 'Calibration',
     counted: 'Counted in calibration.',
     leaveOut: 'Leave out of calibration',
