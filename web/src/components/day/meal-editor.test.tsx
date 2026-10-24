@@ -755,3 +755,94 @@ test('an item of another food now starts its field as it is now', async () => {
     ])
   })
 })
+
+test("an estimate's values are changed, and only those typed anew are new", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const kcal = meal().getByLabelText('Energy (kcal): Salad from the canteen')
+  expect(kcal).toHaveProperty('value', '250')
+  expect(meal().getByLabelText('Fat (g): Salad from the canteen')).toHaveProperty('value', '18')
+  fireEvent.change(kcal, { target: { value: '320' } })
+  fireEvent.change(meal().getByLabelText('Protein (g): Salad from the canteen'), {
+    target: { value: '9,5' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: salad.id,
+            item: {
+              name: 'Salad from the canteen',
+              nutrients: { kcal: 320, protein: 9.5, carbs: 12, fat: 18 },
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('a value of an estimate that is no number is not sent', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const carbs = meal().getByLabelText('Carbs (g): Salad from the canteen')
+  fireEvent.change(carbs, { target: { value: 'lots' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(await meal().findByRole('alert')).toBeDefined()
+  expect(carbs.getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+})
+
+test('an estimate changed elsewhere keeps that change, and its other values', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // A model sets the salad's fat to 20 g, with its fibre, and a note.
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) =>
+      i.id === salad.id
+        ? { ...i, note: 'with dressing', nutrients: { ...i.nutrients, fat: 20, fiber: 5 } }
+        : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+
+  expect(await meal().findByText('Changed elsewhere since this opened.')).toBeDefined()
+  fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
+    target: { value: '300' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: salad.id,
+            item: {
+              name: 'Salad from the canteen',
+              note: 'with dressing',
+              nutrients: { kcal: 300, protein: 8, carbs: 12, fat: 20, fiber: 5 },
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
