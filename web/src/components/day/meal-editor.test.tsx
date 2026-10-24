@@ -1710,6 +1710,38 @@ test('a unit chosen for an item whose food changes elsewhere starts again with t
   expect(server.sent).toEqual([])
 })
 
+test('a note typed for an item another food takes the place of goes with the other food', async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Note: Banana bread'), { target: { value: 'toasted' } })
+  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'big bowl' } })
+  await swap('Banana bread')
+  await swap('Oats')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: rye.id, amount: 100, unit: 'g', note: 'big bowl' },
+          },
+          {
+            op: 'replace',
+            item_id: bread.id,
+            item: { food_id: rye.id, amount: 100, unit: 'g', note: 'toasted' },
+          },
+        ],
+      },
+    ])
+  })
+})
+
 test('an amount worked out in another unit is sent as worked out, not as rounded to be shown', async () => {
   const server = mealServer({
     [`GET /api/v1/foods/${oatsFood}`]: () =>

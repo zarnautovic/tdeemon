@@ -291,28 +291,26 @@ export function MealEditor({
         ops.push({ op: 'remove', item_id: item.id })
         continue
       }
-      const swap = swaps[item.id]
-      if (swap !== undefined) {
-        // Another food in its place, under its id, with its note.
-        const input = itemOf(swap, f.parse)
-        if (input === undefined) {
-          bad.add(swap.key)
-        } else {
-          const { id: _new, ...rest } = input
-          ops.push({
-            op: 'replace',
-            item_id: item.id,
-            item: item.note === undefined ? rest : { ...rest, note: item.note },
-          })
-        }
-        continue
-      }
       // An item's note typed anew, or undefined when it is as it started.
       const noteTyped = (started: string | undefined) => {
         const typed = text(fieldOf(item, 'note'))
         return typed !== undefined && typed !== (started ?? '').trim() ? typed : undefined
       }
       const estimate = estimateOf(item)
+      const swap = swaps[item.id]
+      if (swap !== undefined) {
+        // Another food in its place, under its id, with its note: the one
+        // typed anew, or the one it has now.
+        const input = itemOf(swap, f.parse)
+        if (input === undefined) {
+          bad.add(swap.key)
+        } else {
+          const { id: _new, ...rest } = input
+          const note = noteTyped(estimate ? estimate.note : startOf(item)?.note) ?? item.note ?? ''
+          ops.push({ op: 'replace', item_id: item.id, item: withNote(rest, note) })
+        }
+        continue
+      }
       if (estimate !== undefined) {
         // Only the values typed anew; the others as they are now. A name
         // cleared keeps the one it had.
