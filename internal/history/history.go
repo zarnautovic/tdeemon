@@ -375,9 +375,12 @@ func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Ca
 		switch {
 		case errors.Is(err, store.ErrMealDeleted):
 			r.Meals--
+			r.Split -= splitOf(m)
 			r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: deleted since an import before", d.Date, m.Description))
 			continue
 		case errors.Is(err, store.ErrMealConflict):
+			// The meal of the run before stays, split or not.
+			r.Split -= splitOf(m)
 			r.Skipped = append(r.Skipped, fmt.Sprintf("%s, %s: differs from an import before, which stays as it is", d.Date, m.Description))
 			continue
 		}
@@ -386,6 +389,16 @@ func importMeals(ctx context.Context, db *store.DB, userID uuid.UUID, cal day.Ca
 		}
 	}
 	return len(ms), nil
+}
+
+// splitOf is 1 for a meal split into items of foods, else 0.
+func splitOf(m *meal.Meal) int {
+	for i := range m.Items {
+		if m.Items[i].FoodID != uuid.Nil() {
+			return 1
+		}
+	}
+	return 0
 }
 
 // buildMeals returns the meals of a day's note, each split when sp can,

@@ -497,9 +497,10 @@ note's day, at its time on your clock (one before 05:00, the
 predecessor's rollover, past midnight), split by its text against your
 foods: a part with an amount and a food of yours becomes an item of
 that food, the rest of the meal's total an estimate, "Rest of the meal
-(history split)", so the meal keeps its total; a meal with no such part,
-or whose items would pass its total, is one estimate. A dry run splits
-against the foods of `--foods` too, which it has not written. A day
+(history split)", so the meal keeps its kcal; a meal with no such part,
+or whose items would pass its total, is one estimate, and so is a meal
+a run before wrote so. A dry run splits against the foods of `--foods`
+too, which it has not written. A day
 whose total in the note has more kcal than its meals gets the rest as
 one estimate, "Rest of the day (history import)", so the day's intake
 is the note's. A day

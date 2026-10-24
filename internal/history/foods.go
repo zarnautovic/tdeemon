@@ -244,16 +244,25 @@ type FoodReport struct {
 	Combinations []string
 }
 
+// namesOf counts the rows of each name, the combinations, which are no
+// foods, left out.
+func namesOf(rows []FoodRow) map[string]int {
+	count := map[string]int{}
+	for i := range rows {
+		if !combination(&rows[i]) {
+			count[food.Key(rows[i].Name)]++
+		}
+	}
+	return count
+}
+
 // ImportFoods adds the foods of rows to u's food database, or with dryRun
 // only counts them, the combinations left out. A food whose name u has already (from a run before, or
 // their own) stays as it is, so a run again changes nothing. A name
 // several rows share takes each row's portion.
 func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow, now time.Time, dryRun bool) (FoodReport, error) {
 	var r FoodReport
-	count := map[string]int{}
-	for i := range rows {
-		count[food.Key(rows[i].Name)]++
-	}
+	count := namesOf(rows)
 	seen := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]

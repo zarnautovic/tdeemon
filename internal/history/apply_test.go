@@ -118,18 +118,21 @@ func TestImportSplitsMealsOrNot(t *testing.T) {
 		{Time: "10:00", Description: "2 kruha", Nutrients: kcal(300)},
 		// Parts without amounts.
 		{Time: "11:00", Description: "jogurt + banana", Nutrients: kcal(285)},
+		// 100 g of bread are 250 kcal, 2 past the note's: the meal keeps
+		// its kcal.
+		{Time: "11:30", Description: "kruh (100 g)", Nutrients: food.Nutrients{Kcal: 248, Protein: 8.5, Carbs: 49, Fat: 3.2}},
 		// Less than a kcal of the total left: no rest.
 		{Time: "12:00", Description: "kruh (100 g)", Nutrients: food.Nutrients{Kcal: 250.5, Protein: 8.5, Carbs: 49, Fat: 3.2}},
 	})
 	if r.Split != 1 {
-		t.Errorf("split %d, want only the bread", r.Split)
+		t.Errorf("split %d, want only the bread whose total it meets", r.Split)
 	}
-	for _, m := range stored[:4] {
+	for _, m := range stored[:5] {
 		if len(m.Items) != 1 || m.Items[0].FoodID != uuid.Nil() || m.Items[0].Name != m.Description {
 			t.Errorf("%s = %+v, want one estimate", m.Description, m.Items)
 		}
 	}
-	if m := stored[4]; len(m.Items) != 1 || m.Items[0].Name != "Kruh" {
+	if m := stored[5]; len(m.Items) != 1 || m.Items[0].Name != "Kruh" {
 		t.Errorf("the bread = %+v, want its food alone, as its total is met", m.Items)
 	}
 }
@@ -172,5 +175,53 @@ func TestImportFoodsLeavesCombinationsOut(t *testing.T) {
 	}
 	if _, err := db.FoodByName(t.Context(), u.ID, "Skyr + jagode", ""); err == nil {
 		t.Error("the combination is a food")
+	}
+}
+
+// A meal of more parts of foods than a meal takes items stays one
+// estimate, and the import goes on.
+func TestImportSplitsNoMoreItemsThanAMealTakes(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	splitFoods(t, db, u.ID)
+	text := strings.TrimSuffix(strings.Repeat("kruh (1 g) + ", meal.MaxItems), " + ")
+	// Room for the items' macronutrients: only their count is too many.
+	r, stored := mealsOn(t, db, u, []history.Meal{{Description: text, Nutrients: food.Nutrients{Kcal: 300, Protein: 10, Carbs: 40, Fat: 5}}})
+	if r.Split != 0 || len(stored) != 1 || len(stored[0].Items) != 1 {
+		t.Errorf("split %d, meals %d; want one estimate", r.Split, len(stored))
+	}
+}
+
+// A run again that would split a meal a run before wrote as one estimate
+// leaves it, and counts it as no split.
+func TestImportSplitsAgain(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	meals := []history.Meal{{Description: "kruh (100 g)", Nutrients: food.Nutrients{Kcal: 300, Protein: 10, Carbs: 50, Fat: 5}}}
+	if r, _ := mealsOn(t, db, u, meals); r.Split != 0 {
+		t.Fatalf("split %d without foods", r.Split)
+	}
+	splitFoods(t, db, u.ID)
+	r, stored := mealsOn(t, db, u, meals)
+	if r.Split != 0 || len(stored[0].Items) != 1 || len(r.Skipped) != 1 {
+		t.Errorf("again: split %d, items %d, skipped %v; want the estimate of the run before", r.Split, len(stored[0].Items), r.Skipped)
+	}
+}
+
+// A combination of a food's name gives it no portion in its name.
+func TestImportFoodsCombinationOfAName(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	if _, err := history.ImportFoods(t.Context(), db, u, []history.FoodRow{
+		{Line: 3, Name: "Zobena kaša", Portion: "100 g", Nutrients: food.Nutrients{Kcal: 370, Protein: 13, Carbs: 60, Fat: 7}},
+		{Line: 4, Name: "Zobena kaša", Portion: "50 g zobenih + 200 ml mlijeka", Nutrients: kcal(285)},
+	}, now, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.FoodByName(t.Context(), u.ID, "Zobena kaša", ""); err != nil {
+		t.Errorf("the food: %v; want it by its own name", err)
 	}
 }

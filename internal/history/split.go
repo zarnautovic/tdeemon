@@ -529,7 +529,8 @@ func (s splitter) items(text string, total food.Nutrients) ([]meal.Item, bool) {
 		items = append(items, it)
 		sum = add(sum, it.Nutrients)
 	}
-	if len(items) == 0 || passes(sum, total) {
+	// A meal takes meal.MaxItems items, the rest one of them.
+	if len(items) == 0 || len(items) >= meal.MaxItems || passes(sum, total) {
 		return nil, false
 	}
 	rest := food.Nutrients{
@@ -546,11 +547,12 @@ func (s splitter) items(text string, total food.Nutrients) ([]meal.Item, bool) {
 	return items, true
 }
 
-// passes reports whether sum has more than total, past what rounding
-// gives: 5 kcal or 3 %, 2 g or 10 % of each macronutrient.
+// passes reports whether sum has more than total: more kcal than half a
+// kcal over, as a meal keeps its kcal, which calibration reads, or more
+// of a macronutrient than rounding gives, 2 g or 10 %.
 func passes(sum, total food.Nutrients) bool {
 	over := func(s, t, abs, rel float64) bool { return s > t+math.Max(abs, rel*t) }
-	return over(sum.Kcal, total.Kcal, 5, 0.03) || over(sum.Protein, total.Protein, 2, 0.1) ||
+	return sum.Kcal > total.Kcal+0.5 || over(sum.Protein, total.Protein, 2, 0.1) ||
 		over(sum.Carbs, total.Carbs, 2, 0.1) || over(sum.Fat, total.Fat, 2, 0.1)
 }
 
