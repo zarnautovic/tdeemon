@@ -32,7 +32,7 @@ func actorOf(p auth.Principal) event.Actor {
 // servingBody is a named amount of a food, in its unit.
 type servingBody struct {
 	Name   string  `json:"name" minLength:"1" maxLength:"50" example:"slice"`
-	Amount float64 `json:"amount" exclusiveMinimum:"0" maximum:"10000" doc:"In the food's unit: grams or ml."`
+	Amount float64 `json:"amount" exclusiveMinimum:"0" maximum:"10000" doc:"In g, or ml for a food by 100ml."`
 }
 
 // foodNutrientsBody is a food's nutrients as they are stored, per 100 g,
@@ -113,7 +113,8 @@ func newFoodBody(f *food.Food) foodBody {
 type foodsOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
-		Foods []foodBody `json:"foods" nullable:"false"`
+		Foods   []foodBody `json:"foods" nullable:"false"`
+		Unfound []string   `json:"unfound" nullable:"false" doc:"The queries that found no food: foods the user lacks, not to search again."`
 	}
 }
 
@@ -133,6 +134,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 	// find, once, with both. A query sent twice, in any case, is one.
 	var foods []food.Food
 	var queries [][]string
+	unfound := []string{}
 	at := map[uuid.UUID]int{}
 	asked := map[string]bool{}
 	for _, q := range in.Query {
@@ -144,6 +146,9 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		found, err := s.db.FindFoods(ctx, p.User.ID, q, in.Limit)
 		if err != nil {
 			return nil, internalError("finding foods failed", err)
+		}
+		if len(found) == 0 {
+			unfound = append(unfound, q)
 		}
 		for i := range found {
 			if j, ok := at[found[i].ID]; ok {
@@ -163,7 +168,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		return nil, internalError("finding foods failed", err)
 	}
 	out := &foodsOutput{CacheControl: "no-store"}
-	out.Body.Foods = make([]foodBody, 0, len(foods))
+	out.Body.Foods, out.Body.Unfound = make([]foodBody, 0, len(foods)), unfound
 	for i := range foods {
 		b := newFoodBody(&foods[i])
 		b.Queries = queries[i]
