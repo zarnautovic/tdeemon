@@ -49,7 +49,6 @@ function listOf(foods: Food[]) {
     return Response.json({
       foods: foods.slice(offset, offset + limit),
       total: foods.length,
-      unfound: [],
     })
   }
 }
@@ -113,6 +112,7 @@ test('a search finds the foods, or says none matches', async () => {
     'GET /api/v1/foods': (request) =>
       Response.json({
         foods: new URL(request.url).searchParams.get('query') === 'oat' ? [oats] : [],
+        unfound: [],
       }),
   })
   const router = renderAt('/foods')

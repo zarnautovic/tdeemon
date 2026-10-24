@@ -147,7 +147,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		if err != nil {
 			return nil, internalError("finding foods failed", err)
 		}
-		if len(found) == 0 {
+		if len(found) == 0 && key != "" {
 			unfound = append(unfound, strings.TrimSpace(q))
 		}
 		for i := range found {
