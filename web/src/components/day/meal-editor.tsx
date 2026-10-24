@@ -1,4 +1,4 @@
-import { ArrowLeftRight, RotateCcw, X } from 'lucide-react'
+import { ArrowLeftRight, BookmarkPlus, RotateCcw, X } from 'lucide-react'
 import { Fragment, useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { statusOf } from '@/api/errors'
@@ -71,8 +71,9 @@ function withNote(item: ItemInput, note: string): ItemInput {
 
 // MealEditor changes a meal's description, day (today or one before),
 // time and note, and its items: the amount and unit of each of a food,
-// the name and values of each estimate, the note of each, another food in
-// the place of any, which stay, and
+// the name and values of each estimate, an estimate saved as a food of
+// the user's, the note of each, another food in the place of any, which
+// stay, and
 // new ones (a food of the user's or an estimate, as a meal logged by hand
 // has them); in one change saved at once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
@@ -215,6 +216,8 @@ export function MealEditor({
   // by the item; and the item whose other food is being found.
   const [swaps, setSwaps] = useState<Readonly<Record<string, Entry>>>({})
   const [finding, setFinding] = useState<string | undefined>(undefined)
+  // The estimates to save as foods of the user's, a portion of each.
+  const [asFoods, setAsFoods] = useState<ReadonlySet<string>>(new Set())
   const [wrongEntries, setWrongEntries] = useState<ReadonlySet<string>>(new Set())
   const [added, setAdded] = useState<string | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
@@ -321,7 +324,8 @@ export function MealEditor({
             ? nameTyped
             : item.name
         const note = noteTyped(estimate.note)
-        let changed = name !== item.name
+        const asFood = asFoods.has(item.id)
+        let changed = name !== item.name || asFood
         for (const v of values) {
           const typed = typedIn.get(fieldOf(item, v))
           const n = typeof typed === 'string' ? f.parse(typed) : undefined
@@ -334,7 +338,14 @@ export function MealEditor({
         }
         if (changed) {
           const had = item.note === undefined ? {} : { note: item.note }
-          const input = { name, nutrients, ...had }
+          // Saved as a food, the plate is a portion of it, as it is typed.
+          const input = asFood
+            ? {
+                food: { name, basis: 'portion' as const, source: 'estimate' as const, nutrients },
+                portions: 1,
+                ...had,
+              }
+            : { name, nutrients, ...had }
           ops.push({
             op: 'replace',
             item_id: item.id,
@@ -602,6 +613,25 @@ export function MealEditor({
                     )}
                   </span>
                 )}
+                {estimate && !gone && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t.meal.saveAsFood(item.name)}
+                    aria-pressed={asFoods.has(item.id)}
+                    onClick={() => {
+                      const next = new Set(asFoods)
+                      if (next.has(item.id)) {
+                        next.delete(item.id)
+                      } else {
+                        next.add(item.id)
+                      }
+                      setAsFoods(next)
+                    }}
+                  >
+                    <BookmarkPlus aria-hidden />
+                  </Button>
+                )}
                 {!gone && (
                   <Button
                     variant="ghost"
@@ -631,6 +661,9 @@ export function MealEditor({
                 >
                   {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
                 </Button>
+                {estimate && asFoods.has(item.id) && !gone && (
+                  <span className="basis-full text-xs text-muted-foreground">{t.meal.asFood}</span>
+                )}
                 {estimate && (
                   <input
                     name={fieldOf(item, 'name')}

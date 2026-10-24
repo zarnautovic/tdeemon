@@ -1582,6 +1582,93 @@ test('another food of no amount holds the meal back', async () => {
   expect(server.sent).toEqual([])
 })
 
+test("an estimate is saved as a food of the user's, a portion of it, as it is typed", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const save = meal().getByRole('button', {
+    name: 'Save as a food of yours: Salad from the canteen',
+  })
+  fireEvent.click(save)
+  expect(save.getAttribute('aria-pressed')).toBe('true')
+  expect(meal().getByText('Saved as a food of yours, a portion of it eaten.')).toBeDefined()
+  fireEvent.change(meal().getByLabelText('What it is: Salad from the canteen'), {
+    target: { value: 'Canteen salad' },
+  })
+  fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
+    target: { value: '260' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: salad.id,
+            item: {
+              food: {
+                name: 'Canteen salad',
+                basis: 'portion',
+                source: 'estimate',
+                nutrients: { kcal: 260, protein: 8, carbs: 12, fat: 18 },
+              },
+              portions: 1,
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('an estimate saved as a food and taken back sends nothing', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const save = meal().getByRole('button', {
+    name: 'Save as a food of yours: Salad from the canteen',
+  })
+  fireEvent.click(save)
+  fireEvent.click(save)
+  expect(save.getAttribute('aria-pressed')).toBe('false')
+  expect(meal().queryByText('Saved as a food of yours, a portion of it eaten.')).toBeNull()
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test('a food of the same name the user has already is said to be kept', async () => {
+  const server = mealServer({
+    [`PATCH /api/v1/meals/${mealId}`]: () =>
+      Response.json({
+        meal: breakfast,
+        day: { ...day(), meals: undefined, metrics: undefined },
+        warnings: [{ code: 'food_kept' }],
+      }),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(
+    meal().getByRole('button', { name: 'Save as a food of yours: Salad from the canteen' }),
+  )
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(
+    await meal().findByText('A food of yours was logged with its own values, not those sent.'),
+  ).toBeDefined()
+})
+
 test("an item's note of lines left as it was sends nothing", async () => {
   const server = mealServer()
   server.elsewhere((m) => ({

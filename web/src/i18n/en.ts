@@ -150,6 +150,8 @@ export const en = {
     anotherFood: (name: string) => `Another food in place of: ${name}`,
     inPlaceOf: (name: string) => `In place of ${name}:`,
     findInPlaceOf: (name: string) => `A food of yours in place of ${name}`,
+    saveAsFood: (name: string) => `Save as a food of yours: ${name}`,
+    asFood: 'Saved as a food of yours, a portion of it eaten.',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'C (g)', fat: 'F (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
     changedElsewhere: 'Changed elsewhere since this opened.',
