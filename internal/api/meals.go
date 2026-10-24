@@ -38,10 +38,10 @@ type itemInput struct {
 	ID       string      `json:"id,omitempty" format:"uuid" doc:"The item's id; made when left out."`
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
 	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved; one of the name and brand of the user's food is that food, unchanged."`
-	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit."`
+	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit; none for an estimate."`
 	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
-	Serving  string      `json:"serving,omitempty" doc:"A serving the food names."`
+	Serving  string      `json:"serving,omitempty" doc:"The serving's name, as the food names it; left out, the food's one."`
 	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"Portions of a food per portion."`
 	// Name and Nutrients make an estimate.
 	Name      string             `json:"name,omitempty" maxLength:"200" doc:"A whole plate's estimate: its name, with nutrients."`

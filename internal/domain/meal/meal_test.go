@@ -27,6 +27,13 @@ func tray() food.Food {
 	return f
 }
 
+// twoServings is eggs by the piece and by the tray.
+func twoServings() food.Food {
+	f := egg()
+	f.Servings = append(f.Servings, food.Serving{Name: "tray", Amount: 1800})
+	return f
+}
+
 func milk() food.Food {
 	return food.Food{
 		ID: uuid.NewV7(), Name: "Milk 2.8 %", Brand: "Dukat", Basis: food.Per100ml, Source: food.Label,
@@ -130,6 +137,16 @@ func TestFromFoodIsASnapshot(t *testing.T) {
 	}
 }
 
+// Servings without a name are of the food's serving when it has one.
+func TestFromFoodOneServing(t *testing.T) {
+	t.Parallel()
+
+	it, err := FromFood(egg(), Quantity{Servings: 2}, "")
+	if err != nil || it.Amount != 120 || it.Quantity.Serving != "piece" {
+		t.Errorf("FromFood = %+v, %v; want 2 pieces, 120 g", it, err)
+	}
+}
+
 func TestFromFoodRefuses(t *testing.T) {
 	t.Parallel()
 
@@ -148,7 +165,7 @@ func TestFromFoodRefuses(t *testing.T) {
 		{"too many servings", egg(), Quantity{Servings: MaxServings + 1, Serving: "piece"}, "", "at most 100"},
 		{"servings adding up to too much", tray(), Quantity{Servings: 100, Serving: "tray"}, "", "at most 10000"},
 		{"too many portions", canteen(0), Quantity{Portions: MaxPortions + 1}, "", "at most 50"},
-		{"servings without a name", egg(), Quantity{Servings: 2}, "", "the serving's name"},
+		{"servings without a name, of a food of two", twoServings(), Quantity{Servings: 2}, "", "the serving's name"},
 		{"a name without servings", egg(), Quantity{Amount: 10, Unit: "g", Serving: "piece"}, "", "needs a number"},
 		{"an unknown serving", egg(), Quantity{Servings: 1, Serving: "slice"}, "", `the food has "piece"`},
 		{"a serving of a food with none", milk(), Quantity{Servings: 1, Serving: "glass"}, "", "has none"},
