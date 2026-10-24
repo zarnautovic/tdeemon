@@ -114,7 +114,7 @@ type foodsOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
 		Foods   []foodBody `json:"foods" nullable:"false"`
-		Unfound []string   `json:"unfound" nullable:"false" doc:"The queries that found no food."`
+		Unfound []string   `json:"unfound" nullable:"false" doc:"The queries that found no food: not to send again, though another form of their word may find it."`
 	}
 }
 
