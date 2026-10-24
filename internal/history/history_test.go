@@ -153,7 +153,7 @@ func imported(t *testing.T) (*store.DB, user.User, history.Report) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestImportTimes(t *testing.T) {
 		{Time: "03:59", Description: "Before the day's start", Nutrients: kcal(100)},
 		{Time: "half past", Description: "Some time", Nutrients: kcal(100)},
 	}}}
-	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, u, days, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	ms, err := db.MealsOfDay(t.Context(), u.ID, d)
@@ -260,7 +260,7 @@ func TestImportTimes(t *testing.T) {
 	late := u
 	late.DayStartHour = 6
 	early := []history.Day{{Date: "2026-09-15", Metrics: map[string]float64{}, Meals: []history.Meal{{Time: "05:30", Description: "Early", Nutrients: kcal(100)}}}}
-	if _, err := history.Import(t.Context(), db, late, early, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, late, early, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	ms, _ = db.MealsOfDay(t.Context(), u.ID, day.Date{Year: 2026, Month: 9, Day: 15})
@@ -282,7 +282,7 @@ func TestImportTimes(t *testing.T) {
 		v := u
 		v.DayStartHour = c.start
 		one := []history.Day{{Date: c.date, Metrics: map[string]float64{}, Meals: []history.Meal{{Time: c.time, Description: "Edge", Nutrients: kcal(100)}}}}
-		if _, err := history.Import(t.Context(), db, v, one, now, false); err != nil {
+		if _, err := history.Import(t.Context(), db, v, one, nil, now, false); err != nil {
 			t.Fatal(err)
 		}
 		d, _ := day.ParseDate(c.date)
@@ -311,7 +311,7 @@ INSERT INTO meals VALUES ('2026-09-14', '09:00', 'Under a kcal over', 1000, 80, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil || r.Rests != 2 || len(r.Over) != 0 {
 		t.Fatalf("report = %+v, %v", r, err)
 	}
@@ -350,14 +350,14 @@ func TestImportAgain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dry, err := history.Import(t.Context(), db, u, days, now, true)
+	dry, err := history.Import(t.Context(), db, u, days, nil, now, true)
 	if err != nil || dry.Meals != 7 || dry.Metrics != 6 {
 		t.Fatalf("the dry run = %+v, %v", dry, err)
 	}
 	if es, _ := db.Events(t.Context(), u.ID, 10); len(es) != 0 {
 		t.Fatalf("the dry run wrote %d events", len(es))
 	}
-	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, u, days, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	d1 := day.Date{Year: 2026, Month: 9, Day: 1}
@@ -366,7 +366,7 @@ func TestImportAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
-	r, err := history.Import(t.Context(), db, u, days, now.Add(time.Hour), false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now.Add(time.Hour), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestImportDescriptions(t *testing.T) {
 		{Time: "10:00", Description: "tab\there", Nutrients: kcal(200)},
 		{Time: "11:00", Description: "A feast", Nutrients: kcal(20000)},
 	}}}
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -414,18 +414,18 @@ func TestImportRefuses(t *testing.T) {
 	db, u := newUser(t)
 	bad := u
 	bad.TimeZone = "Nowhere/Bogus"
-	if _, err := history.Import(t.Context(), db, bad, nil, now, false); err == nil {
+	if _, err := history.Import(t.Context(), db, bad, nil, nil, now, false); err == nil {
 		t.Error("Import with a calendar that does not read succeeded")
 	}
 	// A user the database does not have: the first write fails.
 	stranger := u
 	stranger.ID = uuid.NewV7()
 	days := []history.Day{{Date: "2026-09-09", Metrics: map[string]float64{"weight": 80}}}
-	if _, err := history.Import(t.Context(), db, stranger, days, now, false); err == nil {
+	if _, err := history.Import(t.Context(), db, stranger, days, nil, now, false); err == nil {
 		t.Error("Import for no user succeeded")
 	}
 	days = []history.Day{{Date: "2026-09-09", Metrics: map[string]float64{}, Meals: []history.Meal{{Description: "Soup", Nutrients: kcal(200)}}}}
-	if _, err := history.Import(t.Context(), db, stranger, days, now, false); err == nil || errors.Is(err, store.ErrMealDeleted) {
+	if _, err := history.Import(t.Context(), db, stranger, days, nil, now, false); err == nil || errors.Is(err, store.ErrMealDeleted) {
 		t.Errorf("a meal for no user: %v", err)
 	}
 }
@@ -446,11 +446,11 @@ func TestImportExclusions(t *testing.T) {
 		{Date: "2026-09-16", Metrics: map[string]float64{}, Meals: []history.Meal{{Time: "12:00", Description: "Soup", Nutrients: kcal(300)}}},
 		{Date: "2026-09-17", Metrics: map[string]float64{}, Total: &food.Nutrients{Kcal: 1800}},
 	}
-	dry, err := history.Import(t.Context(), db, u, days, now, true)
+	dry, err := history.Import(t.Context(), db, u, days, nil, now, true)
 	if err != nil || len(dry.Excluded) != 5 {
 		t.Fatalf("the dry run = %+v, %v", dry, err)
 	}
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil || len(r.Excluded) != 5 || r.Excluded[0] != "2026-09-11: Birthday dinner with friends" || len(r.Renamed) != 1 ||
 		!strings.Contains(r.Renamed[0], "2026-09-14") {
 		t.Fatalf("report = %+v, %v", r, err)
@@ -486,7 +486,7 @@ func TestImportExclusionsAgain(t *testing.T) {
 		{Date: "2026-09-12", Metrics: map[string]float64{}, Remark: "Travel"},
 		{Date: "2026-09-13", Metrics: map[string]float64{}, Remark: "Sick"},
 	}
-	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, u, days, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	d := day.Date{Year: 2026, Month: 9, Day: 11}
@@ -498,7 +498,7 @@ func TestImportExclusionsAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	before, _ := db.Events(t.Context(), u.ID, store.MaxEvents)
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil || len(r.Excluded) != 0 || len(r.Skipped) != 2 {
 		t.Fatalf("the run again = %+v, %v", r, err)
 	}
@@ -519,11 +519,11 @@ func TestImportChangedSince(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, u, days, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	u.TimeZone = "UTC"
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil || r.Meals != 7 || !slices.ContainsFunc(r.Skipped, func(s string) bool { return strings.Contains(s, "differs from an import before") }) {
 		t.Errorf("the run in another zone = %+v, %v", r, err)
 	}
@@ -549,7 +549,7 @@ func TestImportNoIntake(t *testing.T) {
 		{Date: "2026-10-21", Metrics: map[string]float64{"weight": 80}, Total: &food.Nutrients{Kcal: 20000}},
 		{Date: "2026-10-22", Metrics: map[string]float64{"weight": 80}},
 	}
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil || !slices.Equal(r.Excluded, []string{"2026-10-21: " + history.UnimportableReason}) {
 		t.Errorf("excluded = %q, %v; want only the day whose intake did not import", r.Excluded, err)
 	}
@@ -565,11 +565,11 @@ func TestImportRestOfARunBefore(t *testing.T) {
 		Date: "2026-09-21", Metrics: map[string]float64{}, Total: &food.Nutrients{Kcal: 900},
 		Meals: []history.Meal{{Time: "12:00", Description: "Lunch", Nutrients: kcal(500)}},
 	}}
-	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, u, days, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	days[0].Meals = append(days[0].Meals, history.Meal{Time: "19:00", Description: "Dinner", Nutrients: kcal(400)})
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if err != nil || !slices.ContainsFunc(r.Skipped, func(s string) bool { return strings.Contains(s, "stays though the meals reach the total") }) {
 		t.Errorf("report = %+v, %v", r, err)
 	}
@@ -591,7 +591,7 @@ func TestImportDeletedMealsLeaveTheDay(t *testing.T) {
 
 	db, u := newUser(t)
 	days := []history.Day{{Date: "2026-09-22", Metrics: map[string]float64{}, Meals: []history.Meal{{Time: "12:00", Description: "Lunch", Nutrients: kcal(500)}}}}
-	if _, err := history.Import(t.Context(), db, u, days, now, false); err != nil {
+	if _, err := history.Import(t.Context(), db, u, days, nil, now, false); err != nil {
 		t.Fatal(err)
 	}
 	d := day.Date{Year: 2026, Month: 9, Day: 22}
@@ -599,7 +599,7 @@ func TestImportDeletedMealsLeaveTheDay(t *testing.T) {
 	if err := db.DeleteMeal(t.Context(), u.ID, event.Actor{Kind: event.User, Client: "web"}, ms[0].ID, now); err != nil {
 		t.Fatal(err)
 	}
-	r, err := history.Import(t.Context(), db, u, days, now, false)
+	r, err := history.Import(t.Context(), db, u, days, nil, now, false)
 	if ex, _ := db.Exclusions(t.Context(), u.ID, d, d); err != nil || len(r.Excluded) != 0 || len(ex) != 0 {
 		t.Errorf("the run again = %+v, %v; exclusions %+v", r, err, ex)
 	}

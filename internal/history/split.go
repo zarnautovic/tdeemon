@@ -10,6 +10,9 @@ import (
 	"golang.org/x/text/runes"
 	"golang.org/x/text/transform"
 	"golang.org/x/text/unicode/norm"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
 // The splitting of the history (DESIGN.md §10): the predecessor kept a
@@ -90,11 +93,11 @@ func (r SplitReport) Count() map[MealClass]int {
 // ProposeSplits splits each meal of days, and each food of foods that
 // reads as a combination, against the foods of the table that do not.
 func ProposeSplits(days []Day, foods []FoodRow) SplitReport {
-	var plain []FoodRow
+	var plain []string
 	r := SplitReport{Meals: []MealSplit{}, Foods: []FoodSplit{}}
 	for i := range foods {
 		if !combination(&foods[i]) {
-			plain = append(plain, foods[i])
+			plain = append(plain, foods[i].Name)
 		}
 	}
 	m := newMatcher(plain)
@@ -372,16 +375,16 @@ func nameOf(s string) string {
 	return strings.Trim(s, " ,;:~-–—")
 }
 
-// matcher tells the food of the table a part's name reads as.
+// matcher tells the food, of names, a part's name reads as.
 type matcher struct {
-	foods []FoodRow
+	names []string
 	words [][]string
 }
 
-func newMatcher(foods []FoodRow) matcher {
-	m := matcher{foods: foods}
-	for i := range foods {
-		m.words = append(m.words, wordsOf(foods[i].Name))
+func newMatcher(names []string) matcher {
+	m := matcher{names: names}
+	for _, n := range names {
+		m.words = append(m.words, wordsOf(n))
 	}
 	return m
 }
@@ -424,7 +427,7 @@ func (m matcher) food(name string) string {
 			continue
 		}
 		if score > bestScore {
-			best, bestScore = m.foods[i].Name, score
+			best, bestScore = m.names[i], score
 		}
 	}
 	return best
@@ -471,4 +474,102 @@ func fold(s string) string {
 		return strings.ToLower(s)
 	}
 	return strings.ReplaceAll(out, "đ", "d")
+}
+
+// SplitRestName is the estimate of what a split meal holds beyond its
+// items of a food: the rest of its total.
+const SplitRestName = "Rest of the meal (history split)"
+
+// splitter applies a split to the meals an import writes, against the
+// user's foods: a part with an amount and a food becomes an item of that
+// food, the rest of the meal's total an estimate, so a meal keeps its
+// total; a meal whose items would pass it stays one estimate, as one of
+// them read wrong.
+type splitter struct {
+	m      matcher
+	byName map[string]food.Food
+}
+
+func newSplitter(foods []food.Food) splitter {
+	s := splitter{byName: map[string]food.Food{}}
+	var names []string
+	for i := range foods {
+		f := &foods[i]
+		if strings.Contains(f.Name, " + ") {
+			continue
+		}
+		if _, ok := s.byName[f.Name]; !ok {
+			s.byName[f.Name] = *f
+			names = append(names, f.Name)
+		}
+	}
+	s.m = newMatcher(names)
+	return s
+}
+
+// items returns the items of a meal of text and total split, or false
+// when it stays one estimate: no part of a food, or the items passing its
+// total.
+func (s splitter) items(text string, total food.Nutrients) ([]meal.Item, bool) {
+	var items []meal.Item
+	var sum food.Nutrients
+	for _, p := range s.m.parts(text) {
+		f, ok := s.byName[p.Food]
+		if !ok || p.Amount <= 0 {
+			continue
+		}
+		q, ok := quantityOf(p, &f)
+		if !ok {
+			continue
+		}
+		it, err := meal.FromFood(f, q, "")
+		if err != nil {
+			continue
+		}
+		items = append(items, it)
+		sum = add(sum, it.Nutrients)
+	}
+	// A meal takes meal.MaxItems items, the rest one of them.
+	if len(items) == 0 || len(items) >= meal.MaxItems || passes(sum, total) {
+		return nil, false
+	}
+	rest := food.Nutrients{
+		Kcal: math.Max(total.Kcal-sum.Kcal, 0), Protein: math.Max(total.Protein-sum.Protein, 0),
+		Carbs: math.Max(total.Carbs-sum.Carbs, 0), Fat: math.Max(total.Fat-sum.Fat, 0),
+	}
+	if rest.Kcal >= 1 {
+		it, err := meal.Estimate(SplitRestName, rest, "")
+		if err != nil {
+			return nil, false
+		}
+		items = append(items, it)
+	}
+	return items, true
+}
+
+// passes reports whether sum has more than total: more kcal than half a
+// kcal over, as a meal keeps its kcal, which calibration reads, or more
+// of a macronutrient than rounding gives, 2 g or 10 %.
+func passes(sum, total food.Nutrients) bool {
+	over := func(s, t, abs, rel float64) bool { return s > t+math.Max(abs, rel*t) }
+	return sum.Kcal > total.Kcal+0.5 || over(sum.Protein, total.Protein, 2, 0.1) ||
+		over(sum.Carbs, total.Carbs, 2, 0.1) || over(sum.Fat, total.Fat, 2, 0.1)
+}
+
+// quantityOf is a part's amount as a quantity of f: grams or ml of a food
+// by weight or volume, grams of a food per portion whose portion's weight
+// is known, pieces as its portions or its first serving; false for none.
+func quantityOf(p Part, f *food.Food) (meal.Quantity, bool) {
+	switch {
+	case p.Unit == Pieces && f.Basis == food.PerPortion:
+		return meal.Quantity{Portions: p.Amount}, true
+	case p.Unit == Pieces && len(f.Servings) > 0:
+		return meal.Quantity{Servings: p.Amount, Serving: f.Servings[0].Name}, true
+	case p.Unit == Pieces:
+		return meal.Quantity{}, false
+	case f.Basis == food.PerPortion:
+		return meal.Quantity{Amount: p.Amount, Unit: Grams}, p.Unit == Grams && f.PortionGrams > 0
+	default:
+		return meal.Quantity{Amount: p.Amount, Unit: p.Unit}, p.Unit == f.Basis.Unit()
+	}
 }
