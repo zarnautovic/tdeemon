@@ -34,6 +34,9 @@ interface EstimateStart {
   note: string | undefined
 }
 
+// fieldKey is an item's amount field's key: the item, of its food.
+const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
+
 // fieldOf is the name of the field of an estimate's value.
 const fieldOf = (item: Item, v: (typeof values)[number]) => `${item.id}:${v}`
 
@@ -59,7 +62,8 @@ export function MealEditor({
   // Each amount as the editor opened with it: what its field starts with,
   // and what a number typed in it means, though the item changes
   // elsewhere meanwhile. An item added since, or of another food now,
-  // starts as it is.
+  // starts as it is when its field comes, and holds that as the field
+  // does (later).
   const start = (item: Item): Start | undefined => {
     const amount = amountOf(item)
     return amount && { text: f.field(amount.n), amount, foodId: item.food_id, note: item.note }
@@ -75,7 +79,7 @@ export function MealEditor({
   )
   const startOf = (item: Item) => {
     const opened = initial.get(item.id)
-    return opened?.foodId === item.food_id ? opened : start(item)
+    return opened?.foodId === item.food_id ? opened : (later.get(fieldKey(item)) ?? start(item))
   }
   // Each estimate's values as the editor opened with them, as the amounts.
   const estimateStart = (item: Item): EstimateStart | undefined =>
@@ -100,7 +104,31 @@ export function MealEditor({
       ),
   )
   const estimateOf = (item: Item) =>
-    item.food_id === undefined ? (initialEstimates.get(item.id) ?? estimateStart(item)) : undefined
+    item.food_id === undefined
+      ? (initialEstimates.get(item.id) ?? laterEstimates.get(item.id) ?? estimateStart(item))
+      : undefined
+  // The starts of the items that came after the editor opened, held from
+  // when they came: a correction made elsewhere since is not undone by a
+  // field left as it started.
+  const [later, setLater] = useState<ReadonlyMap<string, Start>>(new Map())
+  const [laterEstimates, setLaterEstimates] = useState<ReadonlyMap<string, EstimateStart>>(
+    new Map(),
+  )
+  const comes = meal.items.flatMap((item) => {
+    const s = initial.get(item.id)?.foodId === item.food_id ? undefined : start(item)
+    return s && !later.has(fieldKey(item)) ? [[fieldKey(item), s] as const] : []
+  })
+  if (comes.length > 0) {
+    setLater((m) => new Map([...m, ...comes]))
+  }
+  const comesEstimates = meal.items.flatMap((item) => {
+    const s =
+      initialEstimates.has(item.id) || laterEstimates.has(item.id) ? undefined : estimateStart(item)
+    return s ? [[item.id, s] as const] : []
+  })
+  if (comesEstimates.length > 0) {
+    setLaterEstimates((m) => new Map([...m, ...comesEstimates]))
+  }
   // The items to remove, and the fields that are not a number (an
   // amount's by its item, an estimate's value's by fieldOf).
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
@@ -213,12 +241,12 @@ export function MealEditor({
           const was = startOf(item)
           const now = start(item)
           const gone = removed.has(item.id)
-          // Changed elsewhere since the editor opened: its field keeps what
-          // it opened with.
-          const opened = initial.get(item.id)
+          // Changed elsewhere since the editor opened, or since the item
+          // came: its field keeps what it started with.
+          const opened = initial.get(item.id) ?? later.get(fieldKey(item))
           const estimate = estimateOf(item)
           const estimateNow = estimateStart(item)
-          const openedEstimate = initialEstimates.get(item.id)
+          const openedEstimate = initialEstimates.get(item.id) ?? laterEstimates.get(item.id)
           const moved =
             (opened !== undefined &&
               (now?.text !== opened.text ||
