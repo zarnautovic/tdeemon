@@ -230,8 +230,10 @@ export function MealEditor({
                   </span>
                 )}
               </span>
-              {was && !gone && (
-                <span className="relative w-32">
+              {was && (
+                // Hidden, not gone, while the item is to be removed: kept
+                // again, it has what was typed in it.
+                <span className="relative w-32" hidden={gone}>
                   <input
                     // Of another food now, the field starts again.
                     key={was.foodId}

@@ -212,6 +212,12 @@ test('the word for portions agrees with the number typed', async () => {
   expect(unitBeside(slices)).toBe('portion')
   fireEvent.change(slices, { target: { value: 'x' } })
   expect(unitBeside(slices)).toBe('portions')
+  // Removed and kept again, the field has what was typed, as its word.
+  fireEvent.change(slices, { target: { value: '1' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Banana bread' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Keep: Banana bread' }))
+  expect(meal().getByLabelText('Amount: Banana bread')).toHaveProperty('value', '1')
+  expect(unitBeside(meal().getByLabelText('Amount: Banana bread'))).toBe('portion')
   // A serving's name and a food's unit stay as they are.
   expect(unitBeside(meal().getByLabelText('Amount: Egg'))).toBe('egg')
   expect(unitBeside(meal().getByLabelText('Amount: Oats'))).toBe('g')
