@@ -443,7 +443,7 @@ test('a unit chosen in a new meal works the amount out anew, both ways', async (
     servings: [{ name: 'handful', amount: 30 }],
   }
   const server = logServer('2026-10-23', {
-    'GET /api/v1/foods': () => Response.json({ foods: [nuts] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [nuts], unfound: [] }),
   })
   renderAt('/')
 
