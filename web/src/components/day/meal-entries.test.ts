@@ -7,6 +7,7 @@ import {
   inputOf,
   itemOf,
   repeatOf,
+  unitGrams,
   unitsOf,
   type Entry,
 } from '@/components/day/meal-entries'
@@ -191,4 +192,13 @@ test('a meal repeated is a new meal of its items, with its words', () => {
   const { note: _note, ...noNote } = meal
   const bare = repeatOf({ ...noNote, description: '' })
   expect('description' in bare || 'note' in bare).toBe(false)
+})
+
+test("a unit's grams are a serving's, a portion's when the food says them, or one", () => {
+  expect(unitGrams(bread, 'serving:slice')).toBe(40)
+  expect(unitGrams(bread, 'serving:loaf')).toBeUndefined()
+  expect(unitGrams(bread, 'g')).toBe(1)
+  expect(unitGrams(stew, 'portion')).toBe(450)
+  const { portion_grams: _grams, ...noGrams } = stew
+  expect(unitGrams(noGrams, 'portion')).toBeUndefined()
 })

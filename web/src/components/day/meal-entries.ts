@@ -79,6 +79,28 @@ export function estimateEntry(): Entry {
   return { key: uuidv7(), kind: 'estimate', name: '', kcal: '', protein: '', carbs: '', fat: '' }
 }
 
+// unitGrams is how many grams (or millilitres) one of a food's unit is,
+// or undefined when the food does not say: a portion without its grams.
+export function unitGrams(food: Food, unit: string): number | undefined {
+  const serving = servingOf(unit)
+  if (serving !== undefined) {
+    return food.servings?.find((s) => s.name === serving)?.amount
+  }
+  return unit === 'portion' ? food.portion_grams : 1
+}
+
+// quantityIn is n of a food in unit (unitsOf), as an item gives it.
+export function quantityIn(unit: string, n: number): ItemInput {
+  const serving = servingOf(unit)
+  if (serving !== undefined) {
+    return { serving, servings: n }
+  }
+  if (unit === 'portion') {
+    return { portions: n }
+  }
+  return { amount: n, unit: unit === 'ml' ? 'ml' : 'g' }
+}
+
 // itemOf is the item an entry sends, with parse reading its numbers; or
 // undefined when one is not a number, a food's amount is 0, or the
 // estimate has no name.
@@ -91,15 +113,7 @@ export function itemOf(
     if (n === undefined || n <= 0) {
       return undefined
     }
-    const base = { id: entry.key, food_id: entry.food.id }
-    const serving = servingOf(entry.unit)
-    if (serving !== undefined) {
-      return { ...base, serving, servings: n }
-    }
-    if (entry.unit === 'portion') {
-      return { ...base, portions: n }
-    }
-    return { ...base, amount: n, unit: entry.unit === 'ml' ? 'ml' : 'g' }
+    return { id: entry.key, food_id: entry.food.id, ...quantityIn(entry.unit, n) }
   }
   const values = [entry.kcal, entry.protein, entry.carbs, entry.fat].map(parse)
   const [kcal, protein, carbs, fat] = values
@@ -122,15 +136,18 @@ export function itemOf(
 // worked out again from the food as it is now, so a food corrected since
 // gives its new values. Only an item of a food has one: an estimate is of
 // a whole plate. Its unit is a serving's name or the food's unit, or, in
-// portions, the word for as many as are typed.
+// portions, the word for as many as are typed; its key, the unit as
+// unitsOf names it.
 export interface Amount {
   n: number
   unit: string | undefined
+  key: string
   portions?: true
   with: (item: Item & { food_id: string }, n: number) => ItemInput
 }
 
-function foodItem(item: Item & { food_id: string }): ItemInput {
+// foodItem is an item's food and note, without how much.
+export function foodItem(item: Item & { food_id: string }): ItemInput {
   return item.note === undefined
     ? { food_id: item.food_id }
     : { food_id: item.food_id, note: item.note }
@@ -146,6 +163,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: q.servings,
       unit: serving,
+      key: servingUnit + serving,
       with: (it, n) => ({ ...foodItem(it), serving, servings: n }),
     }
   }
@@ -162,6 +180,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: q.portions,
       unit: undefined,
+      key: 'portion',
       portions: true,
       with: (it, n) => ({ ...foodItem(it), portions: n }),
     }
@@ -172,6 +191,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: q.amount,
       unit: given ?? (item.unit === 'portion' ? undefined : item.unit),
+      key: given ?? item.unit,
       with: (it, n) =>
         given === undefined
           ? { ...foodItem(it), amount: n }

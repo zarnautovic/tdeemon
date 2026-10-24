@@ -1412,6 +1412,89 @@ test('a day after today is not sent, and says why; a cleared day keeps its own',
   expect(server.sent).toEqual([])
 })
 
+// food is a food of the user's, as GET /api/v1/foods/{id} answers.
+function food(id: string, over: Partial<Food>): Food {
+  return {
+    id,
+    name: 'A food',
+    basis: '100g',
+    source: 'label',
+    archived: false,
+    nutrients: { kcal: 100, protein: 1, carbs: 1, fat: 1 },
+    ...over,
+  }
+}
+
+// foodsOf are the routes of the foods of the breakfast's oats and bread.
+function foodsOf(): Partial<Record<string, Handler>> {
+  return {
+    [`GET /api/v1/foods/${oatsFood}`]: () =>
+      Response.json(food(oatsFood, { name: 'Oats', servings: [{ name: 'cup', amount: 90 }] })),
+    [`GET /api/v1/foods/${bread.food_id ?? ''}`]: () =>
+      Response.json(
+        food(bread.food_id ?? '', { name: 'Banana bread', basis: 'portion', portion_grams: 120 }),
+      ),
+  }
+}
+
+test('an amount is changed to another unit of its food, worked out anew', async () => {
+  const server = mealServer(foodsOf())
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const unit = await meal().findByLabelText('Unit: Oats')
+  expect(unit).toHaveProperty('value', 'g')
+  // 80 g are 0.89 of a cup of 90 g.
+  fireEvent.change(unit, { target: { value: 'serving:cup' } })
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '0.89')
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '1' } })
+  // 1.5 portions of 120 g are 180 g.
+  fireEvent.change(await meal().findByLabelText('Unit: Banana bread'), { target: { value: 'g' } })
+  expect(meal().getByLabelText('Amount: Banana bread')).toHaveProperty('value', '180')
+  // The egg's food did not come: its unit stays as it is.
+  expect(meal().queryByLabelText('Unit: Egg')).toBeNull()
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: oatsFood, serving: 'cup', servings: 1 },
+          },
+          {
+            op: 'replace',
+            item_id: bread.id,
+            item: { food_id: bread.food_id, note: 'home-made', amount: 180, unit: 'g' },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('a unit chosen and chosen back sends the amount as it was', async () => {
+  const server = mealServer(foodsOf())
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const unit = await meal().findByLabelText('Unit: Oats')
+  fireEvent.change(unit, { target: { value: 'serving:cup' } })
+  fireEvent.change(unit, { target: { value: 'g' } })
+  // Not 0.89 of a cup back in grams, 80.1: the 80 it was.
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '80')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
 test("an item's note of lines left as it was sends nothing", async () => {
   const server = mealServer()
   server.elsewhere((m) => ({
