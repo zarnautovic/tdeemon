@@ -1829,6 +1829,40 @@ test('a note typed for an item another food takes the place of goes with the oth
   })
 })
 
+test('an estimate saved as a food is found by a search that was open', async () => {
+  let saved = false
+  const canteen: Food = {
+    ...rye,
+    id: '0193c3a5-0000-7000-8000-0000000000fa',
+    name: 'Canteen salad',
+  }
+  const server = mealServer({
+    'GET /api/v1/foods': () => Response.json({ foods: saved ? [canteen] : [] }),
+  })
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: (request) => {
+      saved = true
+      return patch ? patch(request) : Response.error()
+    },
+  })
+  renderAt('/')
+
+  // A meal being logged, its search finding nothing yet.
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  const log = within(screen.getByRole('form', { name: 'A new meal' }))
+  fireEvent.change(log.getByLabelText('Find a food of yours'), { target: { value: 'canteen' } })
+  expect(await log.findByText('No food of yours matches: give it as an estimate.')).toBeDefined()
+  await edit()
+  fireEvent.click(
+    meal().getByRole('button', { name: 'Save as a food of yours: Salad from the canteen' }),
+  )
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(await log.findByRole('button', { name: /^Canteen salad/ })).toBeDefined()
+})
+
 test('an amount worked out in another unit is sent as worked out, not as rounded to be shown', async () => {
   const server = mealServer({
     [`GET /api/v1/foods/${oatsFood}`]: () =>

@@ -22,12 +22,22 @@ export function useLogMeal(date: string) {
 // useUpdateMeal changes a meal of day date by its ops, in order. Its
 // answer has the day's totals but not its meals, so the days are asked
 // again; the change stands done once they came. So they are for a meal no
-// longer there (404), deleted elsewhere.
+// longer there (404), deleted elsewhere. A change that saved a food asks
+// the foods' searches and lists again too.
 export function useUpdateMeal(date: string) {
   const queryClient = useQueryClient()
   return $api.useMutation('patch', '/api/v1/meals/{id}', {
     scope: dayScope(date),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: days }),
+    onSuccess: (_answer, { body }) =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: days }),
+        ...(body.ops?.some((op) => op.item?.food !== undefined)
+          ? [
+              queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods'] }),
+              queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods/list'] }),
+            ]
+          : []),
+      ]),
     onError: (error) =>
       statusOf(error) === 404 ? queryClient.invalidateQueries({ queryKey: days }) : undefined,
   })
