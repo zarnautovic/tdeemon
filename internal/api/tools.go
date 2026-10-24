@@ -137,7 +137,7 @@ func (s *sessions) tools() []tool {
 		}, s.getHistory).
 			briefly("The user's days, or weeks, from from to to (90 days to today by default, 366 at most): intake against target, " +
 				"weight and trend, the TDEE measured to each day, sleep, resting HR, HRV. For a look back (a trend, a month), by week for a long span; " +
-				"the verdict, today's TDEE, averages: get_summary."),
+				"the verdict, today's TDEE and the averages now: get_summary."),
 		newTool("update_profile_notes", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "set-notes",
 			Method:      http.MethodPut,
