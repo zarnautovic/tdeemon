@@ -99,6 +99,7 @@ export function MealCard({
         <MealEditor
           meal={meal}
           date={date}
+          today={today}
           timeZone={timeZone}
           startHour={startHour}
           onDone={(w) => {

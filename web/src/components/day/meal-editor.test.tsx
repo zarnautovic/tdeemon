@@ -1357,6 +1357,61 @@ test("an item's note alone keeps what the item has, its amount changed elsewhere
   })
 })
 
+test('a meal is moved to a day before, at its time or another', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-23')
+  fireEvent.change(meal().getByLabelText('Day'), { target: { value: '2026-10-22' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  // 08:45 in Los Angeles, a day before.
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ eaten_at: '2026-10-22T15:45:00.000Z' }])
+  })
+})
+
+test('a meal moved to a day and a time is sent as both', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Day'), { target: { value: '2026-10-21' } })
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '19:00' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ eaten_at: '2026-10-22T02:00:00.000Z' }])
+  })
+})
+
+test('a day after today is not sent, and says why; a cleared day keeps its own', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const dayField = meal().getByLabelText('Day')
+  fireEvent.change(dayField, { target: { value: '2026-10-24' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(
+    (await meal().findByText('A meal is of today or a day before.')).getAttribute('role'),
+  ).toBe('alert')
+  expect(dayField.getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+
+  fireEvent.change(dayField, { target: { value: '' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
 test("an item's note of lines left as it was sends nothing", async () => {
   const server = mealServer()
   server.elsewhere((m) => ({

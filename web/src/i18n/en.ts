@@ -145,6 +145,8 @@ export const en = {
     note: 'Note',
     add: 'Add to the meal',
     itemNote: (name: string) => `Note: ${name}`,
+    day: 'Day',
+    dayToCome: 'A meal is of today or a day before.',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'C (g)', fat: 'F (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
     changedElsewhere: 'Changed elsewhere since this opened.',
