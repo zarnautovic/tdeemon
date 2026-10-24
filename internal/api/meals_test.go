@@ -127,6 +127,14 @@ func TestLogMealServingsOfTheFoodsOne(t *testing.T) {
 			t.Errorf("the add, %d: %d %s", i+1, rec.Code, rec.Body.String())
 		}
 	}
+	// A serving's name of spaces is none, and the meal sent again so a
+	// retry too.
+	blank := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "servings": 2, "serving": " "}]}`, meal.NewIDAt(e.now), e.bread)
+	for i, want := range []int{http.StatusCreated, http.StatusOK} {
+		if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", blank, e.session, nil); rec.Code != want {
+			t.Errorf("a blank serving, %d: %d %s, want %d", i+1, rec.Code, rec.Body.String(), want)
+		}
+	}
 }
 
 // A meal logged with a token is the API's; its time, when given, is the

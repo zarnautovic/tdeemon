@@ -41,7 +41,7 @@ type itemInput struct {
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit; none for an estimate."`
 	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
-	Serving  string      `json:"serving,omitempty" doc:"The serving's name, as the food names it; left out, the food's one."`
+	Serving  string      `json:"serving,omitempty" doc:"The serving's name, as the food names it; left out, the food's one, but a new food names it."`
 	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"Portions of a food per portion."`
 	// Name and Nutrients make an estimate.
 	Name      string             `json:"name,omitempty" maxLength:"200" doc:"A whole plate's estimate: its name, with nutrients."`
@@ -69,7 +69,13 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 	if kinds > 1 {
 		return meal.Item{}, nil, nil, huma.Error422UnprocessableEntity(errNotItem.Error())
 	}
-	q := meal.Quantity{Amount: in.Amount, Unit: in.Unit, Servings: in.Servings, Serving: in.Serving, Portions: in.Portions}
+	// A serving's name of spaces is none, as the item stores it, so the
+	// item sent again is the same.
+	serving := in.Serving
+	if strings.TrimSpace(serving) == "" {
+		serving = ""
+	}
+	q := meal.Quantity{Amount: in.Amount, Unit: in.Unit, Servings: in.Servings, Serving: serving, Portions: in.Portions}
 	it := meal.Item{Quantity: q, Note: in.Note}
 	var nf *food.Food
 	var warnings []meal.Warning

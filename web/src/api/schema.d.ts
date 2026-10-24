@@ -1028,7 +1028,7 @@ export interface components {
              * @description Portions of a food per portion.
              */
             portions?: number;
-            /** @description The serving's name, as the food names it; left out, the food's one. */
+            /** @description The serving's name, as the food names it; left out, the food's one, but a new food names it. */
             serving?: string;
             /**
              * Format: double

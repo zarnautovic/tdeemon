@@ -1073,7 +1073,7 @@
             "type": "number"
           },
           "serving": {
-            "description": "The serving's name, as the food names it; left out, the food's one.",
+            "description": "The serving's name, as the food names it; left out, the food's one, but a new food names it.",
             "type": "string"
           },
           "servings": {
