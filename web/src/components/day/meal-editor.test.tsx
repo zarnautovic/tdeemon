@@ -1996,3 +1996,68 @@ test("a meal's note it has is changed from its own button", async () => {
     expect(server.sent.map((s) => s.body)).toEqual([{ note: 'after the run' }])
   })
 })
+
+test("a unit chosen for another food in an item's place works its amount out anew", async () => {
+  const server = withFoods({
+    'GET /api/v1/foods': () =>
+      Response.json({ foods: [{ ...rye, servings: [{ name: 'slice', amount: 40 }] }] }),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  await swap('Banana bread')
+  const amount = meal().getByLabelText('Amount: Rye bread')
+  expect(amount).toHaveProperty('value', '100')
+  fireEvent.change(meal().getByLabelText('Unit: Rye bread'), {
+    target: { value: 'serving:slice' },
+  })
+  expect(amount).toHaveProperty('value', '2.5')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: bread.id,
+            item: { food_id: rye.id, serving: 'slice', servings: 2.5, note: 'home-made' },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('a unit chosen for a food added to the meal works its amount out anew', async () => {
+  const server = withFoods({
+    'GET /api/v1/foods': () =>
+      Response.json({ foods: [{ ...rye, servings: [{ name: 'slice', amount: 40 }] }] }),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.change(meal().getByLabelText('Amount: Rye bread'), { target: { value: '60' } })
+  fireEvent.change(meal().getByLabelText('Unit: Rye bread'), {
+    target: { value: 'serving:slice' },
+  })
+  expect(meal().getByLabelText('Amount: Rye bread')).toHaveProperty('value', '1.5')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'add',
+            item: { id: anId, food_id: rye.id, serving: 'slice', servings: 1.5 },
+          },
+        ],
+      },
+    ])
+  })
+})

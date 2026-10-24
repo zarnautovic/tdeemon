@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
-import { servingOf, unitsOf, type Entry } from '@/components/day/meal-entries'
+import { inUnit, servingOf, unitsOf, type Entry } from '@/components/day/meal-entries'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -67,7 +67,9 @@ export function EntryRow({
           aria-invalid={wrong && notNumber(entry.amount)}
           className={cn(inputClass, 'h-9 w-20 tabular-nums')}
           onChange={(e) => {
-            onChange({ ...entry, amount: e.currentTarget.value })
+            // Typed: what a unit chosen worked out is no more.
+            const { exact: _typed, ...rest } = entry
+            onChange({ ...rest, amount: e.currentTarget.value })
           }}
         />
         <select
@@ -75,7 +77,9 @@ export function EntryRow({
           value={entry.unit}
           className={cn(inputClass, 'h-9 w-auto max-w-32')}
           onChange={(e) => {
-            onChange({ ...entry, unit: e.currentTarget.value })
+            // The amount is worked out anew in the unit chosen, so the item
+            // weighs what it did.
+            onChange(inUnit(entry, e.currentTarget.value, f.parse, f.field))
           }}
         >
           {unitsOf(entry.food).map((u) => (
