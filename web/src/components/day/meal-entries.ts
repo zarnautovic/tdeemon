@@ -80,9 +80,18 @@ export function estimateEntry(): Entry {
 }
 
 // nameKey is a name as the server tells names apart (food.Key): in one
-// form, of no case, and its spaces one.
+// form, case folded, and its spaces one. JavaScript has no case folding
+// of its own: lower case, with the letters it folds otherwise (ß and ẞ
+// are ss, a final sigma is a sigma).
 function nameKey(name: string): string {
-  return name.normalize('NFC').toUpperCase().toLowerCase().split(/\s+/).filter(Boolean).join(' ')
+  return name
+    .normalize('NFC')
+    .toLowerCase()
+    .replaceAll('ß', 'ss')
+    .replaceAll('ς', 'σ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ')
 }
 
 // servingNamed is a food's serving the name names, as the server finds

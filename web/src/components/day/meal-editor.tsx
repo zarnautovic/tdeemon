@@ -331,7 +331,9 @@ export function MealEditor({
         continue
       }
       const food = { ...item, food_id: item.food_id }
-      const n = f.parse(typed)
+      // As a unit chosen worked it out, while the field shows it rounded.
+      const worked = exact[`${item.id} ${String(was.foodId)}`]
+      const n = worked?.text === typed ? worked.n : f.parse(typed)
       const note = noteTyped(was.note)
       // A unit chosen anew: the number is of it.
       const unitTyped = text(fieldOf(item, 'unit'))

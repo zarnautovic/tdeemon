@@ -1622,3 +1622,35 @@ test('a unit chosen for an item whose food changes elsewhere starts again with t
   })
   expect(server.sent).toEqual([])
 })
+
+test('an amount worked out in another unit is sent as worked out, not as rounded to be shown', async () => {
+  const server = mealServer({
+    [`GET /api/v1/foods/${oatsFood}`]: () =>
+      Response.json(food(oatsFood, { name: 'Oats', servings: [{ name: 'sack', amount: 5000 }] })),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '30' } })
+  fireEvent.change(await meal().findByLabelText('Unit: Oats'), {
+    target: { value: 'serving:sack' },
+  })
+  // 30 g are 0.006 of a sack, shown as 0.01.
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '0.01')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: oatsFood, serving: 'sack', servings: 0.006 },
+          },
+        ],
+      },
+    ])
+  })
+})

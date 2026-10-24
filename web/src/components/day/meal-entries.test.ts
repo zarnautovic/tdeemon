@@ -210,4 +210,8 @@ test('a serving is found as the server finds it, whatever its case and spaces', 
   expect(unitGrams(loaf, 'serving:BIG SLICE')).toBe(60)
   expect(unitIn(loaf, 'serving:crust')).toBe('serving:crust')
   expect(unitIn(loaf, 'g')).toBe('g')
+  // Folded as the server folds case: ẞ and ß are ss.
+  const piece = { ...bread, servings: [{ name: 'Großes Stück', amount: 120 }] }
+  expect(unitGrams(piece, 'serving:GROẞES STÜCK')).toBe(120)
+  expect(unitGrams(piece, 'serving:grosses stück')).toBe(120)
 })
