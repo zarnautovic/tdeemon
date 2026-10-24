@@ -134,6 +134,8 @@ export const hr: Messages = {
     note: 'Napomena',
     add: 'Dodaj u obrok',
     itemNote: (name: string) => `Napomena: ${name}`,
+    day: 'Dan',
+    dayToCome: 'Obrok je od danas ili od dana prije.',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'UH (g)', fat: 'M (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
     changedElsewhere: 'Promijenjeno drugdje otkad je ovo otvoreno.',

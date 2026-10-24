@@ -61,8 +61,8 @@ function withNote(item: ItemInput, note: string): ItemInput {
   return note === '' ? rest : { ...rest, note }
 }
 
-// MealEditor changes a meal's description, time (within its day) and
-// note, and its items: the amount of each of a food, the name and values
+// MealEditor changes a meal's description, day (today or one before),
+// time and note, and its items: the amount of each of a food, the name and values
 // of each estimate, the note of each, which stay, and new ones (a food of the user's or an
 // estimate, as a meal logged by hand has them); in one change saved at
 // once, or deletes the meal after
@@ -72,12 +72,15 @@ function withNote(item: ItemInput, note: string): ItemInput {
 export function MealEditor({
   meal,
   date,
+  today,
   timeZone,
   startHour,
   onDone,
 }: {
   meal: Meal
   date: string
+  // The user's logical today: a meal is of it or a day before.
+  today: string
   // The user's clock: its time zone and the hour a day starts at.
   timeZone: string
   startHour: number
@@ -170,6 +173,8 @@ export function MealEditor({
   // amount's by its item, an estimate's value's by fieldOf).
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
+  // A day typed after today.
+  const [toCome, setToCome] = useState(false)
   // What is typed in each amount's field, by the item and its food, for
   // a unit that agrees with it.
   const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
@@ -237,15 +242,19 @@ export function MealEditor({
       return typeof typed === 'string' ? typed.trim() : undefined
     }
     const description = text('description')
-    const time = text('time')
     const mealNote = text('note')
+    // A cleared day or time keeps the one it had.
+    const typedDay = text('day')
+    const day = typedDay !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(typedDay) ? typedDay : date
+    const typedTime = text('time')
+    const time =
+      typedTime !== undefined && /^\d{2}:\d{2}$/.test(typedTime) ? typedTime : openedWith.time
     const fields: Change = {
       ...(description !== undefined && description !== openedWith.description.trim()
         ? { description }
         : {}),
-      // A cleared time keeps the one it had.
-      ...(time !== undefined && /^\d{2}:\d{2}$/.test(time) && time !== openedWith.time
-        ? { eaten_at: mealInstant(date, time, timeZone, startHour) }
+      ...(day !== date || time !== openedWith.time
+        ? { eaten_at: mealInstant(day, time, timeZone, startHour) }
         : {}),
       ...(mealNote !== undefined && mealNote !== openedWith.note.trim() ? { note: mealNote } : {}),
     }
@@ -333,7 +342,8 @@ export function MealEditor({
     }
     setWrong(notNumbers)
     setWrongEntries(bad)
-    if (notNumbers.size > 0 || bad.size > 0) {
+    setToCome(day > today)
+    if (notNumbers.size > 0 || bad.size > 0 || day > today) {
       return
     }
     if (ops.length === 0 && Object.keys(fields).length === 0) {
@@ -345,15 +355,27 @@ export function MealEditor({
 
   return (
     <form ref={form} onSubmit={submit} noValidate className="space-y-3">
+      <label className="block space-y-1">
+        <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
+        <input
+          name="description"
+          defaultValue={openedWith.description}
+          maxLength={200}
+          autoComplete="off"
+          className={inputClass}
+        />
+      </label>
       <div className="flex gap-3">
         <label className="flex-1 space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
+          <span className={cn(fieldLabel, 'block')}>{t.meal.day}</span>
           <input
-            name="description"
-            defaultValue={openedWith.description}
-            maxLength={200}
-            autoComplete="off"
-            className={inputClass}
+            name="day"
+            type="date"
+            defaultValue={date}
+            max={today}
+            aria-invalid={toCome}
+            aria-describedby={toCome ? `${id}-to-come` : undefined}
+            className={cn(inputClass, 'tabular-nums')}
           />
         </label>
         <label className="w-28 space-y-1">
@@ -556,6 +578,11 @@ export function MealEditor({
       {entries.some((e) => wrongEntries.has(e.key)) && (
         <p id={`${id}-wrong-entry`} role="alert" className="text-xs text-destructive">
           {t.log.wrong}
+        </p>
+      )}
+      {toCome && (
+        <p id={`${id}-to-come`} role="alert" className="text-xs text-destructive">
+          {t.meal.dayToCome}
         </p>
       )}
       {none && <p className="text-xs text-muted-foreground">{t.meal.oneItem}</p>}
