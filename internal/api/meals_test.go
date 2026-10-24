@@ -299,6 +299,45 @@ func TestUpdateMeal(t *testing.T) {
 	}
 }
 
+// A note op gives an item a note and changes nothing else of it: an item
+// of a food corrected since keeps what it brought when it was logged.
+func TestUpdateMealNote(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id, toast := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "food_id": %q, "servings": 2, "serving": "slice", "note": "toasted"}]}`,
+		id, toast, e.bread))
+	f, err := e.in.db.FindFoods(t.Context(), e.in.user.ID, "rye", 1)
+	if err != nil || len(f) != 1 {
+		t.Fatalf("the bread: %v, %v", f, err)
+	}
+	f[0].Nutrients.Kcal = 300
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, f[0], e.now); err != nil {
+		t.Fatal(err)
+	}
+
+	note := fmt.Sprintf(`{"ops": [{"op": "note", "item_id": %q, "note": "toasted twice\nwith butter"}]}`, toast)
+	// Sent again, it is the same.
+	for range 2 {
+		rec := e.patch(t, id, note)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("a note: %d %s", rec.Code, rec.Body.String())
+		}
+		checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
+			"meal": {"id": %[1]q, "eaten_at": "*", "description": "", "client": "web", "total": "*", "items": [
+				{"id": %[2]q, "food_id": %[3]q, "name": "Ana's rye bread", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g",
+				 "nutrients": {"kcal": 207, "protein": 6.8, "carbs": 38.4, "fat": 2.6, "fiber": 4.8}, "source": "user", "note": "toasted twice\nwith butter"}
+			]},
+			"day": "*", "warnings": []
+		}`, id, toast, e.bread))
+	}
+	rec := e.patch(t, id, fmt.Sprintf(`{"ops": [{"op": "note", "item_id": %q, "note": ""}]}`, toast))
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"note"`) || !strings.Contains(rec.Body.String(), `"kcal":207`) {
+		t.Errorf("no note: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // update_meal refuses what it cannot do, saying why, and changes nothing.
 func TestUpdateMealRefuses(t *testing.T) {
 	t.Parallel()
@@ -316,6 +355,11 @@ func TestUpdateMealRefuses(t *testing.T) {
 		{"an add of an item without an id", `{"ops": [{"op": "add", "item": ` + estimate + `}]}`, "an add takes an item with its id"},
 		{"a remove with an item", fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q, "item": %s}]}`, soup, estimate), "a remove takes an item_id"},
 		{"the last item removed", fmt.Sprintf(`{"ops": [{"op": "remove", "item_id": %q}]}`, soup), "item"},
+		{"a note of no item", fmt.Sprintf(`{"ops": [{"op": "note", "item_id": %q, "note": "hot"}]}`, meal.NewIDAt(e.now)), "no item"},
+		{"a note without its note", fmt.Sprintf(`{"ops": [{"op": "note", "item_id": %q}]}`, soup), "a note takes an item_id and its note"},
+		{"a note with an item", fmt.Sprintf(`{"ops": [{"op": "note", "item_id": %q, "note": "hot", "item": %s}]}`, soup, estimate), "and no item"},
+		{"a replace with a note", fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": %s, "note": "hot"}]}`, soup, estimate), "only a note op takes a note"},
+		{"a note of spaces at its ends", fmt.Sprintf(`{"ops": [{"op": "note", "item_id": %q, "note": " hot "}]}`, soup), "note"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

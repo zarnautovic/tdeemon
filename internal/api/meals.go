@@ -449,9 +449,10 @@ func (s *sessions) mealAnswer(ctx context.Context, p auth.Principal, m meal.Meal
 
 // mealOp is one change of a meal's items.
 type mealOp struct {
-	Op     string     `json:"op" enum:"add,replace,remove" doc:"add an item; replace item_id with item; remove item_id."`
-	ItemID string     `json:"item_id,omitempty" format:"uuid" doc:"The item to replace or remove."`
+	Op     string     `json:"op" enum:"add,replace,remove,note" doc:"add an item; replace item_id with item; remove item_id; note: give item_id note, and nothing else."`
+	ItemID string     `json:"item_id,omitempty" format:"uuid" doc:"The item to replace, remove or note."`
 	Item   *itemInput `json:"item,omitempty" doc:"The item to add, or to put in the place of item_id."`
+	Note   *string    `json:"note,omitempty" maxLength:"2000" doc:"A note op's note, empty for none: the item keeps what it brought when it was logged."`
 }
 
 type updateMealInput struct {
@@ -653,6 +654,15 @@ var errChanged = huma.Error409Conflict("the item changed while the meal was bein
 func applyOp(m *meal.Meal, op *mealOp, oi opItem) error {
 	at := opTarget(m, oi)
 	switch {
+	case at < 0 && op.Op == "note":
+		return huma.Error422UnprocessableEntity("the meal has no item " + op.ItemID)
+	case op.Op == "note":
+		it, err := m.Items[at].WithNote(*op.Note)
+		if err != nil {
+			return huma.Error422UnprocessableEntity(oneLine(err))
+		}
+		m.Items[at] = it
+		return nil
 	case op.Op == "remove":
 		if at >= 0 {
 			m.Items = slices.Delete(m.Items, at, at+1)
@@ -685,6 +695,18 @@ func checkOp(op *mealOp) error {
 		return huma.Error422UnprocessableEntity("a remove takes an item_id, and no item")
 	case op.Op == "replace" && (op.ItemID == "" || op.Item == nil):
 		return huma.Error422UnprocessableEntity("a replace takes an item_id and the item to put in its place")
+	}
+	return checkNoteOp(op)
+}
+
+// checkNoteOp refuses a note op of the wrong shape, and a note on
+// another op.
+func checkNoteOp(op *mealOp) error {
+	switch {
+	case op.Op == "note" && (op.ItemID == "" || op.Note == nil || op.Item != nil):
+		return huma.Error422UnprocessableEntity("a note takes an item_id and its note, and no item")
+	case op.Op != "note" && op.Note != nil:
+		return huma.Error422UnprocessableEntity("only a note op takes a note: an item's own goes in its item")
 	}
 	return nil
 }

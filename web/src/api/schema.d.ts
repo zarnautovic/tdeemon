@@ -443,7 +443,7 @@ export interface paths {
         head?: never;
         /**
          * Change a meal
-         * @description Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. An item no op touches keeps what it brought when logged, though its food was corrected since. An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. A remove of an item no longer there changes nothing.
+         * @description Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one, note one. An item no op touches keeps what it brought when logged, though its food was corrected since; so does an item a note op gives a note, its only change. An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. A remove of an item no longer there changes nothing.
          */
         patch: operations["update-meal"];
         trace?: never;
@@ -1191,14 +1191,16 @@ export interface components {
             item?: components["schemas"]["ItemInput"];
             /**
              * Format: uuid
-             * @description The item to replace or remove.
+             * @description The item to replace, remove or note.
              */
             item_id?: string;
+            /** @description A note op's note, empty for none: the item keeps what it brought when it was logged. */
+            note?: string;
             /**
-             * @description add an item; replace item_id with item; remove item_id.
+             * @description add an item; replace item_id with item; remove item_id; note: give item_id note, and nothing else.
              * @enum {string}
              */
-            op: "add" | "replace" | "remove";
+            op: "add" | "replace" | "remove" | "note";
         };
         MethodsBody: {
             /** @description The OpenID Connect provider, when the instance has one. */
