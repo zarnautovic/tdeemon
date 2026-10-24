@@ -229,14 +229,14 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPatch,
 			Path:        Prefix + "/meals/{id}",
 			Summary:     "Change a meal",
-			Description: "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one. " +
-				"An item no op touches keeps what it brought when logged, though its food was corrected since. " +
+			Description: "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one, note one. " +
+				"An item no op touches keeps what it brought when logged, though its food was corrected since; so does an item a note op gives a note, its only change. " +
 				"An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. " +
 				"A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. " +
 				"A remove of an item no longer there changes nothing.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.updateMeal).
-			briefly("Changes a meal: its time, its words, and its items by ops in order (add, replace, remove). " +
+			briefly("Changes a meal: its time, its words, and its items by ops in order (add, replace, remove, note: an item's note alone). " +
 				"An item no op touches keeps its values, and so does a replace with what it has: for a corrected food's values, remove the item and add it under a new id. An add under an item id the meal has is a retry when the same, a 409 when not. " +
 				"Answers as log_meal does.").destroys(),
 		newTool("delete_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{

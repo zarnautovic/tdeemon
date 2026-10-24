@@ -1295,7 +1295,7 @@ test('an estimate whose name is cleared sends nothing', async () => {
   expect(server.sent).toEqual([])
 })
 
-test("an item's note is given, changed with its amount, or cleared", async () => {
+test("an item's note alone is a note op; with its amount, the item's replace", async () => {
   const server = mealServer()
   fakeServer(server.routes)
   renderAt('/')
@@ -1315,33 +1315,21 @@ test("an item's note is given, changed with its amount, or cleared", async () =>
     expect(server.sent.map((s) => s.body)).toEqual([
       {
         ops: [
-          {
-            op: 'replace',
-            item_id: oats.id,
-            item: { food_id: oatsFood, amount: 80, unit: 'g', note: 'soaked' },
-          },
-          { op: 'replace', item_id: bread.id, item: { food_id: bread.food_id, portions: 1.5 } },
+          { op: 'note', item_id: oats.id, note: 'soaked' },
+          { op: 'note', item_id: bread.id, note: '' },
           {
             op: 'replace',
             item_id: egg.id,
             item: { food_id: egg.food_id, serving: 'egg', servings: 3, note: 'boiled' },
           },
-          {
-            op: 'replace',
-            item_id: salad.id,
-            item: {
-              name: 'Salad from the canteen',
-              nutrients: { kcal: 250, protein: 8, carbs: 12, fat: 18 },
-              note: 'no dressing',
-            },
-          },
+          { op: 'note', item_id: salad.id, note: 'no dressing' },
         ],
       },
     ])
   })
 })
 
-test("an item's note changed here keeps its amount as changed elsewhere", async () => {
+test("an item's note alone keeps what the item has, its amount changed elsewhere too", async () => {
   const server = mealServer()
   fakeServer(server.routes)
   renderAt('/')
@@ -1363,13 +1351,7 @@ test("an item's note changed here keeps its amount as changed elsewhere", async 
   await waitFor(() => {
     expect(server.sent.map((s) => s.body)).toEqual([
       {
-        ops: [
-          {
-            op: 'replace',
-            item_id: oats.id,
-            item: { food_id: oatsFood, amount: 120, unit: 'g', note: 'soaked' },
-          },
-        ],
+        ops: [{ op: 'note', item_id: oats.id, note: 'soaked' }],
       },
     ])
   })

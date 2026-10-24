@@ -43,7 +43,8 @@ token only reads: say so.
   whether it was eaten twice, and delete the one that was not.
 - A correction ("150 g, not 200") is `update_meal`: replace or remove
   items by `item_id`, add one under a new random UUID (a version 4
-  will do: it holds no time). The ids are in `log_meal`'s answer;
+  will do: it holds no time); an item's note alone is a `note` op,
+  which keeps what the item brought. The ids are in `log_meal`'s answer;
   `get_day` only for a meal whose ids you lack. A meal not eaten is
   `delete_meal`. Never log a meal again.
 - "Undo" is `undo_last`, under a new `id` each time, as a meal's.

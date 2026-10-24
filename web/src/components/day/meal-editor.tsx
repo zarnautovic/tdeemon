@@ -272,7 +272,7 @@ export function MealEditor({
             ? nameTyped
             : item.name
         const note = noteTyped(estimate.note)
-        let changed = name !== item.name || note !== undefined
+        let changed = name !== item.name
         for (const v of values) {
           const typed = typedIn.get(fieldOf(item, v))
           const n = typeof typed === 'string' ? f.parse(typed) : undefined
@@ -291,6 +291,9 @@ export function MealEditor({
             item_id: item.id,
             item: note === undefined ? input : withNote(input, note),
           })
+        } else if (note !== undefined) {
+          // The note alone: what the item brought stays.
+          ops.push({ op: 'note', item_id: item.id, note })
         }
         continue
       }
@@ -314,9 +317,9 @@ export function MealEditor({
           item: note === undefined ? input : withNote(input, note),
         })
       } else if (note !== undefined) {
-        // The note alone: the amount as it is now, changed elsewhere or not.
-        const now = amountOf(food) ?? was.amount
-        ops.push({ op: 'replace', item_id: item.id, item: withNote(now.with(food, now.n), note) })
+        // The note alone: what the item brought stays, though its food
+        // was corrected since, as its amount changed elsewhere or not.
+        ops.push({ op: 'note', item_id: item.id, note })
       }
     }
     const bad = new Set<string>()

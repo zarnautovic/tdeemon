@@ -2,6 +2,7 @@ package meal
 
 import (
 	"math"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -122,6 +123,32 @@ func TestFromFoodScalesOptionalNutrients(t *testing.T) {
 }
 
 // The item is a snapshot: changing the food afterwards changes nothing.
+// WithNote changes an item's note alone: what it brought stays.
+func TestItemWithNote(t *testing.T) {
+	t.Parallel()
+
+	it, err := FromFood(egg(), Quantity{Amount: 100, Unit: "g"}, "boiled")
+	if err != nil {
+		t.Fatal(err)
+	}
+	noted, err := it.WithNote("soft\nwith salt")
+	if err != nil || noted.Note != "soft\nwith salt" {
+		t.Fatalf("a note of lines: %q, %v", noted.Note, err)
+	}
+	noted.Note = it.Note
+	if !reflect.DeepEqual(noted, it) {
+		t.Errorf("a note changed more than the note: %+v, want %+v", noted, it)
+	}
+	if none, err := it.WithNote(""); err != nil || none.Note != "" {
+		t.Errorf("no note: %q, %v", none.Note, err)
+	}
+	for _, note := range []string{" spaced ", strings.Repeat("x", MaxNoteLen+1)} {
+		if _, err := it.WithNote(note); err == nil {
+			t.Errorf("note %.20q: want refused", note)
+		}
+	}
+}
+
 func TestFromFoodIsASnapshot(t *testing.T) {
 	t.Parallel()
 

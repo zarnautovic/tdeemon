@@ -434,4 +434,14 @@ func DayTotal(meals []Meal) food.Nutrients {
 	return t
 }
 
+// WithNote is it with note in place of the one it has, and nothing else:
+// what it brought when it was logged stays.
+func (it Item) WithNote(note string) (Item, error) {
+	if err := validateNote(note); err != nil {
+		return it, err
+	}
+	it.Note = note
+	return it, nil
+}
+
 func validateNote(note string) error { return text.CheckLines("note", note, MaxNoteLen, false) }
