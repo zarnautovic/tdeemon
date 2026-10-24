@@ -139,6 +139,8 @@ export const hr: Messages = {
     anotherFood: (name: string) => `Druga namirnica umjesto: ${name}`,
     inPlaceOf: (name: string) => `Umjesto ${name}:`,
     findInPlaceOf: (name: string) => `Tvoja namirnica umjesto: ${name}`,
+    saveAsFood: (name: string) => `Spremi kao svoju namirnicu: ${name}`,
+    asFood: 'Sprema se kao tvoja namirnica, pojedena jedna porcija.',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'UH (g)', fat: 'M (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
     changedElsewhere: 'Promijenjeno drugdje otkad je ovo otvoreno.',

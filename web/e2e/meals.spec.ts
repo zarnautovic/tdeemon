@@ -70,6 +70,52 @@ test('a meal is repeated today in a tap', async ({ page }) => {
   await expect(toast).toHaveCount(2)
 })
 
+test("a meal's item is given in another unit, and an estimate saved as a food", async ({
+  page,
+}) => {
+  await signIn(page)
+  const food = await page.request.post('/api/v1/foods', {
+    data: {
+      name: 'Muesli',
+      basis: '100g',
+      source: 'label',
+      nutrients: { kcal: 380, protein: 10, carbs: 64, fat: 8 },
+      servings: [{ name: 'cup', amount: 90 }],
+    },
+  })
+  expect(food.ok()).toBe(true)
+  const saved: unknown = await food.json()
+  const foodId =
+    typeof saved === 'object' && saved !== null && 'id' in saved && typeof saved.id === 'string'
+      ? saved.id
+      : ''
+  const logged = await page.request.post('/api/v1/meals', {
+    data: {
+      description: 'Office lunch',
+      items: [
+        { food_id: foodId, amount: 45, unit: 'g' },
+        { name: 'Canteen soup', nutrients: { kcal: 180, protein: 6, carbs: 20, fat: 8 } },
+      ],
+    },
+  })
+  expect(logged.ok()).toBe(true)
+
+  await page.goto('/')
+  const lunch = page.getByRole('article').filter({ hasText: 'Office lunch' })
+  await lunch.getByRole('button', { name: 'Change the meal: Office lunch' }).click()
+  // 45 g are half a cup of 90 g.
+  await lunch.getByLabel('Unit: Muesli').selectOption({ label: 'cup' })
+  await expect(lunch.getByLabel('Amount: Muesli')).toHaveValue('0.5')
+  await lunch.getByLabel('Amount: Muesli').fill('1')
+  await lunch.getByRole('button', { name: 'Save as a food of yours: Canteen soup' }).click()
+  await lunch.getByRole('button', { name: 'Save the meal' }).click()
+
+  await expect(lunch).toContainText('90 g')
+  await expect(lunch).toContainText('Canteen soup')
+  const found = await page.request.get('/api/v1/foods?query=Canteen%20soup')
+  expect(JSON.stringify(await found.json())).toContain('"basis":"portion"')
+})
+
 test("an item's note changed alone keeps what it brought, its food corrected since", async ({
   page,
 }) => {
