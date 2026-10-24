@@ -102,7 +102,8 @@ details.
 - **API tokens are kept out by default.** An operation refuses API
   tokens unless its `Metadata` opens it to a scope
   (`openToTokens(auth.ScopeIngest)`, in `internal/api/tokens.go`);
-  settings and anything about tokens or sessions stay closed to them.
+  settings (the notes for a coach aside, a tool's) and anything about
+  tokens or sessions stay closed to them.
 - **One user's data stays theirs.** A store method for a user's rows
   takes the user's ID and filters by it; a handler takes the user from
   the request's principal. A new operation in the OpenAPI document adds

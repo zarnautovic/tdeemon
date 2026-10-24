@@ -301,6 +301,10 @@
       "writes": 0,
       "tools": [
         "get_history"
+      ],
+      "answer": [
+        "82",
+        "83"
       ]
     }
   },
@@ -605,6 +609,10 @@
       "writes": 0,
       "tools": [
         "get_history"
+      ],
+      "answer": [
+        "82",
+        "83"
       ]
     }
   }
