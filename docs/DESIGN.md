@@ -127,14 +127,15 @@ product or a plain one, never several eaten together (decided October
   known it can be logged in grams too.
 
 A meal of separate things is an item each, in its amount: the agent
-asks a part's amount it does not know, and logs its estimate of the
-plate when the user did not weigh it. A dish, cooked at home or not,
-and a restaurant's or a canteen's plate are no food: the agent logs
-their parts as items when the user names them and the amounts eaten,
-else its estimate of the plate as one item of the meal, without asking
-amounts nobody weighed; a dish the user already has as a food is used
-as it is. Recipes, later, are for a
-dish cooked again: a recipe stores its ingredients and produces a food
+asks a part's amount the user gave no hint of ("some muesli"; "a
+banana" is one), and logs its estimate of a part the user did not weigh
+as an item of its own, beside the others, with no new food. A dish,
+cooked at home or not, and a restaurant's or a canteen's plate are no
+food: the agent logs their parts as items when the user names them and
+the amounts eaten, else its estimate of the plate as one item of the
+meal, without asking amounts nobody weighed; a dish the user already
+has as a food is used as it is. Recipes, later, are for a dish cooked
+again: a recipe stores its ingredients and produces a food
 of its own, with `source: recipe`. A food of `source: dish` or a dish
 per portion, which the code still takes, is what an earlier client or
 an import may have saved.

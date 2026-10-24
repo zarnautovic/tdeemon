@@ -19,8 +19,9 @@ token only reads: say so.
   or portions. A new food's amount names its unit, g or ml; a plate's
   estimate takes no quantity.
 - A meal of several things is an item each, in its amount: yoghurt,
-  whey, muesli and berries are four items. A part's amount unknown: ask;
-  one the user says they did not weigh: your estimate of the plate.
+  whey, muesli and berries are four items. A part of no amount nor
+  count ("some muesli"): ask; one the user did not weigh: your estimate
+  of that part as an item, no new food. "A banana" is one.
 - A food is one food. One the user lacks goes in as a new food:
   packaged, with its label's values per 100 g or 100 ml and a piece of
   it (a bar of 55 g) as a serving; plain (a banana), your values per
