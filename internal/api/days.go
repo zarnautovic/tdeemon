@@ -39,13 +39,13 @@ func newNutrientsBody(n food.Nutrients) nutrientsBody {
 }
 
 // quantityBody is how much of a food was eaten, as it was given: an
-// amount in its unit, a number of a named serving, or a number of
-// portions.
+// amount in its unit, a number of a serving, named or the food's one,
+// or a number of portions.
 type quantityBody struct {
 	Amount   float64 `json:"amount,omitempty"`
 	Unit     string  `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit as given; left out, the unit of the user's food, as the item's amount and unit say."`
 	Servings float64 `json:"servings,omitempty" doc:"How many of serving."`
-	Serving  string  `json:"serving,omitempty" doc:"The named serving: a slice, a piece."`
+	Serving  string  `json:"serving,omitempty" doc:"The named serving: a slice, a piece; left out with servings, the food's one when it was logged, as the item's amount and unit say."`
 	Portions float64 `json:"portions,omitempty"`
 }
 

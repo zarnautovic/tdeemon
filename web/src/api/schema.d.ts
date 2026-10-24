@@ -1332,7 +1332,7 @@ export interface components {
             amount?: number;
             /** Format: double */
             portions?: number;
-            /** @description The named serving: a slice, a piece. */
+            /** @description The named serving: a slice, a piece; left out with servings, the food's one when it was logged, as the item's amount and unit say. */
             serving?: string;
             /**
              * Format: double

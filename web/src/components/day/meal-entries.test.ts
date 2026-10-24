@@ -47,6 +47,9 @@ test('a food comes in the amount it was eaten in last, or 100 of its unit, or a 
   expect(slices).toMatchObject({ amount: '2', unit: 'serving:slice' })
   const grams = foodEntry({ ...bread, last_use: { ...at, quantity: { amount: 80 } } }, field)
   expect(grams).toMatchObject({ amount: '80', unit: 'g' })
+  // Servings without their name, of the food's one: its amount.
+  const unnamed = foodEntry({ ...bread, last_use: { ...at, quantity: { servings: 2 } } }, field)
+  expect(unnamed).toMatchObject({ amount: '80', unit: 'g' })
   // A serving the food no longer has is not offered.
   const gone = foodEntry(
     { ...bread, last_use: { ...at, quantity: { serving: 'loaf', servings: 1 } } },

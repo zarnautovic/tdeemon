@@ -991,6 +991,25 @@ func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
 	}
 }
 
+// A new food's servings name the serving, whatever food the user has of
+// its name: the user's may have another one than the food sent.
+func TestNewFoodServingsNameTheServing(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Oat flakes", bread.Name} {
+		nf := fmt.Sprintf(`{"food": {"name": %q, "basis": "100g", "source": "estimate",
+			"nutrients": {"kcal": 250, "protein": 8, "carbs": 48, "fat": 3}, "servings": [{"name": "loaf", "amount": 500}]}, "servings": 2}`, name)
+		if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+nf+`]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a new food's servings name the serving") {
+			t.Errorf("2 of a new %s: %d %s, want a 422 asking for the serving", name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 // A new food's amount names its unit, whatever food the user has of its
 // name, in a log, an add and a replace.
 func TestNewFoodAmountNamesItsUnit(t *testing.T) {

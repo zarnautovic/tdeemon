@@ -345,6 +345,32 @@ func TestMealOfAFoodTheUserHas(t *testing.T) {
 	}
 }
 
+// A new food's servings without their name, of a food the user has by
+// its name, are refused: of which serving, the user's food's one is not
+// to say.
+func TestMealOfAFoodTheUserHasServingsUnnamed(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := bar()
+	b.Servings = []food.Serving{{Name: "bar", Amount: 50}}
+	if _, err := db.SaveFood(t.Context(), ana, testActor, b, t0); err != nil {
+		t.Fatal(err)
+	}
+	guess := b
+	guess.ID, guess.Servings = uuid.NewV7(), []food.Serving{{Name: "box", Amount: 500}}
+	it, err := meal.FromFood(guess, meal.Quantity{Servings: 2}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{it}
+	var fie *store.FoodItemError
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{guess}, t0); !errors.As(err, &fie) || !strings.Contains(err.Error(), "name the serving") {
+		t.Errorf("a meal of 2 servings of a new food, unnamed = %v, want a FoodItemError asking for the serving", err)
+	}
+}
+
 // An archived food a new food of its name is comes back: the user eats it
 // again, and a search finds it next time. Bringing it back is an event.
 func TestMealOfAnArchivedFood(t *testing.T) {

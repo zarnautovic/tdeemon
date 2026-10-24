@@ -96,8 +96,11 @@ func FromFood(f food.Food, q Quantity, note string) (Item, error) {
 	// Servings without a name are of the food's one serving, when it has
 	// one only: what else they could be of. The item keeps them as given,
 	// as an amount without its unit, so a retry of it is the same.
+	if strings.TrimSpace(q.Serving) == "" {
+		q.Serving = ""
+	}
 	given := q
-	if q.Servings > 0 && strings.TrimSpace(q.Serving) == "" && len(f.Servings) == 1 {
+	if q.Servings > 0 && q.Serving == "" && len(f.Servings) == 1 {
 		q.Serving = f.Servings[0].Name
 	}
 	// An amount without its unit is in the food's, g or ml; the item

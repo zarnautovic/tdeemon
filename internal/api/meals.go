@@ -102,6 +102,20 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 // warnFoodKept is the warning of a new food that is a food the user has.
 const warnFoodKept = "food_kept"
 
+// newFoodQuantity refuses a quantity of a new food that the food's being
+// the user's, as it may turn out to be, could read otherwise: an amount
+// without its unit (the user's food may be by another basis), servings
+// without their name (it may have another serving).
+func newFoodQuantity(nf *food.Food, q meal.Quantity) error {
+	switch {
+	case q.Amount > 0 && q.Unit == "":
+		return huma.Error422UnprocessableEntity(nf.Name + ": a new food's amount names its unit, g or ml")
+	case q.Servings > 0 && strings.TrimSpace(q.Serving) == "":
+		return huma.Error422UnprocessableEntity(nf.Name + ": a new food's servings name the serving")
+	}
+	return nil
+}
+
 // item is sent worked out whole, with warnings about the values of its
 // new food: the item of its quantity of the user's food, or of its new
 // food nf, which the store saves with the meal and whose id the item
@@ -112,11 +126,12 @@ const warnFoodKept = "food_kept"
 func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, nf *food.Food) (meal.Item, []meal.Warning, error) {
 	var f food.Food
 	var warnings []meal.Warning
+	if nf != nil {
+		if err := newFoodQuantity(nf, sent.Quantity); err != nil {
+			return meal.Item{}, nil, err
+		}
+	}
 	switch {
-	case nf != nil && sent.Quantity.Amount > 0 && sent.Quantity.Unit == "":
-		// The food may turn out to be the user's, by another basis, so
-		// the amount must say what it is in.
-		return meal.Item{}, nil, huma.Error422UnprocessableEntity(nf.Name + ": a new food's amount names its unit, g or ml")
 	case nf != nil:
 		had, err := s.db.FoodByKey(ctx, p.User.ID, nf.Name, nf.Brand)
 		switch {

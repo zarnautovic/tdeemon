@@ -155,6 +155,11 @@ func TestFromFoodOneServing(t *testing.T) {
 	if err != nil || !it.SameAs(again) {
 		t.Errorf("the item sent again so is not the same: %v", err)
 	}
+	// A name of spaces is none.
+	blank, err := FromFood(e, Quantity{Servings: 2, Serving: " \t "}, "")
+	if err != nil || blank.Quantity != (Quantity{Servings: 2}) {
+		t.Errorf("a blank serving = %+v, %v; want none", blank.Quantity, err)
+	}
 }
 
 func TestFromFoodRefuses(t *testing.T) {
