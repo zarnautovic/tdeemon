@@ -488,15 +488,18 @@ export function MealEditor({
                 </span>
               )}
               {(was ?? estimate) && (
-                <input
+                <textarea
+                  // A note has lines; of another food now, it starts again,
+                  // as the amount's field does.
+                  key={fieldKey(item)}
                   name={fieldOf(item, 'note')}
                   aria-label={t.meal.itemNote(item.name)}
                   placeholder={t.meal.note}
                   defaultValue={(estimate ? estimate.note : was?.note) ?? ''}
                   maxLength={2000}
-                  autoComplete="off"
+                  rows={1}
                   hidden={gone}
-                  className={cn(inputClass, 'h-8 basis-full text-xs')}
+                  className={cn(inputClass, 'h-auto min-h-8 basis-full py-1 text-xs')}
                 />
               )}
             </li>

@@ -1374,3 +1374,50 @@ test("an item's note changed here keeps its amount as changed elsewhere", async 
     ])
   })
 })
+
+test("an item's note of lines left as it was sends nothing", async () => {
+  const server = mealServer()
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) => (i.id === oats.id ? { ...i, note: 'soaked\novernight' } : i)),
+  }))
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  expect(meal().getByLabelText('Note: Oats')).toHaveProperty('value', 'soaked\novernight')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test("a note typed for an item whose food changes elsewhere starts again with the new one's", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'soaked' } })
+  // A model puts a stew in the oats' place, with a note of its own.
+  const stew = '0193c3a5-0000-7000-8000-0000000000f8'
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) =>
+      i.id === oats.id
+        ? { ...i, food_id: stew, name: 'Stew', note: 'spicy', quantity: { portions: 2 } }
+        : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  expect(await meal().findByLabelText('Note: Stew')).toHaveProperty('value', 'spicy')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
