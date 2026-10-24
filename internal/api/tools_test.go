@@ -729,7 +729,7 @@ func TestFindFoodsOfSeveralQueries(t *testing.T) {
 		t.Errorf("foods = %v, want %v", have, want)
 	}
 	// A query that finds no food says so, the others not.
-	rec = in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=whey&query=musli", "", []*http.Cookie{session}, nil)
+	rec = in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=whey+&query=musli", "", []*http.Cookie{session}, nil)
 	if !strings.Contains(rec.Body.String(), `"unfound":["whey","musli"]`) {
 		t.Errorf("queries that find nothing: %d %s, want them unfound", rec.Code, rec.Body.String())
 	}

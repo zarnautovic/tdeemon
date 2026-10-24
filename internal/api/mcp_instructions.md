@@ -17,8 +17,8 @@ token only reads: say so.
   too ("jaj" and "egg"). Use a found food by its `food_id`; what it
   did not find, do not search again.
 - An item takes one quantity, of three: `"amount": 200, "unit": "g"`,
-  `"servings": 1, "serving": "bar"`, or `"portions": 1`. The unit is
-  the item's, never a food's, and only beside an amount; a new food's
+  `"servings": 1, "serving": "bar"`, or `"portions": 1`. The unit is the
+  item's, never inside `food`, and only beside an amount; a new food's
   amount names it, its servings the serving. A plate's estimate takes
   none.
 - A meal of several things is an item each, in its amount: yoghurt,

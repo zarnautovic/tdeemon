@@ -114,7 +114,7 @@ type foodsOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
 		Foods   []foodBody `json:"foods" nullable:"false"`
-		Unfound []string   `json:"unfound" nullable:"false" doc:"The queries that found no food: foods the user lacks, not to search again."`
+		Unfound []string   `json:"unfound" nullable:"false" doc:"The queries that found no food."`
 	}
 }
 
@@ -148,7 +148,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 			return nil, internalError("finding foods failed", err)
 		}
 		if len(found) == 0 {
-			unfound = append(unfound, q)
+			unfound = append(unfound, strings.TrimSpace(q))
 		}
 		for i := range found {
 			if j, ok := at[found[i].ID]; ok {

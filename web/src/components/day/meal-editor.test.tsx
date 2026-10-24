@@ -944,7 +944,10 @@ const rye: Food = {
 function withFoods(answer: Partial<Record<string, Handler>> = {}) {
   return mealServer({
     'GET /api/v1/foods': (request) =>
-      Response.json({ foods: new URL(request.url).searchParams.get('query') ? [rye] : [] }),
+      Response.json({
+        foods: new URL(request.url).searchParams.get('query') ? [rye] : [],
+        unfound: [],
+      }),
     ...answer,
   })
 }

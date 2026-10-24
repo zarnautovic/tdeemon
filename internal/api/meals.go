@@ -39,7 +39,7 @@ type itemInput struct {
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
 	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved; one of the name and brand of the user's food is that food, unchanged."`
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit; none for an estimate."`
-	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount needs it."`
+	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount, or one per portion, needs it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
 	Serving  string      `json:"serving,omitempty" doc:"The serving's name, as the food names it; left out, the food's one, but a new food names it."`
 	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"Portions of a food per portion."`
