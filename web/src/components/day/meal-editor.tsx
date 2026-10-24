@@ -5,6 +5,7 @@ import { statusOf } from '@/api/errors'
 import { useDeleteMeal, useUpdateMeal } from '@/api/meals'
 import type { components } from '@/api/schema'
 import type { Item, Meal, Warning } from '@/api/types'
+import { amountOf, type Amount } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -13,62 +14,7 @@ import { inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 type Op = components['schemas']['MealOp']
-type ItemInput = components['schemas']['ItemInput']
 type Change = components['schemas']['UpdateMealBody']
-
-// An amount is how much of an item was given, as it was given (grams,
-// portions, servings), and the item that puts another number in its
-// place, given the same way: the item's food (as it is when it is sent)
-// worked out again from the food as it is now, so a food corrected since
-// gives its new values. Only an item of a food has one: an estimate is of
-// a whole plate. Its unit is a serving's name or the food's unit, or, in
-// portions, the word for as many as are typed.
-interface Amount {
-  n: number
-  unit: string | undefined
-  portions?: true
-  with: (item: Item & { food_id: string }, n: number) => ItemInput
-}
-
-function base(item: Item & { food_id: string }): ItemInput {
-  return item.note === undefined
-    ? { food_id: item.food_id }
-    : { food_id: item.food_id, note: item.note }
-}
-
-function amountOf(item: Item): Amount | undefined {
-  if (item.food_id === undefined) {
-    return undefined
-  }
-  const q = item.quantity
-  if (q.servings !== undefined && q.serving !== undefined) {
-    const serving = q.serving
-    return {
-      n: q.servings,
-      unit: serving,
-      with: (it, n) => ({ ...base(it), serving, servings: n }),
-    }
-  }
-  if (q.portions !== undefined) {
-    return {
-      n: q.portions,
-      unit: undefined,
-      portions: true,
-      with: (it, n) => ({ ...base(it), portions: n }),
-    }
-  }
-  if (q.amount !== undefined) {
-    // Given without a unit, it is the food's, and stays so.
-    const given = q.unit
-    return {
-      n: q.amount,
-      unit: given ?? (item.unit === 'portion' ? undefined : item.unit),
-      with: (it, n) =>
-        given === undefined ? { ...base(it), amount: n } : { ...base(it), amount: n, unit: given },
-    }
-  }
-  return undefined
-}
 
 // A start is an item's amount as the editor opened with it, of its food
 // then, and the note it had.

@@ -125,6 +125,9 @@ export const en = {
   },
   meal: {
     edit: (what: string) => `Change the meal: ${what}`,
+    repeat: (what: string) => `Repeat today: ${what}`,
+    repeated: 'Logged again, today at this time.',
+    seeToday: 'See it today',
     amount: (name: string) => `Amount: ${name}`,
     remove: (name: string) => `Remove: ${name}`,
     keep: (name: string) => `Keep: ${name}`,
