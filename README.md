@@ -382,13 +382,15 @@ the tools: those that read with `read` or `tools` (`GET /api/v1/me`,
 the profile and the plan today; `GET /api/v1/days/{date}`, a day,
 `today` or `YYYY-MM-DD`; `GET /api/v1/foods?query=…` and
 `GET /api/v1/foods/{id}`; `GET /api/v1/summary`, calibration's summary
-of the days up to yesterday), and those that
+of the days up to yesterday; `GET /api/v1/history`, the days or weeks of
+a span), and those that
 write with `tools` alone (`POST /api/v1/foods`, a food saved or
 corrected; `POST /api/v1/meals`, and `PATCH` and `DELETE` on
 `/api/v1/meals/{id}`, a meal logged, changed or deleted;
 `PUT` and `DELETE` on `/api/v1/days/{date}/metrics/{kind}`, a
 measurement logged or deleted; `PATCH /api/v1/days/{date}`, a
-check-in; `POST /api/v1/undo`, the latest change taken back). Every
+check-in; `PUT /api/v1/me/notes`, the notes for a coach;
+`POST /api/v1/undo`, the latest change taken back). Every
 other
 operation is closed to tokens (403), so a token can never create, list
 or revoke tokens, read the session or change a setting. Only

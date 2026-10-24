@@ -123,6 +123,30 @@ func (s *sessions) tools() []tool {
 		}, s.getSummary).
 			briefly("Calibration's summary up to yesterday: weekly averages, the trend weight, the measured TDEE with its interval, " +
 				"the phase's verdict, recovery, and days maybe not all logged. Explain it; do not compute it again."),
+		newTool("get_history", readScopes, huma.Operation{
+			OperationID: "get-history",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/history",
+			Summary:     "Get your history",
+			Description: "Your days from from to to, at most 366 of them up to today, or their weeks: " +
+				"what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, " +
+				"as the summary computes them. The charts read it, and a coach looking back.",
+			Tags:   []string{"history"},
+			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		}, s.getHistory).
+			briefly("The user's days, or weeks, from from to to: intake against target, weight and trend, the TDEE measured to each day, " +
+				"sleep and recovery. For looking back; get_summary for now."),
+		newTool("update_profile_notes", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "set-notes",
+			Method:      http.MethodPut,
+			Path:        Prefix + "/me/notes",
+			Summary:     "Set your notes for a coach",
+			Description: "What a coach, a model, should know of you, which get_me gives it: an injury, a food you avoid, how you train. " +
+				"The notes are replaced whole, and empty deletes them. Undo takes a change of them back.",
+			Tags:   []string{"settings"},
+			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		}, s.setNotes).
+			briefly("Replaces the notes for a coach get_profile gives with what you send: send them whole, as what you leave out is deleted.").destroys(),
 		newTool("log_metric", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "log-metric",
 			Method:      http.MethodPut,
