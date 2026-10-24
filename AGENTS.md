@@ -94,7 +94,10 @@ details.
     (`go test ./internal/api -update`) and the TypeScript types
     (`(cd web/codegen && npm ci && npm run gen:api)`);
   - after a migration, refresh the schema snapshot
-    (`go test ./internal/store -run TestSchema -update`).
+    (`go test ./internal/store -run TestSchema -update`);
+  - after `food.Key` or `golang.org/x/text` changes, the web app's table
+    of names' keys
+    (`go test ./internal/domain/food -run TestWebKey -update`).
 - **API tokens are kept out by default.** An operation refuses API
   tokens unless its `Metadata` opens it to a scope
   (`openToTokens(auth.ScopeIngest)`, in `internal/api/tokens.go`);
