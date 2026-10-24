@@ -25,6 +25,7 @@ import { clockAt, mealInstant } from '@/lib/zoned'
 
 type Op = components['schemas']['MealOp']
 type Change = components['schemas']['UpdateMealBody']
+type ItemInput = components['schemas']['ItemInput']
 
 // A start is an item's amount as the editor opened with it, of its food
 // then, and the note it had.
@@ -36,23 +37,33 @@ interface Start {
 }
 
 // The values of an estimate the editor changes, and a start of them: the
-// fields' texts as the editor opened with them, and the note it had.
+// fields' texts as the editor opened with them, its name, and the note it
+// had.
 const values = ['kcal', 'protein', 'carbs', 'fat'] as const
 
 interface EstimateStart {
   texts: Record<(typeof values)[number], string>
+  name: string
   note: string | undefined
 }
 
 // fieldKey is an item's amount field's key: the item, of its food.
 const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
 
-// fieldOf is the name of the field of an estimate's value.
-const fieldOf = (item: Item, v: (typeof values)[number]) => `${item.id}:${v}`
+// fieldOf is the name of the field of an estimate's value, its name or
+// an item's note.
+const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'note') => `${item.id}:${v}`
+
+// withNote is an item with note in place of the one it had: none when it
+// is empty.
+function withNote(item: ItemInput, note: string): ItemInput {
+  const { note: _had, ...rest } = item
+  return note === '' ? rest : { ...rest, note }
+}
 
 // MealEditor changes a meal's description, time (within its day) and
-// note, and its items: the amount of each of a food, the values of each
-// estimate, which stay, and new ones (a food of the user's or an
+// note, and its items: the amount of each of a food, the name and values
+// of each estimate, the note of each, which stay, and new ones (a food of the user's or an
 // estimate, as a meal logged by hand has them); in one change saved at
 // once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
@@ -116,6 +127,7 @@ export function MealEditor({
             carbs: f.field(item.nutrients.carbs),
             fat: f.field(item.nutrients.fat),
           },
+          name: item.name,
           note: item.note,
         }
       : undefined
@@ -244,11 +256,23 @@ export function MealEditor({
         ops.push({ op: 'remove', item_id: item.id })
         continue
       }
+      // An item's note typed anew, or undefined when it is as it started.
+      const noteTyped = (started: string | undefined) => {
+        const typed = text(fieldOf(item, 'note'))
+        return typed !== undefined && typed !== (started ?? '').trim() ? typed : undefined
+      }
       const estimate = estimateOf(item)
       if (estimate !== undefined) {
-        // Only the values typed anew; the others as they are now.
+        // Only the values typed anew; the others as they are now. A name
+        // cleared keeps the one it had.
         const nutrients = { ...item.nutrients }
-        let changed = false
+        const nameTyped = text(fieldOf(item, 'name'))
+        const name =
+          nameTyped !== undefined && nameTyped !== '' && nameTyped !== estimate.name.trim()
+            ? nameTyped
+            : item.name
+        const note = noteTyped(estimate.note)
+        let changed = name !== item.name || note !== undefined
         for (const v of values) {
           const typed = typedIn.get(fieldOf(item, v))
           const n = typeof typed === 'string' ? f.parse(typed) : undefined
@@ -260,11 +284,12 @@ export function MealEditor({
           }
         }
         if (changed) {
-          const note = item.note === undefined ? {} : { note: item.note }
+          const had = item.note === undefined ? {} : { note: item.note }
+          const input = { name, nutrients, ...had }
           ops.push({
             op: 'replace',
             item_id: item.id,
-            item: { name: item.name, nutrients, ...note },
+            item: note === undefined ? input : withNote(input, note),
           })
         }
         continue
@@ -276,12 +301,22 @@ export function MealEditor({
       }
       const food = { ...item, food_id: item.food_id }
       const n = f.parse(typed)
+      const note = noteTyped(was.note)
       if (n === undefined) {
         notNumbers.add(item.id)
       } else if (n !== f.parse(was.text)) {
         // Only an amount typed anew: one left as it started, rounded to
         // what the field shows, is not sent rounded.
-        ops.push({ op: 'replace', item_id: item.id, item: was.amount.with(food, n) })
+        const input = was.amount.with(food, n)
+        ops.push({
+          op: 'replace',
+          item_id: item.id,
+          item: note === undefined ? input : withNote(input, note),
+        })
+      } else if (note !== undefined) {
+        // The note alone: the amount as it is now, changed elsewhere or not.
+        const now = amountOf(food) ?? was.amount
+        ops.push({ op: 'replace', item_id: item.id, item: withNote(now.with(food, now.n), note) })
       }
     }
     const bad = new Set<string>()
@@ -359,6 +394,7 @@ export function MealEditor({
             (openedEstimate !== undefined &&
               (estimateNow === undefined ||
                 estimateNow.note !== openedEstimate.note ||
+                estimateNow.name !== openedEstimate.name ||
                 values.some((v) => estimateNow.texts[v] !== openedEstimate.texts[v])))
           const field = `${item.id} ${String(was?.foodId)}`
           const unit = was?.amount.portions
@@ -419,6 +455,17 @@ export function MealEditor({
                 {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
               </Button>
               {estimate && (
+                <input
+                  name={fieldOf(item, 'name')}
+                  aria-label={t.meal.value(t.log.estimateName, item.name)}
+                  defaultValue={estimate.name}
+                  maxLength={200}
+                  autoComplete="off"
+                  hidden={gone}
+                  className={cn(inputClass, 'h-9 basis-full')}
+                />
+              )}
+              {estimate && (
                 // Hidden, not gone, as an amount's field.
                 <span className="grid basis-full grid-cols-4 gap-2" hidden={gone}>
                   {values.map((v) => (
@@ -439,6 +486,18 @@ export function MealEditor({
                     </label>
                   ))}
                 </span>
+              )}
+              {(was ?? estimate) && (
+                <input
+                  name={fieldOf(item, 'note')}
+                  aria-label={t.meal.itemNote(item.name)}
+                  placeholder={t.meal.note}
+                  defaultValue={(estimate ? estimate.note : was?.note) ?? ''}
+                  maxLength={2000}
+                  autoComplete="off"
+                  hidden={gone}
+                  className={cn(inputClass, 'h-8 basis-full text-xs')}
+                />
               )}
             </li>
           )

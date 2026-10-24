@@ -1248,3 +1248,129 @@ test('an item added by a change that got no answer, then removed elsewhere, stay
   })
   expect(server.sent.at(-1)?.body).toEqual({ ops: [{ op: 'remove', item_id: egg.id }] })
 })
+
+test("an estimate's name is changed, and one cleared keeps the name it had", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const name = meal().getByLabelText('What it is: Salad from the canteen')
+  expect(name).toHaveProperty('value', 'Salad from the canteen')
+  fireEvent.change(name, { target: { value: ' Caesar salad ' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: salad.id,
+            item: {
+              name: 'Caesar salad',
+              nutrients: { kcal: 250, protein: 8, carbs: 12, fat: 18 },
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('an estimate whose name is cleared sends nothing', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('What it is: Salad from the canteen'), {
+    target: { value: ' ' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test("an item's note is given, changed with its amount, or cleared", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  expect(meal().getByLabelText('Note: Banana bread')).toHaveProperty('value', 'home-made')
+  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'soaked ' } })
+  fireEvent.change(meal().getByLabelText('Note: Banana bread'), { target: { value: '' } })
+  fireEvent.change(meal().getByLabelText('Amount: Egg'), { target: { value: '3' } })
+  fireEvent.change(meal().getByLabelText('Note: Egg'), { target: { value: 'boiled' } })
+  fireEvent.change(meal().getByLabelText('Note: Salad from the canteen'), {
+    target: { value: 'no dressing' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: oatsFood, amount: 80, unit: 'g', note: 'soaked' },
+          },
+          { op: 'replace', item_id: bread.id, item: { food_id: bread.food_id, portions: 1.5 } },
+          {
+            op: 'replace',
+            item_id: egg.id,
+            item: { food_id: egg.food_id, serving: 'egg', servings: 3, note: 'boiled' },
+          },
+          {
+            op: 'replace',
+            item_id: salad.id,
+            item: {
+              name: 'Salad from the canteen',
+              nutrients: { kcal: 250, protein: 8, carbs: 12, fat: 18 },
+              note: 'no dressing',
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test("an item's note changed here keeps its amount as changed elsewhere", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // A model sets the oats to 120 g; the window gets the focus back.
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) =>
+      i.id === oats.id ? { ...i, amount: 120, quantity: { amount: 120, unit: 'g' } } : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  expect(await meal().findByText('Changed elsewhere since this opened.')).toBeDefined()
+  fireEvent.change(meal().getByLabelText('Note: Oats'), { target: { value: 'soaked' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: oatsFood, amount: 120, unit: 'g', note: 'soaked' },
+          },
+        ],
+      },
+    ])
+  })
+})
