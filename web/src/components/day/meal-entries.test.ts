@@ -8,6 +8,7 @@ import {
   itemOf,
   repeatOf,
   unitGrams,
+  unitIn,
   unitsOf,
   type Entry,
 } from '@/components/day/meal-entries'
@@ -201,4 +202,12 @@ test("a unit's grams are a serving's, a portion's when the food says them, or on
   expect(unitGrams(stew, 'portion')).toBe(450)
   const { portion_grams: _grams, ...noGrams } = stew
   expect(unitGrams(noGrams, 'portion')).toBeUndefined()
+})
+
+test('a serving is found as the server finds it, whatever its case and spaces', () => {
+  const loaf = { ...bread, servings: [{ name: 'Big  slice', amount: 60 }] }
+  expect(unitIn(loaf, 'serving:big slice')).toBe('serving:Big  slice')
+  expect(unitGrams(loaf, 'serving:BIG SLICE')).toBe(60)
+  expect(unitIn(loaf, 'serving:crust')).toBe('serving:crust')
+  expect(unitIn(loaf, 'g')).toBe('g')
 })

@@ -79,12 +79,32 @@ export function estimateEntry(): Entry {
   return { key: uuidv7(), kind: 'estimate', name: '', kcal: '', protein: '', carbs: '', fat: '' }
 }
 
+// nameKey is a name as the server tells names apart (food.Key): in one
+// form, of no case, and its spaces one.
+function nameKey(name: string): string {
+  return name.normalize('NFC').toUpperCase().toLowerCase().split(/\s+/).filter(Boolean).join(' ')
+}
+
+// servingNamed is a food's serving the name names, as the server finds
+// it: Piece is its piece.
+function servingNamed(food: Food, name: string) {
+  return food.servings?.find((s) => nameKey(s.name) === nameKey(name))
+}
+
+// unitIn is unit as the food names it among its units (unitsOf): a
+// serving given as Piece is its serving:piece.
+export function unitIn(food: Food, unit: string): string {
+  const serving = servingOf(unit)
+  const named = serving === undefined ? undefined : servingNamed(food, serving)
+  return named === undefined ? unit : servingUnit + named.name
+}
+
 // unitGrams is how many grams (or millilitres) one of a food's unit is,
 // or undefined when the food does not say: a portion without its grams.
 export function unitGrams(food: Food, unit: string): number | undefined {
   const serving = servingOf(unit)
   if (serving !== undefined) {
-    return food.servings?.find((s) => s.name === serving)?.amount
+    return servingNamed(food, serving)?.amount
   }
   return unit === 'portion' ? food.portion_grams : 1
 }

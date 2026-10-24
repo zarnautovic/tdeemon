@@ -17,6 +17,7 @@ import {
   quantityIn,
   servingOf,
   unitGrams,
+  unitIn,
   unitsOf,
   type Amount,
   type Entry,
@@ -334,7 +335,9 @@ export function MealEditor({
       const note = noteTyped(was.note)
       // A unit chosen anew: the number is of it.
       const unitTyped = text(fieldOf(item, 'unit'))
-      const unit = unitTyped !== undefined && unitTyped !== was.amount.key ? unitTyped : undefined
+      const itsFood = foodOf(item.food_id)
+      const unitWas = itsFood ? unitIn(itsFood, was.amount.key) : was.amount.key
+      const unit = unitTyped !== undefined && unitTyped !== unitWas ? unitTyped : undefined
       if (n === undefined) {
         notNumbers.add(item.id)
       } else if (unit !== undefined) {
@@ -455,8 +458,12 @@ export function MealEditor({
           // The units its food is given in, the one it has among them, once
           // the food has come: a choice only of two or more.
           const itsFood = foodOf(was?.foodId)
+          // As the food names it: a serving given as Piece is its piece.
+          const unitWas = was && itsFood ? unitIn(itsFood, was.amount.key) : was?.amount.key
           const units =
-            was && itsFood ? [...new Set([was.amount.key, ...unitsOf(itsFood)])] : undefined
+            unitWas !== undefined && itsFood
+              ? [...new Set([unitWas, ...unitsOf(itsFood)])]
+              : undefined
           const choices = units && units.length > 1 ? units : undefined
           return (
             <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
@@ -498,16 +505,18 @@ export function MealEditor({
                   </span>
                   {choices && itsFood && (
                     <select
+                      // Of another food now, the choice starts again.
+                      key={was.foodId}
                       name={fieldOf(item, 'unit')}
                       aria-label={t.log.unit(item.name)}
-                      defaultValue={was.amount.key}
+                      defaultValue={unitWas}
                       className={cn(inputClass, 'h-9 w-auto max-w-28')}
                       onChange={(e) => {
                         // The amount is worked out anew in the unit chosen,
                         // when the food says the grams of both.
                         const unitTo = e.currentTarget.value
                         const amount = e.currentTarget.form?.elements.namedItem(item.id)
-                        const from = unitGrams(itsFood, chosen[field] ?? was.amount.key)
+                        const from = unitGrams(itsFood, chosen[field] ?? unitWas ?? was.amount.key)
                         const to = unitGrams(itsFood, unitTo)
                         setChosen((cs) => ({ ...cs, [field]: unitTo }))
                         if (
@@ -519,7 +528,13 @@ export function MealEditor({
                           const shown = exact[field]
                           const base = shown?.text === amount.value ? shown.n : typedN
                           const n = (base * from) / to
-                          const next = f.field(Math.round(n * 100) / 100)
+                          // Rounded to two decimals, but not to none: 1 g of a serving of
+                          // 500 g is 0.002 of it.
+                          const rounded = Math.round(n * 100) / 100
+                          const next =
+                            rounded > 0 || n === 0
+                              ? f.field(rounded)
+                              : f.field(Number(n.toPrecision(2)), 10)
                           amount.value = next
                           setTyping((ts) => ({ ...ts, [field]: next }))
                           setExact((es) => ({ ...es, [field]: { text: next, n } }))

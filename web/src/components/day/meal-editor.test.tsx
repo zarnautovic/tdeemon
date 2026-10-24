@@ -1541,3 +1541,84 @@ test("a note typed for an item whose food changes elsewhere starts again with th
   })
   expect(server.sent).toEqual([])
 })
+
+test("a serving given in another case is the food's, worked out from its grams", async () => {
+  const server = mealServer({
+    ...foodsOf(),
+    [`GET /api/v1/foods/${egg.food_id ?? ''}`]: () =>
+      Response.json(
+        food(egg.food_id ?? '', { name: 'Egg', servings: [{ name: 'Egg', amount: 50 }] }),
+      ),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // Given as "egg", the food's "Egg": one choice of it, not two.
+  const unit = await meal().findByLabelText('Unit: Egg')
+  expect(unit).toHaveProperty('value', 'serving:Egg')
+  expect(
+    within(unit)
+      .getAllByRole('option')
+      .map((o) => o.textContent),
+  ).toEqual(['Egg', 'g'])
+  fireEvent.change(unit, { target: { value: 'g' } })
+  expect(meal().getByLabelText('Amount: Egg')).toHaveProperty('value', '100')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: egg.id,
+            item: { food_id: egg.food_id, amount: 100, unit: 'g' },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('a small amount in a big unit is not worked out to nothing', async () => {
+  const server = mealServer({
+    [`GET /api/v1/foods/${oatsFood}`]: () =>
+      Response.json(food(oatsFood, { name: 'Oats', servings: [{ name: 'sack', amount: 5000 }] })),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const unit = await meal().findByLabelText('Unit: Oats')
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '1' } })
+  fireEvent.change(unit, { target: { value: 'serving:sack' } })
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '0.0002')
+})
+
+test('a unit chosen for an item whose food changes elsewhere starts again with the new one', async () => {
+  const server = mealServer(foodsOf())
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(await meal().findByLabelText('Unit: Oats'), { target: { value: 'serving:cup' } })
+  // A model puts two portions of the banana bread in the oats' place.
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) =>
+      i.id === oats.id
+        ? { ...i, food_id: bread.food_id ?? '', name: 'Rye loaf', quantity: { portions: 2 } }
+        : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  expect(await meal().findByLabelText('Unit: Rye loaf')).toHaveProperty('value', 'portion')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
