@@ -1150,3 +1150,52 @@ test('items added elsewhere, then corrected elsewhere, are not undone by fields 
     expect(server.sent.map((s) => s.body)).toEqual([{ ops: [{ op: 'remove', item_id: egg.id }] }])
   })
 })
+
+test("an item added by a change that got no answer is the meal's, and not added again", async () => {
+  let up = false
+  const server = withFoods()
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: async (request) => {
+      if (up && patch) {
+        return patch(request)
+      }
+      // Taken, but its answer is lost: the meal has the bread now.
+      const added = /"op":"add","item":\{"id":"([^"]+)"/.exec(await request.text())?.[1]
+      server.elsewhere((m) => ({
+        ...m,
+        items: [
+          ...m.items,
+          { ...oats, id: added ?? '', food_id: rye.id, name: 'Rye bread', amount: 100 },
+        ],
+      }))
+      return problem(503)
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  const again = await meal().findByRole('button', { name: 'Try again' })
+  // The window gets the focus back: the day comes with the bread in it.
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  // One field of it, the meal's, which can be changed again.
+  await waitFor(() => {
+    expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(false)
+  })
+  // Unwanted after all: removed, and not added again with the retry.
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Rye bread' }))
+  up = true
+  fireEvent.click(again)
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  const retried = server.sent.at(-1)?.body
+  expect(opsOf(retried).map((o) => o.op)).toEqual(['remove'])
+  expect(JSON.stringify(retried)).not.toContain('"add"')
+})

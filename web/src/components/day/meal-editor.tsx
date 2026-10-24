@@ -163,8 +163,11 @@ export function MealEditor({
   const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
   // The items added, each under an id made when it was, so the change
   // sent again adds it once; those that cannot be sent as they are; and
-  // the one just added, whose first field takes the focus.
-  const [entries, setEntries] = useState<Entry[]>([])
+  // the one just added, whose first field takes the focus. One the meal
+  // has already (a change that got no answer added it) is the meal's,
+  // changed or removed as its others are, and not added again.
+  const [drafts, setDrafts] = useState<Entry[]>([])
+  const entries = drafts.filter((e) => !meal.items.some((item) => item.id === e.key))
   const [wrongEntries, setWrongEntries] = useState<ReadonlySet<string>>(new Set())
   const [added, setAdded] = useState<string | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
@@ -447,10 +450,10 @@ export function MealEditor({
                 describedBy={wrongEntries.has(entry.key) ? `${id}-wrong-entry` : undefined}
                 focus={entry.key === added}
                 onChange={(changed) => {
-                  setEntries((es) => es.map((e) => (e.key === entry.key ? changed : e)))
+                  setDrafts((es) => es.map((e) => (e.key === entry.key ? changed : e)))
                 }}
                 onRemove={() => {
-                  setEntries((es) => es.filter((e) => e.key !== entry.key))
+                  setDrafts((es) => es.filter((e) => e.key !== entry.key))
                 }}
               />
             ))}
@@ -459,7 +462,7 @@ export function MealEditor({
         <FoodPicker
           onPick={(food) => {
             const entry = foodEntry(food, f.field)
-            setEntries((es) => [...es, entry])
+            setDrafts((es) => [...es, entry])
             setAdded(entry.key)
           }}
         />
@@ -467,7 +470,7 @@ export function MealEditor({
           variant="outline"
           onClick={() => {
             const entry = estimateEntry()
-            setEntries((es) => [...es, entry])
+            setDrafts((es) => [...es, entry])
             setAdded(entry.key)
           }}
         >
