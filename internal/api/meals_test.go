@@ -1096,3 +1096,32 @@ func TestNewFoodAmountNamesItsUnit(t *testing.T) {
 		}
 	}
 }
+
+// A new food's servings with its unit said again are its servings, the
+// same item when sent again; another unit is refused.
+func TestNewFoodServingsWithItsUnit(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	bar := func(unit string) string {
+		return fmt.Sprintf(`{"food": {"name": "Crunchy bar", "brand": "Fitbite", "basis": "100g", "source": "label",
+			"nutrients": {"kcal": 380, "protein": 30, "carbs": 35, "fat": 13}, "servings": [{"name": "bar", "amount": 55}]},
+			"servings": 1, "serving": "bar", "unit": %q}`, unit)
+	}
+	id := meal.NewIDAt(e.now).String()
+	body := fmt.Sprintf(`{"id": %q, "items": [%s]}`, id, bar("g"))
+	for _, want := range []int{http.StatusCreated, http.StatusOK} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+		if rec.Code != want || !strings.Contains(rec.Body.String(), `"quantity":{"servings":1,"serving":"bar"},"amount":55,"unit":"g"`) {
+			t.Fatalf("a bar of a new food, in g: %d %s, want %d and 55 g", rec.Code, rec.Body.String(), want)
+		}
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+bar("ml")+`]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a unit needs an amount") {
+		t.Errorf("a bar of a new food by 100g, in ml: %d %s, want a 422", rec.Code, rec.Body.String())
+	}
+	// With an amount too, it is two quantities, which the error says.
+	both := strings.Replace(bar("g"), `"servings": 1`, `"amount": 55, "servings": 1`, 1)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+both+`]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "give exactly one of an amount") {
+		t.Errorf("a bar of a new food, and 55 g: %d %s, want a 422 of two quantities", rec.Code, rec.Body.String())
+	}
+}

@@ -875,6 +875,8 @@ export interface components {
         };
         FoodsOutputBody: {
             foods: components["schemas"]["FoodBody"][];
+            /** @description The queries that found no food: not to send again, though another form of their word may find it. */
+            unfound: string[];
         };
         HistoryBody: {
             /** @description For granularity day, every day from from to to, in order; else empty. */
@@ -1036,7 +1038,7 @@ export interface components {
              */
             servings?: number;
             /**
-             * @description The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it.
+             * @description The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount, or one per portion, needs it.
              * @enum {string}
              */
             unit?: "g" | "ml";
@@ -1420,7 +1422,7 @@ export interface components {
         ServingBody: {
             /**
              * Format: double
-             * @description In the food's unit: grams or ml.
+             * @description In g, or ml for a food by 100ml.
              */
             amount: number;
             /** @example slice */
