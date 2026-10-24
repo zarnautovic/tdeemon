@@ -875,7 +875,7 @@ export interface components {
         };
         FoodsOutputBody: {
             foods: components["schemas"]["FoodBody"][];
-            /** @description The queries that found no food. */
+            /** @description The queries that found no food: not to send again, though another form of their word may find it. */
             unfound: string[];
         };
         HistoryBody: {

@@ -14,8 +14,9 @@ token only reads: say so.
 - One `find_foods` for a meal, a `query` each: the start of the word as
   the user says it, its ending left off ("jaj" for "2 jaja", "egg" for
   "eggs"); for a user who writes in another language, the English start
-  too ("jaj" and "egg"). Use a found food by its `food_id`; what it
-  did not find, do not search again.
+  too ("jaj" and "egg"). Use a found food by its `food_id`. A word it
+  did not find: once more in another form (singular, no ending,
+  English), never the same query again.
 - An item takes one quantity, of three: `"amount": 200, "unit": "g"`,
   `"servings": 1, "serving": "bar"`, or `"portions": 1`. The unit is the
   item's, never inside `food`, and only beside an amount; a new food's
