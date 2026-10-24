@@ -1,5 +1,9 @@
 # Generated: written by web/codegen, checked by npm run check:api there.
 src/api/schema.d.ts
+# Generated: written from food.Key by go test ./internal/domain/food -run
+# TestWebKey -update, which checks them.
+src/lib/name-key-table.json
+src/test/name-keys.json
 package-lock.json
 codegen/package-lock.json
 dist

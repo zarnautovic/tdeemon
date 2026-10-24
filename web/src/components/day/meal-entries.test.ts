@@ -239,4 +239,7 @@ test('a serving is found as the server finds it, whatever its case and spaces', 
   }
   expect(unitGrams(dots, 'serving:ı')).toBe(90)
   expect(unitGrams(dots, 'serving:i')).toBe(10)
+  // A micro sign is a mu to the server.
+  const micro = { ...bread, servings: [{ name: 'µg', amount: 0.000001 }] }
+  expect(unitIn(micro, 'serving:μg')).toBe('serving:µg')
 })

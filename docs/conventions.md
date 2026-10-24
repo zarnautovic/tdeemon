@@ -203,6 +203,9 @@ A change is done when:
     change;
   - the schema snapshot after a migration
     (`go test ./internal/store -run TestSchema -update`);
+  - the web app's table of names' keys after `food.Key` or
+    `golang.org/x/text` changes
+    (`go test ./internal/domain/food -run TestWebKey -update`);
 - the docs say what changed: README, these conventions, `DESIGN.md` for
   design decisions, `limits.md` for a limit of a plan;
 - no personal data entered the repo (real weights, meals, sessions);

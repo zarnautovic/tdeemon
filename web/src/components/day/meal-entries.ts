@@ -1,5 +1,6 @@
 import type { components } from '@/api/schema'
 import type { Food, Item, Meal } from '@/api/types'
+import { nameKey } from '@/lib/name-key'
 import { uuidv7 } from '@/lib/uuid'
 
 type ItemInput = components['schemas']['ItemInput']
@@ -79,39 +80,9 @@ export function estimateEntry(): Entry {
   return { key: uuidv7(), kind: 'estimate', name: '', kcal: '', protein: '', carbs: '', fat: '' }
 }
 
-// The letters lower case does not fold as the server's case folding
-// does: each folds to these.
-const folds: Record<string, string> = {
-  ß: 'ss',
-  ẞ: 'ss',
-  ς: 'σ',
-  ﬀ: 'ff',
-  ﬁ: 'fi',
-  ﬂ: 'fl',
-  ﬃ: 'ffi',
-  ﬄ: 'ffl',
-  ﬅ: 'st',
-  ﬆ: 'st',
-}
-
-// nameKey is a name as the server tells names apart (food.Key): in one
-// form, case folded, and its spaces one. JavaScript has no case folding
-// of its own: lower case, and the letters above; upper case would make
-// one of I and ı, which the server tells apart.
-function nameKey(name: string): string {
-  return name
-    .normalize('NFC')
-    .toLowerCase()
-    .replaceAll(/[ßẞςﬀ-ﬆ]/gu, (c) => folds[c] ?? c)
-    .split(/\s+/)
-    .filter(Boolean)
-    .join(' ')
-}
-
 // servingNamed is a food's serving the name names, as the server finds
 // it: of that name, or else the one of its key (Piece is its piece); none
-// when the key is of two, which only a folding unlike the server's could
-// make.
+// when the key is of two, which the server's folding never makes.
 function servingNamed(food: Food, name: string) {
   const servings = food.servings ?? []
   const named = servings.find((s) => s.name === name)
