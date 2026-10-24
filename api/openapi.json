@@ -523,7 +523,7 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from.",
+            "description": "Where the values come from; dish is an earlier client's, for no new food.",
             "enum": [
               "label",
               "estimate",
@@ -600,7 +600,7 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from.",
+            "description": "Where the values come from; dish is an earlier client's, for no new food.",
             "enum": [
               "label",
               "estimate",
@@ -2465,7 +2465,7 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from.",
+            "description": "Where the values come from; dish is an earlier client's, for no new food.",
             "enum": [
               "label",
               "estimate",

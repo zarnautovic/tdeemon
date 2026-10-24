@@ -808,7 +808,7 @@ export interface components {
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from.
+             * @description Where the values come from; dish is an earlier client's, for no new food.
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
@@ -835,7 +835,7 @@ export interface components {
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from.
+             * @description Where the values come from; dish is an earlier client's, for no new food.
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
@@ -1661,7 +1661,7 @@ export interface components {
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from.
+             * @description Where the values come from; dish is an earlier client's, for no new food.
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish";
