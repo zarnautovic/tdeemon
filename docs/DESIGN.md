@@ -146,7 +146,8 @@ rather than adding a second, while a new food sent with a meal under
 them is that food as the user has it, unchanged, so a model's guess
 never overwrites a label's values. An alias leads to one food. Search
 runs over names, brands and aliases through a full-text index that
-ignores case and diacritics ("cevapi" finds "Ćevapi") and matches word
+ignores case and diacritics ("cevapi" finds "Ćevapi", and a đ is a d
+or a dj: "grozde" and "grozdje" find "grožđe") and matches word
 prefixes: foods whose name holds every word first, then name and
 aliases, then the rest, shorter names first, from the user's own foods
 alone; archived foods stay out of it but keep their history.

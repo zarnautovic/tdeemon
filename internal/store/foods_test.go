@@ -293,6 +293,7 @@ func TestFindFoods(t *testing.T) {
 	yoghurt := mk("Grčki jogurt 2 %", "Dukat")
 	bread := mk("Proteinski kruh", "", "moj kruh")
 	pecivo := mk("Pecivo sa sezamom", "Kruh i pecivo")
+	grapes := mk("Bijelo grožđe", "Đakovo", "Grožđice")
 	gone := mk("Stari kruh", "")
 	if err := db.SetFoodArchived(t.Context(), ana, testActor, gone.ID, true, t0); err != nil {
 		t.Fatal(err)
@@ -309,6 +310,14 @@ func TestFindFoods(t *testing.T) {
 		{"dukat", []uuid.UUID{yoghurt.ID}},         // by brand
 		{"moj", []uuid.UUID{bread.ID}},             // by alias
 		{"kruh", []uuid.UUID{bread.ID, pecivo.ID}}, // the name first, then the brand; not the archived one
+		{"grozde", []uuid.UUID{grapes.ID}},         // đ as d
+		{"grozdje", []uuid.UUID{grapes.ID}},        // đ as dj
+		{"grozd", []uuid.UUID{grapes.ID}},          // a prefix of both
+		{"GROŽĐE", []uuid.UUID{grapes.ID}},         // as it is, any case
+		{"grožde", []uuid.UUID{grapes.ID}},         // a diacritic but not the đ
+		{"grozdice", []uuid.UUID{grapes.ID}},       // by alias
+		{"dakovo", []uuid.UUID{grapes.ID}},         // by brand
+		{"djakovo", []uuid.UUID{grapes.ID}},        // by brand, đ as dj
 		{"jogurt kruh", nil},                       // all words must match
 		{"", nil},
 		{"  ,;  ", nil},

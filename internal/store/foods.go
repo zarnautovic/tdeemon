@@ -447,8 +447,23 @@ func replaceFoodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f fo
 		}
 	}
 	_, err := tx.ExecContext(ctx, "INSERT INTO foods_fts (food_id, user_id, name, brand, aliases) VALUES (?, ?, ?, ?, ?)",
-		id, uid, f.Name, f.Brand, strings.Join(f.Aliases, "\n"))
+		id, uid, searchText(f.Name), searchText(f.Brand), searchText(strings.Join(f.Aliases, "\n")))
 	return err
+}
+
+// searchText is a text as foods_fts indexes it: the text, and with a đ
+// in it, the text again with d and with dj in its place. The tokenizer's
+// remove_diacritics leaves đ as it is, as no d and mark make it up, and
+// Croatian is typed both ways without the stroke: "grožđe" is found as
+// "grozde" and as "grozdje". Migration 0018 indexes the foods saved
+// before it the same way.
+func searchText(s string) string {
+	if !strings.ContainsAny(s, "đĐ") {
+		return s
+	}
+	d := strings.NewReplacer("đ", "d", "Đ", "D").Replace(s)
+	dj := strings.NewReplacer("đ", "dj", "Đ", "Dj").Replace(s)
+	return s + "\n" + d + "\n" + dj
 }
 
 // FoodByName returns userID's food with name and brand, compared by
@@ -812,8 +827,10 @@ func ftsQuery(s string) string {
 	if len(words) > maxQueryWords {
 		words = words[:maxQueryWords]
 	}
+	// A đ typed is looked for as dj, which searchText indexes too.
+	dj := strings.NewReplacer("đ", "dj", "Đ", "Dj")
 	for i, w := range words {
-		words[i] = `"` + w + `"*`
+		words[i] = `"` + dj.Replace(w) + `"*`
 	}
 	return strings.Join(words, " ")
 }
