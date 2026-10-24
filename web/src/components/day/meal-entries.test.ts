@@ -199,6 +199,11 @@ test("a unit's grams are a serving's, a portion's when the food says them, or on
   expect(unitGrams(bread, 'serving:slice')).toBe(40)
   expect(unitGrams(bread, 'serving:loaf')).toBeUndefined()
   expect(unitGrams(bread, 'g')).toBe(1)
+  // Grams of a food in millilitres are not millilitres: no density.
+  expect(unitGrams(bread, 'ml')).toBeUndefined()
+  expect(unitGrams({ ...bread, basis: '100ml' }, 'g')).toBeUndefined()
+  expect(unitGrams({ ...bread, basis: '100ml' }, 'ml')).toBe(1)
+  expect(unitGrams(stew, 'g')).toBe(1)
   expect(unitGrams(stew, 'portion')).toBe(450)
   const { portion_grams: _grams, ...noGrams } = stew
   expect(unitGrams(noGrams, 'portion')).toBeUndefined()

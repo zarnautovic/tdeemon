@@ -130,14 +130,19 @@ export function unitIn(food: Food, unit: string): string {
   return named === undefined ? unit : servingUnit + named.name
 }
 
-// unitGrams is how many grams (or millilitres) one of a food's unit is,
-// or undefined when the food does not say: a portion without its grams.
+// unitGrams is how many of the food's own unit, grams or millilitres,
+// one of unit is; or undefined when the food does not say: a portion
+// without its grams, or grams of a food in millilitres (or the other way
+// round, an item logged before its basis was corrected), of no density.
 export function unitGrams(food: Food, unit: string): number | undefined {
   const serving = servingOf(unit)
   if (serving !== undefined) {
     return servingNamed(food, serving)?.amount
   }
-  return unit === 'portion' ? food.portion_grams : 1
+  if (unit === 'portion') {
+    return food.portion_grams
+  }
+  return (unit === 'ml') === (food.basis === '100ml') ? 1 : undefined
 }
 
 // quantityIn is n of a food in unit (unitsOf), as an item gives it.
