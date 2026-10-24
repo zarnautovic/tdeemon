@@ -39,7 +39,7 @@ type itemInput struct {
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
 	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved; one of the name and brand of the user's food is that food, unchanged."`
 	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit; none for an estimate."`
-	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it."`
+	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount, or one per portion, needs it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
 	Serving  string      `json:"serving,omitempty" doc:"The serving's name, as the food names it; left out, the food's one, but a new food names it."`
 	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"Portions of a food per portion."`
@@ -86,12 +86,10 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 			return meal.Item{}, nil, nil, huma.Error422UnprocessableEntity("no such food: " + in.FoodID)
 		}
 	case in.Food != nil:
-		f, err := newFood(in.Food)
-		if err != nil {
+		// Its warnings come with the food it is (item).
+		if it, nf, err = sentNewFood(in.Food, it); err != nil {
 			return meal.Item{}, nil, nil, err
 		}
-		// Its warnings come with the food it is (item).
-		nf, it.SentFood = &f, meal.SentFood(f)
 	default:
 		if it, warnings, err = estimateItem(in, q); err != nil {
 			return meal.Item{}, nil, nil, err
@@ -103,6 +101,21 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 		}
 	}
 	return it, nf, warnings, nil
+}
+
+// sentNewFood is it of the new food sent, told by meal.SentFood. Its
+// servings with its unit said again are its servings: a serving's amount
+// is in the food's unit.
+func sentNewFood(fields *FoodFields, it meal.Item) (meal.Item, *food.Food, error) {
+	f, err := newFood(fields)
+	if err != nil {
+		return meal.Item{}, nil, err
+	}
+	it.SentFood = meal.SentFood(f)
+	if q := it.Quantity; q.Servings > 0 && q.Amount == 0 && q.Unit == f.Basis.Unit() {
+		it.Quantity.Unit = ""
+	}
+	return it, &f, nil
 }
 
 // warnFoodKept is the warning of a new food that is a food the user has.

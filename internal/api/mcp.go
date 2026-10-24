@@ -360,7 +360,7 @@ type openAPIDoc struct {
 // alone: a model has each tool's schema with each request, so another
 // that takes it names it in a word. The operation checks it in full.
 var saidOnce = map[string]struct{ of, description string }{
-	"FoodFields": {"upsert_food", "The fields upsert_food takes, but its id and archived."},
+	"FoodFields": {"upsert_food", "The fields upsert_food takes, but its id and archived; no unit: the item has it."},
 	"ItemInput":  {"log_meal", "An item, as log_meal's items take it."},
 }
 

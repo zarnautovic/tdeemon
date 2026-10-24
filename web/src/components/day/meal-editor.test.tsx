@@ -944,7 +944,10 @@ const rye: Food = {
 function withFoods(answer: Partial<Record<string, Handler>> = {}) {
   return mealServer({
     'GET /api/v1/foods': (request) =>
-      Response.json({ foods: new URL(request.url).searchParams.get('query') ? [rye] : [] }),
+      Response.json({
+        foods: new URL(request.url).searchParams.get('query') ? [rye] : [],
+        unfound: [],
+      }),
     ...answer,
   })
 }
@@ -1699,7 +1702,7 @@ test('an estimate saved as a food is found by a search that was open', async () 
     name: 'Canteen salad',
   }
   const server = mealServer({
-    'GET /api/v1/foods': () => Response.json({ foods: saved ? [canteen] : [] }),
+    'GET /api/v1/foods': () => Response.json({ foods: saved ? [canteen] : [], unfound: [] }),
   })
   const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
   fakeServer({
@@ -2000,7 +2003,10 @@ test("a meal's note it has is changed from its own button", async () => {
 test("a unit chosen for another food in an item's place works its amount out anew", async () => {
   const server = withFoods({
     'GET /api/v1/foods': () =>
-      Response.json({ foods: [{ ...rye, servings: [{ name: 'slice', amount: 40 }] }] }),
+      Response.json({
+        foods: [{ ...rye, servings: [{ name: 'slice', amount: 40 }] }],
+        unfound: [],
+      }),
   })
   fakeServer(server.routes)
   renderAt('/')
@@ -2033,7 +2039,10 @@ test("a unit chosen for another food in an item's place works its amount out ane
 test('a unit chosen for a food added to the meal works its amount out anew', async () => {
   const server = withFoods({
     'GET /api/v1/foods': () =>
-      Response.json({ foods: [{ ...rye, servings: [{ name: 'slice', amount: 40 }] }] }),
+      Response.json({
+        foods: [{ ...rye, servings: [{ name: 'slice', amount: 40 }] }],
+        unfound: [],
+      }),
   })
   fakeServer(server.routes)
   renderAt('/')

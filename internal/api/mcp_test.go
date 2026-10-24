@@ -256,11 +256,11 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // the eval measures them (DESIGN.md §6). A change that grows them past it
 // needs a reason, and the eval run again. 13,500 bytes until October
 // 2026, raised for the rules of a meal's parts, then for the coach's
-// history and notes.
+// history and notes, then for an item's quantities and a search again.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 16000
+	const budget = 16500
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
@@ -514,15 +514,21 @@ func TestMCPInstructions(t *testing.T) {
 	}
 	// The fields of the tools' answers, which the instructions name too.
 	toolAnswerNames(t, known)
-	// Every name of the kind tools and fields have, and every word in
-	// backticks.
+	// Every name of the kind tools and fields have, every word in
+	// backticks, and the fields of a JSON fragment in them.
 	for _, m := range regexp.MustCompile("[a-z]+_[a-z_]+|`([^`]+)`").FindAllStringSubmatch(got, -1) {
-		name := m[0]
-		if m[1] != "" {
-			name = m[1]
+		names := []string{m[0]}
+		var fragment map[string]any
+		switch {
+		case m[1] != "" && json.Unmarshal([]byte("{"+m[1]+"}"), &fragment) == nil:
+			names = slices.Collect(maps.Keys(fragment))
+		case m[1] != "":
+			names = []string{m[1]}
 		}
-		if !known[name] {
-			t.Errorf("the instructions name %q, which is no tool nor field of one", name)
+		for _, name := range names {
+			if !known[name] {
+				t.Errorf("the instructions name %q, which is no tool nor field of one", name)
+			}
 		}
 	}
 }

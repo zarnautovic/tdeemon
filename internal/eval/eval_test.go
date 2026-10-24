@@ -90,7 +90,8 @@ type expect struct {
 	// case: the old notes' too, so a change keeps them.
 	Notes []string `json:"notes,omitempty"`
 	// MaxRounds bounds the rounds of tool calls of each message; 2 when
-	// not set (DESIGN.md §5: a log is 1-2 calls).
+	// not set (DESIGN.md §5: a log is 1-2 calls, 3 with a word searched
+	// again in another form), one more for that search.
 	MaxRounds int `json:"max_rounds,omitempty"`
 	// Writes are the changes the client makes, from the event log: 0
 	// for a case that must change nothing.
@@ -286,6 +287,12 @@ type turn struct {
 	tools         []string
 	// answer is what the client said last.
 	answer string
+	// searched are the queries find_foods was sent, in lower case;
+	// searches, its calls; again, that the second sent only queries the
+	// first had not, a word in another form, which may take a round.
+	searched map[string]bool
+	searches int
+	again    bool
 	// message is the id of the model's message whose tool calls were
 	// counted last.
 	message string
@@ -448,6 +455,27 @@ func checkInit(t *testing.T, ev *streamLine, withMCP bool) {
 // add counts the tool calls of an assistant's message, a round when it
 // has any, and logs them and the errors the tools answer. Claude Code
 // streams each block of a message as a line of its own, under its id.
+// search counts a find_foods call of input in.
+func (cur *turn) search(in json.RawMessage) {
+	var q struct {
+		Query []string `json:"query"`
+	}
+	_ = json.Unmarshal(in, &q)
+	if cur.searched == nil {
+		cur.searched = map[string]bool{}
+	}
+	cur.searches++
+	fresh := len(q.Query) > 0
+	for _, w := range q.Query {
+		w = strings.ToLower(strings.TrimSpace(w))
+		fresh = fresh && !cur.searched[w]
+		cur.searched[w] = true
+	}
+	if cur.searches == 2 {
+		cur.again = fresh
+	}
+}
+
 func (cur *turn) add(t *testing.T, ev *streamLine) {
 	t.Helper()
 	calls := 0
@@ -458,6 +486,9 @@ func (cur *turn) add(t *testing.T, ev *streamLine) {
 			name := strings.TrimPrefix(c.Name, "mcp__tdeemon__")
 			cur.tools = append(cur.tools, name)
 			t.Logf("call %s %s", name, oneLine(string(c.Input)))
+			if name == "find_foods" {
+				cur.search(c.Input)
+			}
 		case ev.Type == "user" && c.Type == "tool_result" && c.IsError:
 			// Claude Code refuses an input that is not JSON before it
 			// sends it: the model's slip, not tdeemon's answer.
@@ -554,8 +585,14 @@ func runCase(t *testing.T, c evalCase, model string) string {
 		maxRounds = 2
 	}
 	for i, tr := range turns {
-		if tr.rounds > maxRounds {
-			t.Errorf("message %d: %d rounds of tool calls (%s), want at most %d", i+1, tr.rounds, strings.Join(tr.tools, ", "), maxRounds)
+		// A word searched again in another form, as the instructions
+		// let, takes a round more.
+		most := maxRounds
+		if tr.again {
+			most++
+		}
+		if tr.rounds > most {
+			t.Errorf("message %d: %d rounds of tool calls (%s), want at most %d", i+1, tr.rounds, strings.Join(tr.tools, ", "), most)
 		}
 		// The cost target (DESIGN.md §6) is of what a log pays in full,
 		// the cache warm: a client sends the same prefix with each
@@ -772,5 +809,31 @@ func TestTurnCountsRounds(t *testing.T) {
 	}
 	if cur.rounds != 2 || cur.calls != 3 || !slices.Equal(cur.tools, []string{"find_foods", "get_profile", "log_meal"}) {
 		t.Errorf("rounds %d, calls %d, tools %v; want 2, 3, find_foods get_profile log_meal", cur.rounds, cur.calls, cur.tools)
+	}
+}
+
+// A second find_foods of queries the first had not is a word searched
+// again in another form; one that repeats a query, or a third, is not.
+func TestSearchedAgain(t *testing.T) {
+	t.Parallel()
+
+	for _, c := range []struct {
+		name   string
+		inputs []string
+		again  bool
+	}{
+		{"once", []string{`{"query":["banan"]}`}, false},
+		{"another form", []string{`{"query":["banan"]}`, `{"query":["banana"]}`}, true},
+		{"the same query", []string{`{"query":["banan"]}`, `{"query":["Banan ","banana"]}`}, false},
+		{"a third", []string{`{"query":["a"]}`, `{"query":["b"]}`, `{"query":["c"]}`}, true},
+		{"no query", []string{`{"query":["a"]}`, `{}`}, false},
+	} {
+		var tr turn
+		for _, in := range c.inputs {
+			tr.search(json.RawMessage(in))
+		}
+		if tr.again != c.again {
+			t.Errorf("%s: again %v, want %v", c.name, tr.again, c.again)
+		}
 	}
 }
