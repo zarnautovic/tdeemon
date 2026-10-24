@@ -3,8 +3,10 @@ import { expect, test } from 'vitest'
 import type { Food, Item, Meal } from '@/api/types'
 import {
   amountOf,
+  converted,
   foodEntry,
   inputOf,
+  inUnit,
   itemOf,
   repeatOf,
   unitGrams,
@@ -242,4 +244,32 @@ test('a serving is found as the server finds it, whatever its case and spaces', 
   // A micro sign is a mu to the server.
   const micro = { ...bread, servings: [{ name: 'µg', amount: 0.000001 }] }
   expect(unitIn(micro, 'serving:μg')).toBe('serving:µg')
+})
+
+test("a food's entry in another unit weighs what it did, both ways", () => {
+  const nuts: Food = { ...bread, name: 'Nuts', servings: [{ name: 'handful', amount: 30 }] }
+  const grams = { key: 'k', kind: 'food' as const, food: nuts, amount: '100', unit: 'g' }
+  const handfuls = inUnit(grams, 'serving:handful', parse, field)
+  expect(handfuls).toMatchObject({ unit: 'serving:handful', amount: '3.33', exact: 100 / 30 })
+  // Sent as worked out, not as shown.
+  expect(itemOf(handfuls, parse)).toMatchObject({ serving: 'handful', servings: 100 / 30 })
+  const back = inUnit(handfuls, 'g', parse, field)
+  expect(back).toMatchObject({ unit: 'g', amount: '100', exact: 100 })
+  expect(itemOf(back, parse)).toMatchObject({ amount: 100, unit: 'g' })
+  // Typed, the amount is the one typed.
+  const typed = inUnit({ ...grams, unit: 'serving:handful', amount: '2' }, 'g', parse, field)
+  expect(typed).toMatchObject({ amount: '60', exact: 60 })
+})
+
+test("a food's entry in a unit of no grams asks for its amount anew", () => {
+  const stewGrams = { key: 'k', kind: 'food' as const, food: stew, amount: '1', unit: 'portion' }
+  const { portion_grams: _grams, ...ungrammed } = stew
+  const noGrams = { ...stewGrams, food: ungrammed }
+  expect(inUnit(stewGrams, 'g', parse, field)).toMatchObject({ amount: '450', exact: 450 })
+  const asked = inUnit(noGrams, 'g', parse, field)
+  expect(asked).toEqual({ key: 'k', kind: 'food', food: noGrams.food, amount: '', unit: 'g' })
+  expect(inUnit({ ...stewGrams, amount: 'a lot' }, 'g', parse, field)).toMatchObject({
+    amount: '',
+  })
+  expect(converted(bread, 'g', 'ml', 100)).toBeUndefined()
 })

@@ -10,13 +10,14 @@ import { EntryRow } from '@/components/day/entry-row'
 import { FoodPicker } from '@/components/day/food-picker'
 import {
   amountOf,
+  converted,
   estimateEntry,
   foodEntry,
   foodItem,
   itemOf,
   quantityIn,
   servingOf,
-  unitGrams,
+  shownAmount,
   unitIn,
   unitsOf,
   type Amount,
@@ -554,28 +555,30 @@ export function MealEditor({
                           // when the food says the grams of both.
                           const unitTo = e.currentTarget.value
                           const amount = e.currentTarget.form?.elements.namedItem(item.id)
-                          const from = unitGrams(
-                            itsFood,
-                            chosen[field] ?? unitWas ?? was.amount.key,
-                          )
-                          const to = unitGrams(itsFood, unitTo)
                           setChosen((cs) => ({ ...cs, [field]: unitTo }))
                           if (!(amount instanceof HTMLInputElement)) {
                             return
                           }
-                          if (!from || !to || !Number.isFinite(typedN)) {
+                          // From what a unit chosen worked out, or the
+                          // amount as it was while it is not typed, or as it
+                          // is typed.
+                          const base =
+                            exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
+                          const worked = Number.isFinite(base)
+                            ? converted(
+                                itsFood,
+                                chosen[field] ?? unitWas ?? was.amount.key,
+                                unitTo,
+                                base,
+                              )
+                            : undefined
+                          if (worked === undefined) {
                             // Not to be worked out: the amount is typed anew
                             // in the unit chosen, not taken over in it.
                             amount.value = ''
                             setTyping((ts) => ({ ...ts, [field]: '' }))
                             setExact(({ [field]: _gone, ...es }) => es)
                           } else {
-                            // From what a unit chosen worked out, or the
-                            // amount as it was while it is not typed, or as
-                            // it is typed.
-                            const base =
-                              exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
-                            const worked = (base * from) / to
                             // Back in its own unit, the amount it was, not
                             // one a hair off it.
                             const n =
@@ -583,13 +586,7 @@ export function MealEditor({
                               Math.abs(worked - was.amount.n) <= 1e-9 * Math.max(1, was.amount.n)
                                 ? was.amount.n
                                 : worked
-                            // Rounded to two decimals, but not to none: 1 g of a serving of
-                            // 500 g is 0.002 of it.
-                            const rounded = Math.round(n * 100) / 100
-                            const next =
-                              rounded > 0 || n === 0
-                                ? f.field(rounded)
-                                : f.field(Number(n.toPrecision(2)), 10)
+                            const next = shownAmount(n, f.field)
                             amount.value = next
                             setTyping((ts) => ({ ...ts, [field]: next }))
                             setExact((es) => ({ ...es, [field]: n }))

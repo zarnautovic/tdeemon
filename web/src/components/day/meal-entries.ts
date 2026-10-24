@@ -8,9 +8,11 @@ type LogMealBody = components['schemas']['LogMealBody']
 
 // An entry is an item of a meal being logged, as typed: a food of the
 // user's in an amount and a unit of it, or an estimate of a whole plate.
-// Its key is the item's id too, so a meal sent again is the same.
+// Its key is the item's id too, so a meal sent again is the same. A
+// food's exact is the amount a unit chosen worked out, before it was
+// rounded to be shown, until the amount is typed: it is what is sent.
 export type Entry =
-  | { key: string; kind: 'food'; food: Food; amount: string; unit: string }
+  | { key: string; kind: 'food'; food: Food; amount: string; unit: string; exact?: number }
   | {
       key: string
       kind: 'estimate'
@@ -20,6 +22,9 @@ export type Entry =
       carbs: string
       fat: string
     }
+
+// A food entry is an entry of a food of the user's.
+export type FoodEntry = Entry & { kind: 'food' }
 
 // A unit of a food's: its grams or millilitres (g, ml), its portion
 // (portion), or a serving it names (serving:<name>).
@@ -116,6 +121,48 @@ export function unitGrams(food: Food, unit: string): number | undefined {
   return (unit === 'ml') === (food.basis === '100ml') ? 1 : undefined
 }
 
+// converted is n of a food in unit from worked out in unit to, or
+// undefined when the food does not say the grams of both (unitGrams).
+// One a hair off the amount rounded to be shown is that amount: 100 g in
+// servings of 30 g and back is 100 g, not 100.00000000000001.
+export function converted(food: Food, from: string, to: string, n: number): number | undefined {
+  const fromGrams = unitGrams(food, from)
+  const toGrams = unitGrams(food, to)
+  if (!fromGrams || !toGrams) {
+    return undefined
+  }
+  const worked = (n * fromGrams) / toGrams
+  const rounded = Math.round(worked * 100) / 100
+  return Math.abs(worked - rounded) <= 1e-9 * Math.max(1, rounded) ? rounded : worked
+}
+
+// shownAmount is an amount a unit chosen worked out, as its field shows
+// it: rounded to two decimals, but not to none, as 1 g of a serving of
+// 500 g is 0.002 of it; field formats it.
+export function shownAmount(n: number, field: (n: number, digits?: number) => string): string {
+  const rounded = Math.round(n * 100) / 100
+  return rounded > 0 || n === 0 ? field(rounded) : field(Number(n.toPrecision(2)), 10)
+}
+
+// inUnit is a food's entry in another of its units, its amount worked
+// out anew when the food says the grams of both, from the amount a unit
+// chosen worked out or else the one typed; otherwise emptied, to be typed
+// anew in the unit chosen rather than taken over in it.
+export function inUnit(
+  entry: FoodEntry,
+  unit: string,
+  parse: (s: string) => number | undefined,
+  field: (n: number, digits?: number) => string,
+): FoodEntry {
+  const { exact: _was, ...rest } = entry
+  const base = entry.exact ?? parse(entry.amount)
+  const n = base === undefined ? undefined : converted(entry.food, entry.unit, unit, base)
+  if (n === undefined) {
+    return { ...rest, unit, amount: '' }
+  }
+  return { ...rest, unit, amount: shownAmount(n, field), exact: n }
+}
+
 // quantityIn is n of a food in unit (unitsOf), as an item gives it.
 export function quantityIn(unit: string, n: number): ItemInput {
   const serving = servingOf(unit)
@@ -136,7 +183,7 @@ export function itemOf(
   parse: (s: string) => number | undefined,
 ): ItemInput | undefined {
   if (entry.kind === 'food') {
-    const n = parse(entry.amount)
+    const n = entry.exact ?? parse(entry.amount)
     if (n === undefined || n <= 0) {
       return undefined
     }

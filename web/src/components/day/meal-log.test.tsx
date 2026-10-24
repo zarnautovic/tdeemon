@@ -428,3 +428,49 @@ test('the word for portions agrees with the amount typed', async () => {
   fireEvent.change(composer().getByLabelText('Amount: Stew'), { target: { value: '2' } })
   expect(unit()).toBe('portions')
 })
+
+test('a unit chosen in a new meal works the amount out anew, both ways', async () => {
+  const nuts: Food = {
+    id: '0193c3a5-0000-7000-8000-0000000000f3',
+    name: 'Walnuts',
+    basis: '100g',
+    source: 'label',
+    archived: false,
+    nutrients: { kcal: 654, protein: 15, carbs: 14, fat: 65 },
+    servings: [{ name: 'handful', amount: 30 }],
+  }
+  const server = logServer('2026-10-23', {
+    'GET /api/v1/foods': () => Response.json({ foods: [nuts] }),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'wal' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Walnuts/ }))
+  const amount = () => composer().getByLabelText('Amount: Walnuts')
+  const unit = composer().getByLabelText('Unit: Walnuts')
+  expect(amount()).toHaveProperty('value', '100')
+  fireEvent.change(unit, { target: { value: 'serving:handful' } })
+  expect(amount()).toHaveProperty('value', '3.33')
+  fireEvent.change(unit, { target: { value: 'g' } })
+  expect(amount()).toHaveProperty('value', '100')
+  fireEvent.change(unit, { target: { value: 'serving:handful' } })
+  fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+  expect(await screen.findByText('The meal is logged.')).toBeDefined()
+  expect(server.sent).toEqual([
+    {
+      id: expect.any(String) as unknown,
+      eaten_at: expect.any(String) as unknown,
+      items: [
+        {
+          id: expect.any(String) as unknown,
+          food_id: nuts.id,
+          serving: 'handful',
+          // As worked out, not as shown.
+          servings: 100 / 30,
+        },
+      ],
+    },
+  ])
+})

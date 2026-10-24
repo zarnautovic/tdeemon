@@ -29,6 +29,8 @@ test('a meal is logged by hand, of a food and an estimate', async ({ page }) => 
   await form.getByLabel('Find a food of yours').press('Enter')
   await expect(form).toBeVisible()
   await form.getByLabel('Unit: Basmati rice').selectOption({ label: 'cup' })
+  // 100 g, worked out in cups of 60 g.
+  await expect(form.getByLabel('Amount: Basmati rice')).toHaveValue('1.67')
   await form.getByLabel('Amount: Basmati rice').fill('2')
   await form.getByRole('button', { name: 'Add an estimate' }).click()
   await form.getByLabel('What it is').fill('Curry')
