@@ -69,6 +69,7 @@ token only reads: say so.
 - The weeks, the TDEE, the phase, recovery: `get_summary`, explained
   with its doubts and flags.
 - A look back (a trend, the last month, one week against another):
-  `get_history`, by week for more than a month.
+  `get_history` from the span's start; by week for more than a month,
+  the weeks holding the averages, days only when asked.
 - A meal to suggest fits what `get_day` says remains, of foods the user
   has (`find_foods`).

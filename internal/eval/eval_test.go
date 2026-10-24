@@ -84,6 +84,8 @@ type expect struct {
 	Weight     float64  `json:"weight,omitempty"`
 	Mood       []int    `json:"mood,omitempty"`
 	Hunger     []int    `json:"hunger,omitempty"`
+	// Answer are words the last answer holds: what it must have read.
+	Answer []string `json:"answer,omitempty"`
 	// Notes are words the notes for a coach hold after the case, in any
 	// case: the old notes' too, so a change keeps them.
 	Notes []string `json:"notes,omitempty"`
@@ -240,9 +242,9 @@ func newInstance(t *testing.T, c evalCase) instance {
 			must(err)
 			dinner, err := meal.Estimate(n[5], food.Nutrients{Kcal: 1900 + float64(i%5)*60, Protein: 140, Carbs: 190, Fat: 60}, "")
 			must(err)
-			at := now.AddDate(0, 0, -i)
+			at := cal.Start(d).Add(14 * time.Hour)
 			_, _, err = db.CreateMeal(ctx, u.ID, actor, meal.Meal{
-				ID: meal.NewIDAt(at), EatenAt: at, Day: cal.DayOf(at),
+				ID: meal.NewIDAt(at), EatenAt: at, Day: d,
 				Client: meal.ClientWeb, Items: []meal.Item{dinner},
 			}, now)
 			must(err)
@@ -282,6 +284,8 @@ type turn struct {
 	calls, rounds int
 	tokens, fresh int
 	tools         []string
+	// answer is what the client said last.
+	answer string
 	// message is the id of the model's message whose tool calls were
 	// counted last.
 	message string
@@ -338,6 +342,7 @@ func run(t *testing.T, model, mcpConfig string, messages []map[string]any) []tur
 		}
 		cur.tokens = ev.Usage.Input + ev.Usage.CacheCreation + ev.Usage.CacheRead
 		cur.fresh = ev.Usage.Input + ev.Usage.CacheCreation
+		cur.answer = ev.Result
 		turns = append(turns, cur)
 		t.Logf("answer: %s", oneLine(ev.Result))
 		cur = turn{}
@@ -624,6 +629,14 @@ func checkCalls(t *testing.T, in instance, e expect, turns []turn) {
 	for _, name := range e.NotTools {
 		if slices.Contains(called, name) {
 			t.Errorf("a call of %s among %v, want none", name, called)
+		}
+	}
+	if len(turns) > 0 {
+		last := turns[len(turns)-1].answer
+		for _, w := range e.Answer {
+			if !strings.Contains(last, w) {
+				t.Errorf("the last answer holds no %q: %s", w, oneLine(last))
+			}
 		}
 	}
 }
