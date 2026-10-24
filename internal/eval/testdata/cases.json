@@ -83,7 +83,7 @@
     "name": "a meal of parts",
     "lang": "en",
     "say": [
-      "Breakfast: 300 g of Greek yoghurt (Dukat) with 30 g of whey protein, 50 g of muesli and 100 g of blueberries."
+      "Breakfast: 300 g of Greek yoghurt (Dukat) with 30 g of whey protein, 50 g of muesli and a banana of 120 g."
     ],
     "expect": {
       "meals": 1,
@@ -96,7 +96,7 @@
       "new_foods": [
         "whey",
         "sli",
-        "blueberr"
+        "banan"
       ],
       "not_tools": [
         "get_day"
@@ -115,6 +115,36 @@
       "kcal": [
         300,
         800
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a part without its amount",
+    "lang": "en",
+    "say": [
+      "Breakfast: 200 g of Greek yoghurt (Dukat) with some muesli."
+    ],
+    "expect": {
+      "meals": 0,
+      "writes": 0
+    }
+  },
+  {
+    "name": "a restaurant plate of named parts",
+    "lang": "en",
+    "say": [
+      "Lunch at a restaurant: a steak, fries and a side salad."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        600,
+        1500
       ],
       "no_new_foods": true,
       "not_tools": [
@@ -310,7 +340,7 @@
     "name": "obrok od dijelova",
     "lang": "hr",
     "say": [
-      "Doručak: 300 g grčkog jogurta (Dukat) s 30 g wheya, 50 g müslija i 100 g borovnica."
+      "Doručak: 300 g grčkog jogurta (Dukat) s 30 g wheya, 50 g müslija i bananom od 120 g."
     ],
     "expect": {
       "meals": 1,
@@ -323,7 +353,7 @@
       "new_foods": [
         "whey",
         "sli",
-        "borovnic"
+        "banan"
       ],
       "not_tools": [
         "get_day"
@@ -342,6 +372,36 @@
       "kcal": [
         300,
         800
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "dio bez količine",
+    "lang": "hr",
+    "say": [
+      "Doručak: 200 g grčkog jogurta (Dukat) s malo müslija."
+    ],
+    "expect": {
+      "meals": 0,
+      "writes": 0
+    }
+  },
+  {
+    "name": "tanjur u restoranu s dijelovima",
+    "lang": "hr",
+    "say": [
+      "Ručak u restoranu: odrezak, pomfrit i mala salata."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        600,
+        1500
       ],
       "no_new_foods": true,
       "not_tools": [

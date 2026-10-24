@@ -24,8 +24,9 @@ token only reads: say so.
   packaged, with its label's values per 100 g or 100 ml and a piece of
   it (a bar of 55 g) as a serving; plain (a banana), your values per
   100 g, `source` estimate. A dish, a restaurant's or a canteen's plate
-  is no food: its parts as items when you can tell them, else your
-  estimate of the plate, by name.
+  is no food: its parts as items when the user names them and their
+  amounts, else your estimate of the plate, by name, unasked. A dish the
+  user has as a food: use it.
 - One `log_meal` a meal. Make its `id`, a UUIDv7, only with a tool that
   runs code, never by hand: it holds the time it is made, which the
   server checks. Sent again after a timeout under it, it is safe.

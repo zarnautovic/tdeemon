@@ -122,13 +122,15 @@ product or a plain one, never several eaten together (decided October
 - **by weight or volume** (most of them): values per 100 g or 100 ml, so
   any amount eaten is one multiplication, half a bar as much as a whole
   one. Named servings turn "4 eggs" or "half a roll" into grams;
-- **per portion**: a food judged by the piece (a banana, a muffin),
+- **per portion**: a food judged by the piece (a muffin, a croissant),
   eaten whole or in part ("half a portion"). With the portion's weight
   known it can be logged in grams too.
 
 A dish, a restaurant's or a canteen's plate, a home-cooked meal is no
-food: the agent logs its parts as items when it can tell them, else its
-estimate of the plate as one item of the meal. Recipes, later, are for a
+food: the agent logs its parts as items when the user names them and
+their amounts, else its estimate of the plate as one item of the meal,
+without asking amounts nobody weighed; a dish the user already has as a
+food is used as it is. Recipes, later, are for a
 dish cooked again: a recipe stores its ingredients and produces a food
 of its own, with `source: recipe`. A food of `source: dish` or a dish
 per portion, which the code still takes, is what an earlier client or
@@ -210,7 +212,7 @@ when its portion weight is known.
 ```jsonc
 { "food_id": "0199…", "amount": 150, "unit": "g" }           // known food, in its unit (g or ml)
 { "food_id": "0199…", "servings": 4, "serving": "piece" }    // a named serving: 4 eggs
-{ "food_id": "0199…", "portions": 0.5 }                      // half a canteen portion
+{ "food_id": "0199…", "portions": 0.5 }                      // half a muffin
 { "food": { "name": "Greek yoghurt 2 %", "basis": "100g", "source": "label",
             "kcal": 73, "protein": 9.5, "carbs": 3.6, "fat": 2.0 },
   "amount": 200, "unit": "g" }                               // a new food, saved with the meal
