@@ -7,6 +7,8 @@ import {
   inputOf,
   itemOf,
   repeatOf,
+  unitGrams,
+  unitIn,
   unitsOf,
   type Entry,
 } from '@/components/day/meal-entries'
@@ -191,4 +193,50 @@ test('a meal repeated is a new meal of its items, with its words', () => {
   const { note: _note, ...noNote } = meal
   const bare = repeatOf({ ...noNote, description: '' })
   expect('description' in bare || 'note' in bare).toBe(false)
+})
+
+test("a unit's grams are a serving's, a portion's when the food says them, or one", () => {
+  expect(unitGrams(bread, 'serving:slice')).toBe(40)
+  expect(unitGrams(bread, 'serving:loaf')).toBeUndefined()
+  expect(unitGrams(bread, 'g')).toBe(1)
+  // Grams of a food in millilitres are not millilitres: no density.
+  expect(unitGrams(bread, 'ml')).toBeUndefined()
+  expect(unitGrams({ ...bread, basis: '100ml' }, 'g')).toBeUndefined()
+  expect(unitGrams({ ...bread, basis: '100ml' }, 'ml')).toBe(1)
+  expect(unitGrams(stew, 'g')).toBe(1)
+  expect(unitGrams(stew, 'portion')).toBe(450)
+  const { portion_grams: _grams, ...noGrams } = stew
+  expect(unitGrams(noGrams, 'portion')).toBeUndefined()
+})
+
+test('a serving is found as the server finds it, whatever its case and spaces', () => {
+  const loaf = { ...bread, servings: [{ name: 'Big  slice', amount: 60 }] }
+  expect(unitIn(loaf, 'serving:big slice')).toBe('serving:Big  slice')
+  expect(unitGrams(loaf, 'serving:BIG SLICE')).toBe(60)
+  expect(unitIn(loaf, 'serving:crust')).toBe('serving:crust')
+  expect(unitIn(loaf, 'g')).toBe('g')
+  // Folded as the server folds case: ẞ and ß are ss.
+  const piece = { ...bread, servings: [{ name: 'Großes Stück', amount: 120 }] }
+  expect(unitGrams(piece, 'serving:GROẞES STÜCK')).toBe(120)
+  expect(unitGrams(piece, 'serving:grosses stück')).toBe(120)
+  // A ligature folds to its letters, a final sigma to a sigma.
+  const cup = {
+    ...bread,
+    servings: [
+      { name: 'ﬂ oz', amount: 29.5735 },
+      { name: 'κουπας', amount: 250 },
+    ],
+  }
+  expect(unitGrams(cup, 'serving:FL OZ')).toBe(29.5735)
+  expect(unitGrams(cup, 'serving:ΚΟΥΠΑΣ')).toBe(250)
+  // I and ı are two to the server, and so here.
+  const dots = {
+    ...bread,
+    servings: [
+      { name: 'I', amount: 10 },
+      { name: 'ı', amount: 90 },
+    ],
+  }
+  expect(unitGrams(dots, 'serving:ı')).toBe(90)
+  expect(unitGrams(dots, 'serving:i')).toBe(10)
 })

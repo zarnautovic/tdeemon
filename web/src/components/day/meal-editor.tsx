@@ -2,6 +2,7 @@ import { RotateCcw, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { statusOf } from '@/api/errors'
+import { useFoods } from '@/api/foods'
 import { useDeleteMeal, useUpdateMeal } from '@/api/meals'
 import type { components } from '@/api/schema'
 import type { Item, Meal, Warning } from '@/api/types'
@@ -11,7 +12,13 @@ import {
   amountOf,
   estimateEntry,
   foodEntry,
+  foodItem,
   itemOf,
+  quantityIn,
+  servingOf,
+  unitGrams,
+  unitIn,
+  unitsOf,
   type Amount,
   type Entry,
 } from '@/components/day/meal-entries'
@@ -50,9 +57,10 @@ interface EstimateStart {
 // fieldKey is an item's amount field's key: the item, of its food.
 const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
 
-// fieldOf is the name of the field of an estimate's value, its name or
-// an item's note.
-const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'note') => `${item.id}:${v}`
+// fieldOf is the name of the field of an estimate's value, its name, an
+// item's note or its unit.
+const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'note' | 'unit') =>
+  `${item.id}:${v}`
 
 // withNote is an item with note in place of the one it had: none when it
 // is empty.
@@ -62,10 +70,10 @@ function withNote(item: ItemInput, note: string): ItemInput {
 }
 
 // MealEditor changes a meal's description, day (today or one before),
-// time and note, and its items: the amount of each of a food, the name and values
-// of each estimate, the note of each, which stay, and new ones (a food of the user's or an
-// estimate, as a meal logged by hand has them); in one change saved at
-// once, or deletes the meal after
+// time and note, and its items: the amount and unit of each of a food,
+// the name and values of each estimate, the note of each, which stay, and
+// new ones (a food of the user's or an estimate, as a meal logged by hand
+// has them); in one change saved at once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
 // made elsewhere meanwhile stays. onDone gives the server's warnings of
 // the change.
@@ -91,6 +99,11 @@ export function MealEditor({
   const id = useId()
   const update = useUpdateMeal(date)
   const remove = useDeleteMeal(date)
+  // The items' foods, for the units each can be given in.
+  const foodIds = [...new Set(meal.items.flatMap((i) => (i.food_id ? [i.food_id] : [])))]
+  const foods = useFoods(foodIds)
+  const foodOf = (foodId: string | undefined) =>
+    foodId === undefined ? undefined : foods[foodIds.indexOf(foodId)]
   // Each amount as the editor opened with it: what its field starts with,
   // and what a number typed in it means, though the item changes
   // elsewhere meanwhile. An item added since, or of another food now,
@@ -178,6 +191,13 @@ export function MealEditor({
   // What is typed in each amount's field, by the item and its food, for
   // a unit that agrees with it.
   const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
+  // The unit chosen in each amount's field, by the same key: the number
+  // typed is worked out from it when another is chosen. And the number a
+  // unit chosen worked out, before it was rounded to be shown, until the
+  // amount is typed: it is what is sent, and chosen back, the amount is
+  // as it was.
+  const [chosen, setChosen] = useState<Readonly<Record<string, string>>>({})
+  const [exact, setExact] = useState<Readonly<Record<string, number>>>({})
   // The items added, each under an id made when it was, so the change
   // sent again adds it once; those that cannot be sent as they are; and
   // the one just added, whose first field takes the focus. One the meal
@@ -312,13 +332,28 @@ export function MealEditor({
         continue
       }
       const food = { ...item, food_id: item.food_id }
-      const n = f.parse(typed)
+      // As a unit chosen worked it out, while the field shows it rounded.
+      const worked = exact[`${item.id} ${String(was.foodId)}`]
+      const n = worked ?? f.parse(typed)
       const note = noteTyped(was.note)
+      // A unit chosen anew: the number is of it.
+      const unitTyped = text(fieldOf(item, 'unit'))
+      const itsFood = foodOf(item.food_id)
+      const unitWas = itsFood ? unitIn(itsFood, was.amount.key) : was.amount.key
+      const unit = unitTyped !== undefined && unitTyped !== unitWas ? unitTyped : undefined
       if (n === undefined) {
         notNumbers.add(item.id)
-      } else if (n !== f.parse(was.text)) {
+      } else if (unit !== undefined) {
+        const input = { ...foodItem(food), ...quantityIn(unit, n) }
+        ops.push({
+          op: 'replace',
+          item_id: item.id,
+          item: note === undefined ? input : withNote(input, note),
+        })
+      } else if (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n) {
         // Only an amount typed anew: one left as it started, rounded to
-        // what the field shows, is not sent rounded.
+        // what the field shows, is not sent rounded, nor one a unit chosen
+        // and chosen back gave back.
         const input = was.amount.with(food, n)
         ops.push({
           op: 'replace',
@@ -422,9 +457,22 @@ export function MealEditor({
                 estimateNow.name !== openedEstimate.name ||
                 values.some((v) => estimateNow.texts[v] !== openedEstimate.texts[v])))
           const field = `${item.id} ${String(was?.foodId)}`
-          const unit = was?.amount.portions
-            ? t.meal.portions(f.parse(typing[field] ?? was.text) ?? Number.NaN)
-            : was?.amount.unit
+          const typedN = f.parse(typing[field] ?? was?.text ?? '') ?? Number.NaN
+          const unit = was?.amount.portions ? t.meal.portions(typedN) : was?.amount.unit
+          // The units its food is given in, the one it has among them, once
+          // the food has come: a choice only of two or more.
+          const itsFood = foodOf(was?.foodId)
+          // As the food names it: a serving given as Piece is its piece.
+          const unitWas = was && itsFood ? unitIn(itsFood, was.amount.key) : was?.amount.key
+          // The one chosen stays among them though its food no longer has
+          // it: the amount is of it, which the server refuses rather than
+          // the amount being taken in another unit.
+          const picked = chosen[field]
+          const units =
+            unitWas !== undefined && itsFood
+              ? [...new Set([unitWas, ...(picked ? [picked] : []), ...unitsOf(itsFood)])]
+              : undefined
+          const choices = units && units.length > 1 ? units : undefined
           return (
             <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
               <span className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}>
@@ -439,27 +487,92 @@ export function MealEditor({
               {was && (
                 // Hidden, not gone, while the item is to be removed: kept
                 // again, it has what was typed in it.
-                <span className="relative w-32" hidden={gone}>
-                  <input
-                    // Of another food now, the field starts again.
-                    key={was.foodId}
-                    name={item.id}
-                    aria-label={t.meal.amount(item.name)}
-                    inputMode="decimal"
-                    autoComplete="off"
-                    defaultValue={was.text}
-                    onChange={(e) => {
-                      const next = e.currentTarget.value
-                      setTyping((ts) => ({ ...ts, [field]: next }))
-                    }}
-                    aria-invalid={wrong.has(item.id)}
-                    aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
-                    className={cn(inputClass, 'h-9 tabular-nums', unit && 'pr-14')}
-                  />
-                  {unit && (
-                    <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
-                      {unit}
-                    </span>
+                <span className="flex items-center gap-1" hidden={gone}>
+                  <span className={cn('relative', choices ? 'w-20' : 'w-32')}>
+                    <input
+                      // Of another food now, the field starts again.
+                      key={was.foodId}
+                      name={item.id}
+                      aria-label={t.meal.amount(item.name)}
+                      inputMode="decimal"
+                      autoComplete="off"
+                      defaultValue={was.text}
+                      onChange={(e) => {
+                        const next = e.currentTarget.value
+                        setTyping((ts) => ({ ...ts, [field]: next }))
+                        // Typed: what a unit chosen worked out is no more.
+                        setExact(({ [field]: _typed, ...es }) => es)
+                      }}
+                      aria-invalid={wrong.has(item.id)}
+                      aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
+                      className={cn(inputClass, 'h-9 tabular-nums', !choices && unit && 'pr-14')}
+                    />
+                    {!choices && unit && (
+                      <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
+                        {unit}
+                      </span>
+                    )}
+                  </span>
+                  {choices && itsFood && (
+                    <select
+                      // Of another food now, the choice starts again.
+                      key={was.foodId}
+                      name={fieldOf(item, 'unit')}
+                      aria-label={t.log.unit(item.name)}
+                      // Held by the editor, not the page: a unit renamed or
+                      // gone elsewhere never changes it unseen.
+                      value={picked ?? unitWas}
+                      className={cn(inputClass, 'h-9 w-auto max-w-28')}
+                      onChange={(e) => {
+                        // The amount is worked out anew in the unit chosen,
+                        // when the food says the grams of both.
+                        const unitTo = e.currentTarget.value
+                        const amount = e.currentTarget.form?.elements.namedItem(item.id)
+                        const from = unitGrams(itsFood, chosen[field] ?? unitWas ?? was.amount.key)
+                        const to = unitGrams(itsFood, unitTo)
+                        setChosen((cs) => ({ ...cs, [field]: unitTo }))
+                        if (!(amount instanceof HTMLInputElement)) {
+                          return
+                        }
+                        if (!from || !to || !Number.isFinite(typedN)) {
+                          // Not to be worked out: the amount is typed anew
+                          // in the unit chosen, not taken over in it.
+                          amount.value = ''
+                          setTyping((ts) => ({ ...ts, [field]: '' }))
+                          setExact(({ [field]: _gone, ...es }) => es)
+                        } else {
+                          // From what a unit chosen worked out, or the
+                          // amount as it was while it is not typed, or as
+                          // it is typed.
+                          const base =
+                            exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
+                          const worked = (base * from) / to
+                          // Back in its own unit, the amount it was, not
+                          // one a hair off it.
+                          const n =
+                            unitTo === unitWas &&
+                            Math.abs(worked - was.amount.n) <= 1e-9 * Math.max(1, was.amount.n)
+                              ? was.amount.n
+                              : worked
+                          // Rounded to two decimals, but not to none: 1 g of a serving of
+                          // 500 g is 0.002 of it.
+                          const rounded = Math.round(n * 100) / 100
+                          const next =
+                            rounded > 0 || n === 0
+                              ? f.field(rounded)
+                              : f.field(Number(n.toPrecision(2)), 10)
+                          amount.value = next
+                          setTyping((ts) => ({ ...ts, [field]: next }))
+                          setExact((es) => ({ ...es, [field]: n }))
+                        }
+                      }}
+                    >
+                      {choices.map((u) => (
+                        <option key={u} value={u}>
+                          {u === 'portion' ? t.meal.portions(typedN) : (servingOf(u) ?? u)}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </span>
               )}

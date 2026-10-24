@@ -1,4 +1,9 @@
-import { keepPreviousData, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import {
+  keepPreviousData,
+  useQueries,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query'
 
 import { $api } from './client'
 import type { components } from './schema'
@@ -37,6 +42,17 @@ export function useFindFoods(query: string) {
     // While the next search comes, the last one's foods stay.
     { enabled: q !== '', placeholderData: keepPreviousData },
   )
+}
+
+// useFoods is the user's foods of ids, each as it comes: undefined until
+// it has, or when it cannot.
+export function useFoods(ids: readonly string[]): (Food | undefined)[] {
+  return useQueries({
+    queries: ids.map((id) =>
+      $api.queryOptions('get', '/api/v1/foods/{id}', { params: { path: { id } } }),
+    ),
+    combine: (results) => results.map((r) => r.data),
+  })
 }
 
 // keep keeps a food a save answered with, and asks the lists and the

@@ -79,6 +79,84 @@ export function estimateEntry(): Entry {
   return { key: uuidv7(), kind: 'estimate', name: '', kcal: '', protein: '', carbs: '', fat: '' }
 }
 
+// The letters lower case does not fold as the server's case folding
+// does: each folds to these.
+const folds: Record<string, string> = {
+  ß: 'ss',
+  ẞ: 'ss',
+  ς: 'σ',
+  ﬀ: 'ff',
+  ﬁ: 'fi',
+  ﬂ: 'fl',
+  ﬃ: 'ffi',
+  ﬄ: 'ffl',
+  ﬅ: 'st',
+  ﬆ: 'st',
+}
+
+// nameKey is a name as the server tells names apart (food.Key): in one
+// form, case folded, and its spaces one. JavaScript has no case folding
+// of its own: lower case, and the letters above; upper case would make
+// one of I and ı, which the server tells apart.
+function nameKey(name: string): string {
+  return name
+    .normalize('NFC')
+    .toLowerCase()
+    .replaceAll(/[ßẞςﬀ-ﬆ]/gu, (c) => folds[c] ?? c)
+    .split(/\s+/)
+    .filter(Boolean)
+    .join(' ')
+}
+
+// servingNamed is a food's serving the name names, as the server finds
+// it: of that name, or else the one of its key (Piece is its piece); none
+// when the key is of two, which only a folding unlike the server's could
+// make.
+function servingNamed(food: Food, name: string) {
+  const servings = food.servings ?? []
+  const named = servings.find((s) => s.name === name)
+  if (named !== undefined) {
+    return named
+  }
+  const keyed = servings.filter((s) => nameKey(s.name) === nameKey(name))
+  return keyed.length === 1 ? keyed[0] : undefined
+}
+
+// unitIn is unit as the food names it among its units (unitsOf): a
+// serving given as Piece is its serving:piece.
+export function unitIn(food: Food, unit: string): string {
+  const serving = servingOf(unit)
+  const named = serving === undefined ? undefined : servingNamed(food, serving)
+  return named === undefined ? unit : servingUnit + named.name
+}
+
+// unitGrams is how many of the food's own unit, grams or millilitres,
+// one of unit is; or undefined when the food does not say: a portion
+// without its grams, or grams of a food in millilitres (or the other way
+// round, an item logged before its basis was corrected), of no density.
+export function unitGrams(food: Food, unit: string): number | undefined {
+  const serving = servingOf(unit)
+  if (serving !== undefined) {
+    return servingNamed(food, serving)?.amount
+  }
+  if (unit === 'portion') {
+    return food.portion_grams
+  }
+  return (unit === 'ml') === (food.basis === '100ml') ? 1 : undefined
+}
+
+// quantityIn is n of a food in unit (unitsOf), as an item gives it.
+export function quantityIn(unit: string, n: number): ItemInput {
+  const serving = servingOf(unit)
+  if (serving !== undefined) {
+    return { serving, servings: n }
+  }
+  if (unit === 'portion') {
+    return { portions: n }
+  }
+  return { amount: n, unit: unit === 'ml' ? 'ml' : 'g' }
+}
+
 // itemOf is the item an entry sends, with parse reading its numbers; or
 // undefined when one is not a number, a food's amount is 0, or the
 // estimate has no name.
@@ -91,15 +169,7 @@ export function itemOf(
     if (n === undefined || n <= 0) {
       return undefined
     }
-    const base = { id: entry.key, food_id: entry.food.id }
-    const serving = servingOf(entry.unit)
-    if (serving !== undefined) {
-      return { ...base, serving, servings: n }
-    }
-    if (entry.unit === 'portion') {
-      return { ...base, portions: n }
-    }
-    return { ...base, amount: n, unit: entry.unit === 'ml' ? 'ml' : 'g' }
+    return { id: entry.key, food_id: entry.food.id, ...quantityIn(entry.unit, n) }
   }
   const values = [entry.kcal, entry.protein, entry.carbs, entry.fat].map(parse)
   const [kcal, protein, carbs, fat] = values
@@ -122,15 +192,18 @@ export function itemOf(
 // worked out again from the food as it is now, so a food corrected since
 // gives its new values. Only an item of a food has one: an estimate is of
 // a whole plate. Its unit is a serving's name or the food's unit, or, in
-// portions, the word for as many as are typed.
+// portions, the word for as many as are typed; its key, the unit as
+// unitsOf names it.
 export interface Amount {
   n: number
   unit: string | undefined
+  key: string
   portions?: true
   with: (item: Item & { food_id: string }, n: number) => ItemInput
 }
 
-function foodItem(item: Item & { food_id: string }): ItemInput {
+// foodItem is an item's food and note, without how much.
+export function foodItem(item: Item & { food_id: string }): ItemInput {
   return item.note === undefined
     ? { food_id: item.food_id }
     : { food_id: item.food_id, note: item.note }
@@ -146,6 +219,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: q.servings,
       unit: serving,
+      key: servingUnit + serving,
       with: (it, n) => ({ ...foodItem(it), serving, servings: n }),
     }
   }
@@ -155,6 +229,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: item.amount,
       unit,
+      key: unit,
       with: (it, n) => ({ ...foodItem(it), amount: n, unit }),
     }
   }
@@ -162,6 +237,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: q.portions,
       unit: undefined,
+      key: 'portion',
       portions: true,
       with: (it, n) => ({ ...foodItem(it), portions: n }),
     }
@@ -172,6 +248,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: q.amount,
       unit: given ?? (item.unit === 'portion' ? undefined : item.unit),
+      key: given ?? item.unit,
       with: (it, n) =>
         given === undefined
           ? { ...foodItem(it), amount: n }
