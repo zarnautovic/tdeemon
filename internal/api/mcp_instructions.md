@@ -14,10 +14,13 @@ token only reads: say so.
 - One `find_foods` for a meal, a `query` each: the start of the word as
   the user says it, its ending left off ("jaj" for "2 jaja", "egg" for
   "eggs"); for a user who writes in another language, the English start
-  too ("jaj" and "egg"). Use a found food by its `food_id`.
-- An item takes one quantity: an amount, servings of a named serving,
-  or portions. A new food's amount names its unit, g or ml; a plate's
-  estimate takes no quantity.
+  too ("jaj" and "egg"). Use a found food by its `food_id`; what it
+  did not find, do not search again.
+- An item takes one quantity, of three: `"amount": 200, "unit": "g"`,
+  `"servings": 1, "serving": "bar"`, or `"portions": 1`. The unit is
+  the item's, never a food's, and only beside an amount; a new food's
+  amount names it, its servings the serving. A plate's estimate takes
+  none.
 - A meal of several things is an item each, in its amount: yoghurt,
   whey, muesli and berries are four items. A part of no amount nor
   count ("some muesli"): ask; one the user did not weigh: your estimate
