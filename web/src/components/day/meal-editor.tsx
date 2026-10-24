@@ -175,6 +175,10 @@ export function MealEditor({
   // A meal no longer there (404) was deleted elsewhere: the days are asked
   // again, and its card goes.
   const refused = update.isError && [404, 409, 422].includes(statusOf(update.error) ?? 0)
+  // Sent, and no answer said whether it was taken: the items added hold
+  // still until it is sent again, as an item added under its id already
+  // would refuse other content, and one removed here would stay.
+  const held = update.isPending || (update.isError && !refused)
   const form = useRef<HTMLFormElement>(null)
   const keep = useRef<HTMLButtonElement>(null)
 
@@ -432,7 +436,7 @@ export function MealEditor({
           )
         })}
       </ul>
-      <section aria-label={t.meal.add} className="space-y-2">
+      <fieldset aria-label={t.meal.add} disabled={held} className="min-w-0 space-y-2">
         {entries.length > 0 && (
           <ul className="divide-y">
             {entries.map((entry) => (
@@ -469,7 +473,7 @@ export function MealEditor({
         >
           {t.log.estimate}
         </Button>
-      </section>
+      </fieldset>
       <p className="text-xs text-muted-foreground">{t.meal.recomputed}</p>
       {wrong.size > 0 && (
         <p id={`${id}-wrong`} role="alert" className="text-xs text-destructive">

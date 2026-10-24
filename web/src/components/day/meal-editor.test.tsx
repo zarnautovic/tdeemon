@@ -1065,6 +1065,9 @@ test('an item added and sent again after a failure goes under the same id', asyn
   fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   const again = await meal().findByRole('button', { name: 'Try again' })
+  // It may have been added: it holds still until it is sent again.
+  expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(true)
+  expect(meal().getByRole('button', { name: 'Remove: Rye bread' }).matches(':disabled')).toBe(true)
   up = true
   fireEvent.click(again)
 
