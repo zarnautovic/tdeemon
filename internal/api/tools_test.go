@@ -733,7 +733,7 @@ func TestFindFoodsOfSeveralQueries(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"unfound":["whey","musli"]`) {
 		t.Errorf("queries that find nothing: %d %s, want them unfound", rec.Code, rec.Body.String())
 	}
-	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye", "", []*http.Cookie{session}, nil); !strings.Contains(rec.Body.String(), `"unfound":[]`) {
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods?query=rye&query=+++", "", []*http.Cookie{session}, nil); !strings.Contains(rec.Body.String(), `"unfound":[]`) {
 		t.Errorf("a query that finds a food: %d %s, want none unfound", rec.Code, rec.Body.String())
 	}
 	// A query sent twice, in another case, is one.

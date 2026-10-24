@@ -39,6 +39,7 @@ function logServer(date = '2026-10-23', over: Record<string, Handler> = {}) {
     'GET /api/v1/foods': (request) =>
       Response.json({
         foods: new URL(request.url).searchParams.get('query') === 'rye' ? [bread] : [],
+        unfound: [],
       }),
     'POST /api/v1/meals': async (request) => {
       const body: unknown = await request.json()
