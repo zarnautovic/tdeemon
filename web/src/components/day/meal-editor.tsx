@@ -25,8 +25,23 @@ interface Start {
   note: string | undefined
 }
 
-// MealEditor changes a meal's items, the amount of each of a food and
-// which stay, in one change saved at once, or deletes the meal after
+// The values of an estimate the editor changes, and a start of them: the
+// fields' texts as the editor opened with them, and the note it had.
+const values = ['kcal', 'protein', 'carbs', 'fat'] as const
+
+interface EstimateStart {
+  texts: Record<(typeof values)[number], string>
+  note: string | undefined
+}
+
+// fieldKey is an item's amount field's key: the item, of its food.
+const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
+
+// fieldOf is the name of the field of an estimate's value.
+const fieldOf = (item: Item, v: (typeof values)[number]) => `${item.id}:${v}`
+
+// MealEditor changes a meal's items, the amount of each of a food, the
+// values of each estimate, and which stay, in one change saved at once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
 // made elsewhere meanwhile stays. onDone gives the server's warnings of
 // the change.
@@ -47,7 +62,8 @@ export function MealEditor({
   // Each amount as the editor opened with it: what its field starts with,
   // and what a number typed in it means, though the item changes
   // elsewhere meanwhile. An item added since, or of another food now,
-  // starts as it is.
+  // starts as it is when its field comes, and holds that as the field
+  // does (later).
   const start = (item: Item): Start | undefined => {
     const amount = amountOf(item)
     return amount && { text: f.field(amount.n), amount, foodId: item.food_id, note: item.note }
@@ -63,9 +79,58 @@ export function MealEditor({
   )
   const startOf = (item: Item) => {
     const opened = initial.get(item.id)
-    return opened?.foodId === item.food_id ? opened : start(item)
+    return opened?.foodId === item.food_id ? opened : (later.get(fieldKey(item)) ?? start(item))
   }
-  // The items to remove, and those whose amount is not a number.
+  // Each estimate's values as the editor opened with them, as the amounts.
+  const estimateStart = (item: Item): EstimateStart | undefined =>
+    item.food_id === undefined
+      ? {
+          texts: {
+            kcal: f.field(item.nutrients.kcal),
+            protein: f.field(item.nutrients.protein),
+            carbs: f.field(item.nutrients.carbs),
+            fat: f.field(item.nutrients.fat),
+          },
+          note: item.note,
+        }
+      : undefined
+  const [initialEstimates] = useState(
+    () =>
+      new Map(
+        meal.items.flatMap((item) => {
+          const s = estimateStart(item)
+          return s ? [[item.id, s] as const] : []
+        }),
+      ),
+  )
+  const estimateOf = (item: Item) =>
+    item.food_id === undefined
+      ? (initialEstimates.get(item.id) ?? laterEstimates.get(item.id) ?? estimateStart(item))
+      : undefined
+  // The starts of the items that came after the editor opened, held from
+  // when they came: a correction made elsewhere since is not undone by a
+  // field left as it started.
+  const [later, setLater] = useState<ReadonlyMap<string, Start>>(new Map())
+  const [laterEstimates, setLaterEstimates] = useState<ReadonlyMap<string, EstimateStart>>(
+    new Map(),
+  )
+  const comes = meal.items.flatMap((item) => {
+    const s = initial.get(item.id)?.foodId === item.food_id ? undefined : start(item)
+    return s && !later.has(fieldKey(item)) ? [[fieldKey(item), s] as const] : []
+  })
+  if (comes.length > 0) {
+    setLater((m) => new Map([...m, ...comes]))
+  }
+  const comesEstimates = meal.items.flatMap((item) => {
+    const s =
+      initialEstimates.has(item.id) || laterEstimates.has(item.id) ? undefined : estimateStart(item)
+    return s ? [[item.id, s] as const] : []
+  })
+  if (comesEstimates.length > 0) {
+    setLaterEstimates((m) => new Map([...m, ...comesEstimates]))
+  }
+  // The items to remove, and the fields that are not a number (an
+  // amount's by its item, an estimate's value's by fieldOf).
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
   // What is typed in each amount's field, by the item and its food, for
@@ -118,6 +183,31 @@ export function MealEditor({
         ops.push({ op: 'remove', item_id: item.id })
         continue
       }
+      const estimate = estimateOf(item)
+      if (estimate !== undefined) {
+        // Only the values typed anew; the others as they are now.
+        const nutrients = { ...item.nutrients }
+        let changed = false
+        for (const v of values) {
+          const typed = typedIn.get(fieldOf(item, v))
+          const n = typeof typed === 'string' ? f.parse(typed) : undefined
+          if (n === undefined) {
+            notNumbers.add(fieldOf(item, v))
+          } else if (n !== f.parse(estimate.texts[v])) {
+            nutrients[v] = n
+            changed = true
+          }
+        }
+        if (changed) {
+          const note = item.note === undefined ? {} : { note: item.note }
+          ops.push({
+            op: 'replace',
+            item_id: item.id,
+            item: { name: item.name, nutrients, ...note },
+          })
+        }
+        continue
+      }
       const was = startOf(item)
       const typed = typedIn.get(item.id)
       if (was === undefined || item.food_id === undefined || typeof typed !== 'string') {
@@ -151,16 +241,23 @@ export function MealEditor({
           const was = startOf(item)
           const now = start(item)
           const gone = removed.has(item.id)
-          // Changed elsewhere since the editor opened: its field keeps what
-          // it opened with.
-          const opened = initial.get(item.id)
+          // Changed elsewhere since the editor opened, or since the item
+          // came: its field keeps what it started with.
+          const opened = initial.get(item.id) ?? later.get(fieldKey(item))
+          const estimate = estimateOf(item)
+          const estimateNow = estimateStart(item)
+          const openedEstimate = initialEstimates.get(item.id) ?? laterEstimates.get(item.id)
           const moved =
-            opened !== undefined &&
-            (now?.text !== opened.text ||
-              now.amount.unit !== opened.amount.unit ||
-              now.amount.portions !== opened.amount.portions ||
-              now.foodId !== opened.foodId ||
-              now.note !== opened.note)
+            (opened !== undefined &&
+              (now?.text !== opened.text ||
+                now.amount.unit !== opened.amount.unit ||
+                now.amount.portions !== opened.amount.portions ||
+                now.foodId !== opened.foodId ||
+                now.note !== opened.note)) ||
+            (openedEstimate !== undefined &&
+              (estimateNow === undefined ||
+                estimateNow.note !== openedEstimate.note ||
+                values.some((v) => estimateNow.texts[v] !== openedEstimate.texts[v])))
           const field = `${item.id} ${String(was?.foodId)}`
           const unit = was?.amount.portions
             ? t.meal.portions(f.parse(typing[field] ?? was.text) ?? Number.NaN)
@@ -219,6 +316,28 @@ export function MealEditor({
               >
                 {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
               </Button>
+              {estimate && (
+                // Hidden, not gone, as an amount's field.
+                <span className="grid basis-full grid-cols-4 gap-2" hidden={gone}>
+                  {values.map((v) => (
+                    <label key={v} className="space-y-1">
+                      <span className="block text-xs text-muted-foreground">
+                        {t.meal.estimateValue[v]}
+                      </span>
+                      <input
+                        name={fieldOf(item, v)}
+                        aria-label={t.meal.value(t.foods.nutrient[v], item.name)}
+                        inputMode="decimal"
+                        autoComplete="off"
+                        defaultValue={estimate.texts[v]}
+                        aria-invalid={wrong.has(fieldOf(item, v))}
+                        aria-describedby={wrong.has(fieldOf(item, v)) ? `${id}-wrong` : undefined}
+                        className={cn(inputClass, 'h-9 tabular-nums')}
+                      />
+                    </label>
+                  ))}
+                </span>
+              )}
             </li>
           )
         })}
