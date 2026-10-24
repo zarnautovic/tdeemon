@@ -120,6 +120,7 @@ export function DayPage() {
                 date={day.data.date}
                 today={todayDate ?? day.data.date}
                 timeZone={session.data?.user.timezone ?? 'UTC'}
+                startHour={session.data?.user.day_start_hour ?? 0}
               />
             ))
           )}

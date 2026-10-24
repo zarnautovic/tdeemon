@@ -522,7 +522,7 @@ test('the focus goes into the meal when it opens, to keeping it when asked, and 
 
   await edit()
   await waitFor(() => {
-    expect(document.activeElement).toBe(meal().getByLabelText('Amount: Oats'))
+    expect(document.activeElement).toBe(meal().getByLabelText('What it was'))
   })
   fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
   await waitFor(() => {
@@ -845,6 +845,87 @@ test('an estimate changed elsewhere keeps that change, and its other values', as
       },
     ])
   })
+})
+
+test("a meal's description, time and note are changed, the time within its day", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  expect(meal().getByLabelText('What it was')).toHaveProperty('value', 'Breakfast')
+  // 15:45 UTC is 08:45 in Los Angeles, the user's time zone.
+  expect(meal().getByLabelText('Time')).toHaveProperty('value', '08:45')
+  fireEvent.change(meal().getByLabelText('What it was'), { target: { value: ' Brunch ' } })
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '10:15' } })
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'after the gym\n' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      { description: 'Brunch', eaten_at: '2026-10-23T17:15:00.000Z', note: 'after the gym' },
+    ])
+  })
+})
+
+test("a time before the day's start is of the night after it", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // The user's day starts at 4: 02:30 is the night after the 23rd.
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '02:30' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ eaten_at: '2026-10-24T09:30:00.000Z' }])
+  })
+})
+
+test('words left as they were, or only spaced, and a cleared time send nothing', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('What it was'), { target: { value: 'Breakfast ' } })
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '' } })
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: '  ' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test('a description changed elsewhere stays when only the note is changed here', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  server.elsewhere((m) => ({ ...m, description: 'Second breakfast' }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'big one' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ note: 'big one' }])
+  })
+})
+
+test("a meal's note is shown on its card", async () => {
+  const server = mealServer()
+  server.elsewhere((m) => ({ ...m, note: 'before the run' }))
+  fakeServer(server.routes)
+  renderAt('/')
+
+  expect(
+    await within(await screen.findByRole('article')).findByText('before the run'),
+  ).toBeDefined()
 })
 
 test('an estimate removed and kept again keeps the values typed in it', async () => {

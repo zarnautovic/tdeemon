@@ -10,8 +10,9 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { inputClass } from '@/lib/styles'
+import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
+import { clockAt, mealInstant } from '@/lib/zoned'
 
 type Op = components['schemas']['MealOp']
 type Change = components['schemas']['UpdateMealBody']
@@ -40,18 +41,24 @@ const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
 // fieldOf is the name of the field of an estimate's value.
 const fieldOf = (item: Item, v: (typeof values)[number]) => `${item.id}:${v}`
 
-// MealEditor changes a meal's items, the amount of each of a food, the
-// values of each estimate, and which stay, in one change saved at once, or deletes the meal after
+// MealEditor changes a meal's description, time (within its day) and
+// note, and its items: the amount of each of a food, the values of each
+// estimate, and which stay; in one change saved at once, or deletes the meal after
 // asking. It sends only what was changed since it opened, so a change
 // made elsewhere meanwhile stays. onDone gives the server's warnings of
 // the change.
 export function MealEditor({
   meal,
   date,
+  timeZone,
+  startHour,
   onDone,
 }: {
   meal: Meal
   date: string
+  // The user's clock: its time zone and the hour a day starts at.
+  timeZone: string
+  startHour: number
   onDone: (warnings: Warning[]) => void
 }) {
   const t = useMessages()
@@ -81,6 +88,13 @@ export function MealEditor({
     const opened = initial.get(item.id)
     return opened?.foodId === item.food_id ? opened : (later.get(fieldKey(item)) ?? start(item))
   }
+  // The meal's words and time as the editor opened with them: only those
+  // typed anew are sent.
+  const [openedWith] = useState(() => ({
+    description: meal.description,
+    time: clockAt(Date.parse(meal.eaten_at), timeZone),
+    note: meal.note ?? '',
+  }))
   // Each estimate's values as the editor opened with them, as the amounts.
   const estimateStart = (item: Item): EstimateStart | undefined =>
     item.food_id === undefined
@@ -176,6 +190,24 @@ export function MealEditor({
       return
     }
     const typedIn = new FormData(event.currentTarget)
+    // The server keeps no space at the ends of a text (text.CheckLines).
+    const text = (name: string) => {
+      const typed = typedIn.get(name)
+      return typeof typed === 'string' ? typed.trim() : undefined
+    }
+    const description = text('description')
+    const time = text('time')
+    const mealNote = text('note')
+    const fields: Change = {
+      ...(description !== undefined && description !== openedWith.description.trim()
+        ? { description }
+        : {}),
+      // A cleared time keeps the one it had.
+      ...(time !== undefined && /^\d{2}:\d{2}$/.test(time) && time !== openedWith.time
+        ? { eaten_at: mealInstant(date, time, timeZone, startHour) }
+        : {}),
+      ...(mealNote !== undefined && mealNote !== openedWith.note.trim() ? { note: mealNote } : {}),
+    }
     const ops: Op[] = []
     const notNumbers = new Set<string>()
     for (const item of meal.items) {
@@ -227,15 +259,46 @@ export function MealEditor({
     if (notNumbers.size > 0) {
       return
     }
-    if (ops.length === 0) {
+    if (ops.length === 0 && Object.keys(fields).length === 0) {
       onDone([])
       return
     }
-    send({ ops })
+    send({ ...fields, ...(ops.length > 0 ? { ops } : {}) })
   }
 
   return (
     <form ref={form} onSubmit={submit} noValidate className="space-y-3">
+      <div className="flex gap-3">
+        <label className="flex-1 space-y-1">
+          <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
+          <input
+            name="description"
+            defaultValue={openedWith.description}
+            maxLength={200}
+            autoComplete="off"
+            className={inputClass}
+          />
+        </label>
+        <label className="w-28 space-y-1">
+          <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
+          <input
+            name="time"
+            type="time"
+            defaultValue={openedWith.time}
+            className={cn(inputClass, 'tabular-nums')}
+          />
+        </label>
+      </div>
+      <label className="block space-y-1">
+        <span className={cn(fieldLabel, 'block')}>{t.meal.note}</span>
+        <textarea
+          name="note"
+          defaultValue={openedWith.note}
+          maxLength={2000}
+          rows={2}
+          className={cn(inputClass, 'h-auto py-2')}
+        />
+      </label>
       <ul className="divide-y text-sm">
         {meal.items.map((item) => {
           const was = startOf(item)
