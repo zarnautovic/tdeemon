@@ -40,7 +40,10 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
   await expect(measurements).toContainText('7.5 h')
   await measurements.getByRole('button', { name: 'Change: Sleep' }).click()
   await measurements.getByRole('button', { name: 'Delete' }).click()
-  await expect(measurements).not.toContainText('7.5 h')
+  // Gone once the server answered: its form, which names it, goes too.
+  // The value alone is gone as soon as the form opens, and a reload
+  // before the answer would cancel the delete.
+  await expect(measurements).not.toContainText('Sleep')
 
   // What the server kept comes back with the page.
   await page.reload()
