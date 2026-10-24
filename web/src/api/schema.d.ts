@@ -245,7 +245,7 @@ export interface paths {
         };
         /**
          * Get your history
-         * @description Needs a web session. Your days from from to to, at most 366 of them up to today, or their weeks: what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, as the summary computes them. The charts read it.
+         * @description Your days from from to to, at most 366 of them up to today, or their weeks: what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, as the summary computes them. The charts read it, and a coach looking back.
          */
         get: operations["get-history"];
         put?: never;
@@ -394,7 +394,7 @@ export interface paths {
         get?: never;
         /**
          * Set your notes for a coach
-         * @description Needs a web session. What a coach, a model, should know of you, which get_me gives it; empty deletes them. Undo takes a change of them back.
+         * @description What a coach, a model, should know of you, which get_me gives it: an injury, a food you avoid, how you train. The notes are replaced whole, and empty deletes them. Undo takes a change of them back.
          */
         put: operations["set-notes"];
         post?: never;
@@ -3030,7 +3030,7 @@ export interface operations {
                 from?: string;
                 /** @description The last day, today at the latest; left out, today. */
                 to?: string;
-                /** @description day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow. */
+                /** @description day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out. */
                 granularity?: "day" | "week";
             };
             header?: never;

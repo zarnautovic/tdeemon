@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"math"
-	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -28,7 +27,7 @@ var historySince = day.Date{Year: 1900, Month: 1, Day: 1}
 type historyInput struct {
 	From        string `query:"from" format:"date" doc:"The first day; left out, 89 days before to."`
 	To          string `query:"to" format:"date" doc:"The last day, today at the latest; left out, today."`
-	Granularity string `query:"granularity" enum:"day,week" default:"day" doc:"day: a row a day; week: a row for each 7 days ending on to, the first of which may start before from. A week of today has today's steps left out, as they still grow."`
+	Granularity string `query:"granularity" enum:"day,week" default:"day" doc:"day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out."`
 }
 
 type historyOutput struct {
@@ -201,18 +200,4 @@ func (b *historyDayBody) measure(values []metric.Value) {
 		default:
 		}
 	}
-}
-
-func (s *sessions) registerHistory(a huma.API) {
-	huma.Register(a, huma.Operation{
-		OperationID: "get-history",
-		Method:      http.MethodGet,
-		Path:        Prefix + "/history",
-		Summary:     "Get your history",
-		Description: "Needs a web session. Your days from from to to, at most 366 of them up to today, or their weeks: " +
-			"what was eaten against the target, the measurements, the trend weight and the TDEE measured up to each day, " +
-			"as the summary computes them. The charts read it.",
-		Tags:   []string{"history"},
-		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
-	}, s.getHistory)
 }
