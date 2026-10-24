@@ -193,10 +193,11 @@ export function MealEditor({
   const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
   // The unit chosen in each amount's field, by the same key: the number
   // typed is worked out from it when another is chosen. And the number a
-  // unit chosen worked out, before it was rounded to be shown: chosen
-  // back, the amount is as it was, while the field shows it unchanged.
+  // unit chosen worked out, before it was rounded to be shown, until the
+  // amount is typed: it is what is sent, and chosen back, the amount is
+  // as it was.
   const [chosen, setChosen] = useState<Readonly<Record<string, string>>>({})
-  const [exact, setExact] = useState<Readonly<Record<string, { text: string; n: number }>>>({})
+  const [exact, setExact] = useState<Readonly<Record<string, number>>>({})
   // The items added, each under an id made when it was, so the change
   // sent again adds it once; those that cannot be sent as they are; and
   // the one just added, whose first field takes the focus. One the meal
@@ -333,7 +334,7 @@ export function MealEditor({
       const food = { ...item, food_id: item.food_id }
       // As a unit chosen worked it out, while the field shows it rounded.
       const worked = exact[`${item.id} ${String(was.foodId)}`]
-      const n = worked?.text === typed ? worked.n : f.parse(typed)
+      const n = worked ?? f.parse(typed)
       const note = noteTyped(was.note)
       // A unit chosen anew: the number is of it.
       const unitTyped = text(fieldOf(item, 'unit'))
@@ -349,9 +350,10 @@ export function MealEditor({
           item_id: item.id,
           item: note === undefined ? input : withNote(input, note),
         })
-      } else if (n !== f.parse(was.text)) {
+      } else if (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n) {
         // Only an amount typed anew: one left as it started, rounded to
-        // what the field shows, is not sent rounded.
+        // what the field shows, is not sent rounded, nor one a unit chosen
+        // and chosen back gave back.
         const input = was.amount.with(food, n)
         ops.push({
           op: 'replace',
@@ -494,6 +496,8 @@ export function MealEditor({
                       onChange={(e) => {
                         const next = e.currentTarget.value
                         setTyping((ts) => ({ ...ts, [field]: next }))
+                        // Typed: what a unit chosen worked out is no more.
+                        setExact(({ [field]: _typed, ...es }) => es)
                       }}
                       aria-invalid={wrong.has(item.id)}
                       aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
@@ -527,9 +531,19 @@ export function MealEditor({
                           to &&
                           Number.isFinite(typedN)
                         ) {
-                          const shown = exact[field]
-                          const base = shown?.text === amount.value ? shown.n : typedN
-                          const n = (base * from) / to
+                          // From what a unit chosen worked out, or the
+                          // amount as it was while it is not typed, or as
+                          // it is typed.
+                          const base =
+                            exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
+                          const worked = (base * from) / to
+                          // Back in its own unit, the amount it was, not
+                          // one a hair off it.
+                          const n =
+                            unitTo === unitWas &&
+                            Math.abs(worked - was.amount.n) <= 1e-9 * Math.max(1, was.amount.n)
+                              ? was.amount.n
+                              : worked
                           // Rounded to two decimals, but not to none: 1 g of a serving of
                           // 500 g is 0.002 of it.
                           const rounded = Math.round(n * 100) / 100
@@ -539,7 +553,7 @@ export function MealEditor({
                               : f.field(Number(n.toPrecision(2)), 10)
                           amount.value = next
                           setTyping((ts) => ({ ...ts, [field]: next }))
-                          setExact((es) => ({ ...es, [field]: { text: next, n } }))
+                          setExact((es) => ({ ...es, [field]: n }))
                         }
                       }}
                     >

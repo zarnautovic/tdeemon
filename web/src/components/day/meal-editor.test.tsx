@@ -1654,3 +1654,92 @@ test('an amount worked out in another unit is sent as worked out, not as rounded
     ])
   })
 })
+
+test('an amount typed after a unit worked it out is sent as typed', async () => {
+  const server = mealServer({
+    [`GET /api/v1/foods/${oatsFood}`]: () =>
+      Response.json(food(oatsFood, { name: 'Oats', servings: [{ name: 'sack', amount: 5000 }] })),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '30' } })
+  fireEvent.change(await meal().findByLabelText('Unit: Oats'), {
+    target: { value: 'serving:sack' },
+  })
+  // Typed again as it was shown: what is typed, not what was worked out.
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '1' } })
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '0.01' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: oats.id,
+            item: { food_id: oatsFood, serving: 'sack', servings: 0.01 },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('a unit chosen and chosen back of no even ratio sends nothing', async () => {
+  const server = mealServer({
+    [`GET /api/v1/foods/${oatsFood}`]: () =>
+      Response.json(food(oatsFood, { name: 'Oats', servings: [{ name: 'scoop', amount: 77 }] })),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const unit = await meal().findByLabelText('Unit: Oats')
+  fireEvent.change(unit, { target: { value: 'serving:scoop' } })
+  fireEvent.change(unit, { target: { value: 'g' } })
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '80')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test('an amount not typed is worked out from what it is, not from what its field shows', async () => {
+  const server = mealServer({
+    [`GET /api/v1/foods/${bread.food_id ?? ''}`]: () =>
+      Response.json(
+        food(bread.food_id ?? '', { name: 'Banana bread', basis: 'portion', portion_grams: 500 }),
+      ),
+  })
+  // A third of a portion, which its field shows as 0.333.
+  server.elsewhere((m) => ({
+    ...m,
+    items: m.items.map((i) => (i.id === bread.id ? { ...i, quantity: { portions: 1 / 3 } } : i)),
+  }))
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(await meal().findByLabelText('Unit: Banana bread'), { target: { value: 'g' } })
+  expect(meal().getByLabelText('Amount: Banana bread')).toHaveProperty('value', '166.67')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: bread.id,
+            item: { food_id: bread.food_id, note: 'home-made', amount: 500 / 3, unit: 'g' },
+          },
+        ],
+      },
+    ])
+  })
+})
