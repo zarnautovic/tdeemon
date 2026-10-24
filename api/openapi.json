@@ -712,7 +712,7 @@
             "type": "array"
           },
           "unfound": {
-            "description": "The queries that found no food: foods the user lacks, not to search again.",
+            "description": "The queries that found no food.",
             "items": {
               "type": "string"
             },
@@ -1091,7 +1091,7 @@
             "type": "number"
           },
           "unit": {
-            "description": "The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount needs it.",
+            "description": "The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount, or one per portion, needs it.",
             "enum": [
               "g",
               "ml"

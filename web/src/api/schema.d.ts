@@ -875,7 +875,7 @@ export interface components {
         };
         FoodsOutputBody: {
             foods: components["schemas"]["FoodBody"][];
-            /** @description The queries that found no food: foods the user lacks, not to search again. */
+            /** @description The queries that found no food. */
             unfound: string[];
         };
         HistoryBody: {
@@ -1038,7 +1038,7 @@ export interface components {
              */
             servings?: number;
             /**
-             * @description The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount needs it.
+             * @description The amount's unit, g or ml (g of a portion of known weight); with an amount only. Left out for a food_id, the food's; a new food's amount, or one per portion, needs it.
              * @enum {string}
              */
             unit?: "g" | "ml";

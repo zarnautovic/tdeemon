@@ -179,7 +179,7 @@ test('a meal that got no answer is sent again under its id', async () => {
   const bodies: unknown[] = []
   fakeServer({
     ...signedIn(),
-    'GET /api/v1/foods': () => Response.json({ foods: [bread] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [bread], unfound: [] }),
     'POST /api/v1/meals': async (request) => {
       bodies.push(await request.json())
       return up ? problem(503) : Promise.reject(new TypeError('Failed to fetch'))
@@ -312,7 +312,7 @@ test('a meal sent without an answer holds still, and goes again as it was', asyn
       gets++
       return Response.json(day())
     },
-    'GET /api/v1/foods': () => Response.json({ foods: [bread] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [bread], unfound: [] }),
     'POST /api/v1/meals': async (request) => {
       bodies.push(await request.json())
       return up ? problem(503) : Promise.reject(new TypeError('Failed to fetch'))
@@ -364,7 +364,7 @@ test('the focus goes into the form, to a food picked, and back to the button', a
 
 test("a food's brand tells it apart in the meal", async () => {
   logServer('2026-10-23', {
-    'GET /api/v1/foods': () => Response.json({ foods: [{ ...bread, brand: 'Mill' }] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [{ ...bread, brand: 'Mill' }], unfound: [] }),
   })
   renderAt('/')
 
@@ -392,7 +392,7 @@ test('what is wrong with an entry is no longer said once it is removed', async (
 test('a meal being sent cannot be given up', async () => {
   fakeServer({
     ...signedIn(),
-    'GET /api/v1/foods': () => Response.json({ foods: [bread] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [bread], unfound: [] }),
     'POST /api/v1/meals': () => new Promise<Response>(() => undefined),
   })
   renderAt('/')
@@ -416,7 +416,9 @@ test('the word for portions agrees with the amount typed', async () => {
     archived: false,
     nutrients: { kcal: 450, protein: 30, carbs: 40, fat: 15 },
   }
-  logServer('2026-10-23', { 'GET /api/v1/foods': () => Response.json({ foods: [stew] }) })
+  logServer('2026-10-23', {
+    'GET /api/v1/foods': () => Response.json({ foods: [stew], unfound: [] }),
+  })
   renderAt('/')
 
   fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))

@@ -46,7 +46,11 @@ function listOf(foods: Food[]) {
     const url = new URL(request.url)
     const offset = Number(url.searchParams.get('offset') ?? 0)
     const limit = Number(url.searchParams.get('limit') ?? 50)
-    return Response.json({ foods: foods.slice(offset, offset + limit), total: foods.length })
+    return Response.json({
+      foods: foods.slice(offset, offset + limit),
+      total: foods.length,
+      unfound: [],
+    })
   }
 }
 
@@ -166,7 +170,7 @@ test('what the last search found stays while the next one comes', async () => {
     'GET /api/v1/foods/list': listOf([oats]),
     'GET /api/v1/foods': (request) =>
       new URL(request.url).searchParams.get('query') === 'oat'
-        ? Response.json({ foods: [oats] })
+        ? Response.json({ foods: [oats], unfound: [] })
         : new Promise<Response>((resolve) => {
             answer = resolve
           }),
@@ -178,7 +182,7 @@ test('what the last search found stays while the next one comes', async () => {
   fireEvent.change(screen.getByLabelText('Search the foods'), { target: { value: 'oats' } })
 
   expect(screen.getByRole('list', { name: 'Found' })).toBeDefined()
-  answer?.(Response.json({ foods: [] }))
+  answer?.(Response.json({ foods: [], unfound: [] }))
   expect(await screen.findByText('No food matches.')).toBeDefined()
 })
 
@@ -203,7 +207,7 @@ test('the search field follows the address it did not write, and keeps what is t
   fakeServer({
     ...signedIn(),
     'GET /api/v1/foods/list': listOf([oats]),
-    'GET /api/v1/foods': () => Response.json({ foods: [oats] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [oats], unfound: [] }),
   })
   const router = renderAt('/foods?q=oat')
 
@@ -245,7 +249,7 @@ test('an address with a search typed on the way to another puts it in the field'
   fakeServer({
     ...signedIn(),
     'GET /api/v1/foods/list': listOf([]),
-    'GET /api/v1/foods': () => Response.json({ foods: [] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [], unfound: [] }),
   })
   const router = renderAt('/foods')
   const field = await screen.findByLabelText('Search the foods')
@@ -267,7 +271,7 @@ test("the section's link clears the search after a typo corrected fast", async (
   fakeServer({
     ...signedIn(),
     'GET /api/v1/foods/list': listOf([]),
-    'GET /api/v1/foods': () => Response.json({ foods: [] }),
+    'GET /api/v1/foods': () => Response.json({ foods: [], unfound: [] }),
   })
   const router = renderAt('/foods')
   const field = await screen.findByLabelText('Search the foods')
