@@ -65,6 +65,12 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
 
   const value = (field: LimitField, v: number) => f.field(shown(field, v))
   const label = (name: LimitName) => t.plan.limit[name]
+  // unitOf is a field's unit, which agrees with the number typed in it:
+  // 1 day, 2 days.
+  const unitOf = (field: LimitField, typedIn: string) => {
+    const unit = t.plan.unit[field.unit]
+    return typeof unit === 'string' ? unit : unit(f.parse(typedIn) ?? Number.NaN)
+  }
 
   function send(confirm: boolean) {
     save.mutate({ body: { limits: result.changes, ...(confirm ? { confirm: true } : {}) } })
@@ -118,6 +124,7 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
               .filter((field) => field.group === group)
               .map((field) => {
                 const mine = body.limits[field.name] ?? 0
+                const text = typed[field.name] ?? value(field, mine)
                 const instance = body.instance[field.name]
                 const holds = body.effective[field.name]
                 const problem = result.problems[field.name]
@@ -129,7 +136,7 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
                       <span className={cn(fieldLabel, 'block')}>{label(field.name)}</span>
                       <span className="flex items-center gap-2">
                         <input
-                          value={typed[field.name] ?? value(field, mine)}
+                          value={text}
                           inputMode={field.signed ? 'text' : field.whole ? 'numeric' : 'decimal'}
                           autoComplete="off"
                           aria-invalid={problem ? true : undefined}
@@ -145,9 +152,7 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
                             save.reset()
                           }}
                         />
-                        <span className="text-sm text-muted-foreground">
-                          {t.plan.unit[field.unit]}
-                        </span>
+                        <span className="text-sm text-muted-foreground">{unitOf(field, text)}</span>
                       </span>
                     </label>
                     <p id={hint} className="text-xs text-muted-foreground">
