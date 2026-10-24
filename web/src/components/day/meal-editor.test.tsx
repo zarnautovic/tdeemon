@@ -1495,6 +1495,93 @@ test('a unit chosen and chosen back sends the amount as it was', async () => {
   expect(server.sent).toEqual([])
 })
 
+// swap finds the rye bread for the item named name.
+async function swap(name: string) {
+  fireEvent.click(meal().getByRole('button', { name: `Another food in place of: ${name}` }))
+  fireEvent.change(meal().getByLabelText(`A food of yours in place of ${name}`), {
+    target: { value: 'rye' },
+  })
+  fireEvent.click(await meal().findByRole('button', { name: /^Rye bread/ }))
+}
+
+test("another food takes an item's place, under its id and with its note", async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  await swap('Banana bread')
+  expect(meal().getByText('In place of Banana bread:')).toBeDefined()
+  const amount = meal().getByLabelText('Amount: Rye bread')
+  expect(document.activeElement).toBe(amount)
+  fireEvent.change(amount, { target: { value: '60' } })
+  // An estimate's place too.
+  await swap('Salad from the canteen')
+  fireEvent.change(meal().getAllByLabelText('Amount: Rye bread')[1] ?? amount, {
+    target: { value: '40' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: bread.id,
+            item: { food_id: rye.id, amount: 60, unit: 'g', note: 'home-made' },
+          },
+          { op: 'replace', item_id: salad.id, item: { food_id: rye.id, amount: 40, unit: 'g' } },
+        ],
+      },
+    ])
+  })
+})
+
+test('another food taken back leaves the item as it was', async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '90' } })
+  await swap('Oats')
+  expect(meal().getByLabelText('Amount: Oats', { selector: 'input' }).closest('li')?.hidden).toBe(
+    true,
+  )
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Rye bread' }))
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '90')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          { op: 'replace', item_id: oats.id, item: { food_id: oatsFood, amount: 90, unit: 'g' } },
+        ],
+      },
+    ])
+  })
+})
+
+test('another food of no amount holds the meal back', async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  await swap('Oats')
+  fireEvent.change(meal().getByLabelText('Amount: Rye bread'), { target: { value: '0' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(
+    await meal().findByText(
+      'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+    ),
+  ).toBeDefined()
+  expect(server.sent).toEqual([])
+})
+
 test("an item's note of lines left as it was sends nothing", async () => {
   const server = mealServer()
   server.elsewhere((m) => ({

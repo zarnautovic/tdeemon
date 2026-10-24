@@ -8,8 +8,9 @@ import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 // FoodPicker finds a food of the user's to add to a meal: what a search
-// finds, each a button that picks it.
-export function FoodPicker({ onPick }: { onPick: (food: Food) => void }) {
+// finds, each a button that picks it. label names its search, when it is
+// not to add a food.
+export function FoodPicker({ onPick, label }: { onPick: (food: Food) => void; label?: string }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
@@ -20,7 +21,7 @@ export function FoodPicker({ onPick }: { onPick: (food: Food) => void }) {
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className={cn(fieldLabel, 'block')}>
-        {t.log.find}
+        {label ?? t.log.find}
       </label>
       <input
         id={id}
