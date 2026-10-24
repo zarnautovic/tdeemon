@@ -288,8 +288,9 @@ export function MealEditor({
               >
                 {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
               </Button>
-              {estimate && !gone && (
-                <span className="grid basis-full grid-cols-4 gap-2">
+              {estimate && (
+                // Hidden, not gone, as an amount's field.
+                <span className="grid basis-full grid-cols-4 gap-2" hidden={gone}>
                   {values.map((v) => (
                     <label key={v} className="space-y-1">
                       <span className="block text-xs text-muted-foreground">

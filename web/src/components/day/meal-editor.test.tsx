@@ -846,3 +846,38 @@ test('an estimate changed elsewhere keeps that change, and its other values', as
     ])
   })
 })
+
+test('an estimate removed and kept again keeps the values typed in it', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
+    target: { value: '300' },
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Salad from the canteen' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Keep: Salad from the canteen' }))
+  expect(meal().getByLabelText('Energy (kcal): Salad from the canteen')).toHaveProperty(
+    'value',
+    '300',
+  )
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          {
+            op: 'replace',
+            item_id: salad.id,
+            item: {
+              name: 'Salad from the canteen',
+              nutrients: { kcal: 300, protein: 8, carbs: 12, fat: 18 },
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
