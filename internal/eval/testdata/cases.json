@@ -80,6 +80,89 @@
     }
   },
   {
+    "name": "a meal of parts",
+    "lang": "en",
+    "say": [
+      "Breakfast: 300 g of Greek yoghurt (Dukat) with 30 g of whey protein, 50 g of muesli and a banana of 120 g."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 4,
+      "kcal": [
+        480,
+        720
+      ],
+      "known_items": 1,
+      "new_foods": [
+        "whey",
+        "sli",
+        "banan"
+      ],
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a home-cooked dish",
+    "lang": "en",
+    "say": [
+      "Dinner: a bowl of the chicken stew I made, about 400 g."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        300,
+        800
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a part without its amount",
+    "lang": "en",
+    "say": [
+      "Breakfast: 200 g of Greek yoghurt (Dukat) with some muesli.",
+      "I didn't weigh the muesli, a handful."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 2,
+      "known_items": 1,
+      "kcal": [
+        250,
+        550
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a restaurant plate of named parts",
+    "lang": "en",
+    "say": [
+      "Lunch at a restaurant: a steak, fries and a side salad."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        600,
+        1500
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
     "name": "an estimate, not logged",
     "lang": "en",
     "say": [
@@ -256,6 +339,88 @@
       "kcal": [
         450,
         1400
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "obrok od dijelova",
+    "lang": "hr",
+    "say": [
+      "Doručak: 300 g grčkog jogurta (Dukat) s 30 g wheya, 50 g müslija i bananom od 120 g."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 4,
+      "kcal": [
+        480,
+        720
+      ],
+      "known_items": 1,
+      "new_foods": [
+        "sli",
+        "banan"
+      ],
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "kućno jelo",
+    "lang": "hr",
+    "say": [
+      "Večera: zdjela pilećeg variva koje sam skuhao, oko 400 g."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        300,
+        800
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "dio bez količine",
+    "lang": "hr",
+    "say": [
+      "Doručak: 200 g grčkog jogurta (Dukat) s malo müslija.",
+      "Müsli nisam vagao, šaka."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 2,
+      "known_items": 1,
+      "kcal": [
+        250,
+        550
+      ],
+      "no_new_foods": true,
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "tanjur u restoranu s dijelovima",
+    "lang": "hr",
+    "say": [
+      "Ručak u restoranu: odrezak, pomfrit i mala salata."
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        600,
+        1500
       ],
       "no_new_foods": true,
       "not_tools": [

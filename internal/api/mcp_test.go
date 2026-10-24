@@ -252,13 +252,15 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 }
 
 // TestMCPFitsItsBudget holds the tools and the instructions, which a
-// model is sent with each request, to a budget in bytes: ~6k tokens, as
+// model is sent with each request, to a budget in bytes: ~6.5k tokens, as
 // the eval measures them (DESIGN.md §6). A change that grows them past it
-// needs a reason, and the eval run again.
+// needs a reason, and the eval run again. 13,500 bytes until October
+// 2026, raised for the rules of a meal's parts and the coach's history
+// and notes.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 13500
+	const budget = 14500
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
