@@ -519,7 +519,9 @@ export function MealEditor({
                       key={was.foodId}
                       name={fieldOf(item, 'unit')}
                       aria-label={t.log.unit(item.name)}
-                      defaultValue={unitWas}
+                      // Held by the editor, not the page: a unit renamed or
+                      // gone elsewhere never changes it unseen.
+                      value={picked ?? unitWas}
                       className={cn(inputClass, 'h-9 w-auto max-w-28')}
                       onChange={(e) => {
                         // The amount is worked out anew in the unit chosen,
@@ -529,12 +531,16 @@ export function MealEditor({
                         const from = unitGrams(itsFood, chosen[field] ?? unitWas ?? was.amount.key)
                         const to = unitGrams(itsFood, unitTo)
                         setChosen((cs) => ({ ...cs, [field]: unitTo }))
-                        if (
-                          amount instanceof HTMLInputElement &&
-                          from &&
-                          to &&
-                          Number.isFinite(typedN)
-                        ) {
+                        if (!(amount instanceof HTMLInputElement)) {
+                          return
+                        }
+                        if (!from || !to || !Number.isFinite(typedN)) {
+                          // Not to be worked out: the amount is typed anew
+                          // in the unit chosen, not taken over in it.
+                          amount.value = ''
+                          setTyping((ts) => ({ ...ts, [field]: '' }))
+                          setExact(({ [field]: _gone, ...es }) => es)
+                        } else {
                           // From what a unit chosen worked out, or the
                           // amount as it was while it is not typed, or as
                           // it is typed.

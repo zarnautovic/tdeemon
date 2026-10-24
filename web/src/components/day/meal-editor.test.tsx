@@ -1784,3 +1784,66 @@ test('a serving chosen that its food no longer has stays chosen, with its amount
     ])
   })
 })
+
+test('a serving renamed elsewhere keeps the item in it, untouched', async () => {
+  let name = 'egg'
+  let asked = 0
+  const server = mealServer({
+    [`GET /api/v1/foods/${egg.food_id ?? ''}`]: () => {
+      asked++
+      return Response.json(
+        food(egg.food_id ?? '', { name: 'Egg', servings: [{ name, amount: 50 }] }),
+      )
+    },
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  expect(await meal().findByLabelText('Unit: Egg')).toHaveProperty('value', 'serving:egg')
+  name = 'Egg'
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(meal().getByLabelText('Unit: Egg')).toHaveProperty('value', 'serving:Egg')
+  })
+  expect(asked).toBeGreaterThan(1)
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test('a unit chosen that cannot be worked out from the last asks for the amount anew', async () => {
+  let cup = true
+  let asked = 0
+  const server = mealServer({
+    [`GET /api/v1/foods/${oatsFood}`]: () => {
+      asked++
+      return Response.json(
+        food(oatsFood, { name: 'Oats', servings: cup ? [{ name: 'cup', amount: 90 }] : [] }),
+      )
+    },
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const unit = await meal().findByLabelText('Unit: Oats')
+  fireEvent.change(unit, { target: { value: 'serving:cup' } })
+  // The cup goes from the oats elsewhere: grams cannot be worked out of it.
+  cup = false
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(asked).toBeGreaterThan(1)
+  })
+  fireEvent.change(meal().getByLabelText('Unit: Oats'), { target: { value: 'g' } })
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(await meal().findByRole('alert')).toBeDefined()
+  expect(server.sent).toEqual([])
+})

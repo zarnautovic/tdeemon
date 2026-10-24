@@ -224,4 +224,14 @@ test('a serving is found as the server finds it, whatever its case and spaces', 
   }
   expect(unitGrams(cup, 'serving:FL OZ')).toBe(29.5735)
   expect(unitGrams(cup, 'serving:ΚΟΥΠΑΣ')).toBe(250)
+  // I and ı are two to the server, and so here.
+  const dots = {
+    ...bread,
+    servings: [
+      { name: 'I', amount: 10 },
+      { name: 'ı', amount: 90 },
+    ],
+  }
+  expect(unitGrams(dots, 'serving:ı')).toBe(90)
+  expect(unitGrams(dots, 'serving:i')).toBe(10)
 })
