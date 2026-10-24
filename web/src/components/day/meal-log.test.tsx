@@ -406,3 +406,25 @@ test('a meal being sent cannot be given up', async () => {
     expect(composer().getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')).toBe(true)
   })
 })
+
+test('the word for portions agrees with the amount typed', async () => {
+  const stew: Food = {
+    id: '0193c3a5-0000-7000-8000-0000000000f2',
+    name: 'Stew',
+    basis: 'portion',
+    source: 'dish',
+    archived: false,
+    nutrients: { kcal: 450, protein: 30, carbs: 40, fat: 15 },
+  }
+  logServer('2026-10-23', { 'GET /api/v1/foods': () => Response.json({ foods: [stew] }) })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'stew' } })
+  fireEvent.click(await composer().findByRole('button', { name: /Stew/ }))
+  const unit = () => composer().getByRole('option', { name: /^portion/ }).textContent
+  expect(composer().getByLabelText('Amount: Stew')).toHaveProperty('value', '1')
+  expect(unit()).toBe('portion')
+  fireEvent.change(composer().getByLabelText('Amount: Stew'), { target: { value: '2' } })
+  expect(unit()).toBe('portions')
+})

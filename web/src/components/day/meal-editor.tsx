@@ -21,10 +21,12 @@ type Change = components['schemas']['UpdateMealBody']
 // place, given the same way: the item's food (as it is when it is sent)
 // worked out again from the food as it is now, so a food corrected since
 // gives its new values. Only an item of a food has one: an estimate is of
-// a whole plate.
+// a whole plate. Its unit is a serving's name or the food's unit, or, in
+// portions, the word for as many as are typed.
 interface Amount {
   n: number
   unit: string | undefined
+  portions?: true
   with: (item: Item & { food_id: string }, n: number) => ItemInput
 }
 
@@ -34,7 +36,7 @@ function base(item: Item & { food_id: string }): ItemInput {
     : { food_id: item.food_id, note: item.note }
 }
 
-function amountOf(item: Item, portions: string): Amount | undefined {
+function amountOf(item: Item): Amount | undefined {
   if (item.food_id === undefined) {
     return undefined
   }
@@ -48,7 +50,12 @@ function amountOf(item: Item, portions: string): Amount | undefined {
     }
   }
   if (q.portions !== undefined) {
-    return { n: q.portions, unit: portions, with: (it, n) => ({ ...base(it), portions: n }) }
+    return {
+      n: q.portions,
+      unit: undefined,
+      portions: true,
+      with: (it, n) => ({ ...base(it), portions: n }),
+    }
   }
   if (q.amount !== undefined) {
     // Given without a unit, it is the food's, and stays so.
@@ -96,7 +103,7 @@ export function MealEditor({
   // elsewhere meanwhile. An item added since, or of another food now,
   // starts as it is.
   const start = (item: Item): Start | undefined => {
-    const amount = amountOf(item, t.meal.portions)
+    const amount = amountOf(item)
     return amount && { text: f.field(amount.n), amount, foodId: item.food_id, note: item.note }
   }
   const [initial] = useState(
@@ -115,6 +122,9 @@ export function MealEditor({
   // The items to remove, and those whose amount is not a number.
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
+  // What is typed in each amount's field, by the item and its food, for
+  // a unit that agrees with it.
+  const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
   const [confirming, setConfirming] = useState(false)
   // Of the items there now: one removed elsewhere is not counted.
   const none = meal.items.every((item) => removed.has(item.id))
@@ -202,8 +212,13 @@ export function MealEditor({
             opened !== undefined &&
             (now?.text !== opened.text ||
               now.amount.unit !== opened.amount.unit ||
+              now.amount.portions !== opened.amount.portions ||
               now.foodId !== opened.foodId ||
               now.note !== opened.note)
+          const field = `${item.id} ${String(was?.foodId)}`
+          const unit = was?.amount.portions
+            ? t.meal.portions(f.parse(typing[field] ?? was.text) ?? Number.NaN)
+            : was?.amount.unit
           return (
             <li key={item.id} className="flex flex-wrap items-center gap-2 py-2">
               <span className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}>
@@ -215,8 +230,10 @@ export function MealEditor({
                   </span>
                 )}
               </span>
-              {was && !gone && (
-                <span className="relative w-32">
+              {was && (
+                // Hidden, not gone, while the item is to be removed: kept
+                // again, it has what was typed in it.
+                <span className="relative w-32" hidden={gone}>
                   <input
                     // Of another food now, the field starts again.
                     key={was.foodId}
@@ -225,13 +242,17 @@ export function MealEditor({
                     inputMode="decimal"
                     autoComplete="off"
                     defaultValue={was.text}
+                    onChange={(e) => {
+                      const next = e.currentTarget.value
+                      setTyping((ts) => ({ ...ts, [field]: next }))
+                    }}
                     aria-invalid={wrong.has(item.id)}
                     aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
-                    className={cn(inputClass, 'h-9 tabular-nums', was.amount.unit && 'pr-14')}
+                    className={cn(inputClass, 'h-9 tabular-nums', unit && 'pr-14')}
                   />
-                  {was.amount.unit && (
+                  {unit && (
                     <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
-                      {was.amount.unit}
+                      {unit}
                     </span>
                   )}
                 </span>

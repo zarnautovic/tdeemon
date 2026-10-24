@@ -198,6 +198,31 @@ test("an item's amount is changed as it was given, in one change of the meal", a
   expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
 })
 
+// unitBeside is the unit shown in an amount's field.
+const unitBeside = (field: HTMLElement) => field.nextElementSibling?.textContent
+
+test('the word for portions agrees with the number typed', async () => {
+  fakeServer(mealServer().routes)
+  renderAt('/')
+
+  await edit()
+  const slices = meal().getByLabelText('Amount: Banana bread')
+  expect(unitBeside(slices)).toBe('portions')
+  fireEvent.change(slices, { target: { value: '1' } })
+  expect(unitBeside(slices)).toBe('portion')
+  fireEvent.change(slices, { target: { value: 'x' } })
+  expect(unitBeside(slices)).toBe('portions')
+  // Removed and kept again, the field has what was typed, as its word.
+  fireEvent.change(slices, { target: { value: '1' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Banana bread' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Keep: Banana bread' }))
+  expect(meal().getByLabelText('Amount: Banana bread')).toHaveProperty('value', '1')
+  expect(unitBeside(meal().getByLabelText('Amount: Banana bread'))).toBe('portion')
+  // A serving's name and a food's unit stay as they are.
+  expect(unitBeside(meal().getByLabelText('Amount: Egg'))).toBe('egg')
+  expect(unitBeside(meal().getByLabelText('Amount: Oats'))).toBe('g')
+})
+
 test('items are removed, and one can be kept again before saving', async () => {
   const server = mealServer()
   fakeServer(server.routes)

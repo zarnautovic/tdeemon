@@ -80,7 +80,9 @@ export function EntryRow({
         >
           {unitsOf(entry.food).map((u) => (
             <option key={u} value={u}>
-              {u === 'portion' ? t.log.portions : (servingOf(u) ?? u)}
+              {u === 'portion'
+                ? t.log.portions(f.parse(entry.amount) ?? Number.NaN)
+                : (servingOf(u) ?? u)}
             </option>
           ))}
         </select>

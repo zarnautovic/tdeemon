@@ -321,6 +321,36 @@ test('each limit is shown against its default and the instance', async () => {
   ).toBe('Default 0')
 })
 
+// unitOf is the unit shown beside a limit's field.
+const unitOf = (field: HTMLInputElement) => field.nextElementSibling?.textContent
+
+test('a unit of days agrees with the number typed beside it', async () => {
+  planServer()
+  renderAt('/settings/plan')
+  await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
+  const between = limit('Between two steps, at least')
+  expect(unitOf(between)).toBe('days')
+  type(between, '1')
+  expect(unitOf(between)).toBe('day')
+  // No number yet: the form of many.
+  type(between, '')
+  expect(unitOf(between)).toBe('days')
+  expect(unitOf(limit("Before a phase's first step, at least"))).toBe('days')
+})
+
+test('in Croatian a unit of days agrees with its number too', async () => {
+  planServer({ limits: limitsBody({ first_step_days: 21 }) }, signedIn('hr'))
+  renderAt('/settings/plan')
+  await screen.findByRole('textbox', { name: /^Cut, najbrži gubitak, BMI ispod 30/ })
+  const between = limit('Između dva koraka, najmanje')
+  expect(unitOf(between)).toBe('dana')
+  type(between, '1')
+  expect(unitOf(between)).toBe('dan')
+  type(between, '3')
+  expect(unitOf(between)).toBe('dana')
+  expect(unitOf(limit('Prije prvog koraka faze, najmanje'))).toBe('dan')
+})
+
 test('a tightened limit is saved as it is, and only what changed is sent', async () => {
   const { sent } = planServer()
   renderAt('/settings/plan')
