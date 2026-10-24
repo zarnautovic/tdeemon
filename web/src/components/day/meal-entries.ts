@@ -229,6 +229,7 @@ export function amountOf(item: Item): Amount | undefined {
     return {
       n: item.amount,
       unit,
+      key: unit,
       with: (it, n) => ({ ...foodItem(it), amount: n, unit }),
     }
   }
