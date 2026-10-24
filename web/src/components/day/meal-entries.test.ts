@@ -2,6 +2,7 @@ import { expect, test } from 'vitest'
 
 import type { Food, Item, Meal } from '@/api/types'
 import {
+  amountOf,
   foodEntry,
   inputOf,
   itemOf,
@@ -133,6 +134,17 @@ test('an item logged again is given as it was, a food by its id', () => {
   expect(inputOf(item({ portions: 1.5 }, { food_id: stew.id, unit: 'portion' }))).toEqual({
     food_id: stew.id,
     portions: 1.5,
+  })
+})
+
+test("servings without their name, of the food's one, are its amount in its unit", () => {
+  const amount = amountOf({ ...item({ servings: 2 }, { note: 'toasted' }), food_id: bread.id })
+  expect(amount?.n).toBe(80)
+  expect(amount?.unit).toBe('g')
+  expect(amount?.with({ ...item({ servings: 2 }), food_id: bread.id }, 120)).toEqual({
+    food_id: bread.id,
+    amount: 120,
+    unit: 'g',
   })
 })
 

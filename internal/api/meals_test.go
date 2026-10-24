@@ -106,6 +106,29 @@ func TestLogMeal(t *testing.T) {
 	}
 }
 
+// Servings without their name are of the food's one serving, kept as
+// given: the meal and an add sent again so are retries.
+func TestLogMealServingsOfTheFoodsOne(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	body := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "servings": 2}]}`, id, e.bread)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"quantity":{"servings":2},"amount":80`) {
+		t.Fatalf("%d %s; want 2 slices, 80 g, as given", rec.Code, rec.Body.String())
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusOK {
+		t.Errorf("the meal again: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "servings": 1}}]}`, uuid.NewV4(), e.bread)
+	for i := range 2 {
+		if rec := e.patch(t, id, add); rec.Code != http.StatusOK || strings.Count(rec.Body.String(), `"name":"Ana's rye bread"`) != 2 {
+			t.Errorf("the add, %d: %d %s", i+1, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 // A meal logged with a token is the API's; its time, when given, is the
 // user's, and it belongs to their logical day.
 func TestLogMealThroughTheAPI(t *testing.T) {

@@ -137,13 +137,23 @@ func TestFromFoodIsASnapshot(t *testing.T) {
 	}
 }
 
-// Servings without a name are of the food's serving when it has one.
+// Servings without a name are of the food's serving when it has one,
+// and the item keeps them as given, so a retry sent so is the same.
 func TestFromFoodOneServing(t *testing.T) {
 	t.Parallel()
 
-	it, err := FromFood(egg(), Quantity{Servings: 2}, "")
-	if err != nil || it.Amount != 120 || it.Quantity.Serving != "piece" {
-		t.Errorf("FromFood = %+v, %v; want 2 pieces, 120 g", it, err)
+	e := egg()
+	it, err := FromFood(e, Quantity{Servings: 2}, "")
+	if err != nil || it.Amount != 120 || it.Quantity != (Quantity{Servings: 2}) {
+		t.Errorf("FromFood = %+v, %v; want 2 pieces, 120 g, as given", it, err)
+	}
+	named, err := FromFood(e, Quantity{Servings: 2, Serving: "piece"}, "")
+	if err != nil || it.SameAs(named) {
+		t.Errorf("the item as given is the same as one with its serving named: %v", err)
+	}
+	again, err := FromFood(e, Quantity{Servings: 2}, "")
+	if err != nil || !it.SameAs(again) {
+		t.Errorf("the item sent again so is not the same: %v", err)
 	}
 }
 

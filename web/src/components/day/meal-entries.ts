@@ -138,6 +138,15 @@ export function amountOf(item: Item): Amount | undefined {
       with: (it, n) => ({ ...foodItem(it), serving, servings: n }),
     }
   }
+  // Servings without their name, of the food's one: in its unit, g or ml.
+  if (q.servings !== undefined && item.unit !== 'portion') {
+    const unit = item.unit
+    return {
+      n: item.amount,
+      unit,
+      with: (it, n) => ({ ...foodItem(it), amount: n, unit }),
+    }
+  }
   if (q.portions !== undefined) {
     return {
       n: q.portions,
