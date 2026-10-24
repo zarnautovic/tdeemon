@@ -118,6 +118,7 @@ export function DayPage() {
                 key={meal.id}
                 meal={meal}
                 date={day.data.date}
+                today={todayDate ?? day.data.date}
                 timeZone={session.data?.user.timezone ?? 'UTC'}
               />
             ))
