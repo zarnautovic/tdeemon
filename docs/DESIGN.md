@@ -92,7 +92,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
-| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish, later recipe/off), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a whole dish (a canteen meal); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
+| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish, later recipe/off), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a food by the piece; one food, never a dish ("Foods" below); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
 | `food_servings` | food_id, user_id, name, amount | named amounts of a food by weight or volume: "piece" = 60 g of egg, "slice" = 40 g of bread |
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
@@ -115,22 +115,24 @@ the isolation test can compare every table by user.
 
 **Foods.** The agent works out what was eaten from a short description
 or a photo, finds it in the food DB, and saves what is new for next
-time; the code does the arithmetic. A food is one of:
+time; the code does the arithmetic. A food is one food, a packaged
+product or a plain one, never several eaten together (decided October
+2026: a meal of several is a meal, its parts its items):
 
 - **by weight or volume** (most of them): values per 100 g or 100 ml, so
   any amount eaten is one multiplication, half a bar as much as a whole
   one. Named servings turn "4 eggs" or "half a roll" into grams;
-- **per portion**: a dish judged as a whole (a canteen meal, a
-  restaurant plate), eaten whole or in part ("half a portion"). With the
-  portion's weight known it can be logged in grams too. When the agent
-  logs such a dish it asks whether to keep it for next time; the user
-  decides;
-- **a cooked dish without a recipe** (`source: dish`): the agent works
-  out the values per 100 g of the finished dish from the ingredients and
-  the weight of the pot, or roughly, and keeps the ingredients as a note;
-  a cake cut into pieces is a food per portion. This stays an option
-  after recipes come: a recipe stores its ingredients for a dish cooked
-  again, and produces the same kind of food, with `source: recipe`.
+- **per portion**: a food judged by the piece (a banana, a muffin),
+  eaten whole or in part ("half a portion"). With the portion's weight
+  known it can be logged in grams too.
+
+A dish, a restaurant's or a canteen's plate, a home-cooked meal is no
+food: the agent logs its parts as items when it can tell them, else its
+estimate of the plate as one item of the meal. Recipes, later, are for a
+dish cooked again: a recipe stores its ingredients and produces a food
+of its own, with `source: recipe`. A food of `source: dish` or a dish
+per portion, which the code still takes, is what an earlier client or
+an import may have saved.
 
 The same name and brand (compared without regard to case or runs of
 space) are the same food: saving it again (`upsert_food`) corrects it
@@ -308,9 +310,10 @@ left.
        cache. The first log after the cache has expired (five minutes
        with Anthropic's) pays for the tools and instructions once more.
      - **The tools and the instructions are a budget of their own**,
-       which every request carries, cached or not: ~6k tokens, as a
+       which every request carries, cached or not: ~6.5k tokens, as a
        client that does not cache pays it in full with each request
-       (~10.5k until October 2026). So a tool's schema carries what a
+       (~10.5k until October 2026, ~6k then until the rules of a meal's
+       parts). So a tool's schema carries what a
        model needs to call it, not the format of a number, examples or
        bounds, which the operation checks; a schema two tools take is
        said in full in its own tool's (a new food in `upsert_food`'s, an
