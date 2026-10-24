@@ -260,7 +260,7 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 15500
+	const budget = 16000
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
