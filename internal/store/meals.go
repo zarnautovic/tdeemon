@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 	"uuid"
 
@@ -334,6 +335,11 @@ func itemsOf(items []meal.Item, ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]
 		// another basis.
 		if q := out[i].Quantity; q.Amount > 0 && q.Unit == "" {
 			return nil, &FoodItemError{Food: f, Err: errors.New("a new food's amount names its unit, g or ml")}
+		}
+		// Nor are its servings of the food's one: the user's may have
+		// another.
+		if q := out[i].Quantity; q.Servings > 0 && strings.TrimSpace(q.Serving) == "" {
+			return nil, &FoodItemError{Food: f, Err: errors.New("a new food's servings name the serving")}
 		}
 		it, err := meal.FromFood(f, out[i].Quantity, out[i].Note)
 		if err != nil {

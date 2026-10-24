@@ -73,7 +73,7 @@ type FoodFields struct {
 	Brand        string            `json:"brand,omitempty" maxLength:"100" doc:"The same name and brand are one food."`
 	Basis        string            `json:"basis" enum:"100g,100ml,portion" doc:"What the nutrients are for."`
 	Nutrients    foodNutrientsBody `json:"nutrients"`
-	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"The grams of a portion, when known."`
+	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"For basis portion only: the grams of a portion, when known."`
 	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" maxItems:"20" doc:"Named amounts: a piece, a slice."`
 	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" minLength:"1" maxLength:"100" doc:"Other names search finds."`
 	Source       string            `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from; dish is an earlier client's, for no new food."`

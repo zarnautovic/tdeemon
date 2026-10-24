@@ -106,6 +106,37 @@ func TestLogMeal(t *testing.T) {
 	}
 }
 
+// Servings without their name are of the food's one serving, kept as
+// given: the meal and an add sent again so are retries.
+func TestLogMealServingsOfTheFoodsOne(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id := meal.NewIDAt(e.now).String()
+	body := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "servings": 2}]}`, id, e.bread)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"quantity":{"servings":2},"amount":80`) {
+		t.Fatalf("%d %s; want 2 slices, 80 g, as given", rec.Code, rec.Body.String())
+	}
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusOK {
+		t.Errorf("the meal again: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	add := fmt.Sprintf(`{"ops": [{"op": "add", "item": {"id": %q, "food_id": %q, "servings": 1}}]}`, uuid.NewV4(), e.bread)
+	for i := range 2 {
+		if rec := e.patch(t, id, add); rec.Code != http.StatusOK || strings.Count(rec.Body.String(), `"name":"Ana's rye bread"`) != 2 {
+			t.Errorf("the add, %d: %d %s", i+1, rec.Code, rec.Body.String())
+		}
+	}
+	// A serving's name of spaces is none, and the meal sent again so a
+	// retry too.
+	blank := fmt.Sprintf(`{"id": %q, "items": [{"food_id": %q, "servings": 2, "serving": " "}]}`, meal.NewIDAt(e.now), e.bread)
+	for i, want := range []int{http.StatusCreated, http.StatusOK} {
+		if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", blank, e.session, nil); rec.Code != want {
+			t.Errorf("a blank serving, %d: %d %s, want %d", i+1, rec.Code, rec.Body.String(), want)
+		}
+	}
+}
+
 // A meal logged with a token is the API's; its time, when given, is the
 // user's, and it belongs to their logical day.
 func TestLogMealThroughTheAPI(t *testing.T) {
@@ -964,6 +995,25 @@ func TestLogMealAmountInTheFoodsUnit(t *testing.T) {
 	for range 2 {
 		if rec := e.patch(t, id, replace); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"quantity":{"amount":120},"amount":120,"unit":"g"`) {
 			t.Fatalf("a replace by 120 of the bread: %d %s, want 200 and 120 g", rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// A new food's servings name the serving, whatever food the user has of
+// its name: the user's may have another one than the food sent.
+func TestNewFoodServingsNameTheServing(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Oat flakes", bread.Name} {
+		nf := fmt.Sprintf(`{"food": {"name": %q, "basis": "100g", "source": "estimate",
+			"nutrients": {"kcal": 250, "protein": 8, "carbs": 48, "fat": 3}, "servings": [{"name": "loaf", "amount": 500}]}, "servings": 2}`, name)
+		if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [`+nf+`]}`, e.session, nil); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "a new food's servings name the serving") {
+			t.Errorf("2 of a new %s: %d %s, want a 422 asking for the serving", name, rec.Code, rec.Body.String())
 		}
 	}
 }

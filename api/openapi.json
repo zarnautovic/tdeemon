@@ -502,7 +502,7 @@
             "$ref": "#/components/schemas/FoodNutrientsBody"
           },
           "portion_grams": {
-            "description": "The grams of a portion, when known.",
+            "description": "For basis portion only: the grams of a portion, when known.",
             "format": "double",
             "minimum": 0,
             "type": "number"
@@ -586,7 +586,7 @@
             "$ref": "#/components/schemas/FoodNutrientsBody"
           },
           "portion_grams": {
-            "description": "The grams of a portion, when known.",
+            "description": "For basis portion only: the grams of a portion, when known.",
             "format": "double",
             "minimum": 0,
             "type": "number"
@@ -1034,7 +1034,7 @@
         "additionalProperties": false,
         "properties": {
           "amount": {
-            "description": "How much of the food, in unit.",
+            "description": "How much of the food, in unit; none for an estimate.",
             "format": "double",
             "minimum": 0,
             "type": "number"
@@ -1073,7 +1073,7 @@
             "type": "number"
           },
           "serving": {
-            "description": "A serving the food names.",
+            "description": "The serving's name, as the food names it; left out, the food's one, but a new food names it.",
             "type": "string"
           },
           "servings": {
@@ -1783,7 +1783,7 @@
             "type": "number"
           },
           "serving": {
-            "description": "The named serving: a slice, a piece.",
+            "description": "The named serving: a slice, a piece; left out with servings, the food's one when it was logged, as the item's amount and unit say.",
             "type": "string"
           },
           "servings": {
@@ -2451,7 +2451,7 @@
             "$ref": "#/components/schemas/FoodNutrientsBody"
           },
           "portion_grams": {
-            "description": "The grams of a portion, when known.",
+            "description": "For basis portion only: the grams of a portion, when known.",
             "format": "double",
             "minimum": 0,
             "type": "number"

@@ -38,10 +38,10 @@ type itemInput struct {
 	ID       string      `json:"id,omitempty" format:"uuid" doc:"The item's id; made when left out."`
 	FoodID   string      `json:"food_id,omitempty" format:"uuid" doc:"A food of the user's, from find_foods."`
 	Food     *FoodFields `json:"food,omitempty" doc:"A new food, saved; one of the name and brand of the user's food is that food, unchanged."`
-	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit."`
+	Amount   float64     `json:"amount,omitempty" minimum:"0" doc:"How much of the food, in unit; none for an estimate."`
 	Unit     string      `json:"unit,omitempty" enum:"g,ml" doc:"The food's unit, g or ml (g of a portion of known weight). Left out for a food_id, the food's; a new food or one per portion needs it."`
 	Servings float64     `json:"servings,omitempty" minimum:"0" doc:"How many of the food's serving."`
-	Serving  string      `json:"serving,omitempty" doc:"A serving the food names."`
+	Serving  string      `json:"serving,omitempty" doc:"The serving's name, as the food names it; left out, the food's one, but a new food names it."`
 	Portions float64     `json:"portions,omitempty" minimum:"0" doc:"Portions of a food per portion."`
 	// Name and Nutrients make an estimate.
 	Name      string             `json:"name,omitempty" maxLength:"200" doc:"A whole plate's estimate: its name, with nutrients."`
@@ -69,7 +69,13 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 	if kinds > 1 {
 		return meal.Item{}, nil, nil, huma.Error422UnprocessableEntity(errNotItem.Error())
 	}
-	q := meal.Quantity{Amount: in.Amount, Unit: in.Unit, Servings: in.Servings, Serving: in.Serving, Portions: in.Portions}
+	// A serving's name of spaces is none, as the item stores it, so the
+	// item sent again is the same.
+	serving := in.Serving
+	if strings.TrimSpace(serving) == "" {
+		serving = ""
+	}
+	q := meal.Quantity{Amount: in.Amount, Unit: in.Unit, Servings: in.Servings, Serving: serving, Portions: in.Portions}
 	it := meal.Item{Quantity: q, Note: in.Note}
 	var nf *food.Food
 	var warnings []meal.Warning
@@ -102,6 +108,20 @@ func sentItem(in *itemInput) (meal.Item, *food.Food, []meal.Warning, error) {
 // warnFoodKept is the warning of a new food that is a food the user has.
 const warnFoodKept = "food_kept"
 
+// newFoodQuantity refuses a quantity of a new food that the food's being
+// the user's, as it may turn out to be, could read otherwise: an amount
+// without its unit (the user's food may be by another basis), servings
+// without their name (it may have another serving).
+func newFoodQuantity(nf *food.Food, q meal.Quantity) error {
+	switch {
+	case q.Amount > 0 && q.Unit == "":
+		return huma.Error422UnprocessableEntity(nf.Name + ": a new food's amount names its unit, g or ml")
+	case q.Servings > 0 && strings.TrimSpace(q.Serving) == "":
+		return huma.Error422UnprocessableEntity(nf.Name + ": a new food's servings name the serving")
+	}
+	return nil
+}
+
 // item is sent worked out whole, with warnings about the values of its
 // new food: the item of its quantity of the user's food, or of its new
 // food nf, which the store saves with the meal and whose id the item
@@ -112,11 +132,12 @@ const warnFoodKept = "food_kept"
 func (s *sessions) item(ctx context.Context, p auth.Principal, sent meal.Item, nf *food.Food) (meal.Item, []meal.Warning, error) {
 	var f food.Food
 	var warnings []meal.Warning
+	if nf != nil {
+		if err := newFoodQuantity(nf, sent.Quantity); err != nil {
+			return meal.Item{}, nil, err
+		}
+	}
 	switch {
-	case nf != nil && sent.Quantity.Amount > 0 && sent.Quantity.Unit == "":
-		// The food may turn out to be the user's, by another basis, so
-		// the amount must say what it is in.
-		return meal.Item{}, nil, huma.Error422UnprocessableEntity(nf.Name + ": a new food's amount names its unit, g or ml")
 	case nf != nil:
 		had, err := s.db.FoodByKey(ctx, p.User.ID, nf.Name, nf.Brand)
 		switch {

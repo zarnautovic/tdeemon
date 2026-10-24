@@ -800,7 +800,7 @@ export interface components {
             nutrients: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description The grams of a portion, when known.
+             * @description For basis portion only: the grams of a portion, when known.
              */
             portion_grams?: number;
             /** @description The queries of find_foods that found the food, of those it was sent. */
@@ -829,7 +829,7 @@ export interface components {
             nutrients: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description The grams of a portion, when known.
+             * @description For basis portion only: the grams of a portion, when known.
              */
             portion_grams?: number;
             /** @description Named amounts: a piece, a slice. */
@@ -1003,7 +1003,7 @@ export interface components {
         ItemInput: {
             /**
              * Format: double
-             * @description How much of the food, in unit.
+             * @description How much of the food, in unit; none for an estimate.
              */
             amount?: number;
             /** @description A new food, saved; one of the name and brand of the user's food is that food, unchanged. */
@@ -1028,7 +1028,7 @@ export interface components {
              * @description Portions of a food per portion.
              */
             portions?: number;
-            /** @description A serving the food names. */
+            /** @description The serving's name, as the food names it; left out, the food's one, but a new food names it. */
             serving?: string;
             /**
              * Format: double
@@ -1332,7 +1332,7 @@ export interface components {
             amount?: number;
             /** Format: double */
             portions?: number;
-            /** @description The named serving: a slice, a piece. */
+            /** @description The named serving: a slice, a piece; left out with servings, the food's one when it was logged, as the item's amount and unit say. */
             serving?: string;
             /**
              * Format: double
@@ -1655,7 +1655,7 @@ export interface components {
             nutrients: components["schemas"]["FoodNutrientsBody"];
             /**
              * Format: double
-             * @description The grams of a portion, when known.
+             * @description For basis portion only: the grams of a portion, when known.
              */
             portion_grams?: number;
             /** @description Named amounts: a piece, a slice. */

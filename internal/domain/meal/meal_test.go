@@ -27,6 +27,13 @@ func tray() food.Food {
 	return f
 }
 
+// twoServings is eggs by the piece and by the tray.
+func twoServings() food.Food {
+	f := egg()
+	f.Servings = append(f.Servings, food.Serving{Name: "tray", Amount: 1800})
+	return f
+}
+
 func milk() food.Food {
 	return food.Food{
 		ID: uuid.NewV7(), Name: "Milk 2.8 %", Brand: "Dukat", Basis: food.Per100ml, Source: food.Label,
@@ -130,6 +137,31 @@ func TestFromFoodIsASnapshot(t *testing.T) {
 	}
 }
 
+// Servings without a name are of the food's serving when it has one,
+// and the item keeps them as given, so a retry sent so is the same.
+func TestFromFoodOneServing(t *testing.T) {
+	t.Parallel()
+
+	e := egg()
+	it, err := FromFood(e, Quantity{Servings: 2}, "")
+	if err != nil || it.Amount != 120 || it.Quantity != (Quantity{Servings: 2}) {
+		t.Errorf("FromFood = %+v, %v; want 2 pieces, 120 g, as given", it, err)
+	}
+	named, err := FromFood(e, Quantity{Servings: 2, Serving: "piece"}, "")
+	if err != nil || it.SameAs(named) {
+		t.Errorf("the item as given is the same as one with its serving named: %v", err)
+	}
+	again, err := FromFood(e, Quantity{Servings: 2}, "")
+	if err != nil || !it.SameAs(again) {
+		t.Errorf("the item sent again so is not the same: %v", err)
+	}
+	// A name of spaces is none.
+	blank, err := FromFood(e, Quantity{Servings: 2, Serving: " \t "}, "")
+	if err != nil || blank.Quantity != (Quantity{Servings: 2}) {
+		t.Errorf("a blank serving = %+v, %v; want none", blank.Quantity, err)
+	}
+}
+
 func TestFromFoodRefuses(t *testing.T) {
 	t.Parallel()
 
@@ -148,7 +180,7 @@ func TestFromFoodRefuses(t *testing.T) {
 		{"too many servings", egg(), Quantity{Servings: MaxServings + 1, Serving: "piece"}, "", "at most 100"},
 		{"servings adding up to too much", tray(), Quantity{Servings: 100, Serving: "tray"}, "", "at most 10000"},
 		{"too many portions", canteen(0), Quantity{Portions: MaxPortions + 1}, "", "at most 50"},
-		{"servings without a name", egg(), Quantity{Servings: 2}, "", "the serving's name"},
+		{"servings without a name, of a food of two", twoServings(), Quantity{Servings: 2}, "", "the serving's name"},
 		{"a name without servings", egg(), Quantity{Amount: 10, Unit: "g", Serving: "piece"}, "", "needs a number"},
 		{"an unknown serving", egg(), Quantity{Servings: 1, Serving: "slice"}, "", `the food has "piece"`},
 		{"a serving of a food with none", milk(), Quantity{Servings: 1, Serving: "glass"}, "", "has none"},

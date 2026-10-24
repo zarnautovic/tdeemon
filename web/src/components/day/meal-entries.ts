@@ -55,6 +55,17 @@ export function foodEntry(food: Food, field: (n: number) => string): Entry {
   if (q?.portions !== undefined && units.includes('portion')) {
     return { key, kind: 'food', food, amount: field(q.portions), unit: 'portion' }
   }
+  // Servings without their name, of the food's one: its amount in its
+  // unit, as the item had it.
+  const last = food.last_use
+  if (
+    q?.servings !== undefined &&
+    q.serving === undefined &&
+    last !== undefined &&
+    units.includes(last.unit)
+  ) {
+    return { key, kind: 'food', food, amount: field(last.amount), unit: last.unit }
+  }
   const unit = q?.unit ?? food.last_use?.unit
   if (q?.amount !== undefined && unit !== undefined && units.includes(unit)) {
     return { key, kind: 'food', food, amount: field(q.amount), unit }
@@ -136,6 +147,15 @@ export function amountOf(item: Item): Amount | undefined {
       n: q.servings,
       unit: serving,
       with: (it, n) => ({ ...foodItem(it), serving, servings: n }),
+    }
+  }
+  // Servings without their name, of the food's one: in its unit, g or ml.
+  if (q.servings !== undefined && item.unit !== 'portion') {
+    const unit = item.unit
+    return {
+      n: item.amount,
+      unit,
+      with: (it, n) => ({ ...foodItem(it), amount: n, unit }),
     }
   }
   if (q.portions !== undefined) {
