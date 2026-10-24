@@ -19,12 +19,15 @@ export function MealCard({
   date,
   today,
   timeZone,
+  startHour,
 }: {
   meal: Meal
   date: string
   // The user's logical today, which a repeat is of.
   today: string
+  // The user's clock: its time zone and the hour a day starts at.
   timeZone: string
+  startHour: number
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -96,6 +99,8 @@ export function MealCard({
         <MealEditor
           meal={meal}
           date={date}
+          timeZone={timeZone}
+          startHour={startHour}
           onDone={(w) => {
             setEditing(false)
             setClosed(true)
@@ -103,20 +108,26 @@ export function MealCard({
           }}
         />
       ) : (
-        <ul className="divide-y text-sm">
-          {meal.items.map((item) => (
-            <li key={item.id} className="flex items-baseline justify-between gap-2 py-1.5">
-              <span>
-                {item.name} <span className="text-muted-foreground">{amount(item)}</span>
-              </span>
-              <span className="text-right text-muted-foreground tabular-nums">
-                {t.unit.kcal(f.number(item.nutrients.kcal))} · {t.day.short.protein}{' '}
-                {f.number(item.nutrients.protein)} · {t.day.short.carbs}{' '}
-                {f.number(item.nutrients.carbs)} · {t.day.short.fat} {f.number(item.nutrients.fat)}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          {meal.note && (
+            <p className="text-sm whitespace-pre-line text-muted-foreground">{meal.note}</p>
+          )}
+          <ul className="divide-y text-sm">
+            {meal.items.map((item) => (
+              <li key={item.id} className="flex items-baseline justify-between gap-2 py-1.5">
+                <span>
+                  {item.name} <span className="text-muted-foreground">{amount(item)}</span>
+                </span>
+                <span className="text-right text-muted-foreground tabular-nums">
+                  {t.unit.kcal(f.number(item.nutrients.kcal))} · {t.day.short.protein}{' '}
+                  {f.number(item.nutrients.protein)} · {t.day.short.carbs}{' '}
+                  {f.number(item.nutrients.carbs)} · {t.day.short.fat}{' '}
+                  {f.number(item.nutrients.fat)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
       <RepeatStatus log={repeat} isToday={date === today} />
       {warnings.length > 0 && (

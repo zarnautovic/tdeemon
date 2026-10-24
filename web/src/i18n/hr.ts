@@ -131,6 +131,8 @@ export const hr: Messages = {
     keepMeal: 'Zadrži ga',
     refused: 'Server nije prihvatio ovu promjenu.',
     recomputed: 'Promijenjena količina računa se iz namirnice kakva je sada.',
+    note: 'Napomena',
+    add: 'Dodaj u obrok',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'UH (g)', fat: 'M (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
     changedElsewhere: 'Promijenjeno drugdje otkad je ovo otvoreno.',

@@ -142,6 +142,8 @@ export const en = {
     keepMeal: 'Keep it',
     refused: 'The server did not take this change.',
     recomputed: 'A changed amount is worked out from the food as it is now.',
+    note: 'Note',
+    add: 'Add to the meal',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'C (g)', fat: 'F (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
     changedElsewhere: 'Changed elsewhere since this opened.',

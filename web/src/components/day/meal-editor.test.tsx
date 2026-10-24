@@ -2,7 +2,7 @@ import { focusManager } from '@tanstack/react-query'
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
-import type { Day, Item, Meal } from '@/api/types'
+import type { Day, Food, Item, Meal } from '@/api/types'
 import { setLocale } from '@/i18n/locale'
 import { day, fakeServer, problem, renderAt, signedIn, today, type Handler } from '@/test/app'
 
@@ -522,7 +522,7 @@ test('the focus goes into the meal when it opens, to keeping it when asked, and 
 
   await edit()
   await waitFor(() => {
-    expect(document.activeElement).toBe(meal().getByLabelText('Amount: Oats'))
+    expect(document.activeElement).toBe(meal().getByLabelText('What it was'))
   })
   fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
   await waitFor(() => {
@@ -847,6 +847,237 @@ test('an estimate changed elsewhere keeps that change, and its other values', as
   })
 })
 
+test("a meal's description, time and note are changed, the time within its day", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  expect(meal().getByLabelText('What it was')).toHaveProperty('value', 'Breakfast')
+  // 15:45 UTC is 08:45 in Los Angeles, the user's time zone.
+  expect(meal().getByLabelText('Time')).toHaveProperty('value', '08:45')
+  fireEvent.change(meal().getByLabelText('What it was'), { target: { value: ' Brunch ' } })
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '10:15' } })
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'after the gym\n' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      { description: 'Brunch', eaten_at: '2026-10-23T17:15:00.000Z', note: 'after the gym' },
+    ])
+  })
+})
+
+test("a time before the day's start is of the night after it", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  // The user's day starts at 4: 02:30 is the night after the 23rd.
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '02:30' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ eaten_at: '2026-10-24T09:30:00.000Z' }])
+  })
+})
+
+test('words left as they were, or only spaced, and a cleared time send nothing', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('What it was'), { target: { value: 'Breakfast ' } })
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '' } })
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: '  ' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test('a description changed elsewhere stays when only the note is changed here', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  server.elsewhere((m) => ({ ...m, description: 'Second breakfast' }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'big one' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ note: 'big one' }])
+  })
+})
+
+test("a meal's note is shown on its card", async () => {
+  const server = mealServer()
+  server.elsewhere((m) => ({ ...m, note: 'before the run' }))
+  fakeServer(server.routes)
+  renderAt('/')
+
+  expect(
+    await within(await screen.findByRole('article')).findByText('before the run'),
+  ).toBeDefined()
+})
+
+const rye: Food = {
+  id: '0193c3a5-0000-7000-8000-0000000000f9',
+  name: 'Rye bread',
+  basis: '100g',
+  source: 'label',
+  archived: false,
+  nutrients: { kcal: 259, protein: 8.5, carbs: 48, fat: 3.3 },
+}
+
+// withFoods is a meal's server that finds the rye bread.
+function withFoods(answer: Partial<Record<string, Handler>> = {}) {
+  return mealServer({
+    'GET /api/v1/foods': (request) =>
+      Response.json({ foods: new URL(request.url).searchParams.get('query') ? [rye] : [] }),
+    ...answer,
+  })
+}
+
+const anId = expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7/) as unknown
+
+test("a food of the user's and an estimate are added to the meal, each under its own id", async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  // A food never eaten comes as 100 of its unit.
+  const amount = meal().getByLabelText('Amount: Rye bread')
+  expect(amount).toHaveProperty('value', '100')
+  expect(document.activeElement).toBe(amount)
+  fireEvent.change(amount, { target: { value: '60' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Add an estimate' }))
+  fireEvent.change(meal().getByLabelText('What it is'), { target: { value: 'Butter' } })
+  for (const [label, value] of [
+    ['Energy (kcal)', '70'],
+    ['Protein (g)', '0'],
+    ['Carbs (g)', '0'],
+    ['Fat (g)', '8'],
+  ] as const) {
+    fireEvent.change(meal().getByLabelText(label), { target: { value } })
+  }
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          { op: 'add', item: { id: anId, food_id: rye.id, amount: 60, unit: 'g' } },
+          {
+            op: 'add',
+            item: {
+              id: anId,
+              name: 'Butter',
+              nutrients: { kcal: 70, protein: 0, carbs: 0, fat: 8 },
+            },
+          },
+        ],
+      },
+    ])
+  })
+})
+
+test('an item added that cannot be sent as it is holds the meal back', async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Add an estimate' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(
+    await meal().findByText(
+      'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+    ),
+  ).toBeDefined()
+  expect(server.sent).toEqual([])
+  // Removed, it holds nothing back.
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: an estimate' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent).toEqual([])
+})
+
+test('a meal of its items all removed keeps the one added in their place', async () => {
+  const server = withFoods()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  for (const name of ['Oats', 'Banana bread', 'Egg', 'Salad from the canteen']) {
+    fireEvent.click(meal().getByRole('button', { name: `Remove: ${name}` }))
+  }
+  expect(meal().getByRole('button', { name: 'Save the meal' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([
+      {
+        ops: [
+          { op: 'remove', item_id: oats.id },
+          { op: 'remove', item_id: bread.id },
+          { op: 'remove', item_id: egg.id },
+          { op: 'remove', item_id: salad.id },
+          { op: 'add', item: { id: anId, food_id: rye.id, amount: 100, unit: 'g' } },
+        ],
+      },
+    ])
+  })
+})
+
+test('an item added and sent again after a failure goes under the same id', async () => {
+  let up = false
+  const server = withFoods()
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  // Each body sent, the one that failed too.
+  const bodies: unknown[] = []
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: async (request) => {
+      bodies.push(await request.clone().json())
+      return up && patch ? patch(request) : problem(503)
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  const again = await meal().findByRole('button', { name: 'Try again' })
+  // It may have been added: it holds still until it is sent again.
+  expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(true)
+  expect(meal().getByRole('button', { name: 'Remove: Rye bread' }).matches(':disabled')).toBe(true)
+  up = true
+  fireEvent.click(again)
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(bodies).toHaveLength(2)
+  expect(bodies[1]).toEqual(bodies[0])
+})
+
 test('an estimate removed and kept again keeps the values typed in it', async () => {
   const server = mealServer()
   fakeServer(server.routes)
@@ -918,4 +1149,102 @@ test('items added elsewhere, then corrected elsewhere, are not undone by fields 
   await waitFor(() => {
     expect(server.sent.map((s) => s.body)).toEqual([{ ops: [{ op: 'remove', item_id: egg.id }] }])
   })
+})
+
+test("an item added by a change that got no answer is the meal's, and not added again", async () => {
+  let up = false
+  const server = withFoods()
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: async (request) => {
+      if (up && patch) {
+        return patch(request)
+      }
+      // Taken, but its answer is lost: the meal has the bread now.
+      const added = /"op":"add","item":\{"id":"([^"]+)"/.exec(await request.text())?.[1]
+      server.elsewhere((m) => ({
+        ...m,
+        items: [
+          ...m.items,
+          { ...oats, id: added ?? '', food_id: rye.id, name: 'Rye bread', amount: 100 },
+        ],
+      }))
+      return problem(503)
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  const again = await meal().findByRole('button', { name: 'Try again' })
+  // The window gets the focus back: the day comes with the bread in it.
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  // One field of it, the meal's, which can be changed again.
+  await waitFor(() => {
+    expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(false)
+  })
+  // Unwanted after all: removed, and not added again with the retry.
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Rye bread' }))
+  up = true
+  fireEvent.click(again)
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  const retried = server.sent.at(-1)?.body
+  expect(opsOf(retried).map((o) => o.op)).toEqual(['remove'])
+  expect(JSON.stringify(retried)).not.toContain('"add"')
+})
+
+test('an item added by a change that got no answer, then removed elsewhere, stays removed', async () => {
+  let up = false
+  let addedId = ''
+  const server = withFoods()
+  const patch = server.routes[`PATCH /api/v1/meals/${mealId}`]
+  fakeServer({
+    ...server.routes,
+    [`PATCH /api/v1/meals/${mealId}`]: async (request) => {
+      if (up && patch) {
+        return patch(request)
+      }
+      // Taken, but its answer is lost: the meal has the bread now.
+      addedId = /"op":"add","item":\{"id":"([^"]+)"/.exec(await request.text())?.[1] ?? ''
+      server.elsewhere((m) => ({
+        ...m,
+        items: [...m.items, { ...oats, id: addedId, food_id: rye.id, name: 'Rye bread' }],
+      }))
+      return problem(503)
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
+  fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  const again = await meal().findByRole('button', { name: 'Try again' })
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(false)
+  })
+  // A model removes the bread.
+  server.elsewhere((m) => ({ ...m, items: m.items.filter((i) => i.id !== addedId) }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+  await waitFor(() => {
+    expect(meal().queryByLabelText('Amount: Rye bread')).toBeNull()
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  up = true
+  fireEvent.click(again)
+
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  expect(server.sent.at(-1)?.body).toEqual({ ops: [{ op: 'remove', item_id: egg.id }] })
 })
