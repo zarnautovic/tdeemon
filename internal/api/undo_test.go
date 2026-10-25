@@ -10,6 +10,7 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
+	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
@@ -72,6 +73,41 @@ func TestUndoLast(t *testing.T) {
 		}
 		if code != http.StatusOK {
 			t.Fatalf("an undo: %d %s", code, body)
+		}
+	}
+}
+
+// The answer says the days the change taken back was of, so a client
+// showing another day can say where it went: both days of a meal moved,
+// the day of one logged, none of a food.
+func TestUndoLastSaysItsDays(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	upsert := `{"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}`
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/foods", upsert, e.session, nil); rec.Code != http.StatusOK {
+		t.Fatalf("a food: %d %s", rec.Code, rec.Body.String())
+	}
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	if rec := e.patch(t, id, fmt.Sprintf(`{"eaten_at": %q}`, e.now.Add(-24*time.Hour).Format(time.RFC3339))); rec.Code != http.StatusOK {
+		t.Fatalf("the meal moved to the day before: %d %s", rec.Code, rec.Body.String())
+	}
+	today := day.DateOf(e.now)
+	for _, want := range []string{
+		fmt.Sprintf(`[%q,%q]`, today.AddDays(-1), today), // the move
+		fmt.Sprintf(`[%q]`, today),                       // the meal logged
+		`[]`,                                             // the food
+	} {
+		rec := e.in.do(t, http.MethodPost, "/api/v1/undo", fmt.Sprintf(`{"id": %q}`, clientid.NewAt(e.now)), e.session, nil)
+		var a struct {
+			Undone struct {
+				Action string          `json:"action"`
+				Days   json.RawMessage `json:"days"`
+			} `json:"undone"`
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &a) != nil || string(a.Undone.Days) != want {
+			t.Errorf("an undo: %d %s, want the days %s", rec.Code, rec.Body.String(), want)
 		}
 	}
 }

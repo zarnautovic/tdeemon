@@ -182,6 +182,8 @@ export const hr: Messages = {
   undo: {
     button: 'Poništi zadnju promjenu',
     done: (what: string) => `Poništeno: ${what}.`,
+    doneElsewhere: (what: string, days: number) =>
+      `Poništeno: ${what}, s ${days === 1 ? 'drugog dana' : 'drugih dana'}:`,
     nothing: 'Nema ničega za poništavanje.',
     unsure: 'Poništavanje nije dobilo odgovor. Pogledaj dan prije nego što ponovno poništiš.',
     clash:

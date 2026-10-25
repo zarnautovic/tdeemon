@@ -194,12 +194,12 @@ func (s *sessions) tools() []tool {
 				"without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; " +
 				"undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. " +
 				"A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, " +
-				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.",
+				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back and the days it was of; get_day shows each after it.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.undoLast).
 			briefly("Takes back the latest change not undone, of any client: a meal, a food, a measurement, a check-in, the notes; not the plan nor an import. " +
 				"Each undo takes a new id; the same id again answers as before. A change that cannot be taken back is a 409 saying why, " +
-				"and the next undo goes past it. Nothing is redone: the next undo takes back the change before. Answers what was taken back; get_day shows the day after it.").destroys().mayWriteAgain(),
+				"and the next undo goes past it. Nothing is redone: the next undo takes back the change before. Answers what was taken back and its days; get_day shows each after it.").destroys().mayWriteAgain(),
 		newTool("find_foods", readScopes, huma.Operation{
 			OperationID: "find-foods",
 			Method:      http.MethodGet,

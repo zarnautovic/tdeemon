@@ -309,6 +309,62 @@ func TestUndoMetrics(t *testing.T) {
 	}
 }
 
+// The days a change was of, as undo takes each back: a meal's before and
+// after it, a day's, a measurement's; none for a food or the notes.
+func TestDaysOf(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	d := day.DateOf(t0)
+	before, after := d.AddDays(-2), d.AddDays(-1)
+	b := saveFood(t, db, ana, bar())
+	created := createMeal(t, db, ana, breakfast(t, b, t0))
+	moved := created
+	moved.EatenAt, moved.Day = t0.Add(-48*time.Hour), before
+	steps := metric.Value{Kind: metric.Steps, Value: 6000, Source: metric.Manual}
+	for _, write := range []func() error{
+		func() error { _, err := db.ReplaceMeal(t.Context(), ana, testActor, moved, t0); return err },
+		func() error { return db.DeleteMeal(t.Context(), ana, testActor, created.ID, t0) },
+		func() error {
+			return db.ExcludeDay(t.Context(), ana, testActor, after, day.Exclusion{Reason: "wedding"}, t0)
+		},
+		func() error { _, err := db.SetMetric(t.Context(), ana, testActor, d, steps, t0); return err },
+		func() error { return db.SetTrainingDay(t.Context(), ana, testActor, before, new(true), t0) },
+		func() error {
+			_, err := db.CheckIn(t.Context(), ana, testActor, after, func(c store.DayCheckIn) store.DayCheckIn {
+				c.Mood = 4
+				return c
+			}, t0)
+			return err
+		},
+		func() error { return db.SetProfileNotes(t.Context(), ana, testActor, "a coach's", t0) },
+	} {
+		if err := write(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, want := range [][]day.Date{
+		nil,         // the notes
+		{after},     // the check-in
+		{before},    // the day's type
+		{d},         // the measurement
+		{after},     // the exclusion
+		{before},    // the meal deleted, on the day it was moved to
+		{before, d}, // the meal moved
+		{d},         // the meal logged
+		nil,         // the food
+	} {
+		e := undo(t, db, ana)
+		if got := store.DaysOf(e); !reflect.DeepEqual(got, want) {
+			t.Errorf("the days of %s = %v, want %v", e.Action, got, want)
+		}
+	}
+	// A meal's state that does not read is of no day.
+	if got := store.DaysOf(event.Event{Action: event.MealCreate, Entity: created.ID.String(), After: json.RawMessage(`{`)}); got != nil {
+		t.Errorf("the days of a state that does not read = %v, want none", got)
+	}
+}
+
 // An undo is an event too, of the actor that asked for it, and it marks
 // the event it took back.
 func TestUndoIsRecorded(t *testing.T) {

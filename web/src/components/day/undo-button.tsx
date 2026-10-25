@@ -1,27 +1,53 @@
+import { Link } from '@tanstack/react-router'
 import { Undo2 } from 'lucide-react'
+import { Fragment } from 'react'
 
 import { statusOf } from '@/api/errors'
 import { useUndo } from '@/api/meals'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
+import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { uuidv7 } from '@/lib/uuid'
 
 // UndoButton takes back the user's latest change, made here or anywhere
-// else, and says what it took back. Each tap is an undo of its own, under
-// a new id; trying again after no answer sends the same one, so it takes
-// back no more than one change.
-export function UndoButton({ date }: { date: string }) {
+// else, and says what it took back; of a change of another day than date,
+// it names that day, with a link to it. Each tap is an undo of its own,
+// under a new id; trying again after no answer sends the same one, so it
+// takes back no more than one change.
+export function UndoButton({ date, today }: { date: string; today: string | undefined }) {
   const t = useMessages()
+  const f = useFormat()
   const undo = useUndo(date)
   const status = statusOf(undo.error)
 
   let said
   if (undo.isSuccess) {
-    const action = undo.data.undone.action
-    said = (
-      <output className="text-sm">{t.undo.done(t.undo.actions[action] ?? t.undo.change)}</output>
-    )
+    const { action, days } = undo.data.undone
+    const what = t.undo.actions[action] ?? t.undo.change
+    // A change of this day shows on it; of a food or the notes, of none.
+    const elsewhere = days.includes(date) ? [] : days
+    said =
+      elsewhere.length === 0 ? (
+        <output className="text-sm">{t.undo.done(what)}</output>
+      ) : (
+        <output className="text-sm">
+          {t.undo.doneElsewhere(what, elsewhere.length)}{' '}
+          {elsewhere.map((d, i) => (
+            <Fragment key={d}>
+              {i > 0 && ' · '}
+              <Link
+                to="/"
+                // Today's link is / itself.
+                search={d === today ? {} : { date: d }}
+                className="underline underline-offset-2"
+              >
+                {f.date(d)}
+              </Link>
+            </Fragment>
+          ))}
+        </output>
+      )
   } else if (undo.isError && status === 404) {
     said = <output className="text-sm text-muted-foreground">{t.undo.nothing}</output>
   } else if (undo.isError && status === 409) {
