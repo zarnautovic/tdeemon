@@ -183,6 +183,34 @@ func TestFoodsUnderOneIDStayApart(t *testing.T) {
 	}
 }
 
+// Archived foods are found apart, by FindArchivedFoods alone, and only
+// the user's own.
+func TestFindArchivedFoods(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	for _, userID := range []uuid.UUID{ana, ivo} {
+		f := saveFood(t, db, userID, bar())
+		if err := db.SetFoodArchived(t.Context(), userID, testActor, f.ID, true, t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	anas, err := db.FindArchivedFoods(t.Context(), ana, "caramel", 10)
+	if err != nil || len(anas) != 1 || !anas[0].Archived {
+		t.Errorf("FindArchivedFoods = %v, %v; want ana's archived bar alone", names(anas), err)
+	}
+	if got, _ := db.FindFoods(t.Context(), ana, "caramel", 10); len(got) != 0 {
+		t.Errorf("FindFoods finds an archived food: %v", names(got))
+	}
+	saveFood(t, db, ana, food.Food{
+		ID: uuid.NewV7(), Name: "Raženi kruh", Basis: food.Per100g, Source: food.User,
+		Nutrients: food.Nutrients{Kcal: 250, Protein: 9, Carbs: 49, Fat: 3},
+	})
+	if got, _ := db.FindArchivedFoods(t.Context(), ana, "kruh", 10); len(got) != 0 {
+		t.Errorf("FindArchivedFoods finds a food in use: %v", names(got))
+	}
+}
+
 // Saving the name and brand of an archived food corrects it and brings it
 // back into search.
 func TestSaveFoodRevivesAnArchivedOne(t *testing.T) {

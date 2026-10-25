@@ -66,6 +66,13 @@ func TestCheckNutrients(t *testing.T) {
 	}
 }
 
+// corrected is f renamed, and with a fifth more energy.
+func corrected(f food.Food) food.Food {
+	f.Name += ", boiled"
+	f.Nutrients.Kcal *= 1.2
+	return f
+}
+
 func TestDuplicateOf(t *testing.T) {
 	t.Parallel()
 
@@ -85,6 +92,8 @@ func TestDuplicateOf(t *testing.T) {
 		{"more egg", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 180, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), false},
 		{"an item less", meal(t, at.Add(time.Minute), item(t, e, Quantity{Amount: 120, Unit: "g"})), false},
 		{"another food", meal(t, at.Add(time.Minute), item(t, egg(), Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), false},
+		{"the same, its egg renamed and corrected since", meal(t, at.Add(2*time.Minute),
+			item(t, corrected(e), Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"})), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

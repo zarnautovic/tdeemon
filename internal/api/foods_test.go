@@ -15,6 +15,25 @@ import (
 
 // list-foods pages the user's foods, the archived ones apart, by name or
 // by their last use, with how many there are, for a web session only.
+// find_foods leaves the archived foods out, and finds them alone when
+// asked for them.
+func TestFindArchivedFoods(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	stew := e.in.user.Name + "'s canteen stew"
+	for _, tc := range []struct{ path, want, not string }{
+		{"/api/v1/foods?query=stew", `"unfound":["stew"]`, stew},
+		{"/api/v1/foods?query=stew&archived=true", stew, `"unfound":["stew"]`},
+		{"/api/v1/foods?query=rye&archived=true", `"unfound":["rye"]`, "rye bread"},
+	} {
+		rec := e.in.do(t, http.MethodGet, tc.path, "", e.session, nil)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), tc.want) || strings.Contains(rec.Body.String(), tc.not) {
+			t.Errorf("%s: %d %s, want %q and not %q", tc.path, rec.Code, rec.Body.String(), tc.want, tc.not)
+		}
+	}
+}
+
 func TestListFoods(t *testing.T) {
 	t.Parallel()
 

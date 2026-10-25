@@ -461,7 +461,7 @@
             "type": "array"
           },
           "archived": {
-            "description": "An archived food stays out of a search, and keeps its name and aliases.",
+            "description": "An archived food stays out of a search, but one of the archived foods, and keeps its name and aliases.",
             "type": "boolean"
           },
           "basis": {
@@ -3751,7 +3751,7 @@
     },
     "/api/v1/foods": {
       "get": {
-        "description": "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out.",
+        "description": "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out, or alone found with archived.",
         "operationId": "find-foods",
         "parameters": [
           {
@@ -3789,6 +3789,16 @@
               "maximum": 50,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "description": "The archived foods instead of the others.",
+            "explode": false,
+            "in": "query",
+            "name": "archived",
+            "schema": {
+              "description": "The archived foods instead of the others.",
+              "type": "boolean"
             }
           }
         ],

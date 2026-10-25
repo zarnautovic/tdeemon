@@ -32,13 +32,13 @@ export function useFoodList(archived: boolean, order: 'name' | 'use') {
 }
 
 // useFindFoods is the user's foods a search finds (find_foods), when
-// there is something to search for; archived foods are left out.
-export function useFindFoods(query: string) {
+// there is something to search for: the archived ones, or the others.
+export function useFindFoods(query: string, archived = false) {
   const q = query.trim()
   return $api.useQuery(
     'get',
     '/api/v1/foods',
-    { params: { query: { query: [q], limit: 50 } } },
+    { params: { query: { query: [q], limit: 50, ...(archived ? { archived } : {}) } } },
     // While the next search comes, the last one's foods stay.
     { enabled: q !== '', placeholderData: keepPreviousData },
   )

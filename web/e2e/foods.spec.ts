@@ -31,13 +31,19 @@ test('a food is made, found, corrected, archived and brought back', async ({ pag
   await expect(page.getByText('Saved')).toBeVisible()
 
   await page.getByRole('button', { name: 'Archive' }).click()
-  await expect(page.getByText('Archived: no search finds it')).toBeVisible()
+  await expect(
+    page.getByText('Archived: only a search of the archived foods finds it'),
+  ).toBeVisible()
   await page.getByRole('link', { name: 'Back to the foods' }).click()
   await expect(page.getByRole('list', { name: 'Found' })).toHaveCount(0)
   await page.getByLabel('Search the foods').fill('')
   await page.getByRole('button', { name: 'Archived' }).click()
   const archived = page.getByRole('list', { name: 'Archived' })
   await expect(archived).toContainText('346 kcal')
+  // A search on the archived tab is of the archived foods.
+  await page.getByLabel('Search the foods').fill('buck')
+  await expect(page.getByRole('list', { name: 'Found' })).toContainText('Buckwheat')
+  await page.getByLabel('Search the foods').fill('')
   await archived.getByRole('link', { name: /Buckwheat/ }).click()
   await page.getByRole('button', { name: 'Bring back' }).click()
   await expect(page.getByRole('button', { name: 'Archive' })).toBeVisible()

@@ -693,6 +693,17 @@ func foodStateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 // alone, not on other users' (which a relevance score over the whole
 // index would). A query with no words finds nothing.
 func (db *DB) FindFoods(ctx context.Context, userID uuid.UUID, query string, limit int) ([]food.Food, error) {
+	return db.findFoods(ctx, userID, query, limit, false)
+}
+
+// FindArchivedFoods is FindFoods among userID's archived foods alone.
+func (db *DB) FindArchivedFoods(ctx context.Context, userID uuid.UUID, query string, limit int) ([]food.Food, error) {
+	return db.findFoods(ctx, userID, query, limit, true)
+}
+
+// findFoods is FindFoods among userID's archived foods, or the others, as
+// archived says.
+func (db *DB) findFoods(ctx context.Context, userID uuid.UUID, query string, limit int, archived bool) ([]food.Food, error) {
 	match := ftsQuery(query)
 	if match == "" || limit <= 0 {
 		return nil, nil
@@ -704,14 +715,14 @@ func (db *DB) FindFoods(ctx context.Context, userID uuid.UUID, query string, lim
 		var err error
 		out, err = queryFoods(ctx, tx, `
 			SELECT `+foodColumns+` FROM foods AS f
-			WHERE f.user_id = ? AND f.archived = 0
+			WHERE f.user_id = ? AND f.archived = ?
 				AND f.id IN (SELECT food_id FROM foods_fts WHERE foods_fts MATCH ? AND user_id = ?)
 			ORDER BY CASE
 					WHEN f.id IN (SELECT food_id FROM foods_fts WHERE foods_fts MATCH ? AND user_id = ?) THEN 0
 					WHEN f.id IN (SELECT food_id FROM foods_fts WHERE foods_fts MATCH ? AND user_id = ?) THEN 1
 					ELSE 2
 				END, length(f.name), f.name
-			LIMIT ?`, uid, match, uid, "{name} : ("+match+")", uid, "{name aliases} : ("+match+")", uid, limit)
+			LIMIT ?`, uid, archived, match, uid, "{name} : ("+match+")", uid, "{name aliases} : ("+match+")", uid, limit)
 		if err != nil {
 			return err
 		}

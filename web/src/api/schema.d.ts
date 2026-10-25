@@ -161,7 +161,7 @@ export interface paths {
         };
         /**
          * Find foods
-         * @description Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out.
+         * @description Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. Each has how much a meal had of it last. Archived foods are left out, or alone found with archived.
          */
         get: operations["find-foods"];
         put?: never;
@@ -781,7 +781,7 @@ export interface components {
         FoodBody: {
             /** @description Other names search finds. */
             aliases?: string[];
-            /** @description An archived food stays out of a search, and keeps its name and aliases. */
+            /** @description An archived food stays out of a search, but one of the archived foods, and keeps its name and aliases. */
             archived: boolean;
             /**
              * @description What the nutrients are for.
@@ -2579,6 +2579,8 @@ export interface operations {
                 query: string[];
                 /** @description The most foods of each query. */
                 limit?: number;
+                /** @description The archived foods instead of the others. */
+                archived?: boolean;
             };
             header?: never;
             path?: never;

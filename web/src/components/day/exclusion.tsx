@@ -5,7 +5,7 @@ import type { Day } from '@/api/types'
 import { Field } from '@/components/day/field'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
-import { useMessages } from '@/i18n/messages'
+import { reasonOf, useMessages } from '@/i18n/messages'
 import { inputClass } from '@/lib/styles'
 
 // maxReason is the server's bound on why a day is left out, in
@@ -14,7 +14,8 @@ const maxReason = 200
 
 // Exclusion says whether calibration counts the day, and leaves it out
 // with a reason (a restaurant meal that could not be weighed, being sick,
-// a day not all logged) or counts it again.
+// a day not all logged) or counts it again. A reason a tap gives is
+// stored under its code and said in the language; one typed, as it is.
 export function Exclusion({ day }: { day: Day }) {
   const t = useMessages()
   const id = useId()
@@ -37,14 +38,20 @@ export function Exclusion({ day }: { day: Day }) {
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    send(reason.trim())
+    send(reasonOf(reason) ?? reason.trim())
+  }
+
+  // said is a reason as the language says it.
+  const said = (r: string) => {
+    const code = reasonOf(r)
+    return code === undefined ? r : t.day.reasons[code]
   }
 
   let body
   if (day.status === 'excluded') {
     body = (
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm">{t.day.excluded(day.excluded_reason ?? '')}</p>
+        <p className="text-sm">{t.day.excluded(said(day.excluded_reason ?? ''))}</p>
         <Button
           variant="outline"
           disabled={change.isPending}
@@ -74,9 +81,9 @@ export function Exclusion({ day }: { day: Day }) {
           }}
         />
         <div className="flex flex-wrap gap-1.5">
-          {t.day.reasons.map((r) => (
+          {Object.entries(t.day.reasons).map(([code, r]) => (
             <Button
-              key={r}
+              key={code}
               variant="outline"
               size="sm"
               className="rounded-full border-dashed"

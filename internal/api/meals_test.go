@@ -189,6 +189,32 @@ func TestLogMealWarns(t *testing.T) {
 	}
 }
 
+// A meal logged again after its food was corrected, as a repeat of it
+// would be, is still the same meal: the duplicate is told by the food,
+// not by the values it brought.
+func TestLogMealWarnsOfADuplicateOfAFoodCorrectedSince(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	body := fmt.Sprintf(`{"items": [{"food_id": %q, "servings": 2, "serving": "slice"}]}`, e.bread)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusCreated {
+		t.Fatalf("the meal: %d %s", rec.Code, rec.Body.String())
+	}
+	bread, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, uuid.MustParse(e.bread))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bread.Name, bread.Nutrients.Kcal = "Dark rye bread", 280
+	if _, err := e.in.db.SaveFood(t.Context(), e.in.user.ID, isolationActor, bread, e.now); err != nil {
+		t.Fatal(err)
+	}
+	e.in.clock.Set(e.now.Add(2 * time.Minute))
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil); rec.Code != http.StatusCreated ||
+		!strings.Contains(rec.Body.String(), `"code":"duplicate_meal"`) {
+		t.Errorf("the meal again: %d %s, want a duplicate", rec.Code, rec.Body.String())
+	}
+}
+
 // log_meal refuses a meal it cannot take, saying why, and stores nothing.
 func TestLogMealRefuses(t *testing.T) {
 	t.Parallel()
