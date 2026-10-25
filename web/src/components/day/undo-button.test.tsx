@@ -97,6 +97,19 @@ test('a meal moved between two other days is said with both', async () => {
   })
 })
 
+test('a change of a day of another year says its year', async () => {
+  fakeServer({
+    ...signedIn(),
+    'POST /api/v1/undo': () =>
+      Response.json({ undone: { ...undone.undone, action: 'metric.set', days: ['2025-12-31'] } }),
+  })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+
+  expect(await screen.findByRole('link', { name: 'Wednesday, December 31, 2025' })).toBeDefined()
+})
+
 test('a change of the day shown, or of no day, is said without a day', async () => {
   // A meal moved from the day shown, then a food.
   const answers = [

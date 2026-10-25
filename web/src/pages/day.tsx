@@ -76,9 +76,11 @@ export function DayPage() {
           <ChevronLeft aria-hidden />
         </Link>
         <div className="flex-1 text-center">
-          <h1 className="text-xl font-semibold">{isToday ? t.day.today : f.date(shown)}</h1>
+          <h1 className="text-xl font-semibold">
+            {isToday ? t.day.today : f.date(shown, todayDate)}
+          </h1>
           <p className="text-sm text-muted-foreground">
-            {isToday && `${f.date(shown)} · `}
+            {isToday && `${f.date(shown, todayDate)} · `}
             {day.data.type === 'training' ? t.day.training : t.day.rest}
           </p>
         </div>
