@@ -92,13 +92,24 @@ func (s *sessions) followChat(ctx context.Context, from, to int64, now time.Time
 	}
 }
 
-// answer is the answer to u's message text at now.
+// answer is the answer to u's message text at now: the summary to its
+// command in any language, the commands to anything else.
 func (s *sessions) answer(ctx context.Context, u user.User, text string, now time.Time) (string, error) {
-	switch command(text) {
-	case "sazetak", "sažetak", "summary":
+	if isSummary(command(text)) {
 		return s.morning(ctx, u, now)
 	}
 	return helpText(u.Locale), nil
+}
+
+// isSummary reports whether name is the summary's command in a language,
+// or sažetak as typed, with the diacritic a command's name has not.
+func isSummary(name string) bool {
+	for _, w := range botWords {
+		if w.summary.Name == name {
+			return true
+		}
+	}
+	return name == "sažetak"
 }
 
 // command returns the command text starts with, without its slash and
@@ -117,20 +128,50 @@ func command(text string) string {
 	return strings.ToLower(name)
 }
 
-// BotCommands are the commands Telegram's menu lists for the bot, by the
-// language of the app (telegram.Bot.SetCommands): Croatian for hr, and
-// English for any other.
-func BotCommands() map[string][]telegram.Command {
-	return map[string][]telegram.Command{
-		"":   {{Name: "summary", Description: "The morning summary, now"}, {Name: "help", Description: "The commands"}},
-		"hr": {{Name: "sazetak", Description: "Jutarnji sažetak, sada"}, {Name: "pomoc", Description: "Naredbe"}},
+// botLanguage is the bot's commands in a language: the summary's and the
+// help's, as Telegram's menu lists them, and the help's text.
+type botLanguage struct {
+	summary, help telegram.Command
+	helpText      string
+}
+
+// botWords are the bot's commands in each language a user can have
+// (user.Locales), which a test holds to; English is the base.
+var botWords = map[string]botLanguage{
+	"en": {
+		summary:  telegram.Command{Name: "summary", Description: "The morning summary, now"},
+		help:     telegram.Command{Name: "help", Description: "The commands"},
+		helpText: "Commands:\n/summary – the morning summary, now\n/help – these commands",
+	},
+	"hr": {
+		summary:  telegram.Command{Name: "sazetak", Description: "Jutarnji sažetak, sada"},
+		help:     telegram.Command{Name: "pomoc", Description: "Naredbe"},
+		helpText: "Naredbe:\n/sazetak – jutarnji sažetak, sada\n/pomoc – ove naredbe",
+	},
+}
+
+// botLanguageOf is the bot's commands in locale, English for one without
+// them.
+func botLanguageOf(locale string) botLanguage {
+	if w, ok := botWords[locale]; ok {
+		return w
 	}
+	return botWords["en"]
+}
+
+// BotCommands are the commands Telegram's menu lists for the bot, by the
+// language of the app (telegram.Bot.SetCommands): each language's, and
+// English for any other ("").
+func BotCommands() map[string][]telegram.Command {
+	out := map[string][]telegram.Command{}
+	for locale, w := range botWords {
+		if locale == "en" {
+			locale = ""
+		}
+		out[locale] = []telegram.Command{w.summary, w.help}
+	}
+	return out
 }
 
 // helpText lists the commands, in the language of locale.
-func helpText(locale string) string {
-	if locale == "hr" {
-		return "Naredbe:\n/sazetak – jutarnji sažetak, sada\n/pomoc – ove naredbe"
-	}
-	return "Commands:\n/summary – the morning summary, now\n/help – these commands"
-}
+func helpText(locale string) string { return botLanguageOf(locale).helpText }

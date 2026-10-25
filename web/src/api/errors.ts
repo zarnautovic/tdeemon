@@ -75,3 +75,36 @@ export function detailOf(error: unknown): string {
   })
   return said.length > 0 ? `${error.detail}: ${said.join('; ')}` : error.detail
 }
+
+// Conflict is the food in the way of a food's save, as a 409 says it in
+// data: the name and brand it has, or the other name at alias of those
+// sent, and its id.
+export interface Conflict {
+  alias?: number
+  foodId: string
+}
+
+// conflictOf is the Conflict a 409 says; undefined for any other error,
+// or one that does not say it.
+export function conflictOf(error: unknown): Conflict | undefined {
+  if (statusOf(error) !== 409 || typeof error !== 'object' || error === null) {
+    return undefined
+  }
+  const errors: unknown[] = 'errors' in error && Array.isArray(error.errors) ? error.errors : []
+  const e = errors[0]
+  if (
+    typeof e !== 'object' ||
+    e === null ||
+    !('location' in e) ||
+    !('value' in e) ||
+    typeof e.location !== 'string' ||
+    typeof e.value !== 'string'
+  ) {
+    return undefined
+  }
+  if (e.location === 'body.name') {
+    return { foodId: e.value }
+  }
+  const alias = /^body\.aliases\[(\d+)\]$/.exec(e.location)?.[1]
+  return alias === undefined ? undefined : { alias: Number(alias), foodId: e.value }
+}

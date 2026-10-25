@@ -293,17 +293,25 @@ func newAPI(mux *http.ServeMux, logger *slog.Logger) huma.API {
 // dropErrorValues keeps an error response from echoing what the request
 // sent: huma puts the offending value into each error detail, and for a
 // sign-in that is the password (a body that does not parse, a field of
-// the wrong type). The location and the message say enough.
+// the wrong type). The location and the message say enough. A value the
+// server gives of its own (ownValue) stays.
 func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 	if e, ok := v.(*huma.ErrorModel); ok {
 		for _, d := range e.Errors {
-			if d != nil {
+			if d == nil {
+				continue
+			}
+			if _, own := d.Value.(ownValue); !own {
 				d.Value = nil
 			}
 		}
 	}
 	return v, nil
 }
+
+// ownValue is an error detail's value the server gives of its own, such
+// as the id of the food in the way of a save, never one the request sent.
+type ownValue string
 
 // documentRequestErrors lists in an operation's responses the problems
 // answered before the handler runs, which huma does not list itself: the

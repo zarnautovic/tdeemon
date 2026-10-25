@@ -628,7 +628,8 @@ generator writes it.
   (`hr.ts`), which the type checker holds to it, read with
   `useMessages()`. A text with values in it is a function of them. The
   language is the signed-in user's (`locale`); before the app knows the
-  user, the one chosen last in the browser, or the browser's own.
+  user, the one chosen last in the browser, or the browser's own. The
+  rest of what a language takes is in [Languages](#languages).
 
 ### Tests
 
@@ -646,6 +647,46 @@ generator writes it.
   the profile and the limits; the rest is
   Vitest's. A failed run in CI leaves Playwright's report, with a trace,
   as the `e2e-report` artifact.
+
+## Languages
+
+The app speaks each language a user can have (`user.Locales()` in Go,
+the API's `locale`); English is the base.
+
+- **The server's words are English, and for models and logs.** A
+  problem's `detail` and `errors[].message` say what is wrong to a model
+  over MCP, which reads English. The web never shows them as its own
+  words: it says a refusal in the user's language from what the answer
+  says as data, its status, the field (`errors[].location`) and what the
+  server gives of its own there (`errors[].value`, such as the food in
+  the way of a save). Only a refusal the web could not foresee shows the
+  server's words, after its own sentence ("The server did not take it:
+  …").
+- **What is stored is a code, never a text said in a language**, such as
+  a day's reason for leaving it out of calibration (`sick`, said
+  "bolest" in Croatian): a user who changes the language, and a model,
+  read the same.
+- **A text with values is a function of them**, and the values come
+  formatted in the language: numbers, dates and times through
+  `useFormat()` (`Intl`), a word's forms by count through `plural()`
+  (CLDR's rules), so each language puts the words in its own order.
+- **Telegram's texts** (the morning summary, the alarms, the bot's
+  commands, the hello of `user set-telegram`) are written on the
+  server, in a map of each language (`morningWords`, `botWords`, the
+  watchdog's `words`, `telegramHello`), which a test holds to
+  `user.Locales()`.
+
+Adding a language:
+
+1. Add it to `user.Locales()`, and refresh `api/openapi.json` and the
+   web's types (the README's commands).
+2. The web's type check then asks for the rest: the language in
+   `known` and `locales` (`src/i18n/locale.ts`, named in itself), and a
+   dictionary of every message (`src/i18n/<code>.ts`, typed `Messages`)
+   in `src/i18n/messages.ts`.
+3. The Go tests ask for Telegram's texts in it.
+
+Nothing else names a language.
 
 ## Other files
 

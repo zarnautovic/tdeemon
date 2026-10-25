@@ -170,22 +170,10 @@ type phrases struct {
 	days func(n int) string
 }
 
-// phrasesOf returns the phrases of locale: Croatian for hr, English for
-// any other.
-func phrasesOf(locale string) phrases {
-	if locale == "hr" {
-		return phrases{
-			noMetrics:    "Upozorenje: tdeemon već %d h nije primio nijednu metriku. Provjeri Health Auto Export na telefonu.",
-			silentDevice: "Upozorenje: token %q nije korišten %s. Je li uređaj koji šalje s njim stao?",
-			days: func(n int) string {
-				if n%10 == 1 && n%100 != 11 {
-					return fmt.Sprintf("%d dan", n)
-				}
-				return fmt.Sprintf("%d dana", n)
-			},
-		}
-	}
-	return phrases{
+// words are the alarms' phrases in each language a user can have
+// (user.Locales), which a test holds to; English is the base.
+var words = map[string]phrases{
+	"en": {
 		noMetrics:    "Alert: tdeemon has had no metric for %d h. Check Health Auto Export on the phone.",
 		silentDevice: "Alert: the token %q has not been used for %s. Has the device that sends with it stopped?",
 		days: func(n int) string {
@@ -194,5 +182,23 @@ func phrasesOf(locale string) phrases {
 			}
 			return fmt.Sprintf("%d days", n)
 		},
+	},
+	"hr": {
+		noMetrics:    "Upozorenje: tdeemon već %d h nije primio nijednu metriku. Provjeri Health Auto Export na telefonu.",
+		silentDevice: "Upozorenje: token %q nije korišten %s. Je li uređaj koji šalje s njim stao?",
+		days: func(n int) string {
+			if n%10 == 1 && n%100 != 11 {
+				return fmt.Sprintf("%d dan", n)
+			}
+			return fmt.Sprintf("%d dana", n)
+		},
+	},
+}
+
+// phrasesOf returns the phrases of locale, English for one without them.
+func phrasesOf(locale string) phrases {
+	if p, ok := words[locale]; ok {
+		return p
 	}
+	return words["en"]
 }

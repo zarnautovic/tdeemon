@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -260,7 +261,8 @@ func (s *sessions) registerFoods(a huma.API) {
 		Path:        Prefix + "/foods/new",
 		Summary:     "Make a new food",
 		Description: "Needs a web session. Saves a new food: a food you have of the name and brand, archived too, is refused (409), naming it, " +
-			"and so is an alias another food has; upsert_food corrects a food instead.",
+			"and so is an alias another food has; upsert_food corrects a food instead. " +
+			"The 409's errors say it as data: where (body.name, or the alias's body.aliases[i]) and the food's id as the value.",
 		Tags:          []string{"foods"},
 		DefaultStatus: http.StatusCreated,
 		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
@@ -334,7 +336,7 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 	case errors.Is(err, store.ErrNotFound):
 		return nil, huma.Error404NotFound("no such food: a new food comes without an id")
 	case errors.As(err, &conflict):
-		return nil, huma.Error409Conflict(conflictDetail(conflict))
+		return nil, huma.Error409Conflict(conflictDetail(conflict), conflictError(conflict, b.Aliases))
 	case err != nil:
 		return nil, internalError("saving the food failed", err)
 	}
@@ -377,11 +379,22 @@ func (s *sessions) createFood(ctx context.Context, in *createFoodInput) (*create
 	var conflict *store.FoodConflictError
 	switch {
 	case errors.As(err, &conflict):
-		return nil, huma.Error409Conflict(conflictDetail(conflict))
+		return nil, huma.Error409Conflict(conflictDetail(conflict), conflictError(conflict, in.Body.Aliases))
 	case err != nil:
 		return nil, internalError("saving the food failed", err)
 	}
 	return &createdFoodOutput{Body: newFoodBody(&saved)}, nil
+}
+
+// conflictError names the food in the way of a save as data, for a client
+// to say it in its own words: where it is in the way, body.name or the
+// alias's body.aliases[i], and as the value the food's id.
+func conflictError(c *store.FoodConflictError, aliases []string) *huma.ErrorDetail {
+	at := "body.name"
+	if i := slices.Index(aliases, c.Alias); c.Alias != "" && i >= 0 {
+		at = fmt.Sprintf("body.aliases[%d]", i)
+	}
+	return &huma.ErrorDetail{Location: at, Message: "taken by food " + c.Food.ID.String(), Value: ownValue(c.Food.ID.String())}
 }
 
 // conflictDetail says which food is in the way of a save, so a client can

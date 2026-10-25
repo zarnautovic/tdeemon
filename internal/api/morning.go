@@ -145,10 +145,14 @@ var croatian = phrases{
 	short:        func(_ phrases, d day.Date) string { return fmt.Sprintf("%d. %d.", d.Day, int(d.Month)) },
 }
 
+// morningWords are the summary's phrases in each language a user can have
+// (user.Locales), which a test holds to.
+var morningWords = map[string]phrases{"en": english, "hr": croatian}
+
 // phrasesOf returns the phrases of locale, English for one without them.
 func phrasesOf(locale string) phrases {
-	if locale == "hr" {
-		return croatian
+	if p, ok := morningWords[locale]; ok {
+		return p
 	}
 	return english
 }

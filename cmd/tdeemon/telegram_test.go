@@ -170,6 +170,18 @@ func TestHelloIn(t *testing.T) {
 	}
 }
 
+// Every language a user can have has the hello, so a language added to
+// user.Locales does not fall to English unseen.
+func TestHelloInEveryLocale(t *testing.T) {
+	t.Parallel()
+
+	for _, locale := range user.Locales() {
+		if telegramHello[locale] == "" {
+			t.Errorf("the hello has no words in %q", locale)
+		}
+	}
+}
+
 // The hello is in the user's locale: Croatian for hr.
 func TestSetTelegramInTheUsersLocale(t *testing.T) {
 	t.Parallel()
