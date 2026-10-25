@@ -27,17 +27,21 @@ const oats: Food = {
   note: 'from the label',
 }
 
-// foodServer is a server with oats, which takes a save as the API does,
-// and keeps the bodies it was sent.
+// foodServer is a server with oats, and others, which takes a save as the
+// API does, and keeps the bodies it was sent.
 function foodServer(
   save?: (body: unknown) => Response,
   locale: 'en' | 'hr' = 'en',
   start: Food = oats,
+  others: Food[] = [],
 ) {
   let current = start
   const sent: unknown[] = []
   const fetch = fakeServer({
     ...signedIn(locale),
+    ...Object.fromEntries(
+      others.map((o) => [`GET /api/v1/foods/${o.id}`, () => Response.json(o)] as const),
+    ),
     [`GET /api/v1/foods/${id}`]: () => Response.json(current),
     'POST /api/v1/foods/new': (request) => saved(request),
     'POST /api/v1/foods': (request) => saved(request),
@@ -132,7 +136,91 @@ test('a value below 0 is said to be one, not no number', async () => {
   expect(server.sent).toEqual([])
 })
 
-test("a name another food has is refused, in the server's words", async () => {
+// conflict is the API's 409 of a save another food is in the way of, at
+// location.
+function conflict(location: string, foodId: string): Response {
+  return Response.json(
+    {
+      status: 409,
+      title: 'Conflict',
+      detail: `the name and brand are taken by food ${foodId}`,
+      errors: [{ location, message: `taken by food ${foodId}`, value: foodId }],
+    },
+    { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
+  )
+}
+
+const otherOats: Food = { ...oats, id: '0193c3a5-0000-7000-8000-0000000000f7', aliases: [] }
+
+test('a name and brand another food has says which food, under the name, until changed', async () => {
+  foodServer(() => conflict('body.name', otherOats.id), 'en', oats, [otherOats])
+  renderAt(`/foods/${id}`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
+
+  const link = await screen.findByRole('link', { name: 'Rolled oats · Mill' })
+  expect(link.getAttribute('href')).toBe(`/foods/${otherOats.id}`)
+  expect(screen.getByRole('alert').textContent).toBe(
+    'Another food of yours has this name and brand: Rolled oats · Mill',
+  )
+  // A refusal, said at the name, which takes the focus: sent again, it
+  // would be refused again.
+  const name = screen.getByLabelText('Name')
+  expect(name.getAttribute('aria-invalid')).toBe('true')
+  expect(name.getAttribute('aria-describedby')).toBe(screen.getByRole('alert').id)
+  await waitFor(() => {
+    expect(document.activeElement).toBe(name)
+  })
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+  expect(screen.queryByText(/taken by food/)).toBeNull()
+  // A change of the form makes it stale.
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Jumbo oats' } })
+  expect(screen.queryByRole('link', { name: 'Rolled oats · Mill' })).toBeNull()
+})
+
+test('an other name another food has says which food, under it, in Croatian', async () => {
+  const archived = { ...otherOats, name: 'Zobene pahuljice', brand: '', archived: true }
+  foodServer(() => conflict('body.aliases[0]', archived.id), 'hr', oats, [archived])
+  renderAt(`/foods/${id}`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Spremi namirnicu' }))
+
+  await screen.findByRole('link', { name: 'Zobene pahuljice' })
+  expect(screen.getByRole('alert').textContent).toBe(
+    'Ovaj drugi naziv već ima tvoja namirnica: Zobene pahuljice (arhivirano)',
+  )
+  expect(screen.getByLabelText('Drugi naziv 1').getAttribute('aria-invalid')).toBe('true')
+})
+
+test('a conflict of an other name removed while the save was on its way marks no field', async () => {
+  let answer: ((r: Response) => void) | undefined
+  const withTwo = { ...oats, aliases: ['porridge oats', 'muesli'] }
+  fakeServer({
+    ...signedIn(),
+    [`GET /api/v1/foods/${id}`]: () => Response.json(withTwo),
+    [`GET /api/v1/foods/${otherOats.id}`]: () => Response.json(otherOats),
+    'POST /api/v1/foods': () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve
+      }),
+  })
+  renderAt(`/foods/${id}`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(answer).toBeDefined()
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Remove the name: porridge oats' }))
+  answer?.(conflict('body.aliases[0]', otherOats.id))
+
+  expect((await screen.findByRole('alert')).textContent).toContain(
+    'Another food of yours has this other name:',
+  )
+  // The other name it was is gone; muesli, now the first, is not it.
+  expect(screen.getByLabelText('Other name 1').getAttribute('aria-invalid')).toBe('false')
+})
+
+test("a conflict that does not say its food is said in the server's words", async () => {
   foodServer(() =>
     Response.json(
       { status: 409, title: 'Conflict', detail: 'the name and brand are taken by food x ("Oats")' },

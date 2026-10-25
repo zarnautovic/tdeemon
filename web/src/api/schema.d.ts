@@ -167,7 +167,7 @@ export interface paths {
         put?: never;
         /**
          * Save a food
-         * @description Saves a food, or corrects one: the food with the id (404 for an id the user has no food of), or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.
+         * @description Saves a food, or corrects one: the food with the id (404 for an id the user has no food of), or else the one of the same name and brand, keeping its id; else a new one. A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it. Its errors say it as data: where (body.name, or the alias's body.aliases[i]) and the food's id as the value.
          */
         post: operations["upsert-food"];
         delete?: never;
@@ -207,7 +207,7 @@ export interface paths {
         put?: never;
         /**
          * Make a new food
-         * @description Needs a web session. Saves a new food: a food you have of the name and brand, archived too, is refused (409), naming it, and so is an alias another food has; upsert_food corrects a food instead.
+         * @description Needs a web session. Saves a new food: a food you have of the name and brand, archived too, is refused (409), naming it, and so is an alias another food has; upsert_food corrects a food instead. The 409's errors say it as data: where (body.name, or the alias's body.aliases[i]) and the food's id as the value.
          */
         post: operations["create-food"];
         delete?: never;

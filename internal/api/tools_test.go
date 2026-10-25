@@ -511,6 +511,22 @@ func TestFindFoods(t *testing.T) {
 	}
 }
 
+// checkConflictData checks that the 409 body says as data where a save
+// was in the way (location) and of which food.
+func checkConflictData(t *testing.T, body []byte, location, foodID string) {
+	t.Helper()
+	var problem struct {
+		Errors []struct {
+			Location string `json:"location"`
+			Value    string `json:"value"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &problem); err != nil || len(problem.Errors) != 1 ||
+		problem.Errors[0].Location != location || problem.Errors[0].Value != foodID {
+		t.Errorf("the conflict as data: %+v, %v; want %s of food %s", problem.Errors, err, location, foodID)
+	}
+}
+
 // upsert_food saves a food: a new one, or one of the same name and brand
 // corrected in place, keeping its id; a food in the way of a name or an
 // alias is named, archived or not.
@@ -553,6 +569,8 @@ func TestUpsertFood(t *testing.T) {
 		!strings.Contains(rec.Body.String(), `the alias \"my yoghurt\" is taken by food `) || !strings.Contains(rec.Body.String(), "archived") {
 		t.Errorf("a taken alias: %d %s", rec.Code, rec.Body.String())
 	}
+	// As data too: where, and the food in the way.
+	checkConflictData(t, rec.Body.Bytes(), "body.aliases[0]", saved.ID)
 	// The archived food, corrected without its alias, stays archived when
 	// the save says so: out of a search.
 	body := fmt.Sprintf(`{"id": %q, "archived": true, `, saved.ID) + strings.Replace(fmt.Sprintf(yoghurt, "x")[1:], `"aliases": ["x"], `, "", 1)

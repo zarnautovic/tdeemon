@@ -227,7 +227,8 @@ func parseSetTelegramFlags(args []string) (setTelegramFlags, error) {
 }
 
 // telegramHello is the message that tells a chat it is the user's for
-// notifications, by the user's locale; English for another.
+// notifications, in each language a user can have (user.Locales), which
+// a test holds to; English for another.
 var telegramHello = map[string]string{
 	"en": "tdeemon is connected: your morning summary and the alerts when data stop coming arrive here.",
 	"hr": "tdeemon je spojen: ovdje stižu jutarnji sažetak i upozorenja kad podaci prestanu stizati.",

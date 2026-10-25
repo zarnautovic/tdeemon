@@ -229,7 +229,8 @@ func (s *sessions) tools() []tool {
 			Description: "Saves a food, or corrects one: the food with the id (404 for an id the user has no food of), or else the one of the same name and brand, keeping its id; else a new one. " +
 				"A save replaces the whole food: a field left out (a serving, an alias, an optional nutrient, the note) is cleared, so correct a food from what find_foods gave, " +
 				"without its last_use. archived archives the food, or keeps it so; left out, a save brings an archived food back. " +
-				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it.",
+				"A name and brand, or an alias, another food has is refused (409), naming that food, which may be archived and so in no search: get_food gives it. " +
+				"Its errors say it as data: where (body.name, or the alias's body.aliases[i]) and the food's id as the value.",
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
 		}, s.upsertFood).
 			briefly("Saves a food, or corrects one: by its id, or else its name and brand; else a new one. A save replaces the whole food, " +

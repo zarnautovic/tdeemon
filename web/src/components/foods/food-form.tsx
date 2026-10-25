@@ -1,7 +1,9 @@
+import { Link } from '@tanstack/react-router'
 import { X } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
 
-import { detailOf, statusOf } from '@/api/errors'
+import { $api } from '@/api/client'
+import { conflictOf, detailOf, statusOf } from '@/api/errors'
 import { useCreateFood, useSaveFood } from '@/api/foods'
 import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
@@ -94,8 +96,28 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
   // not a number.
   const [wrong, setWrong] = useState<ReadonlyMap<string, string>>(new Map())
   const unit = draft.basis === '100ml' ? 'ml' : 'g'
+  // The food in the way of the save, and the field it is in the way of,
+  // while it holds what was sent: the name and brand, or the row of the
+  // alias sent at the place the answer gives. A change of the form makes
+  // it stale.
+  const conflict = conflictOf(save.error)
+  const sent = save.variables?.body
+  let conflictKey: string | undefined
+  if (conflict && sent && conflict.alias === undefined) {
+    conflictKey =
+      sent.name === draft.name.trim() && (sent.brand ?? '') === draft.brand.trim()
+        ? 'name'
+        : undefined
+  } else if (conflict && sent && conflict.alias !== undefined) {
+    const taken = sent.aliases?.[conflict.alias]
+    const takenRow = draft.aliases.find((a) => taken !== undefined && a.value.trim() === taken)
+    conflictKey = takenRow && `alias ${takenRow.key}`
+  }
   const set = (change: Partial<Draft>) => {
     setDraft((d) => ({ ...d, ...change }))
+    if (conflict) {
+      save.reset()
+    }
   }
 
   // body is the food the draft says, or the fields that are wrong.
@@ -189,12 +211,13 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     }
   }
 
-  // A draft that cannot be sent takes the focus to its first wrong field.
+  // A draft that cannot be sent, or that another food is in the way of,
+  // takes the focus to its first wrong field.
   useEffect(() => {
-    if (wrong.size > 0) {
+    if (wrong.size > 0 || conflictKey !== undefined) {
       form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
     }
-  }, [wrong])
+  }, [wrong, conflictKey])
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -211,6 +234,8 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     kind: { decimal: true } | { maxLength: number },
   ) {
     const error = wrong.get(key)
+    // The field another food is in the way of, which the refusal says.
+    const taken = error === undefined && key === conflictKey
     return (
       <div className="space-y-1">
         <label htmlFor={`${id}-${key}`} className={cn(fieldLabel, 'block')}>
@@ -223,8 +248,10 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           {...('decimal' in kind
             ? { inputMode: 'decimal' as const }
             : { maxLength: kind.maxLength })}
-          aria-invalid={error !== undefined}
-          aria-describedby={error === undefined ? undefined : `${id}-${key}-error`}
+          aria-invalid={error !== undefined || taken}
+          aria-describedby={
+            error === undefined ? (taken ? `${id}-refused` : undefined) : `${id}-${key}-error`
+          }
           className={inputClass}
           onChange={(e) => {
             onChange(e.currentTarget.value)
@@ -240,8 +267,10 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
   }
 
   const status = statusOf(save.error)
-  let refused
-  if (save.isError && status === 409) {
+  let refused: ReactNode
+  if (conflict) {
+    refused = <TakenBy foodId={conflict.foodId} alias={conflict.alias !== undefined} />
+  } else if (save.isError && status === 409) {
     refused = t.foods.conflict(detailOf(save.error))
   } else if (save.isError && status === 422) {
     refused = t.foods.refused(detailOf(save.error))
@@ -463,7 +492,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         />
       </div>
       {refused ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p id={`${id}-refused`} role="alert" className="text-sm text-destructive">
           {refused}
         </p>
       ) : food ? (
@@ -475,5 +504,24 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         {t.foods.save}
       </Button>
     </form>
+  )
+}
+
+// TakenBy says that another food of the user's has a name and brand, or
+// an other name, and which, with a link to it.
+function TakenBy({ foodId, alias }: { foodId: string; alias: boolean }) {
+  const t = useMessages()
+  const other = $api.useQuery('get', '/api/v1/foods/{id}', { params: { path: { id: foodId } } })
+  const name = other.data
+    ? [other.data.name, other.data.brand].filter(Boolean).join(' · ')
+    : t.foods.thatFood
+  return (
+    <>
+      {alias ? t.foods.aliasTaken : t.foods.nameTaken}{' '}
+      <Link to="/foods/$id" params={{ id: foodId }} className="underline underline-offset-2">
+        {name}
+      </Link>
+      {other.data?.archived && ` (${t.foods.archivedMark})`}
+    </>
   )
 }

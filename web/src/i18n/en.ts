@@ -283,6 +283,9 @@ export const en = {
     needed: 'Needed.',
     negative: 'It cannot be less than 0.',
     conflict: (detail: string) => `Another food has this name or other name: ${detail}`,
+    nameTaken: 'Another food of yours has this name and brand:',
+    aliasTaken: 'Another food of yours has this other name:',
+    thatFood: 'that food',
     refused: (detail: string) => `The server did not take this food: ${detail}`,
   },
   charts: {

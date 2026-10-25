@@ -124,7 +124,8 @@ func TestCreateFood(t *testing.T) {
 			"nutrients": {"kcal": 700, "protein": 30, "carbs": 80, "fat": 25}}`,
 	} {
 		rec := in.do(t, http.MethodPost, "/api/v1/foods/new", sent, cookies, nil)
-		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "the name and brand are taken by food") {
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "the name and brand are taken by food") ||
+			!strings.Contains(rec.Body.String(), `"location":"body.name"`) {
 			t.Errorf("%s: %d %s, want 409 naming the food", name, rec.Code, rec.Body.String())
 		}
 	}
