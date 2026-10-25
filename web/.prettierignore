@@ -4,6 +4,9 @@ src/api/schema.d.ts
 # TestWebKey -update, which checks them.
 src/lib/name-key-table.json
 src/test/name-keys.json
+# Generated: written from the server's limits by go test ./internal/api
+# -run TestWebLimits -update, which checks it.
+src/lib/limits.json
 package-lock.json
 codegen/package-lock.json
 dist

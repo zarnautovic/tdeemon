@@ -7,12 +7,14 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 // MetricForm takes a measurement of a kind, typed in the language and the
-// kind's unit, and stores it for the day; what is not a number it says so
-// of, and sends nothing. children are more buttons, after Save.
+// kind's unit, and stores it for the day; what is not a number, or not a
+// value of the kind (limits.json, the server's bounds), it says so of,
+// and sends nothing. children are more buttons, after Save.
 export function MetricForm({
   date,
   kind,
@@ -33,7 +35,9 @@ export function MetricForm({
   const id = useId()
   const log = useLogMetric(date)
   const [notNumber, setNotNumber] = useState(false)
+  const [outside, setOutside] = useState(false)
   const unit = units[kind]
+  const { least, most } = limits.metrics[kind]
   // A value the server refuses (422) is out of what the kind can be:
   // sending it again would not help.
   const refused = log.isError && statusOf(log.error) === 422
@@ -49,8 +53,10 @@ export function MetricForm({
     event.preventDefault()
     const typed = new FormData(event.currentTarget).get('value')
     const value = typeof typed === 'string' ? f.parse(typed) : undefined
+    const out = value !== undefined && (value < least || value > most)
     setNotNumber(value === undefined)
-    if (value !== undefined) {
+    setOutside(out)
+    if (value !== undefined && !out) {
       save(value)
     }
   }
@@ -68,7 +74,7 @@ export function MetricForm({
             inputMode="decimal"
             autoComplete="off"
             defaultValue={initial}
-            aria-invalid={notNumber || log.isError}
+            aria-invalid={notNumber || outside || log.isError}
             aria-describedby={unit ? `${id}-unit` : undefined}
             className={cn(inputClass, 'tabular-nums', unit && 'pr-20')}
           />
@@ -86,9 +92,13 @@ export function MetricForm({
         </Button>
         {children}
       </div>
-      {notNumber || refused ? (
+      {notNumber || outside || refused ? (
         <p role="alert" className="text-xs text-destructive">
-          {notNumber ? t.day.notANumber : t.day.outOfRange}
+          {notNumber
+            ? t.day.notANumber
+            : outside
+              ? t.day.between(f.number(least, 1), f.number(most, 1), unit)
+              : t.day.outOfRange}
         </p>
       ) : (
         <SaveStatus

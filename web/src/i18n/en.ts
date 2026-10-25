@@ -124,6 +124,8 @@ export const en = {
     value: 'Value',
     notANumber: 'Write a number, such as 72.5.',
     outOfRange: 'The server does not take this value.',
+    between: (least: string, most: string, unit: string) =>
+      `Give a value from ${least} to ${most}${unit ? ` ${unit}` : ''}.`,
   },
   meal: {
     edit: (what: string) => `Change the meal: ${what}`,
@@ -189,7 +191,8 @@ export const en = {
     remove: (name: string) => `Remove: ${name}`,
     anEstimate: 'an estimate',
     noItems: 'Add a food or an estimate first.',
-    wrong: 'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+    wrong: (most: { amount: string; servings: string; portions: string; kcal: string }) =>
+      `An amount is more than 0 and at most ${most.amount} g or ml, ${most.servings} servings or ${most.portions} portions; an estimate has a name and its values, such as 72.5, and at most ${most.kcal} kcal.`,
     save: 'Log the meal',
     cancel: 'Cancel',
     logged: 'The meal is logged.',
@@ -282,6 +285,12 @@ export const en = {
       'Archived: only a search of the archived foods finds it, and its names stay taken.',
     needed: 'Needed.',
     negative: 'It cannot be less than 0.',
+    kcalPer100: (most: string, unit: string) =>
+      `At most ${most} kcal per 100 ${unit}, the energy of pure fat.`,
+    massPer100: (most: string, unit: string) =>
+      `Protein, carbs, fat and alcohol add up to at most ${most} g per 100 ${unit}.`,
+    gramsPer100: (most: string, unit: string) => `At most ${most} g per 100 ${unit}.`,
+    kcalPerPortion: (most: string) => `At most ${most} kcal in a portion.`,
     conflict: (detail: string) => `Another food has this name or other name: ${detail}`,
     nameTaken: 'Another food of yours has this name and brand:',
     aliasTaken: 'Another food of yours has this other name:',
@@ -346,6 +355,7 @@ export const en = {
     about: 'About',
     you: 'You',
     name: 'Name',
+    nameNeeded: 'A name is needed.',
     language: 'Language',
     timeZone: 'Time zone',
     dayStart: 'The day starts at',
@@ -400,6 +410,8 @@ export const en = {
     complete: 'A plan has all it needs of you.',
     missingField: { sex: 'sex', birth_date: 'birth date', height_cm: 'height' },
     wrongDate: 'The birth date is not a whole date: give it all, or clear it.',
+    dateToCome: 'The birth date is after today.',
+    tooOld: (age: string) => `The birth date makes an age of more than ${age}.`,
     wrongHeight: (min: string, max: string) => `The height is ${min} to ${max} cm.`,
     save: 'Save',
     limits: 'Limits of the plan',

@@ -153,9 +153,27 @@ test('a meal without items, or with an amount that is no number, is not sent', a
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
 
   expect(composer().getByRole('alert').textContent).toBe(
-    'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+    'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
   )
   expect(composer().getByLabelText('Amount: Rye bread').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+})
+
+test('an amount past what the server takes is said with its bounds, in Croatian, and not sent', async () => {
+  const server = logServer('2026-10-23', { ...signedIn('hr') })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Upiši obrok' }))
+  const form = within(screen.getByRole('form', { name: 'Novi obrok' }))
+  fireEvent.change(form.getByLabelText('Pronađi svoju namirnicu'), { target: { value: 'rye' } })
+  fireEvent.click(await form.findByRole('button', { name: /Rye bread/ }))
+  fireEvent.change(form.getByLabelText('Količina: Rye bread'), { target: { value: '99999' } })
+  fireEvent.click(form.getByRole('button', { name: 'Upiši obrok' }))
+
+  expect(form.getByRole('alert').textContent).toBe(
+    'Količina je veća od 0 i najviše 10.000 g ili ml, 100 servinga ili 50 porcija; procjena ima naziv i vrijednosti, npr. 72,5, i najviše 10.000 kcal.',
+  )
+  expect(form.getByLabelText('Količina: Rye bread').getAttribute('aria-invalid')).toBe('true')
   expect(server.sent).toEqual([])
 })
 

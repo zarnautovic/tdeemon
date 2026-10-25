@@ -207,6 +207,9 @@ A change is done when:
   - the web app's table of names' keys after `food.Key` or
     `golang.org/x/text` changes
     (`go test ./internal/domain/food -run TestWebKey -update`);
+  - the web app's copy of the limits it checks its forms by,
+    `web/src/lib/limits.json`, after one of them changes
+    (`go test ./internal/api -run TestWebLimits -update`);
 - the docs say what changed: README, these conventions, `DESIGN.md` for
   design decisions, `limits.md` for a limit of a plan;
 - no personal data entered the repo (real weights, meals, sessions);
@@ -659,9 +662,11 @@ the API's `locale`); English is the base.
   words: it says a refusal in the user's language from what the answer
   says as data, its status, the field (`errors[].location`) and what the
   server gives of its own there (`errors[].value`, such as the food in
-  the way of a save). Only a refusal the web could not foresee shows the
-  server's words, after its own sentence ("The server did not take it:
-  …").
+  the way of a save). What a form can check before it sends, it checks,
+  by the server's limits (`web/src/lib/limits.json`, generated from Go),
+  and says next to the field. Only a refusal the web could not foresee
+  shows the server's words, after its own sentence ("The server did not
+  take it: …").
 - **What is stored is a code, never a text said in a language**, such as
   a day's reason for leaving it out of calibration (`sick`, said
   "bolest" in Croatian): a user who changes the language, and a model,

@@ -9,6 +9,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { locales, setLocale, type Locale } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { nameNow } from '@/lib/time-zones'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,8 @@ export function YouForm({ user }: { user: User }) {
   const id = useId()
   const queryClient = useQueryClient()
   const [edits, setEdits] = useState<Edits>({})
+  // A name cleared, which the server refuses.
+  const [noName, setNoName] = useState(false)
   const name = edits.name ?? user.name
   const locale = edits.locale ?? user.locale
   const timeZone = edits.timezone ?? user.timezone
@@ -80,6 +83,10 @@ export function YouForm({ user }: { user: User }) {
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const typed = edits.name?.trim()
+    setNoName(typed === '')
+    if (typed === '') {
+      return
+    }
     save.mutate({
       body: {
         ...(typed === undefined || typed === user.name ? {} : { name: typed }),
@@ -101,18 +108,28 @@ export function YouForm({ user }: { user: User }) {
       <h2 id={`${id}-title`} className="font-medium">
         {t.settings.you}
       </h2>
-      <label className="block space-y-1">
-        <span className={cn(fieldLabel, 'block')}>{t.settings.name}</span>
-        <input
-          value={name}
-          maxLength={100}
-          autoComplete="name"
-          className={inputClass}
-          onChange={(e) => {
-            edit({ name: e.currentTarget.value })
-          }}
-        />
-      </label>
+      <div className="space-y-1">
+        <label className="block space-y-1">
+          <span className={cn(fieldLabel, 'block')}>{t.settings.name}</span>
+          <input
+            value={name}
+            maxLength={limits.user.maxNameLen}
+            autoComplete="name"
+            aria-invalid={noName || undefined}
+            aria-describedby={noName ? `${id}-name` : undefined}
+            className={inputClass}
+            onChange={(e) => {
+              edit({ name: e.currentTarget.value })
+              setNoName(false)
+            }}
+          />
+        </label>
+        {noName && (
+          <p id={`${id}-name`} role="alert" className="text-sm text-destructive">
+            {t.settings.nameNeeded}
+          </p>
+        )}
+      </div>
       <label className="block space-y-1">
         <span className={cn(fieldLabel, 'block')}>{t.settings.language}</span>
         <select

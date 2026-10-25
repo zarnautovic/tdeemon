@@ -101,12 +101,13 @@ func (n Nutrients) Validate() error {
 	return errors.Join(errs...)
 }
 
-// The most grams of nutrients 100 g or 100 ml of a food can hold: 100 g
-// (a little over for rounding on labels), and for 100 ml as much as the
-// densest food a client logs by volume, honey or syrup, at up to 1.5 g/ml.
+// MaxGramsPer100g and MaxGramsPer100ml are the most grams of nutrients
+// 100 g or 100 ml of a food can hold: 100 g (a little over for rounding
+// on labels), and for 100 ml as much as the densest food a client logs by
+// volume, honey or syrup, at up to 1.5 g/ml.
 const (
-	maxGramsPer100g  = 101
-	maxGramsPer100ml = 150
+	MaxGramsPer100g  = 101
+	MaxGramsPer100ml = 150
 )
 
 // ValidatePer100 checks nutrients per 100 of basis (Per100g or Per100ml):
@@ -117,9 +118,9 @@ func (n Nutrients) ValidatePer100(basis Basis) error {
 	if err := n.Validate(); err != nil {
 		return err
 	}
-	unit, maxGrams := "g", float64(maxGramsPer100g)
+	unit, maxGrams := "g", float64(MaxGramsPer100g)
 	if basis == Per100ml {
-		unit, maxGrams = "ml", maxGramsPer100ml
+		unit, maxGrams = "ml", MaxGramsPer100ml
 	}
 	var errs []error
 	if n.Kcal > MaxKcalPer100 {

@@ -6,7 +6,7 @@ import { useLogMeal } from '@/api/meals'
 import type { Warning } from '@/api/types'
 import { EntryRow } from '@/components/day/entry-row'
 import { FoodPicker } from '@/components/day/food-picker'
-import { estimateEntry, foodEntry, itemOf, type Entry } from '@/components/day/meal-entries'
+import { estimateEntry, foodEntry, itemOf, most, type Entry } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -279,7 +279,7 @@ function Composer({
       )}
       {entries.some((e) => wrong.has(e.key)) && (
         <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
-          {t.log.wrong}
+          {t.log.wrong(most(f.number))}
         </p>
       )}
       {refused ? (

@@ -1,5 +1,6 @@
 import type { components } from '@/api/schema'
 import type { Food, Item, Meal } from '@/api/types'
+import limits from '@/lib/limits.json'
 import { nameKey } from '@/lib/name-key'
 import { uuidv7 } from '@/lib/uuid'
 
@@ -175,16 +176,51 @@ export function quantityIn(unit: string, n: number): ItemInput {
   return { amount: n, unit: unit === 'ml' ? 'ml' : 'g' }
 }
 
+// tooMuch tells n of food in unit (unitsOf) past what an item may hold
+// (limits.json, the server's): grams or ml past the most, servings past
+// the most of them or of their grams, portions past the most, as the
+// grams of a food by the portion may be too. Of a food not known yet,
+// the count alone.
+export function tooMuch(food: Food | undefined, unit: string, n: number): boolean {
+  const { maxAmount, maxServings, maxPortions } = limits.meal
+  if (servingOf(unit) !== undefined) {
+    const grams = food && unitGrams(food, unit)
+    return n > maxServings || (grams !== undefined && n * grams > maxAmount)
+  }
+  if (unit === 'portion') {
+    return n > maxPortions
+  }
+  if (n > maxAmount) {
+    return true
+  }
+  return food?.basis === 'portion' && food.portion_grams !== undefined
+    ? n / food.portion_grams > maxPortions
+    : false
+}
+
+// most is what an item may hold at most (limits.json), each number as
+// number says it, for a message to say.
+export function most(number: (n: number) => string) {
+  const { maxAmount, maxServings, maxPortions, maxEstimateKcal } = limits.meal
+  return {
+    amount: number(maxAmount),
+    servings: number(maxServings),
+    portions: number(maxPortions),
+    kcal: number(maxEstimateKcal),
+  }
+}
+
 // itemOf is the item an entry sends, with parse reading its numbers; or
-// undefined when one is not a number, a food's amount is 0, or the
-// estimate has no name.
+// undefined when one is not a number, a food's amount is 0 or more than
+// an item may hold (tooMuch), or the estimate has no name or more energy
+// than one may have.
 export function itemOf(
   entry: Entry,
   parse: (s: string) => number | undefined,
 ): ItemInput | undefined {
   if (entry.kind === 'food') {
     const n = entry.exact ?? parse(entry.amount)
-    if (n === undefined || n <= 0) {
+    if (n === undefined || n <= 0 || tooMuch(entry.food, entry.unit, n)) {
       return undefined
     }
     return { id: entry.key, food_id: entry.food.id, ...quantityIn(entry.unit, n) }
@@ -197,7 +233,8 @@ export function itemOf(
     kcal === undefined ||
     protein === undefined ||
     carbs === undefined ||
-    fat === undefined
+    fat === undefined ||
+    kcal > limits.meal.maxEstimateKcal
   ) {
     return undefined
   }

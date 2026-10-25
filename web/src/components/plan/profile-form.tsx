@@ -8,6 +8,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -16,9 +17,15 @@ type Sex = NonNullable<Profile['sex']>
 
 const sexes: readonly Sex[] = ['male', 'female']
 
-// The heights the server takes, in cm (profile.MinHeightCm, MaxHeightCm).
-const minHeight = 50
-const maxHeight = 275
+// The heights the server takes, in cm, and the oldest a user may be.
+const { minHeightCm: minHeight, maxHeightCm: maxHeight, maxAge } = limits.profile
+
+// ageOn is the age in whole years, on today, of one born on birth (both
+// YYYY-MM-DD), as the server counts it (profile.AgeOn).
+function ageOn(birth: string, today: string): number {
+  const years = Number(today.slice(0, 4)) - Number(birth.slice(0, 4))
+  return today.slice(5) < birth.slice(5) ? years - 1 : years
+}
 
 // ProfileForm sets what a plan needs of the user: the sex the energy
 // equations take, the birth date and the height. A field left empty is
@@ -36,9 +43,11 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   )
   const [wrongHeight, setWrongHeight] = useState(false)
   // A date part typed and part not reads as none, which would clear the
-  // one stored: the field says it is no whole date.
+  // one stored: the field says it is no whole date. A whole one after the
+  // user's today, or of an age past the oldest, the server refuses.
   const date = useRef<HTMLInputElement>(null)
-  const [wrongDate, setWrongDate] = useState(false)
+  const [wrongDate, setWrongDate] = useState<'part' | 'toCome' | 'old' | undefined>(undefined)
+  const today = $api.useQuery('get', '/api/v1/me').data?.today
   const save = $api.useMutation('put', '/api/v1/profile', {
     onSuccess: (answer) => {
       queryClient.setQueryData($api.queryOptions('get', '/api/v1/profile').queryKey, answer)
@@ -50,10 +59,17 @@ export function ProfileForm({ profile }: { profile: Profile }) {
     const typed = height.trim()
     const cm = typed === '' ? undefined : f.parse(typed)
     const wrong = typed !== '' && (cm === undefined || cm < minHeight || cm > maxHeight)
-    const partDate = date.current?.validity.badInput === true
+    let dateWrong: typeof wrongDate
+    if (date.current?.validity.badInput === true) {
+      dateWrong = 'part'
+    } else if (birthDate && today !== undefined && birthDate > today) {
+      dateWrong = 'toCome'
+    } else if (birthDate && today !== undefined && ageOn(birthDate, today) > maxAge) {
+      dateWrong = 'old'
+    }
     setWrongHeight(wrong)
-    setWrongDate(partDate)
-    if (wrong || partDate) {
+    setWrongDate(dateWrong)
+    if (wrong || dateWrong !== undefined) {
       return
     }
     save.mutate({
@@ -110,7 +126,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
             ref={date}
             type="date"
             value={birthDate}
-            aria-invalid={wrongDate || undefined}
+            aria-invalid={wrongDate !== undefined || undefined}
             aria-describedby={wrongDate ? `${id}-date` : undefined}
             className={inputClass}
             onChange={(e) => {
@@ -120,7 +136,9 @@ export function ProfileForm({ profile }: { profile: Profile }) {
         </label>
         {wrongDate && (
           <p id={`${id}-date`} role="alert" className="text-sm text-destructive">
-            {t.plan.wrongDate}
+            {wrongDate === 'part' && t.plan.wrongDate}
+            {wrongDate === 'toCome' && t.plan.dateToCome}
+            {wrongDate === 'old' && t.plan.tooOld(f.number(maxAge))}
           </p>
         )}
       </div>

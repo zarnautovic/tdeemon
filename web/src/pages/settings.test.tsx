@@ -134,6 +134,21 @@ test("the user's name, language, time zone and day's start are changed, and the 
   ])
 })
 
+test('a name cleared is said to be needed, and not sent', async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  const you = within(await screen.findByRole('form', { name: 'You' }))
+  fireEvent.change(you.getByLabelText('Name'), { target: { value: '  ' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+
+  expect(you.getByRole('alert').textContent).toBe('A name is needed.')
+  expect(you.getByLabelText('Name').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent['PATCH /api/v1/me']).toBeUndefined()
+  fireEvent.change(you.getByLabelText('Name'), { target: { value: 'Ana' } })
+  expect(you.queryByRole('alert')).toBeNull()
+})
+
 test('only the settings changed are sent, and the days and the user asked again', async () => {
   const server = settingsServer()
   renderAt('/settings')

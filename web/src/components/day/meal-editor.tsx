@@ -15,9 +15,11 @@ import {
   foodEntry,
   foodItem,
   itemOf,
+  most,
   quantityIn,
   servingOf,
   shownAmount,
+  tooMuch,
   unitIn,
   unitsOf,
   type Amount,
@@ -215,6 +217,8 @@ export function MealEditor({
   // The estimates to save as foods of the user's, a portion of each.
   const [asFoods, setAsFoods] = useState<ReadonlySet<string>>(new Set())
   const [wrongEntries, setWrongEntries] = useState<ReadonlySet<string>>(new Set())
+  // The items whose amount is 0, or more than an item may hold (tooMuch).
+  const [over, setOver] = useState<ReadonlySet<string>>(new Set())
   const [added, setAdded] = useState<string | undefined>(undefined)
   const [confirming, setConfirming] = useState(false)
   // Of the items there now: one removed elsewhere is not counted.
@@ -293,6 +297,7 @@ export function MealEditor({
     }
     const ops: Op[] = []
     const notNumbers = new Set<string>()
+    const overs = new Set<string>()
     const bad = new Set<string>()
     for (const item of meal.items) {
       if (removed.has(item.id)) {
@@ -365,18 +370,28 @@ export function MealEditor({
       const itsFood = foodOf(item.food_id)
       const unitWas = itsFood ? unitIn(itsFood, was.amount.key) : was.amount.key
       const unit = unitTyped !== undefined && unitTyped !== unitWas ? unitTyped : undefined
+      // Only an amount typed anew, or in a unit chosen anew, is sent: one
+      // left as it started, rounded to what the field shows, is not sent
+      // rounded, nor one a unit chosen and chosen back gave back. An item
+      // left as it was keeps what it brought, though past what its food
+      // as corrected since would hold.
+      const anew =
+        n !== undefined &&
+        (unit !== undefined ||
+          (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n))
       if (n === undefined) {
         notNumbers.add(item.id)
+      } else if (!anew) {
+        continue
+      } else if (n <= 0 || tooMuch(itsFood, unit ?? unitWas, n)) {
+        overs.add(item.id)
       } else if (unit !== undefined) {
         ops.push({
           op: 'replace',
           item_id: item.id,
           item: { ...foodItem(food), ...quantityIn(unit, n) },
         })
-      } else if (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n) {
-        // Only an amount typed anew: one left as it started, rounded to
-        // what the field shows, is not sent rounded, nor one a unit chosen
-        // and chosen back gave back.
+      } else {
         ops.push({ op: 'replace', item_id: item.id, item: was.amount.with(food, n) })
       }
     }
@@ -390,6 +405,7 @@ export function MealEditor({
     }
     setWrong(notNumbers)
     setWrongEntries(bad)
+    setOver(overs)
     let after: typeof ahead
     if (day > today) {
       after = 'day'
@@ -397,7 +413,7 @@ export function MealEditor({
       after = 'time'
     }
     setAhead(after)
-    if (notNumbers.size > 0 || bad.size > 0 || after !== undefined) {
+    if (notNumbers.size > 0 || bad.size > 0 || overs.size > 0 || after !== undefined) {
       return
     }
     if (ops.length === 0 && Object.keys(fields).length === 0) {
@@ -558,8 +574,14 @@ export function MealEditor({
                           // Typed: what a unit chosen worked out is no more.
                           setExact(({ [field]: _typed, ...es }) => es)
                         }}
-                        aria-invalid={wrong.has(item.id)}
-                        aria-describedby={wrong.has(item.id) ? `${id}-wrong` : undefined}
+                        aria-invalid={wrong.has(item.id) || over.has(item.id)}
+                        aria-describedby={
+                          wrong.has(item.id)
+                            ? `${id}-wrong`
+                            : over.has(item.id)
+                              ? `${id}-wrong-entry`
+                              : undefined
+                        }
                         className={cn(inputClass, 'h-9 tabular-nums', !choices && unit && 'pr-14')}
                       />
                       {!choices && unit && (
@@ -796,9 +818,10 @@ export function MealEditor({
           {t.day.notANumber}
         </p>
       )}
-      {[...entries, ...Object.values(swaps)].some((e) => wrongEntries.has(e.key)) && (
+      {(over.size > 0 ||
+        [...entries, ...Object.values(swaps)].some((e) => wrongEntries.has(e.key))) && (
         <p id={`${id}-wrong-entry`} role="alert" className="text-xs text-destructive">
-          {t.log.wrong}
+          {t.log.wrong(most(f.number))}
         </p>
       )}
       {ahead !== undefined && (

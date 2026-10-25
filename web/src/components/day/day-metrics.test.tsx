@@ -67,6 +67,20 @@ test('what is no number is not sent, and the field says so', async () => {
   expect(server.sent).toEqual([])
 })
 
+test("a value out of the kind's bounds is said with them, in the language, and not sent", async () => {
+  const server = dayServer()
+  fakeServer({ ...signedIn('hr'), ...server.routes })
+  renderAt('/')
+
+  fireEvent.change(await screen.findByLabelText('Kilaža'), { target: { value: '7,25' } })
+  const mjerenja = within(screen.getByRole('region', { name: 'Mjerenja' }))
+  fireEvent.click(mjerenja.getByRole('button', { name: 'Spremi' }))
+
+  expect(mjerenja.getByRole('alert').textContent).toBe('Upiši vrijednost od 20 do 400 kg.')
+  expect(screen.getByLabelText('Kilaža').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+})
+
 test('a value the server refuses says so, with nothing to try again', async () => {
   fakeServer({
     ...signedIn(),
@@ -75,7 +89,7 @@ test('a value the server refuses says so, with nothing to try again', async () =
   })
   renderAt('/')
 
-  fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '7.25' } })
+  fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '72.5' } })
   fireEvent.click(measurements().getByRole('button', { name: 'Save' }))
 
   expect((await measurements().findByRole('alert')).textContent).toBe(

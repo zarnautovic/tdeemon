@@ -111,6 +111,8 @@ export const hr: Messages = {
     value: 'Vrijednost',
     notANumber: 'Upiši broj, npr. 72,5.',
     outOfRange: 'Server ne prima ovu vrijednost.',
+    between: (least: string, most: string, unit: string) =>
+      `Upiši vrijednost od ${least} do ${most}${unit ? ` ${unit}` : ''}.`,
   },
   meal: {
     edit: (what: string) => `Promijeni obrok: ${what}`,
@@ -175,7 +177,8 @@ export const hr: Messages = {
     remove: (name: string) => `Ukloni: ${name}`,
     anEstimate: 'procjena',
     noItems: 'Prvo dodaj namirnicu ili procjenu.',
-    wrong: 'Količina je veća od 0, a procjena ima naziv i vrijednosti, npr. 72,5.',
+    wrong: (most: { amount: string; servings: string; portions: string; kcal: string }) =>
+      `Količina je veća od 0 i najviše ${most.amount} g ili ml, ${most.servings} servinga ili ${most.portions} porcija; procjena ima naziv i vrijednosti, npr. 72,5, i najviše ${most.kcal} kcal.`,
     save: 'Upiši obrok',
     cancel: 'Odustani',
     logged: 'Obrok je upisan.',
@@ -267,6 +270,12 @@ export const hr: Messages = {
       'Arhivirano: nalazi je samo pretraga arhiviranih, a njezini nazivi ostaju zauzeti.',
     needed: 'Obavezno.',
     negative: 'Ne može biti manje od 0.',
+    kcalPer100: (most: string, unit: string) =>
+      `Najviše ${most} kcal na 100 ${unit}, energija čiste masti.`,
+    massPer100: (most: string, unit: string) =>
+      `Proteini, ugljikohidrati, masti i alkohol zajedno imaju najviše ${most} g na 100 ${unit}.`,
+    gramsPer100: (most: string, unit: string) => `Najviše ${most} g na 100 ${unit}.`,
+    kcalPerPortion: (most: string) => `Najviše ${most} kcal u porciji.`,
     conflict: (detail: string) => `Taj naziv ili drugi naziv već ima druga namirnica: ${detail}`,
     nameTaken: 'Ovaj naziv i marku već ima tvoja namirnica:',
     aliasTaken: 'Ovaj drugi naziv već ima tvoja namirnica:',
@@ -329,6 +338,7 @@ export const hr: Messages = {
     about: 'O aplikaciji',
     you: 'Ti',
     name: 'Ime',
+    nameNeeded: 'Ime je obavezno.',
     language: 'Jezik',
     timeZone: 'Vremenska zona',
     dayStart: 'Dan počinje u',
@@ -381,6 +391,8 @@ export const hr: Messages = {
     complete: 'Plan ima sve što mu treba o tebi.',
     missingField: { sex: 'spol', birth_date: 'datum rođenja', height_cm: 'visina' },
     wrongDate: 'Datum rođenja nije potpun: upiši ga cijelog ili ga obriši.',
+    dateToCome: 'Datum rođenja je poslije današnjeg dana.',
+    tooOld: (age: string) => `Uz taj datum rođenja dob je veća od ${age}.`,
     wrongHeight: (min: string, max: string) => `Visina je od ${min} do ${max} cm.`,
     save: 'Spremi',
     limits: 'Granice plana',

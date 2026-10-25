@@ -11,6 +11,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
@@ -25,6 +26,9 @@ const maxServing = 10000
 const needed = ['kcal', 'protein', 'carbs', 'fat'] as const
 const optional = ['fiber', 'saturated_fat', 'sugars', 'salt', 'polyols', 'alcohol'] as const
 type Nutrient = (typeof needed)[number] | (typeof optional)[number]
+
+// The nutrients whose grams add up, which 100 g or ml can hold so many of.
+const mass = ['protein', 'carbs', 'fat', 'alcohol'] as const
 
 const bases = ['100g', '100ml', 'portion'] as const
 const sources = ['label', 'estimate', 'user', 'dish'] as const
@@ -120,6 +124,49 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     }
   }
 
+  // tooMuch sets in errors what of nutrients the server refuses of a food
+  // (limits.json, food.ValidatePer100): per 100 g or ml no more energy than
+  // pure fat, no more grams than 100 can hold; a portion no more than a
+  // feast, and of its grams known, as much per 100 g of it. A field said
+  // wrong already stays so.
+  function tooMuch(
+    nutrients: Nutrients,
+    portionGrams: number | undefined,
+    errors: Map<string, string>,
+  ) {
+    const { maxKcalPer100, maxGramsPer100g, maxGramsPer100ml, maxKcalPerPortion } = limits.food
+    const say = (key: string, message: string) => {
+      if (!errors.has(key)) {
+        errors.set(key, message)
+      }
+    }
+    if (draft.basis === 'portion' && nutrients.kcal > maxKcalPerPortion) {
+      say('kcal', t.foods.kcalPerPortion(f.number(maxKcalPerPortion)))
+    }
+    // The values per 100 g or ml: a portion's, scaled as the server does.
+    let per100 = 1
+    if (draft.basis === 'portion') {
+      if (!portionGrams) {
+        return
+      }
+      per100 = 100 / portionGrams
+    }
+    const in100 = draft.basis === '100ml' ? 'ml' : 'g'
+    const most = draft.basis === '100ml' ? maxGramsPer100ml : maxGramsPer100g
+    if (nutrients.kcal * per100 > maxKcalPer100) {
+      say('kcal', t.foods.kcalPer100(f.number(maxKcalPer100), in100))
+    }
+    if (mass.reduce((sum, k) => sum + (nutrients[k] ?? 0) * per100, 0) > most) {
+      say('mass', t.foods.massPer100(f.number(most), in100))
+    }
+    for (const k of optional) {
+      const v = nutrients[k]
+      if (v !== undefined && v * per100 > most) {
+        say(k, t.foods.gramsPer100(f.number(most), in100))
+      }
+    }
+  }
+
   // body is the food the draft says, or the fields that are wrong.
   function body(): { body: Upsert } | { wrong: ReadonlyMap<string, string> } {
     const errors = new Map<string, string>()
@@ -159,6 +206,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     }
     const portionGrams =
       draft.basis === 'portion' ? number('portionGrams', draft.portionGrams, false) : undefined
+    tooMuch(nutrients, portionGrams, errors)
     const servings = draft.servings.flatMap(({ key, value }) => {
       if (value.name.trim() === '' && value.amount.trim() === '') {
         return []
@@ -234,8 +282,13 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     kind: { decimal: true } | { maxLength: number },
   ) {
     const error = wrong.get(key)
-    // The field another food is in the way of, which the refusal says.
+    // The field another food is in the way of, which the refusal says;
+    // one of the grams that add up to more than 100 can hold.
     const taken = error === undefined && key === conflictKey
+    const tooHeavy =
+      error === undefined &&
+      wrong.has('mass') &&
+      mass.some((k) => k === key && draft.nutrients[k].trim() !== '')
     return (
       <div className="space-y-1">
         <label htmlFor={`${id}-${key}`} className={cn(fieldLabel, 'block')}>
@@ -248,9 +301,15 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           {...('decimal' in kind
             ? { inputMode: 'decimal' as const }
             : { maxLength: kind.maxLength })}
-          aria-invalid={error !== undefined || taken}
+          aria-invalid={error !== undefined || taken || tooHeavy}
           aria-describedby={
-            error === undefined ? (taken ? `${id}-refused` : undefined) : `${id}-${key}-error`
+            error !== undefined
+              ? `${id}-${key}-error`
+              : taken
+                ? `${id}-refused`
+                : tooHeavy
+                  ? `${id}-mass-error`
+                  : undefined
           }
           className={inputClass}
           onChange={(e) => {
@@ -333,6 +392,11 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           </div>
         ))}
       </div>
+      {wrong.has('mass') && (
+        <p id={`${id}-mass-error`} className="text-xs text-destructive">
+          {wrong.get('mass')}
+        </p>
+      )}
       <details className="rounded-lg border p-3" open={optional.some((k) => wrong.has(k))}>
         <summary className="cursor-pointer text-sm">{t.foods.moreNutrients}</summary>
         <div className="mt-3 grid grid-cols-2 gap-3">
