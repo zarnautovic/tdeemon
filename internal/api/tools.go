@@ -207,7 +207,7 @@ func (s *sessions) tools() []tool {
 			Summary:     "Find foods",
 			Description: "Your foods whose name, brand or an alias has words starting with each word of a query, in any case and without the diacritics: " +
 				"the name's matches first, then the shorter name. Send a meal's foods at once, one query each: each food says which queries found it. " +
-				"Each has how much a meal had of it last. Archived foods are left out.",
+				"Each has how much a meal had of it last. Archived foods are left out, or alone found with archived.",
 			Errors: []int{http.StatusUnauthorized},
 		}, s.findFoods).
 			briefly("The user's foods whose name, brand or an alias has words starting with a query's, in any case, without diacritics, " +

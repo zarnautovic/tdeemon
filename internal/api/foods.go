@@ -95,7 +95,7 @@ type lastUseBody struct {
 type foodBody struct {
 	ID string `json:"id" format:"uuid"`
 	FoodFields
-	Archived bool         `json:"archived" doc:"An archived food stays out of a search, and keeps its name and aliases."`
+	Archived bool         `json:"archived" doc:"An archived food stays out of a search, but one of the archived foods, and keeps its name and aliases."`
 	LastUse  *lastUseBody `json:"last_use,omitempty" doc:"The last time a meal used the food; absent when none has."`
 	Queries  []string     `json:"queries,omitempty" nullable:"false" doc:"The queries of find_foods that found the food, of those it was sent."`
 }
@@ -122,8 +122,9 @@ type foodsOutput struct {
 // findFoodsInput's maxItems is store.MaxFoodQueries, and its limit's
 // maximum store.MaxFoodResults.
 type findFoodsInput struct {
-	Query []string `query:"query,explode" required:"true" nullable:"false" minItems:"1" maxItems:"20" minLength:"1" maxLength:"200" example:"greek yog" doc:"The start of words of the name, brand or an alias, in any case, without diacritics; one a food."`
-	Limit int      `query:"limit" default:"10" minimum:"1" maximum:"50" doc:"The most foods of each query."`
+	Query    []string `query:"query,explode" required:"true" nullable:"false" minItems:"1" maxItems:"20" minLength:"1" maxLength:"200" example:"greek yog" doc:"The start of words of the name, brand or an alias, in any case, without diacritics; one a food."`
+	Limit    int      `query:"limit" default:"10" minimum:"1" maximum:"50" doc:"The most foods of each query."`
+	Archived bool     `query:"archived" doc:"The archived foods instead of the others."`
 }
 
 func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOutput, error) {
@@ -138,13 +139,17 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 	unfound := []string{}
 	at := map[uuid.UUID]int{}
 	asked := map[string]bool{}
+	find := s.db.FindFoods
+	if in.Archived {
+		find = s.db.FindArchivedFoods
+	}
 	for _, q := range in.Query {
 		key := strings.ToLower(strings.TrimSpace(q))
 		if asked[key] {
 			continue
 		}
 		asked[key] = true
-		found, err := s.db.FindFoods(ctx, p.User.ID, q, in.Limit)
+		found, err := find(ctx, p.User.ID, q, in.Limit)
 		if err != nil {
 			return nil, internalError("finding foods failed", err)
 		}

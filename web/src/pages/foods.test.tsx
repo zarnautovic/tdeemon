@@ -131,6 +131,32 @@ test('a search finds the foods, or says none matches', async () => {
   expect(await screen.findByText('No food matches.')).toBeDefined()
 })
 
+test('a search on the archived tab finds the archived foods, and the tab stays', async () => {
+  const stew = { ...oats, id: '0193c3a5-0000-7000-8000-0000000000f9', name: 'Canteen stew' }
+  const fetch = fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': listOf([]),
+    'GET /api/v1/foods': (request) =>
+      Response.json({
+        foods: new URL(request.url).searchParams.get('archived') === 'true' ? [stew] : [],
+        unfound: [],
+      }),
+  })
+  const router = renderAt('/foods?archived=true')
+
+  fireEvent.change(await screen.findByLabelText('Search the foods'), { target: { value: 'stew' } })
+
+  const found = await screen.findByRole('list', { name: 'Found' })
+  expect(within(found).getByText('Canteen stew')).toBeDefined()
+  expect(asked(fetch, '/api/v1/foods').at(-1)?.searchParams.get('archived')).toBe('true')
+  expect(screen.getByRole('button', { name: 'Archived' }).getAttribute('aria-pressed')).toBe('true')
+  // The foods in use, searched for the same.
+  fireEvent.click(screen.getByRole('button', { name: 'In use' }))
+  expect(await screen.findByText('No food matches.')).toBeDefined()
+  expect(asked(fetch, '/api/v1/foods').at(-1)?.searchParams.has('archived')).toBe(false)
+  expect(router.state.location.search).toEqual({ q: 'stew' })
+})
+
 test('a list that did not come says why, and asks again', async () => {
   let up = false
   fakeServer({

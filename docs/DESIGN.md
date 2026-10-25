@@ -150,7 +150,8 @@ ignores case and diacritics ("cevapi" finds "Ćevapi", and a đ is a d
 or a dj: "grozde" and "grozdje" find "grožđe") and matches word
 prefixes: foods whose name holds every word first, then name and
 aliases, then the rest, shorter names first, from the user's own foods
-alone; archived foods stay out of it but keep their history.
+alone; archived foods stay out of it but keep their history, and are
+found alone in a search of the archived ones (`archived`).
 
 A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
@@ -193,7 +194,7 @@ duplicate food would stay in the list.
 | tool | purpose |
 | --- | --- |
 | `get_profile` | the profile (sex, age, height), current phase and goal, current targets (day-type aware), profile notes, locale, units, and the time now on the user's clock (a model has none) |
-| `find_foods(query[], limit)` | the foods whose name, brand or an alias has words starting with a query's, without case or diacritics, the name's first; a meal's foods at once, one query each, each food told by the queries that found it, and the queries that found none (`unfound`), so a model does not send them again (another form of the word, once); with the last use (the amount as given and in the food's unit) |
+| `find_foods(query[], limit, archived?)` | the foods whose name, brand or an alias has words starting with a query's, without case or diacritics, the name's first, among those in use (or the archived ones alone, with `archived`); a meal's foods at once, one query each, each food told by the queries that found it, and the queries that found none (`unfound`), so a model does not send them again (another form of the word, once); with the last use (the amount as given and in the food's unit) |
 | `log_meal(id?, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9), or one the server makes for a client that cannot (a model without a clock: that meal sent again is another); a meal is logged once eaten, so a time still to come (past the few minutes a clock may be ahead) is refused; returns breakdown + day status |
 | `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, give an item a note (a note op, which changes nothing else of it), change the time (not to one still to come) and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
 | `delete_meal(id)` / `undo_last(id?)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9; or one the server makes for a client that cannot, whose undo sent again takes back another) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name or an alias, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |

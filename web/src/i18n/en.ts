@@ -111,8 +111,10 @@ export const en = {
     leaveOut: 'Leave out of calibration',
     countAgain: 'Count it again',
     reason: 'Reason',
-    // Reasons a tap writes in, the ones a day is left out for most.
-    reasons: ['restaurant', 'sick', 'not logged'],
+    // Reasons a tap writes in, the ones a day is left out for most: each
+    // stored under its code, the server's words, and said in the
+    // language.
+    reasons: { restaurant: 'restaurant', sick: 'sick', 'not logged': 'not logged' },
     cancel: 'Cancel',
     save: 'Save',
     delete: 'Delete',
@@ -276,7 +278,8 @@ export const en = {
     save: 'Save the food',
     archive: 'Archive',
     unarchive: 'Bring back',
-    archivedNote: 'Archived: no search finds it, and its names stay taken.',
+    archivedNote:
+      'Archived: only a search of the archived foods finds it, and its names stay taken.',
     needed: 'Needed.',
     negative: 'It cannot be less than 0.',
     conflict: (detail: string) => `Another food has this name or other name: ${detail}`,

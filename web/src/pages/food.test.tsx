@@ -166,7 +166,9 @@ test('a food is archived, and brought back', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Archive' }))
 
   expect(
-    await screen.findByText('Archived: no search finds it, and its names stay taken.'),
+    await screen.findByText(
+      'Archived: only a search of the archived foods finds it, and its names stay taken.',
+    ),
   ).toBeDefined()
   expect(server.sent[0]).toEqual({ ...oats, archived: true })
   fireEvent.click(screen.getByRole('button', { name: 'Bring back' }))

@@ -101,7 +101,7 @@ export const hr: Messages = {
     leaveOut: 'Izostavi iz kalibracije',
     countAgain: 'Vrati u kalibraciju',
     reason: 'Razlog',
-    reasons: ['restoran', 'bolest', 'nije sve upisano'],
+    reasons: { restaurant: 'restoran', sick: 'bolest', 'not logged': 'nije sve upisano' },
     cancel: 'Odustani',
     save: 'Spremi',
     delete: 'Obriši',
@@ -263,7 +263,8 @@ export const hr: Messages = {
     save: 'Spremi namirnicu',
     archive: 'Arhiviraj',
     unarchive: 'Vrati iz arhive',
-    archivedNote: 'Arhivirano: pretraga je ne nalazi, a njezini nazivi ostaju zauzeti.',
+    archivedNote:
+      'Arhivirano: nalazi je samo pretraga arhiviranih, a njezini nazivi ostaju zauzeti.',
     needed: 'Obavezno.',
     negative: 'Ne može biti manje od 0.',
     conflict: (detail: string) => `Taj naziv ili drugi naziv već ima druga namirnica: ${detail}`,

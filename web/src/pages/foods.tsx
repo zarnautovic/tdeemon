@@ -13,9 +13,9 @@ import { inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import type { FoodsSearch } from '@/router'
 
-// FoodsPage is the user's foods: a search of them, or the list of those in
-// use or archived, by name or by when they were eaten last, a page at a
-// time; and a way to add one. What it shows is in the address (q,
+// FoodsPage is the user's foods, those in use or the archived ones: a
+// search of them, or their list, by name or by when they were eaten last,
+// a page at a time; and a way to add one. What it shows is in the address (q,
 // archived, order), so coming back from a food finds it as it was.
 export function FoodsPage() {
   const t = useMessages()
@@ -84,51 +84,63 @@ export function FoodsPage() {
           }}
         />
       </div>
+      {/* The search too is of the foods in use or of the archived ones. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <fieldset aria-label={t.foods.lists} className="flex gap-1">
+          {([false, true] as const).map((a) => (
+            <Button
+              key={String(a)}
+              variant={archived === a ? 'default' : 'outline'}
+              aria-pressed={archived === a}
+              onClick={() => {
+                void navigate({ search: (s) => ({ ...s, archived: a || undefined }) })
+              }}
+            >
+              {a ? t.foods.archived : t.foods.inUse}
+            </Button>
+          ))}
+        </fieldset>
+        {!searching && (
+          <label className="flex items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{t.foods.order}</span>
+            <select
+              value={order}
+              className={cn(inputClass, 'h-8 w-auto')}
+              onChange={(event) => {
+                const chosen = event.currentTarget.value === 'use' ? 'use' : undefined
+                void navigate({ search: (s) => ({ ...s, order: chosen }) })
+              }}
+            >
+              <option value="name">{t.foods.byName}</option>
+              <option value="use">{t.foods.byUse}</option>
+            </select>
+          </label>
+        )}
+      </div>
       {searching ? (
-        <Found query={typed} timeZone={timeZone} from={search} />
+        <Found query={typed} archived={archived} timeZone={timeZone} from={search} />
       ) : (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <fieldset aria-label={t.foods.lists} className="flex gap-1">
-              {([false, true] as const).map((a) => (
-                <Button
-                  key={String(a)}
-                  variant={archived === a ? 'default' : 'outline'}
-                  aria-pressed={archived === a}
-                  onClick={() => {
-                    void navigate({ search: (s) => ({ ...s, archived: a || undefined }) })
-                  }}
-                >
-                  {a ? t.foods.archived : t.foods.inUse}
-                </Button>
-              ))}
-            </fieldset>
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">{t.foods.order}</span>
-              <select
-                value={order}
-                className={cn(inputClass, 'h-8 w-auto')}
-                onChange={(event) => {
-                  const chosen = event.currentTarget.value === 'use' ? 'use' : undefined
-                  void navigate({ search: (s) => ({ ...s, order: chosen }) })
-                }}
-              >
-                <option value="name">{t.foods.byName}</option>
-                <option value="use">{t.foods.byUse}</option>
-              </select>
-            </label>
-          </div>
-          <Listed archived={archived} order={order} timeZone={timeZone} from={search} />
-        </>
+        <Listed archived={archived} order={order} timeZone={timeZone} from={search} />
       )}
     </section>
   )
 }
 
-// Found is what a search of the foods finds.
-function Found({ query, timeZone, from }: { query: string; timeZone: string; from: FoodsSearch }) {
+// Found is what a search of the foods finds, of the archived ones or the
+// others.
+function Found({
+  query,
+  archived,
+  timeZone,
+  from,
+}: {
+  query: string
+  archived: boolean
+  timeZone: string
+  from: FoodsSearch
+}) {
   const t = useMessages()
-  const found = useFindFoods(query)
+  const found = useFindFoods(query, archived)
 
   if (found.isPending) {
     return <output className="block text-muted-foreground">{t.loading}</output>

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"time"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 )
@@ -107,7 +108,9 @@ func DuplicateOf(m Meal, recent []Meal, loc *time.Location) (Warning, bool) {
 
 // sameItems reports whether a and b hold the same foods in amounts within
 // 1 % of each other, or estimates of the same name and kcal within 1 %,
-// in any order.
+// in any order. A food's item is told by the food, not by the name and
+// values it brought: a meal sent again after its food was corrected is
+// the same meal.
 func sameItems(a, b []Item) bool {
 	if len(a) != len(b) {
 		return false
@@ -117,9 +120,7 @@ next:
 	for i := range a {
 		x := &a[i]
 		for j := range b {
-			y := &b[j]
-			if !used[j] && x.FoodID == y.FoodID && x.Name == y.Name && x.Unit == y.Unit &&
-				within1(x.Amount, y.Amount) && within1(x.Nutrients.Kcal, y.Nutrients.Kcal) {
+			if !used[j] && sameItem(x, &b[j]) {
 				used[j] = true
 				continue next
 			}
@@ -127,6 +128,15 @@ next:
 		return false
 	}
 	return true
+}
+
+// sameItem reports whether x and y are the same food in amounts within
+// 1 % of each other, or estimates of the same name and kcal within 1 %.
+func sameItem(x, y *Item) bool {
+	if x.FoodID != y.FoodID || x.Unit != y.Unit || !within1(x.Amount, y.Amount) {
+		return false
+	}
+	return x.FoodID != uuid.Nil() || (x.Name == y.Name && within1(x.Nutrients.Kcal, y.Nutrients.Kcal))
 }
 
 func within1(a, b float64) bool { return math.Abs(a-b) <= 0.01*math.Max(a, b) }

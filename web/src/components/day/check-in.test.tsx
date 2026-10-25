@@ -249,6 +249,35 @@ test('a day is left out of calibration with a reason, and counted again', async 
   expect(server.sent.at(-1)?.body).toEqual({ excluded_reason: '' })
 })
 
+test('a reason a tap gives is stored under its code, and said in the language', async () => {
+  const server = dayServer()
+  fakeServer({ ...signedIn('hr'), ...server.routes })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Izostavi iz kalibracije' }))
+  fireEvent.click(screen.getByRole('button', { name: 'bolest' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Izostavi iz kalibracije' }))
+
+  expect(await screen.findByText('Izvan kalibracije: bolest')).toBeDefined()
+  expect(server.sent.at(-1)?.body).toEqual({ excluded_reason: 'sick' })
+})
+
+test.each([
+  ['sick', 'sick'],
+  // Stored in Croatian before the taps gave codes.
+  ['bolest', 'sick'],
+  ['nije sve upisano', 'not logged'],
+  ['a wedding', 'a wedding'],
+])('a day left out as %j says %j in English', async (stored, said) => {
+  fakeServer({
+    ...signedIn(),
+    ...dayServer(day({ status: 'excluded', excluded_reason: stored })).routes,
+  })
+  renderAt('/')
+
+  expect(await screen.findByText(`Out of calibration: ${said}`)).toBeDefined()
+})
+
 test('leaving a day out can be given up', async () => {
   const server = dayServer()
   fakeServer({ ...signedIn(), ...server.routes })
