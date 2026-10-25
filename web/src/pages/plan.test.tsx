@@ -265,6 +265,36 @@ test('a birth date typed in part is not sent, as it would clear the one stored',
   expect(sent['PUT /api/v1/profile']).toBeUndefined()
 })
 
+test('a birth date after today, or of an age past the oldest, is not sent', async () => {
+  const { sent } = planServer({
+    profile: { birth_date: '1990-06-15', missing: ['sex', 'height_cm'] },
+  })
+  renderAt('/settings/plan')
+  const form = await screen.findByRole('form', { name: 'Profile' })
+  const date = within(form).getByLabelText('Birth date')
+
+  // Today is October 23, 2026.
+  fireEvent.change(date, { target: { value: '2026-10-24' } })
+  save('Profile')
+  expect((await within(form).findByRole('alert')).textContent).toBe(
+    'The birth date is after today.',
+  )
+  // 131 on the 23rd, a day short of 132.
+  fireEvent.change(date, { target: { value: '1894-10-24' } })
+  save('Profile')
+  expect(within(form).getByRole('alert').textContent).toBe(
+    'The birth date makes an age of more than 130.',
+  )
+  expect(date.getAttribute('aria-invalid')).toBe('true')
+  expect(sent['PUT /api/v1/profile']).toBeUndefined()
+  // 130 on the 23rd, as the server counts it: sent.
+  fireEvent.change(date, { target: { value: '1895-10-24' } })
+  save('Profile')
+  await waitFor(() => {
+    expect(sent['PUT /api/v1/profile']).toHaveLength(1)
+  })
+})
+
 test('a height that is no number, or none the server takes, is not sent', async () => {
   const { sent } = planServer()
   renderAt('/settings/plan')

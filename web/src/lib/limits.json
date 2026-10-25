@@ -1,0 +1,68 @@
+{
+  "metrics": {
+    "active_kcal": {
+      "least": 0,
+      "most": 15000
+    },
+    "basal_kcal": {
+      "least": 0,
+      "most": 10000
+    },
+    "body_fat": {
+      "least": 1,
+      "most": 75
+    },
+    "exercise_min": {
+      "least": 0,
+      "most": 1500
+    },
+    "hrv": {
+      "least": 1,
+      "most": 500
+    },
+    "lean_mass": {
+      "least": 10,
+      "most": 300
+    },
+    "rhr": {
+      "least": 20,
+      "most": 250
+    },
+    "sleep_h": {
+      "least": 0,
+      "most": 24
+    },
+    "steps": {
+      "least": 0,
+      "most": 300000
+    },
+    "vo2max": {
+      "least": 5,
+      "most": 100
+    },
+    "weight": {
+      "least": 20,
+      "most": 400
+    }
+  },
+  "meal": {
+    "maxAmount": 10000,
+    "maxServings": 100,
+    "maxPortions": 50,
+    "maxEstimateKcal": 10000
+  },
+  "food": {
+    "maxKcalPer100": 900,
+    "maxGramsPer100g": 101,
+    "maxGramsPer100ml": 150,
+    "maxKcalPerPortion": 10000
+  },
+  "profile": {
+    "minHeightCm": 50,
+    "maxHeightCm": 275,
+    "maxAge": 130
+  },
+  "user": {
+    "maxNameLen": 100
+  }
+}

@@ -283,6 +283,25 @@ test('an amount that is no number is not sent', async () => {
   expect(server.sent).toEqual([])
 })
 
+test("an item's amount of 0, or past what the server takes, is not sent", async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '10001' } })
+  fireEvent.change(meal().getByLabelText('Amount: Banana bread'), { target: { value: '0' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(meal().getByRole('alert').textContent).toBe(
+    'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
+  )
+  expect(meal().getByLabelText('Amount: Oats').getAttribute('aria-invalid')).toBe('true')
+  expect(meal().getByLabelText('Amount: Banana bread').getAttribute('aria-invalid')).toBe('true')
+  expect(meal().getByLabelText('Amount: Egg').getAttribute('aria-invalid')).toBe('false')
+  expect(server.sent).toEqual([])
+})
+
 test("the server's warnings of a change are said in the app's words", async () => {
   fakeServer(
     mealServer({
@@ -1045,7 +1064,7 @@ test('an item added that cannot be sent as it is holds the meal back', async () 
 
   expect(
     await meal().findByText(
-      'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+      'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
     ),
   ).toBeDefined()
   expect(server.sent).toEqual([])
@@ -1417,6 +1436,34 @@ function foodsOf(): Partial<Record<string, Handler>> {
   }
 }
 
+test('an item left as it was is not held back by its food corrected since', async () => {
+  // The egg's serving is 6 kg since: the 2 eggs logged are past what an
+  // item may hold of it now.
+  const server = mealServer({
+    [`GET /api/v1/foods/${egg.food_id ?? ''}`]: () =>
+      Response.json(
+        food(egg.food_id ?? '', { name: 'Egg', servings: [{ name: 'egg', amount: 6000 }] }),
+      ),
+  })
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  await meal().findByLabelText('Unit: Egg')
+  fireEvent.change(meal().getByLabelText('What it was'), { target: { value: 'Brunch' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  await waitFor(() => {
+    expect(server.sent.map((s) => s.body)).toEqual([{ description: 'Brunch' }])
+  })
+  // Typed anew, the amount is held to what an item may hold.
+  await edit()
+  fireEvent.change(await meal().findByLabelText('Amount: Egg'), { target: { value: '3' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  expect(meal().getByLabelText('Amount: Egg').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toHaveLength(1)
+})
+
 test('an amount is changed to another unit of its food, worked out anew', async () => {
   const server = mealServer(foodsOf())
   fakeServer(server.routes)
@@ -1556,7 +1603,7 @@ test('another food of no amount holds the meal back', async () => {
 
   expect(
     await meal().findByText(
-      'An amount is more than 0, and an estimate has a name and its values, such as 72.5.',
+      'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
     ),
   ).toBeDefined()
   expect(server.sent).toEqual([])

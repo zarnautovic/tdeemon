@@ -9,6 +9,7 @@ import {
   inUnit,
   itemOf,
   repeatOf,
+  tooMuch,
   unitGrams,
   unitIn,
   unitsOf,
@@ -278,4 +279,42 @@ test("a food's entry in a unit of no grams asks for its amount anew", () => {
     amount: '',
   })
   expect(converted(bread, 'g', 'ml', 100)).toBeUndefined()
+})
+
+test('an item holds no more than the server takes', () => {
+  // Grams, servings and their grams, portions, and a portion's grams.
+  expect(tooMuch(bread, 'g', 10_000)).toBe(false)
+  expect(tooMuch(bread, 'g', 10_001)).toBe(true)
+  expect(tooMuch(bread, 'serving:slice', 100)).toBe(false)
+  expect(tooMuch(bread, 'serving:slice', 101)).toBe(true)
+  const sack = { ...bread, servings: [{ name: 'sack', amount: 5000 }] }
+  expect(tooMuch(sack, 'serving:sack', 2)).toBe(false)
+  expect(tooMuch(sack, 'serving:sack', 2.5)).toBe(true)
+  expect(tooMuch(stew, 'portion', 50)).toBe(false)
+  expect(tooMuch(stew, 'portion', 51)).toBe(true)
+  // Grams of a food by the portion: no more than the most grams either.
+  expect(tooMuch(stew, 'g', 10_000)).toBe(false)
+  expect(tooMuch(stew, 'g', 10_001)).toBe(true)
+  const bite = { ...stew, portion_grams: 100 }
+  expect(tooMuch(bite, 'g', 5000)).toBe(false)
+  expect(tooMuch(bite, 'g', 5100)).toBe(true)
+  // A food not known yet: the count of servings alone.
+  expect(tooMuch(undefined, 'serving:slice', 101)).toBe(true)
+
+  const entry = foodEntry(bread, field)
+  if (entry.kind !== 'food') {
+    throw new Error('a food gives no food entry')
+  }
+  expect(itemOf({ ...entry, unit: 'serving:slice', amount: '99999' }, parse)).toBeUndefined()
+  const plate = {
+    key: '0193c3a5-0000-7000-8000-0000000000e1',
+    kind: 'estimate' as const,
+    name: 'Feast',
+    kcal: '10001',
+    protein: '1',
+    carbs: '1',
+    fat: '1',
+  }
+  expect(itemOf(plate, parse)).toBeUndefined()
+  expect(itemOf({ ...plate, kcal: '10000' }, parse)).toBeDefined()
 })

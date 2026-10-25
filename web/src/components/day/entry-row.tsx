@@ -5,6 +5,7 @@ import { inUnit, servingOf, unitsOf, type Entry } from '@/components/day/meal-en
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -39,10 +40,11 @@ export function EntryRow({
   }, [focus])
   const brand = entry.kind === 'food' && entry.food.brand ? ` · ${entry.food.brand}` : ''
   const name = entry.kind === 'food' ? entry.food.name + brand : entry.name || t.log.anEstimate
-  // An amount is wrong when the entry is and it holds no number, or 0.
-  const notNumber = (s: string) => {
-    const n = f.parse(s)
-    return n === undefined || n <= 0
+  // An estimate's value is wrong when the entry is and it holds no
+  // number, or energy past the most an estimate may have.
+  const wrongValue = (v: (typeof values)[number]) => {
+    const n = f.parse(entry.kind === 'estimate' ? entry[v] : '')
+    return n === undefined || (v === 'kcal' && n > limits.meal.maxEstimateKcal)
   }
   const remove = (
     <Button variant="ghost" size="icon-lg" aria-label={t.log.remove(name)} onClick={onRemove}>
@@ -64,7 +66,8 @@ export function EntryRow({
           value={entry.amount}
           inputMode="decimal"
           autoComplete="off"
-          aria-invalid={wrong && notNumber(entry.amount)}
+          // A food's entry is wrong by its amount alone.
+          aria-invalid={wrong}
           className={cn(inputClass, 'h-9 w-20 tabular-nums')}
           onChange={(e) => {
             // Typed: what a unit chosen worked out is no more.
@@ -121,7 +124,7 @@ export function EntryRow({
               value={entry[v]}
               inputMode="decimal"
               autoComplete="off"
-              aria-invalid={wrong && f.parse(entry[v]) === undefined}
+              aria-invalid={wrong && wrongValue(v)}
               aria-describedby={describedBy}
               className={cn(inputClass, 'tabular-nums')}
               onChange={(e) => {

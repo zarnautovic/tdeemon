@@ -98,7 +98,11 @@ details.
     (`go test ./internal/store -run TestSchema -update`);
   - after `food.Key` or `golang.org/x/text` changes, the web app's table
     of names' keys
-    (`go test ./internal/domain/food -run TestWebKey -update`).
+    (`go test ./internal/domain/food -run TestWebKey -update`);
+  - after a limit the web app checks a form by changes (a metric's
+    bounds, a meal's or a food's limits, the profile's, a name's
+    length), its copy `web/src/lib/limits.json`
+    (`go test ./internal/api -run TestWebLimits -update`).
 - **API tokens are kept out by default.** An operation refuses API
   tokens unless its `Metadata` opens it to a scope
   (`openToTokens(auth.ScopeIngest)`, in `internal/api/tokens.go`);

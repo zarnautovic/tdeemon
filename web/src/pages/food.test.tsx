@@ -265,6 +265,43 @@ test('a food is archived, and brought back', async () => {
   })
 })
 
+test("values past what 100 g can hold are said with the server's bounds, and not sent", async () => {
+  const server = foodServer()
+  renderAt(`/foods/${id}`)
+
+  // 200 g of protein in 100 g, more energy than fat, more sugars than 100 g.
+  fireEvent.change(await screen.findByLabelText('Protein (g)'), { target: { value: '200' } })
+  fireEvent.change(screen.getByLabelText('Energy (kcal)'), { target: { value: '950' } })
+  fireEvent.change(screen.getByLabelText('Sugars (g)'), { target: { value: '120' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  expect(
+    screen.getByText('Protein, carbs, fat and alcohol add up to at most 101 g per 100 g.'),
+  ).toBeDefined()
+  expect(screen.getByLabelText('Protein (g)').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByLabelText('Carbs (g)').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByText('At most 900 kcal per 100 g, the energy of pure fat.')).toBeDefined()
+  expect(screen.getByText('At most 101 g per 100 g.')).toBeDefined()
+  expect(server.sent).toEqual([])
+})
+
+test('a portion is no feast, and of its grams known holds what 100 g can, in Croatian', async () => {
+  const server = foodServer(undefined, 'hr')
+  renderAt(`/foods/${id}`)
+
+  fireEvent.change(await screen.findByLabelText('Vrijednosti su'), { target: { value: 'portion' } })
+  fireEvent.change(screen.getByLabelText('Energija (kcal)'), { target: { value: '10500' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
+  expect(screen.getByText('Najviše 10.000 kcal u porciji.')).toBeDefined()
+
+  // 1,000 kcal in a portion of 50 g is 2,000 in 100 g.
+  fireEvent.change(screen.getByLabelText('Energija (kcal)'), { target: { value: '1000' } })
+  fireEvent.change(screen.getByLabelText('Grama u porciji'), { target: { value: '50' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
+  expect(screen.getByText('Najviše 900 kcal na 100 g, energija čiste masti.')).toBeDefined()
+  expect(server.sent).toEqual([])
+})
+
 test('a food of a portion has its grams, and none else', async () => {
   const server = foodServer()
   renderAt(`/foods/${id}`)
