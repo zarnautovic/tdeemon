@@ -144,3 +144,24 @@ func TestMealItemIDsDiffer(t *testing.T) {
 		t.Errorf("two items of one id: %v", err)
 	}
 }
+
+// A meal is eaten by now, or by a clock a little ahead of it.
+func TestCheckEatenBy(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 24, 14, 0, 0, 0, time.UTC)
+	for _, eaten := range []time.Time{now.Add(-48 * time.Hour), now, now.Add(meal.MaxEatenAhead)} {
+		if err := meal.CheckEatenBy(eaten, now); err != nil {
+			t.Errorf("eaten at %v: %v", eaten, err)
+		}
+	}
+	// 02:00 in Zagreb on the night summer time ends, the second of the
+	// two, after the day of the 24th.
+	night := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC)
+	if err := meal.CheckEatenBy(night, now); err == nil || !strings.Contains(err.Error(), "eaten at 2026-10-25T01:00:00Z, after now") {
+		t.Errorf("a meal eaten later = %v", err)
+	}
+	if err := meal.CheckEatenBy(now.Add(meal.MaxEatenAhead+time.Millisecond), now); err == nil {
+		t.Error("a meal eaten past the clock's margin: no error")
+	}
+}

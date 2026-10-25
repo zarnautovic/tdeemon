@@ -20,6 +20,7 @@ const bread: Food = {
   servings: [{ name: 'slice', amount: 40 }],
   last_use: {
     at: '2026-10-21T07:00:00Z',
+    day: '2026-10-21',
     meal_id: '0193c3a5-0000-7000-8000-0000000000a9',
     quantity: { serving: 'slice', servings: 2 },
     amount: 80,
@@ -298,6 +299,42 @@ test("today's meal is logged now when its time is left as it was", async () => {
       expect(server.sent).toHaveLength(1)
     })
     expect(server.sent[0]).toMatchObject({ eaten_at: '2026-10-23T15:27:00.000Z' })
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+test('a time still to come is not sent, and one of the night after says so', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  // 11:00 on the 23rd in Los Angeles, whose day starts at 4.
+  vi.setSystemTime(new Date('2026-10-23T18:00:00Z'))
+  try {
+    const server = logServer()
+    renderAt('/')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+    fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
+    fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Tea' } })
+    for (const label of ['Energy (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)']) {
+      fireEvent.change(composer().getByLabelText(label), { target: { value: '1' } })
+    }
+    fireEvent.change(composer().getByLabelText('Time'), { target: { value: '02:30' } })
+    expect(composer().getByText('02:30 is the night after this day.')).toBeDefined()
+    fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+
+    expect((await composer().findByRole('alert')).textContent).toBe(
+      'That time is still to come: a meal is logged once eaten.',
+    )
+    expect(server.sent).toEqual([])
+    // A time already gone is sent, and the alert goes once it is typed.
+    fireEvent.change(composer().getByLabelText('Time'), { target: { value: '10:15' } })
+    expect(composer().queryByRole('alert')).toBeNull()
+    expect(composer().queryByText(/the night after this day/)).toBeNull()
+    fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
+    await waitFor(() => {
+      expect(server.sent).toHaveLength(1)
+    })
+    expect(server.sent[0]).toMatchObject({ eaten_at: '2026-10-23T17:15:00.000Z' })
   } finally {
     vi.useRealTimers()
   }

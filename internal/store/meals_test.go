@@ -451,8 +451,9 @@ func TestLastUses(t *testing.T) {
 	createMeal(t, db, ana, breakfast(t, bar, t0))
 	later, _ := meal.FromFood(bar, meal.Quantity{Amount: 30, Unit: "g"}, "")
 	then, _ := meal.FromFood(bar, meal.Quantity{Servings: 0.5, Serving: "bar"}, "")
+	// Eaten on the night after the day, of which it is.
 	m := meal.Meal{
-		ID: uuid.NewV7(), EatenAt: t0.Add(2 * time.Hour), Day: day.DateOf(t0), Client: meal.ClientChat,
+		ID: uuid.NewV7(), EatenAt: t0.Add(18 * time.Hour), Day: day.DateOf(t0), Client: meal.ClientChat,
 		Items: []meal.Item{later, then},
 	}
 	createMeal(t, db, ana, m)
@@ -463,7 +464,7 @@ func TestLastUses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := store.LastUse{At: t0.Add(2 * time.Hour), MealID: m.ID, Quantity: meal.Quantity{Servings: 0.5, Serving: "bar"}, Amount: 27.5, Unit: "g"}
+	want := store.LastUse{At: t0.Add(18 * time.Hour), Day: day.DateOf(t0), MealID: m.ID, Quantity: meal.Quantity{Servings: 0.5, Serving: "bar"}, Amount: 27.5, Unit: "g"}
 	if len(got) != 1 || !reflect.DeepEqual(got[bar.ID], want) {
 		t.Errorf("LastUses = %+v, want only the bar's last item, %+v", got, want)
 	}

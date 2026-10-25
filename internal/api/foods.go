@@ -84,6 +84,7 @@ type FoodFields struct {
 // the usual amount.
 type lastUseBody struct {
 	At       time.Time    `json:"at"`
+	Day      string       `json:"day" format:"date" doc:"The meal's logical day: a meal before the day's start hour is of the day before."`
 	MealID   string       `json:"meal_id" format:"uuid"`
 	Quantity quantityBody `json:"quantity" doc:"How much, as it was given."`
 	Amount   float64      `json:"amount" doc:"How much, in unit."`
@@ -182,7 +183,7 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 
 func newLastUseBody(u store.LastUse) *lastUseBody {
 	return &lastUseBody{
-		At: u.At, MealID: u.MealID.String(), Amount: u.Amount, Unit: u.Unit,
+		At: u.At, Day: u.Day.String(), MealID: u.MealID.String(), Amount: u.Amount, Unit: u.Unit,
 		Quantity: quantityBody{
 			Amount: u.Quantity.Amount, Unit: u.Quantity.Unit,
 			Servings: u.Quantity.Servings, Serving: u.Quantity.Serving, Portions: u.Quantity.Portions,

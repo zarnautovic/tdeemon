@@ -69,6 +69,25 @@ export function parseNumber(s: string, locale: string): number | undefined {
   return /^\d+([.,]\d+)?$/.test(typed) ? Number(typed.replace(',', '.')) : undefined
 }
 
+// shortDay is at's day on the clock of timeZone, short, with its year
+// when another than now's on the clock of nowZone.
+function shortDay(
+  locale: string,
+  at: Date,
+  timeZone: string,
+  now: number,
+  nowZone: string = timeZone,
+): string {
+  const year = (d: Date, zone: string) =>
+    dateFormat(locale, { year: 'numeric', timeZone: zone }).format(d)
+  return dateFormat(locale, {
+    day: 'numeric',
+    month: 'short',
+    ...(year(at, timeZone) === year(new Date(now), nowZone) ? {} : { year: 'numeric' }),
+    timeZone,
+  }).format(at)
+}
+
 // useFormat formats numbers, dates and times in the app's language.
 export function useFormat() {
   const locale = useLocale()
@@ -109,15 +128,11 @@ export function useFormat() {
     // day is an instant's day on the user's clock, short: "Oct 21" in
     // English, "21. lis" in Croatian; of another year than now's, with
     // it.
-    day: (instant: string, timeZone: string, now: number = Date.now()) => {
-      const year = (at: Date) => dateFormat(locale, { year: 'numeric', timeZone }).format(at)
-      const at = new Date(instant)
-      return dateFormat(locale, {
-        day: 'numeric',
-        month: 'short',
-        ...(year(at) === year(new Date(now)) ? {} : { year: 'numeric' }),
-        timeZone,
-      }).format(at)
-    },
+    day: (instant: string, timeZone: string, now: number = Date.now()) =>
+      shortDay(locale, new Date(instant), timeZone, now),
+    // calendarDay is a day's date (YYYY-MM-DD) as day says an instant's:
+    // of another year than now's on the user's clock, with it.
+    calendarDay: (date: string, timeZone: string, now: number = Date.now()) =>
+      shortDay(locale, calendarDate(date), 'UTC', now, timeZone),
   }
 }

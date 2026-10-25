@@ -489,11 +489,11 @@ func TestFindFoods(t *testing.T) {
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{"foods": [
 		{"id": %[1]q, "name": "Rye roll", "brand": "Bakery", "basis": "100g", "source": "label", "archived": false,
 		 "nutrients": {"kcal": 251.3, "protein": 8.04, "carbs": 46.07, "fat": 2.9, "salt": 1.234},
-		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}, "queries": ["rye"]},
+		 "last_use": {"at": %[3]q, "day": "2026-10-21", "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}, "queries": ["rye"]},
 		{"id": %[2]q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": false,
 		 "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
 		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"],
-		 "last_use": {"at": %[3]q, "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}, "queries": ["rye"]}
+		 "last_use": {"at": %[3]q, "day": "2026-10-21", "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}, "queries": ["rye"]}
 	], "unfound": []}`, roll.ID, bread.ID, now.Format(time.RFC3339), m.ID))
 	// By an alias; an archived food not at all; at most limit.
 	for query, want := range map[string]string{"loaf": `"name":"Ana's rye bread"`, "stew": `{"foods":[],"unfound":["stew"]}`} {

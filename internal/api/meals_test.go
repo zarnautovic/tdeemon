@@ -221,6 +221,39 @@ func TestLogMealRefuses(t *testing.T) {
 	}
 }
 
+// A meal is logged once eaten: a time still to come, past the minutes a
+// clock may be ahead, is refused, logged or changed to; the meal stays as
+// it was.
+func TestMealEatenToComeIsRefused(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	soup := `{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}`
+	logAt := func(eaten time.Time) *httptest.ResponseRecorder {
+		return e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"id": %q, "eaten_at": %q, "items": [%s]}`,
+			meal.NewIDAt(e.now), eaten.Format(time.RFC3339), soup), e.session, nil)
+	}
+	if rec := logAt(e.now.Add(meal.MaxEatenAhead + time.Second)); rec.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(rec.Body.String(), "a meal is logged once eaten") {
+		t.Errorf("a meal eaten later: %d %s, want 422", rec.Code, rec.Body.String())
+	}
+	if rec := logAt(e.now.Add(meal.MaxEatenAhead)); rec.Code != http.StatusCreated {
+		t.Errorf("a meal of a clock a little ahead: %d %s, want 201", rec.Code, rec.Body.String())
+	}
+	id := meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [%s]}`, id, soup))
+	// 02:00 in Zagreb, before the day's start at 04:00, is the night after
+	// the day: of today's meal, a time to come.
+	night := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	if rec := e.patch(t, id, fmt.Sprintf(`{"eaten_at": %q}`, night.Format(time.RFC3339))); rec.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(rec.Body.String(), "a meal is logged once eaten") {
+		t.Errorf("a meal changed to the night after: %d %s, want 422", rec.Code, rec.Body.String())
+	}
+	if m, err := e.in.db.MealByID(t.Context(), e.in.user.ID, uuid.MustParse(id)); err != nil || !m.EatenAt.Equal(e.now.Truncate(time.Millisecond)) {
+		t.Errorf("the meal after = %v, %v; want it eaten at %v", m.EatenAt, err, e.now)
+	}
+}
+
 // logged logs body and fails the test unless it is stored.
 func (e mealsEnv) logged(t *testing.T, body string) {
 	t.Helper()

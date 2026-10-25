@@ -876,12 +876,48 @@ test("a time before the day's start is of the night after it", async () => {
 
   await edit()
   // The user's day starts at 4: 02:30 is the night after the 23rd.
+  expect(meal().queryByText(/the night after this day/)).toBeNull()
   fireEvent.change(meal().getByLabelText('Time'), { target: { value: '02:30' } })
+  expect(meal().getByText('02:30 is the night after this day.')).toBeDefined()
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   await waitFor(() => {
     expect(server.sent.map((s) => s.body)).toEqual([{ eaten_at: '2026-10-24T09:30:00.000Z' }])
   })
+})
+
+test('a time still to come is not sent: a meal is logged once eaten', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  // 11:00 on the 23rd in Los Angeles.
+  vi.setSystemTime(new Date('2026-10-23T18:00:00Z'))
+  try {
+    const server = mealServer()
+    fakeServer(server.routes)
+    renderAt('/')
+
+    await edit()
+    // Later today, then the night after it.
+    fireEvent.change(meal().getByLabelText('Time'), { target: { value: '12:00' } })
+    fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+    expect((await meal().findByRole('alert')).textContent).toBe(
+      'That time is still to come: a meal is logged once eaten.',
+    )
+    expect(meal().getByLabelText('Time').getAttribute('aria-invalid')).toBe('true')
+    fireEvent.change(meal().getByLabelText('Time'), { target: { value: '02:30' } })
+    fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+    expect(meal().getByRole('alert').textContent).toBe(
+      'That time is still to come: a meal is logged once eaten.',
+    )
+    expect(server.sent).toEqual([])
+    // A time already gone is sent.
+    fireEvent.change(meal().getByLabelText('Time'), { target: { value: '10:15' } })
+    fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+    await waitFor(() => {
+      expect(server.sent.map((s) => s.body)).toEqual([{ eaten_at: '2026-10-23T17:15:00.000Z' }])
+    })
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 test('words left as they were, or only spaced, and a cleared time send nothing', async () => {

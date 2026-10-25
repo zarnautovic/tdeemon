@@ -242,7 +242,7 @@ func (s *sessions) tools() []tool {
 			DefaultStatus: http.StatusCreated,
 			Description: "Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). " +
 				"Without an id, from a client that cannot make one, the server makes it: that meal sent again is another (or a 409, when its items carry ids of their own), " +
-				"so after a timeout, look at get_day before sending it again. eaten_at left out is the id's time, so a retry has the same. " +
+				"so after a timeout, look at get_day before sending it again. eaten_at left out is the id's time, so a retry has the same; a time still to come is refused (422). " +
 				"An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; " +
 				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), " +
 				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
@@ -256,7 +256,7 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodPatch,
 			Path:        Prefix + "/meals/{id}",
 			Summary:     "Change a meal",
-			Description: "Changes a meal: when it was eaten, its words, and its items, by ops in order: add an item, replace one, remove one, note one. " +
+			Description: "Changes a meal: when it was eaten (a time still to come is refused, 422), its words, and its items, by ops in order: add an item, replace one, remove one, note one. " +
 				"An item no op touches keeps what it brought when logged, though its food was corrected since; so does an item a note op gives a note, its only change. " +
 				"An add carries its item's id, a UUID the client makes: an add of an item the meal has under its id is a retry when it is the same, a conflict (409) when not. " +
 				"A replace with what the item has already changes nothing, so it does not take a corrected food's values: remove the item and add it again under a new id for that. " +

@@ -268,7 +268,7 @@ type logMealInput struct {
 // logMealBody is a meal as log_meal takes it.
 type logMealBody struct {
 	ID          string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 made now (a day back to five minutes ahead): the meal sent again under it is a retry. Left out (not empty), the server makes one, and a meal sent again is another."`
-	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When eaten; left out, the time of the id."`
+	EatenAt     *time.Time  `json:"eaten_at,omitempty" doc:"When eaten, by now (a time to come is refused); left out, the time of the id."`
 	Description string      `json:"description,omitempty" maxLength:"200" doc:"What the meal was, in the user's words."`
 	Items       []itemInput `json:"items" nullable:"false" minItems:"1" maxItems:"50"`
 	Note        string      `json:"note,omitempty" maxLength:"2000"`
@@ -298,6 +298,9 @@ func (s *sessions) logMeal(ctx context.Context, in *logMealInput) (*mealOutput, 
 		// A new meal's id must be made now.
 		if err := meal.CheckNewID(m.ID, now); err != nil {
 			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+		if err := meal.CheckEatenBy(m.EatenAt, now); err != nil {
+			return nil, huma.Error422UnprocessableEntity("the meal: " + err.Error())
 		}
 		var ws []meal.Warning
 		if m.Items, ws, err = s.items(ctx, p, sent, foods); err != nil {
@@ -475,10 +478,26 @@ type updateMealInput struct {
 
 // updateMealBody is the change of a meal update_meal takes.
 type updateMealBody struct {
-	EatenAt     *time.Time `json:"eaten_at,omitempty" doc:"When the meal was eaten, which may move it to another day."`
+	EatenAt     *time.Time `json:"eaten_at,omitempty" doc:"When the meal was eaten, by now (a time to come is refused), which may move it to another day."`
 	Description *string    `json:"description,omitempty" maxLength:"200"`
 	Note        *string    `json:"note,omitempty" maxLength:"2000"`
 	Ops         []mealOp   `json:"ops,omitempty" nullable:"false" maxItems:"50" doc:"The changes of the items, in order."`
+}
+
+// calendarOfTime is the user's calendar, to put a meal's new time eaten
+// on its day, once eaten is checked: none for no new time.
+func calendarOfTime(p auth.Principal, eaten *time.Time, now time.Time) (day.Calendar, error) {
+	if eaten == nil {
+		return day.Calendar{}, nil
+	}
+	if err := meal.CheckEatenBy(*eaten, now); err != nil {
+		return day.Calendar{}, huma.Error422UnprocessableEntity("the meal: " + err.Error())
+	}
+	cal, _, err := userDay(p, now)
+	if err != nil {
+		return day.Calendar{}, internalError("changing the meal failed", err)
+	}
+	return cal, nil
 }
 
 // mealID is the meal id of a path, or the 404 of a meal that does not
@@ -508,11 +527,9 @@ func (s *sessions) updateMeal(ctx context.Context, in *updateMealInput) (*mealOu
 		return nil, internalError("changing the meal failed", err)
 	}
 	b := &in.Body
-	var cal day.Calendar
-	if b.EatenAt != nil {
-		if cal, _, err = userDay(p, now); err != nil {
-			return nil, internalError("changing the meal failed", err)
-		}
+	cal, err := calendarOfTime(p, b.EatenAt, now)
+	if err != nil {
+		return nil, err
 	}
 	items, foods, warnings, err := s.opItems(ctx, p, &had, b.Ops)
 	if err != nil {
