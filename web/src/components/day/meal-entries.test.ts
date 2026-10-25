@@ -43,7 +43,13 @@ test("a food's units are its basis's, a portion's grams and its servings", () =>
 })
 
 test('a food comes in the amount it was eaten in last, or 100 of its unit, or a portion', () => {
-  const at = { at: '2026-10-21T07:00:00Z', meal_id: bread.id, amount: 80, unit: 'g' as const }
+  const at = {
+    at: '2026-10-21T07:00:00Z',
+    day: '2026-10-21',
+    meal_id: bread.id,
+    amount: 80,
+    unit: 'g' as const,
+  }
   const slices = foodEntry(
     { ...bread, last_use: { ...at, quantity: { serving: 'slice', servings: 2 } } },
     field,

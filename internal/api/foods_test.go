@@ -48,7 +48,7 @@ func TestListFoods(t *testing.T) {
 		{"id": %[1]q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": false,
 		 "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
 		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"],
-		 "last_use": {"at": %[3]q, "meal_id": %[4]q, "quantity": {"amount": 60, "unit": "g"}, "amount": 60, "unit": "g"}},
+		 "last_use": {"at": %[3]q, "day": "2026-10-21", "meal_id": %[4]q, "quantity": {"amount": 60, "unit": "g"}, "amount": 60, "unit": "g"}},
 		{"id": %[2]q, "name": "Apple", "basis": "100g", "source": "label", "archived": false,
 		 "nutrients": {"kcal": 52, "protein": 0.3, "carbs": 14, "fat": 0.2}}
 	]}`, bread.ID, apple.ID, now.Format(time.RFC3339), m.ID))

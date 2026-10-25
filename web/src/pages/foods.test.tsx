@@ -31,8 +31,11 @@ const oats = food(1, {
   servings: [{ name: 'cup', amount: 80 }],
   aliases: ['porridge oats'],
   note: 'from the label',
+  // 02:30 in Los Angeles, before the day's start at 04:00: of the day
+  // before.
   last_use: {
-    at: '2026-10-21T07:00:00Z',
+    at: '2026-10-22T09:30:00Z',
+    day: '2026-10-21',
     meal_id: '0193c3a5-0000-7000-8000-0000000000a1',
     quantity: { amount: 80, unit: 'g' },
     amount: 80,
@@ -191,6 +194,7 @@ test('a food eaten last in another year says the year', async () => {
     name: 'Old cereal',
     last_use: {
       at: '2024-10-21T07:00:00Z',
+      day: '2024-10-21',
       meal_id: '0193c3a5-0000-7000-8000-0000000000a1',
       quantity: { amount: 80, unit: 'g' },
       amount: 80,

@@ -29,7 +29,7 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
-import { clockAt, mealInstant } from '@/lib/zoned'
+import { clockAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
 
 type Op = components['schemas']['MealOp']
 type Change = components['schemas']['UpdateMealBody']
@@ -127,6 +127,9 @@ export function MealEditor({
     time: clockAt(Date.parse(meal.eaten_at), timeZone),
     note: meal.note ?? '',
   }))
+  // The time in its field, to say when it is of the night after the day.
+  const [clock, setClock] = useState(openedWith.time)
+  const night = nightAfter(clock, startHour)
   // Each estimate's values as the editor opened with them, as the amounts.
   const estimateStart = (item: Item): EstimateStart | undefined =>
     item.food_id === undefined
@@ -180,8 +183,9 @@ export function MealEditor({
   // amount's by its item, an estimate's value's by fieldOf).
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
-  // A day typed after today.
-  const [toCome, setToCome] = useState(false)
+  // A day typed after today, or a time still to come: a meal is logged
+  // once eaten.
+  const [ahead, setAhead] = useState<'day' | 'time' | undefined>(undefined)
   // What is typed in each amount's field, by the item and its food, for
   // a unit that agrees with it.
   const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
@@ -386,8 +390,14 @@ export function MealEditor({
     }
     setWrong(notNumbers)
     setWrongEntries(bad)
-    setToCome(day > today)
-    if (notNumbers.size > 0 || bad.size > 0 || day > today) {
+    let after: typeof ahead
+    if (day > today) {
+      after = 'day'
+    } else if (fields.eaten_at !== undefined && toCome(fields.eaten_at)) {
+      after = 'time'
+    }
+    setAhead(after)
+    if (notNumbers.size > 0 || bad.size > 0 || after !== undefined) {
       return
     }
     if (ops.length === 0 && Object.keys(fields).length === 0) {
@@ -417,8 +427,8 @@ export function MealEditor({
             type="date"
             defaultValue={date}
             max={today}
-            aria-invalid={toCome}
-            aria-describedby={toCome ? `${id}-to-come` : undefined}
+            aria-invalid={ahead === 'day'}
+            aria-describedby={ahead === 'day' ? `${id}-to-come` : undefined}
             className={cn(inputClass, 'tabular-nums')}
           />
         </label>
@@ -428,10 +438,28 @@ export function MealEditor({
             name="time"
             type="time"
             defaultValue={openedWith.time}
+            aria-invalid={ahead === 'time'}
+            aria-describedby={
+              [ahead === 'time' ? `${id}-to-come` : '', night ? `${id}-night` : '']
+                .join(' ')
+                .trim() || undefined
+            }
             className={cn(inputClass, 'tabular-nums')}
+            onChange={(e) => {
+              // A cleared field keeps the time it had.
+              const typed = e.currentTarget.value
+              if (/^\d{2}:\d{2}$/.test(typed)) {
+                setClock(typed)
+              }
+            }}
           />
         </label>
       </div>
+      {night && (
+        <p id={`${id}-night`} className="text-xs text-muted-foreground">
+          {t.log.nightAfter(clock)}
+        </p>
+      )}
       {noting ? (
         <label className="block space-y-1">
           <span className={cn(fieldLabel, 'block')}>{t.meal.note}</span>
@@ -773,9 +801,9 @@ export function MealEditor({
           {t.log.wrong}
         </p>
       )}
-      {toCome && (
+      {ahead !== undefined && (
         <p id={`${id}-to-come`} role="alert" className="text-xs text-destructive">
-          {t.meal.dayToCome}
+          {ahead === 'day' ? t.meal.dayToCome : t.meal.timeToCome}
         </p>
       )}
       {none && <p className="text-xs text-muted-foreground">{t.meal.oneItem}</p>}

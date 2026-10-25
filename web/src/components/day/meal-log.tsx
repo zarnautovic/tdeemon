@@ -14,7 +14,7 @@ import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
-import { clockAt, mealInstant } from '@/lib/zoned'
+import { clockAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
 
 interface Day {
   // The logical day, YYYY-MM-DD, and whether it is today.
@@ -112,6 +112,9 @@ function Composer({
   // is the instant the meal is sent: the page may have been open a while.
   const [time, setTime] = useState(() => (today ? clockAt(Date.now(), timeZone) : '12:00'))
   const [timeSet, setTimeSet] = useState(false)
+  // A time still to come, which the server refuses: a meal is logged once
+  // eaten.
+  const [later, setLater] = useState(false)
   const first = useRef<HTMLInputElement>(null)
   // The entry just added, whose amount takes the focus.
   const [added, setAdded] = useState<string | undefined>(undefined)
@@ -125,6 +128,7 @@ function Composer({
   const [empty, setEmpty] = useState(false)
   const status = statusOf(log.error)
   const refused = log.isError && (status === 409 || status === 422)
+  const night = nightAfter(time, startHour)
   // Sent, and no answer said whether it was taken: the meal stays as sent.
   const held = log.isPending || (log.isError && !refused)
 
@@ -152,15 +156,17 @@ function Composer({
       return [item]
     })
     setWrong(bad)
-    if (entries.length === 0 || bad.size > 0) {
+    const eatenAt =
+      today && !timeSet ? new Date().toISOString() : mealInstant(date, time, timeZone, startHour)
+    setLater(toCome(eatenAt))
+    if (entries.length === 0 || bad.size > 0 || toCome(eatenAt)) {
       return
     }
     const what = description.trim()
     send({
       id: mealId,
       ...(what ? { description: what } : {}),
-      eaten_at:
-        today && !timeSet ? new Date().toISOString() : mealInstant(date, time, timeZone, startHour),
+      eaten_at: eatenAt,
       items,
     })
   }
@@ -197,6 +203,11 @@ function Composer({
               type="time"
               value={time}
               required
+              aria-invalid={later}
+              aria-describedby={
+                [later ? `${id}-later` : '', night ? `${id}-night` : ''].join(' ').trim() ||
+                undefined
+              }
               className={cn(inputClass, 'tabular-nums')}
               onChange={(e) => {
                 // A cleared field keeps the time it had.
@@ -204,11 +215,17 @@ function Composer({
                 if (/^\d{2}:\d{2}$/.test(typed)) {
                   setTime(typed)
                   setTimeSet(true)
+                  setLater(false)
                 }
               }}
             />
           </label>
         </div>
+        {night && (
+          <p id={`${id}-night`} className="text-xs text-muted-foreground">
+            {t.log.nightAfter(time)}
+          </p>
+        )}
         <section aria-label={t.log.items} className="space-y-2">
           {entries.length > 0 && (
             <ul className="divide-y">
@@ -250,6 +267,11 @@ function Composer({
           </Button>
         </section>
       </fieldset>
+      {later && (
+        <p id={`${id}-later`} role="alert" className="text-sm text-destructive">
+          {t.meal.timeToCome}
+        </p>
+      )}
       {empty && (
         <p role="alert" className="text-sm text-destructive">
           {t.log.noItems}

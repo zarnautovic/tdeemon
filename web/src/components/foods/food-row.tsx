@@ -6,7 +6,7 @@ import { useMessages } from '@/i18n/messages'
 import type { FoodsSearch } from '@/router'
 
 // FoodRow is a food in a list: its name and brand, what it brings per its
-// basis, and when it was eaten last; a link to the food.
+// basis, and the day it was eaten last; a link to the food.
 export function FoodRow({
   food,
   timeZone,
@@ -37,7 +37,7 @@ export function FoodRow({
           )}
           {food.last_use && (
             <span className="block text-xs text-muted-foreground">
-              {t.foods.lastEaten(f.day(food.last_use.at, timeZone))}
+              {t.foods.lastEaten(f.calendarDay(food.last_use.day, timeZone))}
             </span>
           )}
         </span>

@@ -730,7 +730,9 @@ func scanItem(rows *sql.Rows) (meal.Item, error) {
 
 // LastUse is the last time a food was eaten, and how much.
 type LastUse struct {
-	At       time.Time
+	At time.Time
+	// Day is the logical day of the meal (day.Calendar.DayOf).
+	Day      day.Date
 	MealID   uuid.UUID
 	Quantity meal.Quantity
 	// Amount and Unit are the quantity in the food's unit.
@@ -746,15 +748,15 @@ func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (
 	out := map[uuid.UUID]LastUse{}
 	for _, id := range ids[:min(len(ids), MaxFoodQueries*MaxFoodResults)] {
 		var u LastUse
-		var at, mealID string
+		var at, mealDay, mealID string
 		q := &u.Quantity
 		err := db.read.QueryRowContext(ctx, `
-			SELECT m.eaten_at, m.id, i.quantity_amount, i.quantity_unit, i.quantity_servings, i.quantity_serving,
+			SELECT m.eaten_at, m.day, m.id, i.quantity_amount, i.quantity_unit, i.quantity_servings, i.quantity_serving,
 				i.quantity_portions, i.amount, i.unit
 			FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
 			WHERE i.user_id = ? AND i.food_id = ?
 			ORDER BY m.eaten_at DESC, m.id DESC, i.position DESC LIMIT 1`, userID.String(), id.String()).
-			Scan(&at, &mealID, &q.Amount, &q.Unit, &q.Servings, &q.Serving, &q.Portions, &u.Amount, &u.Unit)
+			Scan(&at, &mealDay, &mealID, &q.Amount, &q.Unit, &q.Servings, &q.Serving, &q.Portions, &u.Amount, &u.Unit)
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
@@ -762,6 +764,9 @@ func (db *DB) LastUses(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (
 			return nil, fmt.Errorf("last uses: %w", err)
 		}
 		if u.At, err = parseTime(at); err != nil {
+			return nil, fmt.Errorf("last uses: %w", err)
+		}
+		if u.Day, err = day.ParseDate(mealDay); err != nil {
 			return nil, fmt.Errorf("last uses: %w", err)
 		}
 		if u.MealID, err = uuid.Parse(mealID); err != nil {
