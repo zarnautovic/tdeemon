@@ -109,7 +109,12 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         return undefined
       }
       const n = f.parse(typed)
-      if (n === undefined) {
+      // A number below 0 is a number all the same, of which no food has
+      // less than none.
+      const sign = /^\s*[-\u2212]/.exec(typed)
+      if (sign && f.parse(typed.slice(sign[0].length)) !== undefined) {
+        errors.set(key, t.foods.negative)
+      } else if (n === undefined) {
         errors.set(key, t.day.notANumber)
       }
       return n

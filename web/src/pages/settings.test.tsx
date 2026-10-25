@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
 import { setLocale } from '@/i18n/locale'
+import { nameNow } from '@/lib/time-zones'
 import { fakeServer, me, problem, renderAt, session, signedIn } from '@/test/app'
 
 afterEach(() => {
@@ -164,8 +165,14 @@ test("the time zones offer UTC and the browser's own, or a field without a list"
     .getAllByRole('option')
     .map((o) => o.textContent)
   expect(options).toContain('UTC')
-  expect(options).toContain(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  // Under its name now: a browser in Kolkata says Asia/Calcutta.
+  expect(options).toContain(nameNow(Intl.DateTimeFormat().resolvedOptions().timeZone))
   expect(options).toContain('America/Los_Angeles')
+  // Under the names IANA gives them now, though the browser keeps old ones.
+  expect(options).toContain('Europe/Kyiv')
+  expect(options).not.toContain('Europe/Kiev')
+  expect(options).toContain('Asia/Kolkata')
+  expect(options).not.toContain('Asia/Calcutta')
   cleanup()
 
   vi.stubGlobal('Intl', Object.create(Intl, { supportedValuesOf: { value: undefined } }))
@@ -182,6 +189,22 @@ test("the time zones offer UTC and the browser's own, or a field without a list"
   })
   // The rest of the page stands: the tokens' times are formatted.
   expect(await screen.findByText('iPhone')).toBeDefined()
+})
+
+test("a user's zone under its old name is still theirs, and kept unless changed", async () => {
+  const server = settingsServer({
+    'GET /api/v1/auth/session': () =>
+      Response.json({ ...session(), user: { ...session().user, timezone: 'Europe/Kiev' } }),
+  })
+  renderAt('/settings')
+
+  const you = within(await screen.findByRole('form', { name: 'You' }))
+  expect(you.getByLabelText('Time zone')).toHaveProperty('value', 'Europe/Kiev')
+  fireEvent.change(you.getByLabelText('Name'), { target: { value: 'Ana M.' } })
+  fireEvent.click(you.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(server.sent['PATCH /api/v1/me']).toEqual([{ name: 'Ana M.' }])
+  })
 })
 
 test("the notes are the server's, not those a cache kept from before", async () => {
