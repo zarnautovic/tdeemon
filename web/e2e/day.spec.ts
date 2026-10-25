@@ -31,3 +31,33 @@ test('the day shows what was logged, and the days before it', async ({ page }) =
   await page.getByRole('link', { name: 'Back to today' }).click()
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
 })
+
+test("a meal's energy stays on one line beside a long description", async ({ page }) => {
+  await signIn(page)
+  const long = 'Grilled chicken with roasted vegetables, rice and a yoghurt sauce'
+  const logged = await Promise.all(
+    (
+      [
+        ['Espresso', 20],
+        [long, 1180],
+      ] as const
+    ).map(([description, kcal]) =>
+      page.request.post('/api/v1/meals', {
+        data: {
+          description,
+          items: [{ name: 'The plate', nutrients: { kcal, protein: 1, carbs: 1, fat: 1 } }],
+        },
+      }),
+    ),
+  )
+  expect(logged.every((r) => r.ok())).toBe(true)
+
+  await page.goto('/')
+  const energy = (description: string, kcal: string) =>
+    page.getByRole('article').filter({ hasText: description }).getByText(kcal, { exact: true })
+  // As high as a short meal's energy, which has room: one line.
+  const short = await energy('Espresso', '20 kcal').boundingBox()
+  const beside = await energy(long, '1,180 kcal').boundingBox()
+  expect(short).not.toBeNull()
+  expect(beside?.height).toBe(short?.height)
+})

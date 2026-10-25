@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLogMeal } from '@/api/meals'
 import type { Item, Meal, Warning } from '@/api/types'
 import { MealEditor } from '@/components/day/meal-editor'
-import { repeatOf } from '@/components/day/meal-entries'
+import { repeatOf, shownAmount } from '@/components/day/meal-entries'
 import { RepeatButton, RepeatStatus } from '@/components/day/repeat-meal'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -47,27 +47,38 @@ export function MealCard({
   }, [closed])
   const time = f.time(meal.eaten_at, timeZone)
 
-  // amount is how much of an item, in its unit.
+  // amount is how much of an item, in its unit; of a named serving, as
+  // it was given, with that: "2 slices (80 g)", as the editor has it.
   function amount(item: Item): string {
+    let inUnit
     if (item.unit === 'portion') {
       // The word's form follows the number shown: 0.999 is "1 portion".
       const shown = Math.round(item.amount * 100) / 100
-      return t.day.portions(f.number(shown, 2), shown)
+      inUnit = t.day.portions(f.number(shown, 2), shown)
+    } else {
+      inUnit = t.unit[item.unit](f.number(item.amount))
     }
-    return t.unit[item.unit](f.number(item.amount))
+    const { servings, serving } = item.quantity
+    // Rounded as the editor's field has it, but not to none.
+    return servings !== undefined && serving !== undefined
+      ? `${shownAmount(servings, (n, digits = 2) => f.number(n, digits))} ${serving} (${inUnit})`
+      : inUnit
   }
 
   return (
     <article className="space-y-2 rounded-xl border p-4">
       <header className="flex items-baseline justify-between gap-2">
-        <h3 className="font-medium">
+        <h3 className="min-w-0 font-medium break-words">
           <time dateTime={meal.eaten_at} className="text-muted-foreground tabular-nums">
             {time}
           </time>{' '}
           {meal.description}
         </h3>
-        <div className="flex items-baseline gap-1">
-          <p className="font-semibold tabular-nums">{t.unit.kcal(f.number(meal.total.kcal))}</p>
+        {/* The energy on one line, whatever the description's length. */}
+        <div className="flex shrink-0 items-baseline gap-1">
+          <p className="font-semibold whitespace-nowrap tabular-nums">
+            {t.unit.kcal(f.number(meal.total.kcal))}
+          </p>
           {!editing && (
             <RepeatButton
               label={t.meal.repeat(meal.description || time)}

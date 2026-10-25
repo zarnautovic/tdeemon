@@ -278,6 +278,7 @@ export const en = {
     unarchive: 'Bring back',
     archivedNote: 'Archived: no search finds it, and its names stay taken.',
     needed: 'Needed.',
+    negative: 'It cannot be less than 0.',
     conflict: (detail: string) => `Another food has this name or other name: ${detail}`,
     refused: (detail: string) => `The server did not take this food: ${detail}`,
   },

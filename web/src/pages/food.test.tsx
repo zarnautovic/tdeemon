@@ -118,6 +118,20 @@ test('what a food needs, and what is no number, is said and not sent', async () 
   expect(server.sent).toEqual([])
 })
 
+test('a value below 0 is said to be one, not no number', async () => {
+  const server = foodServer()
+  renderAt(`/foods/${id}`)
+
+  fireEvent.change(await screen.findByLabelText('Carbs (g)'), { target: { value: '-5' } })
+  fireEvent.change(screen.getByLabelText('Fat (g)'), { target: { value: '\u22122,5' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  expect(screen.getAllByText('It cannot be less than 0.')).toHaveLength(2)
+  expect(screen.getByLabelText('Carbs (g)').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.queryByText('Write a number, such as 72.5.')).toBeNull()
+  expect(server.sent).toEqual([])
+})
+
 test("a name another food has is refused, in the server's words", async () => {
   foodServer(() =>
     Response.json(

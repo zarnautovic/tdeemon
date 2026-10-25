@@ -81,6 +81,40 @@ test('today shows what was eaten against the target, the meals and the measureme
   expect(within(measurements).getByText('18.2%')).toBeDefined()
 })
 
+test('an item of a named serving says it as it was given, with its weight', async () => {
+  const [oats] = breakfast.items
+  if (!oats) {
+    throw new Error('the fixture has no items')
+  }
+  const handful = {
+    ...oats,
+    quantity: { servings: 2, serving: 'šaka' },
+    amount: 60,
+    unit: 'g' as const,
+  }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(day({ meals: [{ ...breakfast, items: [handful] }] })),
+  })
+
+  renderAt('/')
+
+  expect(await screen.findByText('2 šaka (60 g)')).toBeDefined()
+  cleanup()
+
+  // A gram of a bag of 500 g is not none of it.
+  const gram = { ...handful, quantity: { servings: 0.002, serving: 'bag' }, amount: 1 }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(day({ meals: [{ ...breakfast, items: [gram] }] })),
+  })
+  renderAt('/')
+
+  expect(await screen.findByText('0.002 bag (1 g)')).toBeDefined()
+})
+
 test("an amount of portions takes the word's form of the number shown", async () => {
   const [oats] = breakfast.items
   if (!oats) {

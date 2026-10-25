@@ -10,20 +10,24 @@ import { Button } from '@/components/ui/button'
 import { locales, setLocale, type Locale } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { nameNow } from '@/lib/time-zones'
 import { cn } from '@/lib/utils'
 
 type User = Session['user']
 
-// zones are the time zones to choose from: the browser's own list, with
-// UTC, the browser's zone and the user's in it whatever it holds (V8's
-// has no UTC); undefined for a browser without a list, where the zone is
-// typed, which the server checks.
+// zones are the time zones to choose from: the browser's own list under
+// the names IANA gives them now, with UTC, the browser's zone and the
+// user's in it whatever it holds, an old name too (V8's has no UTC);
+// undefined for a browser without a list, where the zone is typed, which
+// the server checks.
 function zones(current: string): string[] | undefined {
   if (typeof Intl.supportedValuesOf !== 'function') {
     return undefined
   }
   const own = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return [...new Set([...Intl.supportedValuesOf('timeZone'), 'UTC', own, current])].toSorted()
+  return [
+    ...new Set([...Intl.supportedValuesOf('timeZone').map(nameNow), 'UTC', nameNow(own), current]),
+  ].toSorted()
 }
 
 const hours = Array.from({ length: 24 }, (_, h) => h)

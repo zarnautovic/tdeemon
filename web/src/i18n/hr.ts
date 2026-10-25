@@ -265,6 +265,7 @@ export const hr: Messages = {
     unarchive: 'Vrati iz arhive',
     archivedNote: 'Arhivirano: pretraga je ne nalazi, a njezini nazivi ostaju zauzeti.',
     needed: 'Obavezno.',
+    negative: 'Ne može biti manje od 0.',
     conflict: (detail: string) => `Taj naziv ili drugi naziv već ima druga namirnica: ${detail}`,
     refused: (detail: string) => `Server nije prihvatio ovu namirnicu: ${detail}`,
   },
