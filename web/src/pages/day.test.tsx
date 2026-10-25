@@ -167,6 +167,27 @@ test('the days move back and ahead, up to today', async () => {
   expect(screen.getByRole('link', { name: 'Back to today' }).getAttribute('href')).toBe('/')
 })
 
+test('a day of another year than today says its year, in each language', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2025-10-24': () => Response.json(day({ date: '2025-10-24' })),
+  })
+  renderAt('/?date=2025-10-24')
+
+  expect(await screen.findByRole('heading', { name: 'Friday, October 24, 2025' })).toBeDefined()
+  cleanup()
+
+  fakeServer({
+    ...signedIn('hr'),
+    'GET /api/v1/days/1900-01-01': () => Response.json(day({ date: '1900-01-01' })),
+  })
+  renderAt('/?date=1900-01-01')
+
+  expect(
+    await screen.findByRole('heading', { name: 'ponedjeljak, 1. siječnja 1900.' }),
+  ).toBeDefined()
+})
+
 test('a day that did not come says why, and asks again', async () => {
   let up = false
   fakeServer({

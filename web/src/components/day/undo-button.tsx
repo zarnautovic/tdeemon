@@ -42,7 +42,7 @@ export function UndoButton({ date, today }: { date: string; today: string | unde
                 search={d === today ? {} : { date: d }}
                 className="underline underline-offset-2"
               >
-                {f.date(d)}
+                {f.date(d, today)}
               </Link>
             </Fragment>
           ))}

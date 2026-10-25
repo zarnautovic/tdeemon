@@ -106,12 +106,14 @@ export function useFormat() {
     percent: (n: number, digits = 1) =>
       numberFormat(locale, { style: 'percent', maximumFractionDigits: digits }).format(n / 100),
     // date is a day's date in words: "Wednesday, October 22" in English,
-    // "srijeda, 22. listopada" in Croatian.
-    date: (date: string) =>
+    // "srijeda, 22. listopada" in Croatian; of another year than today's
+    // (YYYY-MM-DD, the user's; in UTC when not known), with it.
+    date: (date: string, today: string = new Date().toISOString().slice(0, 10)) =>
       dateFormat(locale, {
         weekday: 'long',
         day: 'numeric',
         month: 'long',
+        ...(date.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' }),
         timeZone: 'UTC',
       }).format(calendarDate(date)),
     // short is a day's date, short: "Oct 21" in English, "21. lis" in
