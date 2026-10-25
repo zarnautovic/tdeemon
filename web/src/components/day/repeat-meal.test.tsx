@@ -180,6 +180,7 @@ test("an undo tapped while another day's repeat is on its way waits for it", asy
           entity: breakfast.id,
           at: '2026-10-23T16:00:00Z',
           client: 'web',
+          days: [today],
         },
       })
     },

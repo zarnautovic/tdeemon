@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -465,6 +466,32 @@ func entityDay(s string) (day.Date, error) {
 		return day.Date{}, fmt.Errorf("%w: entity day %q: %w", errUnreadable, s, err)
 	}
 	return d, nil
+}
+
+// DaysOf returns the days e's change was of, in order: a meal's day
+// before and after it (two for a meal moved to another day), or the day
+// of a check-in, an exclusion, a day's type or a measurement. A food and
+// the notes are of no day, and neither is a state that does not read.
+func DaysOf(e event.Event) []day.Date {
+	var ds []day.Date
+	switch e.Action {
+	case event.MealCreate, event.MealReplace, event.MealDelete:
+		for _, state := range []json.RawMessage{e.Before, e.After} {
+			var s mealState
+			if state != nil && decode(state, &s) == nil && !s.Meal.Day.IsZero() {
+				ds = append(ds, s.Meal.Day)
+			}
+		}
+	case event.DayExclude, event.DayInclude, event.DayCheckIn, event.TrainingDay,
+		event.MetricsMerge, event.MetricSet, event.MetricDelete:
+		dayPart, _, _ := strings.Cut(e.Entity, "/")
+		if d, err := entityDay(dayPart); err == nil {
+			ds = append(ds, d)
+		}
+	default:
+	}
+	slices.SortFunc(ds, day.Date.Compare)
+	return slices.Compact(ds)
 }
 
 // stateNow returns the state of e's entity now, as e's kind of event

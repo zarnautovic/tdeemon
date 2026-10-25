@@ -289,8 +289,10 @@ has none of), and `checkin` is `PATCH /api/v1/days/{date}`; each takes a
 date or `today`, and answers the day as `get_day` does. `undo_last` is
 `POST /api/v1/undo`: it answers the change it took back (marked
 `repeated` for an undo sent again under its id: each undo takes a new
-one), a 409 that says why for one it passed over, or a 404 with nothing
-left.
+one) with the days it was of (a meal's before and after it, a day's or
+a measurement's; none for a food or the notes), so a client showing
+another day can say where it went; a 409 that says why for one it
+passed over, or a 404 with nothing left.
 
 ## 6. AI layer
 

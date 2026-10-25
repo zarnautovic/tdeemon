@@ -20,6 +20,7 @@ type undoneBody struct {
 	At     time.Time `json:"at" doc:"When the change was made."`
 	Client string    `json:"client" doc:"What it came through: web, api, mcp."`
 	Model  string    `json:"model,omitempty" doc:"The AI model that made it for the user, when one did."`
+	Days   []string  `json:"days" nullable:"false" doc:"The days (YYYY-MM-DD) it was of, in order: a meal's before and after it (two for a meal moved to another day), or a check-in's, a measurement's or a day's; none for a food or the notes. get_day shows each after the undo."`
 }
 
 type undoInput struct {
@@ -66,6 +67,9 @@ func (s *sessions) undoLast(ctx context.Context, in *undoInput) (*undoOutput, er
 	}
 	out := &undoOutput{}
 	out.Body.Repeated = again
-	out.Body.Undone = undoneBody{Action: string(e.Action), Entity: e.Entity, At: e.At.UTC(), Client: e.Actor.Client, Model: e.Actor.Model}
+	out.Body.Undone = undoneBody{Action: string(e.Action), Entity: e.Entity, At: e.At.UTC(), Client: e.Actor.Client, Model: e.Actor.Model, Days: []string{}}
+	for _, d := range store.DaysOf(e) {
+		out.Body.Undone.Days = append(out.Body.Undone.Days, d.String())
+	}
 	return out, nil
 }

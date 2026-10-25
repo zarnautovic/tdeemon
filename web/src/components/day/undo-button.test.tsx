@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { day, fakeServer, problem, renderAt, signedIn } from '@/test/app'
+import { day, fakeServer, problem, renderAt, signedIn, today } from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -15,6 +15,7 @@ const undone = {
     entity: '0193c3a5-0000-7000-8000-0000000000a1',
     at: '2026-10-23T16:00:00Z',
     client: 'web',
+    days: [today],
   },
 }
 
@@ -51,6 +52,69 @@ test('the latest change is taken back, said, and the day asked again', async () 
   // Each tap is an undo of its own, under a UUIDv7 of its own.
   expect(ids[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7/)
   expect(ids[1]).not.toBe(ids[0])
+})
+
+test('a change of another day is said with its day, a link to it', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-10-20': () => Response.json(day({ date: '2026-10-20' })),
+    'POST /api/v1/undo': () =>
+      Response.json({ undone: { ...undone.undone, action: 'meal.create' } }),
+  })
+  const router = renderAt('/?date=2026-10-20')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+
+  const said = await screen.findByText(/^Taken back: a meal logged, on another day:/)
+  expect(said.textContent).toBe('Taken back: a meal logged, on another day: Friday, October 23')
+  // Today's link is / itself.
+  fireEvent.click(screen.getByRole('link', { name: 'Friday, October 23' }))
+  await waitFor(() => {
+    expect(router.state.location.href).toBe('/')
+  })
+})
+
+test('a meal moved between two other days is said with both', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-10-20': () => Response.json(day({ date: '2026-10-20' })),
+    'POST /api/v1/undo': () =>
+      Response.json({
+        undone: { ...undone.undone, action: 'meal.replace', days: ['2026-10-18', today] },
+      }),
+  })
+  const router = renderAt('/?date=2026-10-20')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+
+  const said = await screen.findByText(/^Taken back: a meal changed, on other days:/)
+  expect(said.textContent).toBe(
+    'Taken back: a meal changed, on other days: Sunday, October 18 · Friday, October 23',
+  )
+  fireEvent.click(screen.getByRole('link', { name: 'Sunday, October 18' }))
+  await waitFor(() => {
+    expect(router.state.location.href).toBe('/?date=2026-10-18')
+  })
+})
+
+test('a change of the day shown, or of no day, is said without a day', async () => {
+  // A meal moved from the day shown, then a food.
+  const answers = [
+    { action: 'meal.replace', days: ['2026-10-18', '2026-10-20'] },
+    { action: 'food.save', days: [] },
+  ]
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-10-20': () => Response.json(day({ date: '2026-10-20' })),
+    'POST /api/v1/undo': () => Response.json({ undone: { ...undone.undone, ...answers.shift() } }),
+  })
+  renderAt('/?date=2026-10-20')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo the latest change' }))
+  expect(await screen.findByText('Taken back: a meal changed.')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Undo the latest change' }))
+  expect(await screen.findByText('Taken back: a food saved.')).toBeDefined()
+  expect(screen.queryByRole('link', { name: /October 18/ })).toBeNull()
 })
 
 test('an undo that got no answer is sent again under the same id', async () => {

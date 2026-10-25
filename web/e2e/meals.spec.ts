@@ -52,6 +52,27 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
   await expect(porridge).toContainText('100 g')
 })
 
+test('an undo on another day says the day of what it took back', async ({ page }) => {
+  await signIn(page)
+  const logged = await page.request.post('/api/v1/meals', {
+    data: {
+      description: 'Late snack',
+      items: [{ name: 'Crackers', nutrients: { kcal: 150, protein: 3, carbs: 20, fat: 6 } }],
+    },
+  })
+  expect(logged.ok()).toBe(true)
+
+  await page.goto('/')
+  await page.getByRole('link', { name: 'The day before' }).click()
+  await page.getByRole('button', { name: 'Undo the latest change' }).click()
+  const said = page.getByText(/^Taken back: a meal logged, on another day:/)
+  await expect(said).toBeVisible()
+
+  await said.getByRole('link').click()
+  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('article').filter({ hasText: 'Late snack' })).toHaveCount(0)
+})
+
 test('a meal is repeated today in a tap', async ({ page }) => {
   await signIn(page)
   const logged = await page.request.post('/api/v1/meals', {

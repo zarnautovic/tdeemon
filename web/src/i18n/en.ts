@@ -194,6 +194,8 @@ export const en = {
   undo: {
     button: 'Undo the latest change',
     done: (what: string) => `Taken back: ${what}.`,
+    doneElsewhere: (what: string, days: number) =>
+      `Taken back: ${what}, on ${days === 1 ? 'another day' : 'other days'}:`,
     nothing: 'There is no change to take back.',
     unsure: 'The undo got no answer. Look at the day before you undo again.',
     clash:

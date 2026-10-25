@@ -140,7 +140,7 @@ export function DayPage() {
           metrics={day.data.metrics}
           canLog={!future}
         />
-        <UndoButton key={`undo ${day.data.date}`} date={day.data.date} />
+        <UndoButton key={`undo ${day.data.date}`} date={day.data.date} today={todayDate} />
       </div>
       {!isToday && (
         <Link

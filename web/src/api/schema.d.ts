@@ -551,7 +551,7 @@ export interface paths {
         put?: never;
         /**
          * Undo the latest change
-         * @description Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in, the notes for a coach. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back; get_day shows the day after it.
+         * @description Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in, the notes for a coach. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back and the days it was of; get_day shows each after it.
          */
         post: operations["undo-last"];
         delete?: never;
@@ -1604,6 +1604,8 @@ export interface components {
             at: string;
             /** @description What it came through: web, api, mcp. */
             client: string;
+            /** @description The days (YYYY-MM-DD) it was of, in order: a meal's before and after it (two for a meal moved to another day), or a check-in's, a measurement's or a day's; none for a food or the notes. get_day shows each after the undo. */
+            days: string[];
             /** @description What it changed: a food's or a meal's id, a day (YYYY-MM-DD), a day and a metric (2026-10-21/weight), or notes. */
             entity: string;
             /** @description The AI model that made it for the user, when one did. */
