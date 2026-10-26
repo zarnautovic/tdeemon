@@ -315,11 +315,11 @@ func (s *sessions) tools() []tool {
 				"Without an id, from a client that cannot make one, the server makes it: that meal sent again is another (or a 409, when its items carry ids of their own), " +
 				"so after a timeout, look at get_day before sending it again. eaten_at left out is the id's time, so a retry has the same; a time still to come is refused (422). " +
 				"An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; " +
-				"or an estimate of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), " +
+				"or an estimate, of a part nobody weighed or of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), " +
 				"and warnings: values that do not add up, or a meal that looks like one logged minutes before.",
 			Errors: []int{http.StatusUnauthorized, http.StatusConflict},
 		}, s.logMeal).
-			briefly("Logs a meal of items: a food of the user's by food_id, a new food (saved), or an estimate of a whole plate. " +
+			briefly("Logs a meal of items: a food of the user's by food_id, a new food (saved), or an estimate of an unweighed part or a plate. " +
 				"The same meal sent again under its id is a retry; without an id the server makes one, and a meal sent again is another. " +
 				"Answers the meal with each item's values, where its day stands, and warnings.").retried().mayWriteAgain(),
 		newTool("update_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{

@@ -131,10 +131,13 @@ asks a part's amount the user gave no hint of ("some muesli"; "a
 banana" is one), and logs its estimate of a part the user did not weigh
 as an item of its own, beside the others, with no new food. A dish,
 cooked at home or not, and a restaurant's or a canteen's plate are no
-food: the agent logs their parts as items when the user names them and
-the amounts eaten, else its estimate of the plate as one item of the
-meal, without asking amounts nobody weighed; a dish the user already
-has as a food is used as it is. Recipes, later, are for a dish cooked
+food: the agent logs each part the user names as an item, its estimate
+of the part when nobody weighed it, with the portion it took in the
+item's name ("Steak ~250 g"), and its estimate of the plate as one item
+when the user names no part; it asks no amount nobody weighed (decided
+on 26 October 2026: a part's estimate is no worse than the plate's, and
+says what it took, so a correction changes that part alone); a dish the
+user already has as a food is used as it is. Recipes, later, are for a dish cooked
 again: a recipe stores its ingredients and produces a food
 of its own, with `source: recipe`. A food of `source: dish` or a dish
 per portion, which the code still takes, is what an earlier client or

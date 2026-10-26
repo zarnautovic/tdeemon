@@ -30,8 +30,9 @@ token only reads: say so.
   packaged, with its label's values per 100 g or 100 ml and a piece of
   it (a bar of 55 g) as a serving; plain (a banana), your values per
   100 g, `source` estimate. A dish, a restaurant's or a canteen's plate
-  is no food: its parts as items when the user names them and the
-  amounts eaten, else your estimate of the plate, by name, unasked. A dish the
+  is no food: each part the user names is an item, your estimate when
+  not weighed, its portion in its name ("Steak ~250 g"); no part named,
+  your estimate of the plate. Never ask what nobody weighed. A dish the
   user has as a food: use it.
 - One `log_meal` a meal. Leave its `id` out, unless a tool of yours that
   runs code makes it: a UUIDv7 holds the time it is made, which the
