@@ -43,6 +43,7 @@ func TestChangesValidate(t *testing.T) {
 	faster := cut(t, "2026-09-07", "", -0.7)
 	endedYesterday := cut(t, "2026-09-07", "2026-10-25", -0.5)
 	bulk := &plan.Phase{Type: plan.Bulk, Start: date(t, "2027-01-04"), RatePctWeek: 0.25}
+	timeline := []plan.Phase{*current, *bulk}
 	for _, tc := range []struct {
 		name string
 		c    Changes
@@ -50,6 +51,10 @@ func TestChangesValidate(t *testing.T) {
 		{"a new phase ahead", Changes{Phases: []PhaseChange{{Start: bulk.Start, After: bulk}}}},
 		{"a new phase today", Changes{Phases: []PhaseChange{{Start: today, After: cut(t, "2026-10-26", "", -0.5)}}}},
 		{"the current phase's rate", Changes{Phases: []PhaseChange{{Start: current.Start, Before: current, After: faster}}}},
+		{"the current phase's rate and the next one's", Changes{Phases: []PhaseChange{
+			{Start: current.Start, Before: current, After: faster},
+			{Start: bulk.Start, Before: bulk, After: &plan.Phase{Type: plan.Bulk, Start: bulk.Start, RatePctWeek: 0.2}},
+		}}},
 		{"the current phase ended yesterday", Changes{Phases: []PhaseChange{
 			{Start: current.Start, Before: current, After: endedYesterday},
 			{Start: today, After: &plan.Phase{Type: plan.Maintain, Start: today}},
@@ -66,7 +71,7 @@ func TestChangesValidate(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if err := tc.c.Validate(today); err != nil {
+			if err := tc.c.Validate(today, timeline); err != nil {
 				t.Errorf("Validate = %v", err)
 			}
 		})
@@ -79,8 +84,11 @@ func TestChangesValidateRefuses(t *testing.T) {
 	today := date(t, "2026-10-26")
 	current := cut(t, "2026-09-07", "", -0.5)
 	past := cut(t, "2026-08-03", "2026-09-06", -0.5)
+	// An open phase the past one ended.
+	open := cut(t, "2026-06-01", "", -0.5)
 	maintain := &plan.Phase{Type: plan.Maintain, Start: current.Start}
 	tomorrow := date(t, "2026-10-27")
+	timeline := []plan.Phase{*open, *past, *current}
 	for _, tc := range []struct {
 		name string
 		c    Changes
@@ -127,6 +135,11 @@ func TestChangesValidateRefuses(t *testing.T) {
 			Changes{Phases: []PhaseChange{{Start: past.Start, Before: past, After: cut(t, "2026-08-03", "2026-09-06", -0.7)}}},
 			"the phase from 2026-08-03 ended on 2026-09-06",
 		},
+		{
+			"a phase the next one ended",
+			Changes{Phases: []PhaseChange{{Start: open.Start, Before: open, After: cut(t, "2026-06-01", "", -0.7)}}},
+			"the phase from 2026-06-01 ended on 2026-08-02",
+		},
 		{"a target twice", Changes{Targets: []TargetChange{
 			{From: tomorrow, After: target(t, "2026-10-27", 2100)},
 			{From: tomorrow, After: target(t, "2026-10-27", 2000)},
@@ -159,11 +172,51 @@ func TestChangesValidateRefuses(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := tc.c.Validate(today)
+			err := tc.c.Validate(today, timeline)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Validate = %v, want %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// The current phase is over once the next starts, ended or not.
+func TestChangesValidateAsTheNextPhaseStarts(t *testing.T) {
+	t.Parallel()
+
+	current := cut(t, "2026-09-07", "", -0.5)
+	next := &plan.Phase{Type: plan.Maintain, Start: date(t, "2026-10-27")}
+	c := Changes{Phases: []PhaseChange{{Start: current.Start, Before: current, After: cut(t, "2026-09-07", "", -0.7)}}}
+	timeline := []plan.Phase{*current, *next}
+	if err := c.Validate(date(t, "2026-10-26"), timeline); err != nil {
+		t.Errorf("Validate the day before = %v", err)
+	}
+	if err := c.Validate(date(t, "2026-10-27"), timeline); err == nil || !strings.Contains(err.Error(), "ended on 2026-10-26") {
+		t.Errorf("Validate as the next starts = %v", err)
+	}
+}
+
+func TestChangesInverse(t *testing.T) {
+	t.Parallel()
+
+	current, faster := cut(t, "2026-09-07", "", -0.5), cut(t, "2026-09-07", "", -0.7)
+	bulk := &plan.Phase{Type: plan.Bulk, Start: date(t, "2027-01-04"), RatePctWeek: 0.25}
+	from := date(t, "2026-11-02")
+	c := Changes{
+		Phases:           []PhaseChange{{Start: current.Start, Before: current, After: faster}, {Start: bulk.Start, After: bulk}},
+		Targets:          []TargetChange{{From: from, Before: target(t, "2026-11-02", 2100)}},
+		TrainingWeekdays: &WeekdaysChange{Before: 0b0101010, After: 0b0010101},
+	}
+	want := Changes{
+		Phases:           []PhaseChange{{Start: current.Start, Before: faster, After: current}, {Start: bulk.Start, Before: bulk}},
+		Targets:          []TargetChange{{From: from, After: target(t, "2026-11-02", 2100)}},
+		TrainingWeekdays: &WeekdaysChange{Before: 0b0010101, After: 0b0101010},
+	}
+	if got := c.Inverse(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Inverse = %+v, want %+v", got, want)
+	}
+	if got := (Changes{}).Inverse(); !reflect.DeepEqual(got, Changes{}) {
+		t.Errorf("the inverse of nothing = %+v", got)
 	}
 }
 

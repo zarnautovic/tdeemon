@@ -78,14 +78,15 @@ type Changes struct {
 }
 
 // Validate reports every rule the changes break, joined into one error,
-// today being the user's day: each change is of the shape of what it
+// today being the user's day and phases the timeline before them, in the
+// order the phases start: each change is of the shape of what it
 // changes, changes something, and keeps the past as it was. A target
 // takes effect from today on; a phase starts from today on, unless it
 // is an edit of the phase that has started, which keeps its type and
-// every day it has had up to yesterday, and a phase that ended stays as
-// it is. The timeline the changes leave is the store's to check, with
-// the phases they leave alone (Timeline).
-func (c Changes) Validate(today day.Date) error {
+// every day it has had up to yesterday, and a phase that ended, on its
+// planned end or as the next one started, stays as it is. The timeline
+// the changes leave is the store's to check (Timeline).
+func (c Changes) Validate(today day.Date, phases []plan.Phase) error {
 	if len(c.Phases) == 0 && len(c.Targets) == 0 && c.TrainingWeekdays == nil {
 		return errors.New("the proposal changes nothing")
 	}
@@ -97,7 +98,7 @@ func (c Changes) Validate(today day.Date) error {
 			continue
 		}
 		seen[ch.Start] = true
-		errs = append(errs, ch.validate(today))
+		errs = append(errs, ch.validate(today, phases))
 	}
 	clear(seen)
 	for _, ch := range c.Targets {
@@ -118,7 +119,7 @@ func (c Changes) Validate(today day.Date) error {
 	return errors.Join(errs...)
 }
 
-func (ch PhaseChange) validate(today day.Date) error {
+func (ch PhaseChange) validate(today day.Date, phases []plan.Phase) error {
 	b, a := ch.Before, ch.After
 	switch {
 	case a != nil && a.Validate() != nil:
@@ -130,7 +131,7 @@ func (ch PhaseChange) validate(today day.Date) error {
 	case b != nil && a != nil && samePhase(*b, *a):
 		return fmt.Errorf("the phase from %s is already so", ch.Start)
 	case ch.Start.Before(today):
-		return ch.validateStarted(today)
+		return ch.validateStarted(today, phases)
 	}
 	return nil
 }
@@ -138,13 +139,14 @@ func (ch PhaseChange) validate(today day.Date) error {
 // validateStarted reports a change of a phase that starts before today
 // that changes the past: a new phase, a delete, a phase that ended, a
 // type changed, or an end before yesterday.
-func (ch PhaseChange) validateStarted(today day.Date) error {
+func (ch PhaseChange) validateStarted(today day.Date, phases []plan.Phase) error {
 	b, a := ch.Before, ch.After
-	switch {
-	case b == nil:
+	if b == nil {
 		return fmt.Errorf("a new phase that starts on %s, before today %s", ch.Start, today)
-	case !b.End.IsZero() && b.End.Before(today):
-		return fmt.Errorf("the phase from %s ended on %s: the past stays as it was", ch.Start, b.End)
+	}
+	switch end := endOf(*b, phases); {
+	case !end.IsZero() && end.Before(today):
+		return fmt.Errorf("the phase from %s ended on %s: the past stays as it was", ch.Start, end)
 	case a == nil:
 		return fmt.Errorf("the phase from %s has started: end it instead", ch.Start)
 	case a.Type != b.Type:
@@ -173,10 +175,42 @@ func (ch TargetChange) validate(today day.Date) error {
 	return nil
 }
 
+// endOf returns the last day of p on the timeline phases: its planned
+// end, or the day before the next phase starts when that comes first;
+// the zero Date for a phase open to no end.
+func endOf(p plan.Phase, phases []plan.Phase) day.Date {
+	end := p.End
+	for _, q := range phases {
+		if p.Start.Before(q.Start) {
+			if next := q.Start.AddDays(-1); end.IsZero() || next.Before(end) {
+				end = next
+			}
+			break
+		}
+	}
+	return end
+}
+
 func samePhase(a, b plan.Phase) bool {
 	same := func(x, y *float64) bool { return x == nil && y == nil || x != nil && y != nil && *x == *y }
 	return a.Type == b.Type && a.Start == b.Start && a.End == b.End && a.RatePctWeek == b.RatePctWeek &&
 		same(a.GoalWeight, b.GoalWeight) && same(a.MilestoneWeight, b.MilestoneWeight)
+}
+
+// Inverse returns the changes that take c back: each one's state before
+// and after swapped.
+func (c Changes) Inverse() Changes {
+	var out Changes
+	for _, ch := range c.Phases {
+		out.Phases = append(out.Phases, PhaseChange{Start: ch.Start, Before: ch.After, After: ch.Before})
+	}
+	for _, ch := range c.Targets {
+		out.Targets = append(out.Targets, TargetChange{From: ch.From, Before: ch.After, After: ch.Before})
+	}
+	if w := c.TrainingWeekdays; w != nil {
+		out.TrainingWeekdays = &WeekdaysChange{Before: w.After, After: w.Before}
+	}
+	return out
 }
 
 // Timeline returns phases, a timeline in the order the phases start, as
@@ -227,13 +261,12 @@ func ValidateRationale(r string) error {
 }
 
 // Draft is a proposal as it is made: why, the days it was drawn from, nil
-// for none, the changes, each as it would leave the plan (the store fills
-// in each Before), and the applied proposal it takes back, or uuid.Nil.
+// for none, and the changes, each as it would leave the plan (the store
+// fills in each Before).
 type Draft struct {
 	Rationale string
 	Window    *Window
 	Changes   Changes
-	Reverts   uuid.UUID
 }
 
 // Proposal is a proposed change of the plan, and where it is in its life.

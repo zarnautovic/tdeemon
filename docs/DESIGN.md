@@ -596,7 +596,11 @@ Claude/ChatGPT subscription.
    the app.
 3. **History.** Applied proposals are the revision history: who (user,
    model name, client), when, why, before → after. `revert` creates the
-   inverse proposal; applied, it marks the one it takes back reverted.
+   inverse proposal, each change put back as it was before; applied, it
+   marks the one it takes back reverted. It needs the plan as the
+   proposal left it, so no later change is lost, and changes that keep
+   the past as it was: a change that took effect moves on by a new
+   proposal.
 4. **Lifetime.** A proposal waits a week for consent, then expires. It
    is superseded when the plan changes under it (any write of a phase,
    a target or the training weekdays, an applied proposal included), or

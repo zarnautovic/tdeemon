@@ -299,9 +299,12 @@ func (db *DB) Proposal(ctx context.Context, userID, id uuid.UUID, now time.Time)
 
 // Proposals returns up to limit of userID's latest proposals, newest
 // first, each with its status at now: what waits, and the plan's
-// revisions.
+// revisions; none for a limit of 0 or less.
 func (db *DB) Proposals(ctx context.Context, userID uuid.UUID, limit int, now time.Time) ([]proposal.Proposal, error) {
 	out := []proposal.Proposal{}
+	if limit <= 0 {
+		return out, nil
+	}
 	err := db.readTx(ctx, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, "SELECT "+proposalColumns+" FROM proposals WHERE user_id = ? ORDER BY rowid DESC LIMIT ?",
 			userID.String(), limit)
@@ -332,96 +335,149 @@ func (db *DB) Proposals(ctx context.Context, userID uuid.UUID, limit int, now ti
 // user's day now, and returns it. Each change gets the plan as it is
 // before it (Before); the changes must keep their rules
 // (proposal.Changes.Validate) and leave a timeline without an overlap,
-// or ErrInvalidProposal, and a revert must take back an applied proposal.
-// The limits of a plan are limits.Validate's, which runs before. The
-// proposal supersedes the user's pending ones: what they showed is
-// what it changes now. It waits proposal.TTL for the user's consent.
+// or ErrInvalidProposal. The limits of a plan are limits.Validate's,
+// which runs before. The proposal supersedes the user's pending ones:
+// what they showed is what it changes now. It waits proposal.TTL for the
+// user's consent.
 func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Actor, d proposal.Draft, today day.Date, now time.Time) (proposal.Proposal, error) {
-	if err := a.Validate(); err != nil {
-		return proposal.Proposal{}, fmt.Errorf("invalid actor: %w", err)
-	}
-	if a.Kind != event.User {
-		return proposal.Proposal{}, fmt.Errorf("invalid actor: a proposal is the user's, not %s's", a.Kind)
-	}
-	if err := proposal.ValidateRationale(d.Rationale); err != nil {
-		return proposal.Proposal{}, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
-	}
-	if d.Window != nil {
-		if err := d.Window.Validate(today); err != nil {
-			return proposal.Proposal{}, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
-		}
+	if err := checkDraft(a, d, today); err != nil {
+		return proposal.Proposal{}, err
 	}
 	var p proposal.Proposal
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		c, err := draftChanges(ctx, tx, userID, d, today)
+		c, err := planBefore(ctx, tx, userID, d.Changes)
 		if err != nil {
 			return err
 		}
-		if err := supersedeProposals(ctx, tx, userID, a, now); err != nil {
-			return err
-		}
-		p, err = insertProposal(ctx, tx, userID, a, d, c, now)
+		p, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now)
 		return err
 	})
-	if errors.Is(err, ErrInvalidProposal) {
-		return proposal.Proposal{}, err
-	}
 	if err != nil {
-		return proposal.Proposal{}, fmt.Errorf("create proposal: %w", err)
+		return proposal.Proposal{}, proposalError("create proposal", err)
 	}
 	return p, nil
 }
 
-// draftChanges returns d's changes with the plan as it is before each in
-// tx (planBefore), or ErrInvalidProposal for changes that break their
-// rules, a timeline they leave that overlaps, or a revert of a proposal
-// that is not applied.
-func draftChanges(ctx context.Context, tx *sql.Tx, userID uuid.UUID, d proposal.Draft, today day.Date) (proposal.Changes, error) {
-	if d.Reverts != uuid.Nil() {
-		s, err := proposalOf(ctx, tx, userID, d.Reverts)
+// RevertProposal makes the proposal that takes userID's applied proposal
+// id back, a's, with why, today being the user's day now, and returns
+// it, pending as any other: each change of id put back as it was before
+// (proposal.Changes.Inverse). It needs an applied proposal, the plan it
+// changed as it left it (a later change would be lost), and changes that
+// keep the past as it was (a change that took effect is moved on by a
+// proposal of its own), or ErrInvalidProposal. Applied, it marks id
+// reverted.
+func (db *DB) RevertProposal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, rationale string, today day.Date, now time.Time) (proposal.Proposal, error) {
+	d := proposal.Draft{Rationale: rationale}
+	if err := checkDraft(a, d, today); err != nil {
+		return proposal.Proposal{}, err
+	}
+	var p proposal.Proposal
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		s, err := proposalOf(ctx, tx, userID, id)
 		if err != nil {
-			return proposal.Changes{}, err
+			return err
 		}
 		if s == nil || proposal.Status(s.Status) != proposal.Applied {
-			return proposal.Changes{}, fmt.Errorf("%w: no applied proposal %s to revert", ErrInvalidProposal, d.Reverts)
+			return fmt.Errorf("%w: no applied proposal %s to revert", ErrInvalidProposal, id)
 		}
-	}
-	c, err := planBefore(ctx, tx, userID, d.Changes)
+		applied, err := s.proposal(id.String(), now)
+		if err != nil {
+			return err
+		}
+		back := applied.Changes.Inverse()
+		c, err := planBefore(ctx, tx, userID, back)
+		if err != nil {
+			return err
+		}
+		if err := changedSince(c, back); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidProposal, err)
+		}
+		p, err = createProposalIn(ctx, tx, userID, a, d, c, id, today, now)
+		return err
+	})
 	if err != nil {
-		return proposal.Changes{}, err
+		return proposal.Proposal{}, proposalError("revert proposal", err)
 	}
-	if err := c.Validate(today); err != nil {
-		return proposal.Changes{}, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
-	}
-	phases, err := phasesIn(ctx, tx, userID)
-	if err != nil {
-		return proposal.Changes{}, err
-	}
-	if err := plan.ValidateTimeline(c.Timeline(phases)); err != nil {
-		return proposal.Changes{}, fmt.Errorf("%w: the phases it leaves: %w", ErrInvalidProposal, err)
-	}
-	return c, nil
+	return p, nil
 }
 
-// insertProposal stores d, with its changes c, as userID's new pending
-// proposal, a's event, and returns it.
-func insertProposal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, d proposal.Draft, c proposal.Changes, now time.Time) (proposal.Proposal, error) {
+// checkDraft reports an actor that is not the user, or a rationale or a
+// window of d that breaks its rules (ErrInvalidProposal).
+func checkDraft(a event.Actor, d proposal.Draft, today day.Date) error {
+	if err := a.Validate(); err != nil {
+		return fmt.Errorf("invalid actor: %w", err)
+	}
+	if a.Kind != event.User {
+		return fmt.Errorf("invalid actor: a proposal is the user's, not %s's", a.Kind)
+	}
+	if err := proposal.ValidateRationale(d.Rationale); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidProposal, err)
+	}
+	if d.Window != nil {
+		if err := d.Window.Validate(today); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidProposal, err)
+		}
+	}
+	return nil
+}
+
+// changedSince reports the first entity whose state now (c's Before) is
+// not the state the revert back takes it from: the plan changed since the
+// proposal it reverts.
+func changedSince(c, back proposal.Changes) error {
+	for i, ch := range c.Phases {
+		if !reflect.DeepEqual(ch.Before, back.Phases[i].Before) {
+			return fmt.Errorf("the phase from %s changed since the proposal", ch.Start)
+		}
+	}
+	for i, ch := range c.Targets {
+		if !reflect.DeepEqual(ch.Before, back.Targets[i].Before) {
+			return fmt.Errorf("the target from %s changed since the proposal", ch.From)
+		}
+	}
+	if w := c.TrainingWeekdays; w != nil && w.Before != back.TrainingWeekdays.Before {
+		return errors.New("the training weekdays changed since the proposal")
+	}
+	return nil
+}
+
+// createProposalIn stores d as userID's new pending proposal in tx, a's,
+// with c, its changes with the plan before each, and reverts, the
+// proposal it takes back or uuid.Nil, and returns it; ErrInvalidProposal
+// for changes that break their rules or leave a timeline that overlaps.
+// It supersedes the user's pending proposals.
+func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, d proposal.Draft, c proposal.Changes,
+	reverts uuid.UUID, today day.Date, now time.Time,
+) (proposal.Proposal, error) {
+	phases, err := phasesIn(ctx, tx, userID)
+	if err != nil {
+		return proposal.Proposal{}, err
+	}
+	if err := c.Validate(today, phases); err != nil {
+		return proposal.Proposal{}, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
+	}
+	if err := plan.ValidateTimeline(c.Timeline(phases)); err != nil {
+		return proposal.Proposal{}, fmt.Errorf("%w: the phases it leaves: %w", ErrInvalidProposal, err)
+	}
+	if err := supersedeProposals(ctx, tx, userID, a, now); err != nil {
+		return proposal.Proposal{}, err
+	}
 	changes, err := json.Marshal(changesStateOf(c))
 	if err != nil {
 		return proposal.Proposal{}, err
 	}
 	id := uuid.NewV7()
-	var from, to, reverts any
+	var from, to, revertsID any
 	if w := d.Window; w != nil {
 		from, to = w.From.String(), w.To.String()
 	}
-	if d.Reverts != uuid.Nil() {
-		reverts = d.Reverts.String()
+	if reverts != uuid.Nil() {
+		revertsID = reverts.String()
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO proposals (user_id, id, status, client, model, rationale,
 		window_from, window_to, changes, reverts, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		userID.String(), id.String(), string(proposal.Pending), a.Client, a.Model, d.Rationale,
-		from, to, string(changes), reverts, formatTime(now), formatTime(now.Add(proposal.TTL))); err != nil {
+		from, to, string(changes), revertsID, formatTime(now), formatTime(now.Add(proposal.TTL))); err != nil {
 		return proposal.Proposal{}, err
 	}
 	after, err := proposalOf(ctx, tx, userID, id)
@@ -527,7 +583,7 @@ func (db *DB) RejectProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 // there is none; a *ProposalClosedError when it waits no more, or the
 // plan it changes is no longer as it was (the proposal is superseded);
 // ErrInvalidProposal when a change would now change the past (a day
-// went by). The limits of a plan are limits.Validate's, which runs again
+// went by, or the next phase started). The limits of a plan are limits.Validate's, which runs again
 // before: the data or the limits may have changed since.
 func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, today day.Date, now time.Time) (proposal.Proposal, error) {
 	if err := a.Validate(); err != nil {
@@ -547,18 +603,11 @@ func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor
 		default:
 			return &ProposalClosedError{Status: p.Status}
 		}
-		if err := p.Changes.Validate(today); err != nil {
-			return fmt.Errorf("%w: %w", ErrInvalidProposal, err)
-		}
-		// A write of the plan supersedes the proposal; one the store did
-		// not make, as an import of the database could, is found here.
-		fresh, err := planBefore(ctx, tx, userID, p.Changes)
-		if err != nil {
+		if changed, err = changedUnder(ctx, tx, userID, p, today); err != nil || changed {
+			if changed {
+				err = closeProposal(ctx, tx, userID, a, id, proposal.Superseded, now)
+			}
 			return err
-		}
-		if !reflect.DeepEqual(fresh, p.Changes) {
-			changed = true
-			return closeProposal(ctx, tx, userID, a, id, proposal.Superseded, now)
 		}
 		if err := closeProposal(ctx, tx, userID, a, id, proposal.Applied, now); err != nil {
 			return err
@@ -581,6 +630,29 @@ func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor
 		return proposal.Proposal{}, &ProposalClosedError{Status: proposal.Superseded}
 	}
 	return p, nil
+}
+
+// changedUnder reports whether userID's plan in tx is no longer as p
+// found it: a write of the plan supersedes a proposal, and one the store
+// did not make, as an import of the database could, is found here. It
+// returns ErrInvalidProposal for changes that would now change the past
+// (a day went by, or the next phase started).
+func changedUnder(ctx context.Context, tx *sql.Tx, userID uuid.UUID, p proposal.Proposal, today day.Date) (bool, error) {
+	fresh, err := planBefore(ctx, tx, userID, p.Changes)
+	if err != nil {
+		return false, err
+	}
+	if !reflect.DeepEqual(fresh, p.Changes) {
+		return true, nil
+	}
+	phases, err := phasesIn(ctx, tx, userID)
+	if err != nil {
+		return false, err
+	}
+	if err := p.Changes.Validate(today, phases); err != nil {
+		return false, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
+	}
+	return false, nil
 }
 
 // applyChanges writes c, the changes of the proposal id, as a's changes

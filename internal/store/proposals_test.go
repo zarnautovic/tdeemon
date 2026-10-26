@@ -204,32 +204,30 @@ func TestCreateProposalRefuses(t *testing.T) {
 	today := day.DateOf(t0)
 	for _, tc := range []struct {
 		name  string
-		edit  func(d *proposal.Draft, pending uuid.UUID)
+		edit  func(d *proposal.Draft)
 		want  string
 		wrong error
 	}{
-		{"no rationale", func(d *proposal.Draft, _ uuid.UUID) { d.Rationale = "" }, "rationale is required", store.ErrInvalidProposal},
-		{"a window ahead", func(d *proposal.Draft, _ uuid.UUID) { d.Window.To = today.AddDays(1) }, "after today", store.ErrInvalidProposal},
-		{"nothing", func(d *proposal.Draft, _ uuid.UUID) { d.Changes = proposal.Changes{} }, "changes nothing", store.ErrInvalidProposal},
-		{"a delete of no phase", func(d *proposal.Draft, _ uuid.UUID) {
+		{"no rationale", func(d *proposal.Draft) { d.Rationale = "" }, "rationale is required", store.ErrInvalidProposal},
+		{"a window ahead", func(d *proposal.Draft) { d.Window.To = today.AddDays(1) }, "after today", store.ErrInvalidProposal},
+		{"nothing", func(d *proposal.Draft) { d.Changes = proposal.Changes{} }, "changes nothing", store.ErrInvalidProposal},
+		{"a delete of no phase", func(d *proposal.Draft) {
 			d.Changes = proposal.Changes{Phases: []proposal.PhaseChange{{Start: today.AddDays(5)}}}
 		}, "no phase from 2026-10-26 to delete", store.ErrInvalidProposal},
-		{"a target in the past", func(d *proposal.Draft, _ uuid.UUID) {
+		{"a target in the past", func(d *proposal.Draft) {
 			d.Changes.Targets[0].From, d.Changes.Targets[0].After.EffectiveFrom = today.AddDays(-1), today.AddDays(-1)
 		}, "before today", store.ErrInvalidProposal},
-		{"a phase over the current one", func(d *proposal.Draft, _ uuid.UUID) {
+		{"a phase over the current one", func(d *proposal.Draft) {
 			d.Changes.Phases[0].After.End = date(t, "2026-12-31")
 			d.Changes.Phases = append(d.Changes.Phases, proposal.PhaseChange{Start: date(t, "2026-12-01"), After: new(cut(t, "2026-12-01", "", -0.5))})
 		}, "phase 2 starts on 2026-12-01, while phase 1 runs to 2026-12-31", store.ErrInvalidProposal},
-		{"a revert of a pending proposal", func(d *proposal.Draft, pending uuid.UUID) { d.Reverts = pending }, "no applied proposal", store.ErrInvalidProposal},
-		{"a revert of no proposal", func(d *proposal.Draft, _ uuid.UUID) { d.Reverts = uuid.NewV7() }, "no applied proposal", store.ErrInvalidProposal},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			db, ana, _ := withPlans(t)
 			pending := propose(t, db, ana, coachDraft(t), t0)
 			d := coachDraft(t)
-			tc.edit(&d, pending.ID)
+			tc.edit(&d)
 			n := countRows(t, db, "events")
 			_, err := db.CreateProposal(t.Context(), ana, coachActor, d, today, t0)
 			if !errors.Is(err, tc.wrong) || !strings.Contains(err.Error(), tc.want) {
@@ -285,6 +283,11 @@ func TestANewProposalSupersedesThePending(t *testing.T) {
 	}
 	if ps, _ := db.Proposals(t.Context(), ana, 1, later); len(ps) != 1 || ps[0].ID != second.ID {
 		t.Errorf("Proposals up to 1 = %+v", ps)
+	}
+	for _, limit := range []int{0, -1} {
+		if ps, err := db.Proposals(t.Context(), ana, limit, later); err != nil || len(ps) != 0 {
+			t.Errorf("Proposals up to %d = %+v, %v; want none", limit, ps, err)
+		}
 	}
 }
 
@@ -517,6 +520,25 @@ func TestApplyProposalADayLate(t *testing.T) {
 	wantStatus(t, db, ana, p.ID, late, proposal.Pending)
 }
 
+// A phase the next one ended as the proposal waited is in the past.
+func TestApplyProposalAsTheNextPhaseStarts(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	next := plan.Phase{Type: plan.Maintain, Start: day.DateOf(t0).AddDays(1)}
+	if err := db.SetPhase(t.Context(), ana, testActor, next, t0); err != nil {
+		t.Fatal(err)
+	}
+	d := coachDraft(t)
+	d.Changes.Targets, d.Changes.TrainingWeekdays = nil, nil
+	p := propose(t, db, ana, d, t0)
+	late := t0.Add(48 * time.Hour)
+	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(late), late); !errors.Is(err, store.ErrInvalidProposal) ||
+		!strings.Contains(err.Error(), "the phase from 2026-09-07 ended on 2026-10-21") {
+		t.Errorf("ApplyProposal after the next phase started = %v", err)
+	}
+}
+
 // The plan changed under a proposal without a write of the store: it is
 // superseded when applied, and changes nothing.
 func TestApplyProposalUnderAChangedPlan(t *testing.T) {
@@ -582,19 +604,13 @@ func TestRejectProposalRefusesOneClosed(t *testing.T) {
 	wantStatus(t, db, ana, expired.ID, t0.Add(proposal.TTL), proposal.Expired)
 }
 
-// inverse returns the changes that take c back.
-func inverse(c proposal.Changes) proposal.Changes {
-	var back proposal.Changes
-	for _, ch := range c.Phases {
-		back.Phases = append(back.Phases, proposal.PhaseChange{Start: ch.Start, After: ch.Before})
+func revertOf(t *testing.T, db *store.DB, userID, id uuid.UUID, now time.Time) proposal.Proposal {
+	t.Helper()
+	p, err := db.RevertProposal(t.Context(), userID, coachActor, id, "Too hungry.", day.DateOf(now), now)
+	if err != nil {
+		t.Fatalf("RevertProposal: %v", err)
 	}
-	for _, ch := range c.Targets {
-		back.Targets = append(back.Targets, proposal.TargetChange{From: ch.From, After: ch.Before})
-	}
-	if w := c.TrainingWeekdays; w != nil {
-		back.TrainingWeekdays = &proposal.WeekdaysChange{After: w.Before}
-	}
-	return back
+	return p
 }
 
 func TestRevertProposal(t *testing.T) {
@@ -604,8 +620,9 @@ func TestRevertProposal(t *testing.T) {
 	p := propose(t, db, ana, coachDraft(t), t0)
 	applied := apply(t, db, ana, p.ID, t0)
 	later := t0.Add(time.Hour)
-	revert := propose(t, db, ana, proposal.Draft{Rationale: "Too hungry.", Changes: inverse(applied.Changes), Reverts: p.ID}, later)
-	if revert.Reverts != p.ID {
+	revert := revertOf(t, db, ana, p.ID, later)
+	// Each change of the proposal, put back.
+	if revert.Reverts != p.ID || revert.Rationale != "Too hungry." || !reflect.DeepEqual(revert.Changes, applied.Changes.Inverse()) {
 		t.Errorf("the revert = %+v", revert)
 	}
 	// Until the revert applies, the proposal stays applied.
@@ -623,11 +640,71 @@ func TestRevertProposal(t *testing.T) {
 	if got, _ := db.Targets(t.Context(), ana); !reflect.DeepEqual(got, []plan.Target{tg}) {
 		t.Errorf("Targets = %+v, want them as before", got)
 	}
-	// A reverted proposal is reverted once.
-	_, err := db.CreateProposal(t.Context(), ana, coachActor, proposal.Draft{Rationale: "Again.", Changes: applied.Changes, Reverts: p.ID},
-		day.DateOf(later), later)
-	if !errors.Is(err, store.ErrInvalidProposal) {
-		t.Errorf("a revert of a reverted proposal = %v", err)
+	if got, _ := db.TrainingWeekdays(t.Context(), ana); got != 0b0101010 {
+		t.Errorf("TrainingWeekdays = %#b, want them as before", got)
+	}
+	// The revert applied, the proposal reverted, and each change put back.
+	want := []event.Action{event.WeekdaysSet, event.TargetDelete, event.PhaseSet, event.ProposalStatus, event.ProposalStatus}
+	if got := eventActions(t, db, ana, 5); !reflect.DeepEqual(got, want) {
+		t.Errorf("the events = %v, want %v", got, want)
+	}
+}
+
+func TestRevertProposalRefuses(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		// revert returns the proposal to revert, and when.
+		revert func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time)
+		want   string
+	}{
+		{"a pending proposal", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
+			t.Helper()
+			return propose(t, db, userID, coachDraft(t), t0).ID, t0
+		}, "no applied proposal"},
+		{"no proposal", func(t *testing.T, _ *store.DB, _ uuid.UUID) (uuid.UUID, time.Time) {
+			t.Helper()
+			return uuid.NewV7(), t0
+		}, "no applied proposal"},
+		{"a reverted proposal", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
+			t.Helper()
+			p := propose(t, db, userID, coachDraft(t), t0)
+			apply(t, db, userID, p.ID, t0)
+			apply(t, db, userID, revertOf(t, db, userID, p.ID, t0).ID, t0)
+			return p.ID, t0
+		}, "no applied proposal"},
+		{"a target changed since", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
+			t.Helper()
+			p := propose(t, db, userID, coachDraft(t), t0)
+			applied := apply(t, db, userID, p.ID, t0)
+			tg := *applied.Changes.Targets[0].After
+			tg.Rest.Kcal = 1800
+			if err := db.SetTarget(t.Context(), userID, testActor, tg, t0); err != nil {
+				t.Fatal(err)
+			}
+			return p.ID, t0
+		}, "the target from 2026-10-22 changed since the proposal"},
+		{"a target that took effect", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
+			t.Helper()
+			p := propose(t, db, userID, coachDraft(t), t0)
+			apply(t, db, userID, p.ID, t0)
+			return p.ID, t0.Add(48 * time.Hour)
+		}, "the target from 2026-10-22, before today 2026-10-23"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			db, ana, _ := withPlans(t)
+			id, now := tc.revert(t, db, ana)
+			n := countRows(t, db, "events")
+			_, err := db.RevertProposal(t.Context(), ana, coachActor, id, "Back.", day.DateOf(now), now)
+			if !errors.Is(err, store.ErrInvalidProposal) || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("RevertProposal = %v, want %q", err, tc.want)
+			}
+			if countRows(t, db, "events") != n {
+				t.Error("a refused revert recorded an event")
+			}
+		})
 	}
 }
 
@@ -638,9 +715,8 @@ func TestProposalsGoWithTheUser(t *testing.T) {
 
 	db, ana, ivo := withPlans(t)
 	p := propose(t, db, ana, coachDraft(t), t0)
-	applied := apply(t, db, ana, p.ID, t0)
-	revert := propose(t, db, ana, proposal.Draft{Rationale: "Back.", Changes: inverse(applied.Changes), Reverts: p.ID}, t0)
-	apply(t, db, ana, revert.ID, t0)
+	apply(t, db, ana, p.ID, t0)
+	apply(t, db, ana, revertOf(t, db, ana, p.ID, t0).ID, t0)
 	propose(t, db, ivo, coachDraft(t), t0)
 	exec(t, db, "DELETE FROM users WHERE id = ?", ana.String())
 	if n := countRows(t, db, "proposals"); n != 1 {
