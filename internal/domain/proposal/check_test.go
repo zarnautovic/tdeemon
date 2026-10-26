@@ -222,3 +222,17 @@ func TestChangesCheckATargetInANewPhase(t *testing.T) {
 		t.Errorf("in a new cut: %v, want implied_loss_rate", got)
 	}
 }
+
+// A check of a phase warns of no target: the target in force has checks
+// of its own, of the target the change leaves.
+func TestChangesCheckAPhaseWarnsOfNoTarget(t *testing.T) {
+	t.Parallel()
+
+	s, targets := checkState(t)
+	// 1500 kcal is under the BMR, and leaves 90 g of carbs.
+	s.Target = target(t, "2026-09-07", 1500)
+	cs := Changes{Phases: []PhaseChange{{Start: s.Phase.Start, Before: s.Phase, After: cut(t, "2026-09-07", "", -0.6)}}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
+	if len(cs) != 1 || len(cs[0].Warnings) != 0 {
+		t.Errorf("the check of a phase = %+v, want no warning", cs)
+	}
+}

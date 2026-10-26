@@ -54,9 +54,13 @@ func (c Changes) Check(s limits.State, lv limits.Levels, phases []plan.Phase, ta
 		days, training = &w.After, w.After
 	}
 	var out []Checked
+	// A phase is checked without the target in force: that target's
+	// checks are its own, of the target the changes leave.
+	noTarget := s
+	noTarget.Target = nil
 	for _, ch := range c.Phases {
 		if ch.After != nil {
-			r := limits.Validate(limits.Change{Phase: ch.After, By: limits.ByPlan}, s, lv)
+			r := limits.Validate(limits.Change{Phase: ch.After, By: limits.ByPlan}, noTarget, lv)
 			out = append(out, Checked{Of: OfPhase, Day: ch.Start, TrainingDays: training, Result: r})
 		}
 	}
