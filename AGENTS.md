@@ -12,10 +12,11 @@ binary with SQLite and a React web app inside, an MCP server and a REST
 API. It is early: the skeleton, the database layer, users, sign-in
 (password, sessions, OpenID Connect), API tokens with scopes, foods,
 meals, metrics and the plan (profile, phases, targets, limits) in the
-domain and the database with an event log and undo, the API for the
-profile, the limits, the settings, the notes for a coach, the list of
-foods, a new food and the history, calibration (the measured TDEE and
-the verdict on a phase), the tool registry with `get_profile`,
+domain and the database with an event log and undo, the proposals of
+changes of the plan and their life in the domain and the database, the
+API for the profile, the limits, the settings, the notes for a coach,
+the list of foods, a new food and the history, calibration (the measured
+TDEE and the verdict on a phase), the tool registry with `get_profile`,
 `get_day`, `get_summary`, `get_history`, `find_foods`, `get_food`,
 `upsert_food`, `log_meal`, `update_meal`, `delete_meal`, `log_metric`,
 `delete_metric`, `checkin`, `update_profile_notes` and `undo_last`, the
@@ -33,7 +34,7 @@ and the limits of a plan) exist.
 | --- | --- |
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create`, `user set-password`, `user set-telegram`, `user set-locale` and `import-history` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
-| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `calibration` (the trend weight, the measured TDEE with its interval and the verdict on a phase, DESIGN.md §7), `recovery` (the last week's sleep, resting heart rate and HRV against the weeks before), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
+| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `proposal` (a proposed change of the plan, each change with the state before and after, and its life: pending, applied, rejected, expired, superseded, reverted; DESIGN.md §8), `calibration` (the trend weight, the measured TDEE with its interval and the verdict on a phase, DESIGN.md §7), `recovery` (the last week's sleep, resting heart rate and HRV against the weeks before), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
 | `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/ingest` | what devices and apps send (Health Auto Export, a simple JSON form) turned into a day's metrics: which value a day keeps, units, a check of each value; the days of workouts in Strong's CSV export; the archive of the bodies |
 | `internal/history` | the one-off import of a user's history from the predecessor: days' metrics and meals from its database, with the rest of a day's total, foods from its food table, and a plan file written from its goals note; and the split of its meals and of its table's combinations (DESIGN.md §10) |

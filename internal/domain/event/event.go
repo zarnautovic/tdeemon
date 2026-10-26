@@ -87,6 +87,11 @@ const (
 	TrainingDay  Action = "day.training"
 	WeekdaysSet  Action = "plan.weekdays"
 	NotesSet     Action = "notes.set"
+	// A proposed change of the plan made, and one that stopped pending
+	// (applied, rejected, superseded) or was reverted; undo leaves them,
+	// as an applied one goes back as a revert.
+	ProposalCreate Action = "proposal.create"
+	ProposalStatus Action = "proposal.status"
 	// Undo took another event back; its Entity is that event's id.
 	Undo Action = "undo"
 )
@@ -97,8 +102,8 @@ type Event struct {
 	At     time.Time
 	Actor  Actor
 	Action Action
-	// Entity names what changed: a food's or a meal's id, a day
-	// (YYYY-MM-DD), a day and a metric ("2026-10-21/weight"), a phase by
+	// Entity names what changed: a food's, a meal's or a proposal's id, a
+	// day (YYYY-MM-DD), a day and a metric ("2026-10-21/weight"), a phase by
 	// its start or a target by its first day (YYYY-MM-DD), "profile",
 	// "limits", "plan" (the training weekdays), "notes" or a source of
 	// workouts ("strong"), or for an undo the event undone, or "nothing"

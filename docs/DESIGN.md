@@ -101,7 +101,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
 | `days` | user_id, day, excluded_reason?, training_day?, mood?, hunger?, note? | check-in (mood and hunger 1–5); open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
 | `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
-| `proposals` | id, user_id, actor (user / model + client), status (pending/applied/rejected/expired/reverted), rationale, window, changes (JSON diff), preview, created_at, decided_at | every plan change (§8); applied ones are the revision log |
+| `proposals` | id, user_id, client + model, status (pending/applied/rejected/superseded/reverted), rationale, window?, changes (JSON: each change with the state before and after), reverts?, created_at, expires_at, decided_at + who decided, reverted_by? | every plan change (§8); applied ones are the revision log; a pending one past expires_at is expired, which follows from the time and is not stored |
 | `plan_settings` | user_id, training_weekdays, limits?; later autonomy (propose/autopilot) and check-in weekday | the training weekdays give each day its type ahead of time (§7); the user's limits are a JSON object of their names ([limits.md](limits.md)) holding only those off their defaults, so a limit at its default follows a later release's default, and change only from a web session, never through tools (§8) |
 | `phases` | user_id, start, type (cut/maintain/bulk/recomp), end_day?, rate_pct_week (signed), goal_weight?, milestone_weight? | the user's goal timeline, one phase per start, none overlapping another; a phase without an end lasts until the next starts; a phase start anchors the water/glycogen window; a diet break or a deload maintenance week is just a short `maintain` phase; goal and milestone may sit above or below the current weight |
 | `profile_notes` | user_id, notes | free-text preferences and guidance (e.g. food dislikes, schedule constraints) handed to the AI as context; one text per user |
@@ -580,17 +580,29 @@ Claude/ChatGPT subscription.
 
 ### Proposals, not direct writes
 
-1. **Propose.** `propose_changes` submits a diff (phases, targets,
-   settings, the profile, notes) with a rationale and the analysed
-   window. The server validates it and returns a preview: daily targets
-   per day type, the expected rate, any guardrail violations.
+1. **Propose.** `propose_changes` submits a diff (phases, targets, the
+   training weekdays; later the profile and the limits, which a web
+   session applies) with a rationale and the analysed window. The
+   server validates it and returns a preview: daily targets per day
+   type, the expected rate, any guardrail violations. Each change
+   carries the plan as it is before it, and keeps the past as it was: a
+   target takes effect from today on, and a phase that has started
+   keeps its type and the days it has had. The notes for a coach are no
+   part of the plan: `update_profile_notes` writes them, and undo takes
+   them back.
 2. **Consent.** The user agrees in plain language ("može", "yes") and the
    AI calls `apply_proposal`. Pending proposals also show in the web UI
    with Accept/Reject, so a proposal made in Claude can be accepted in
    the app.
 3. **History.** Applied proposals are the revision history: who (user,
    model name, client), when, why, before → after. `revert` creates the
-   inverse proposal.
+   inverse proposal; applied, it marks the one it takes back reverted.
+4. **Lifetime.** A proposal waits a week for consent, then expires. It
+   is superseded when the plan changes under it (any write of a phase,
+   a target or the training weekdays, an applied proposal included), or
+   when a newer proposal replaces it, so one proposal waits at a time
+   and what it showed is what applies. Undo leaves proposals, as it
+   leaves the plan.
 
 ### Autonomy, per user
 
