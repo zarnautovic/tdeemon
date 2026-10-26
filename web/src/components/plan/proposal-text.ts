@@ -1,4 +1,7 @@
+import { useQuery } from '@tanstack/react-query'
+
 import type { components } from '@/api/schema'
+import { sessionQuery } from '@/api/session'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
@@ -68,4 +71,14 @@ export function useViolationText(): (v: Violation) => string {
     }
     return `${rule}${on}: ${t.plan.proposedLimit(f.number(v.proposed, 2), f.number(v.limit, 2), t.plan.levels[v.level])}`
   }
+}
+
+// useDate says a day of a proposal (YYYY-MM-DD), short, with its year when
+// it is of another year than now's on the user's clock: a change of a year
+// must not read as none.
+export function useDate(): (date: string) => string {
+  const f = useFormat()
+  const session = useQuery(sessionQuery)
+  const timeZone = session.data?.user.timezone ?? 'UTC'
+  return (date) => f.calendarDay(date, timeZone)
 }

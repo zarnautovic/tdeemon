@@ -1,14 +1,21 @@
 import { focusManager } from '@tanstack/react-query'
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
 import { setLocale } from '@/i18n/locale'
 import { fakeServer, renderAt, signedIn } from '@/test/app'
 import { limitsBody, planBody } from '@/test/plan'
 
+// The clock is the tests' day, so a date of another year says its year.
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-23T16:00:00Z'))
+})
+
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.unstubAllGlobals()
   setLocale('en')
 })
@@ -331,4 +338,27 @@ test("an action's answer is its own, not the one before's", async () => {
   await card.findByText('The proposal waits no more: the plan changed, or it expired.')
   expect(card.queryByText('The limits refuse it now:')).toBeNull()
   expect(card.getByRole('button', { name: 'Reject' })).toHaveProperty('disabled', true)
+})
+
+// A date of another year says its year: a phase made a year longer does
+// not read as it was.
+test("a change's date of another year says its year", async () => {
+  const longer: Proposal = {
+    ...step,
+    changes: {
+      phases: [
+        {
+          start: '2026-09-07',
+          before: { type: 'cut', start: '2026-09-07', end: '2026-12-31', rate_pct_week: -0.5 },
+          after: { type: 'cut', start: '2026-09-07', end: '2027-12-31', rate_pct_week: -0.5 },
+        },
+      ],
+      targets: [],
+    },
+  }
+  coachServer({ pending: longer })
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  card.getByText('Cut, -0.5% a week, until Dec 31, 2027')
+  expect(card.getByText('was Cut, -0.5% a week, until Dec 31')).toBeTruthy()
 })

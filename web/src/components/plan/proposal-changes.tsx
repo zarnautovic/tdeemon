@@ -3,7 +3,7 @@ import { useFormat } from '@/i18n/format'
 import { useLocale } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
 
-import { useViolationText } from './proposal-text'
+import { useDate, useViolationText } from './proposal-text'
 
 export type Proposal = components['schemas']['ProposalBody']
 export type Preview = components['schemas']['PreviewBody']
@@ -30,12 +30,13 @@ export function ProposalChanges({ changes }: { changes: Changes }) {
   const t = useMessages()
   const f = useFormat()
   const weekdayName = useWeekdayName()
+  const date = useDate()
   const c = t.plan.change
 
   const phase = (p: Phase) =>
     [
       `${c.types[p.type]}, ${c.rate(f.percent(p.rate_pct_week, 2))}`,
-      ...(p.end === undefined ? [] : [c.until(f.short(p.end))]),
+      ...(p.end === undefined ? [] : [c.until(date(p.end))]),
       ...(p.goal_weight === undefined ? [] : [c.goal(f.number(p.goal_weight, 1))]),
       ...(p.milestone_weight === undefined ? [] : [c.milestone(f.number(p.milestone_weight, 1))]),
     ].join(', ')
@@ -56,10 +57,10 @@ export function ProposalChanges({ changes }: { changes: Changes }) {
         <li key={`phase ${ch.start}`}>
           <span className="block font-medium">
             {ch.before === undefined
-              ? c.newPhase(f.short(ch.start))
+              ? c.newPhase(date(ch.start))
               : ch.after === undefined
-                ? c.deletedPhase(f.short(ch.start))
-                : c.phase(f.short(ch.start))}
+                ? c.deletedPhase(date(ch.start))
+                : c.phase(date(ch.start))}
           </span>
           {ch.after !== undefined && <span className="block">{phase(ch.after)}</span>}
           {ch.before !== undefined && (
@@ -71,10 +72,10 @@ export function ProposalChanges({ changes }: { changes: Changes }) {
         <li key={`target ${ch.from}`}>
           <span className="block font-medium">
             {ch.before === undefined
-              ? c.newTarget(f.short(ch.from))
+              ? c.newTarget(date(ch.from))
               : ch.after === undefined
-                ? c.deletedTarget(f.short(ch.from))
-                : c.target(f.short(ch.from))}
+                ? c.deletedTarget(date(ch.from))
+                : c.target(date(ch.from))}
           </span>
           {ch.after !== undefined && <span className="block">{target(ch.after)}</span>}
           {ch.before !== undefined && (
@@ -101,6 +102,7 @@ export function PreviewLines({ preview }: { preview: Preview }) {
   const t = useMessages()
   const f = useFormat()
   const violation = useViolationText()
+  const date = useDate()
   const warning = (w: LimitWarning) =>
     t.plan.warnings[w.rule](f.number(w.value), f.number(w.threshold))
 
@@ -110,7 +112,7 @@ export function PreviewLines({ preview }: { preview: Preview }) {
         <li key={`${ck.of} ${ck.day}`}>
           {ck.weekly_kcal !== undefined && (
             <span className="block">
-              {t.plan.pending.average(f.short(ck.day), f.number(ck.weekly_kcal))}
+              {t.plan.pending.average(date(ck.day), f.number(ck.weekly_kcal))}
               {ck.expected_pct_week !== undefined &&
                 ck.expected_kg_week !== undefined &&
                 t.plan.pending.rate(

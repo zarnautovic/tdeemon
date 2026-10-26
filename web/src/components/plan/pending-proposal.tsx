@@ -10,7 +10,7 @@ import {
   type Preview,
   type Proposal,
 } from '@/components/plan/proposal-changes'
-import { useViolationText, violationsOf } from '@/components/plan/proposal-text'
+import { useDate, useViolationText, violationsOf } from '@/components/plan/proposal-text'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -34,6 +34,7 @@ export function PendingProposal({
   const timeZone = session.data?.user.timezone ?? 'UTC'
   const queryClient = useQueryClient()
   const violation = useViolationText()
+  const date = useDate()
   const done = () => queryClient.invalidateQueries()
   const accept = $api.useMutation('post', '/api/v1/proposals/{id}/apply', { onSuccess: done })
   const reject = $api.useMutation('post', '/api/v1/proposals/{id}/reject', { onSuccess: done })
@@ -62,7 +63,7 @@ export function PendingProposal({
       <p className="whitespace-pre-line">{proposal.rationale}</p>
       {proposal.window !== undefined && (
         <p className="text-sm text-muted-foreground">
-          {p.window(f.short(proposal.window.from), f.short(proposal.window.to))}
+          {p.window(date(proposal.window.from), date(proposal.window.to))}
         </p>
       )}
       <ProposalChanges changes={proposal.changes} />
