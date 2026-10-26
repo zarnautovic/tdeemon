@@ -642,7 +642,9 @@ it read while researching. So limits are enforced by the server.
   UI. A proposal of several changes is held as `proposal.Changes.Check`
   splits it: each phase it sets as a change of the current one, and the
   target in force from each day it changes one from, against the one in
-  force then before, with the training weekdays it leaves (new ones move
+  force then before, in the phase in force then as it leaves it (a new
+  phase starts at the trend weight now, which takes today's weigh-in
+  too), with the training weekdays it leaves (new ones move
   a split target's weekly average, so they check today's target and each
   to come); with the data and the limits of now for a change ahead too.
   The check reads them in the transaction that stores or applies the

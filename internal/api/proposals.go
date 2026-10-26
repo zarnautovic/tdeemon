@@ -135,11 +135,13 @@ type refusedError struct{ checks []proposal.Checked }
 func (e *refusedError) Error() string { return "the proposal breaks the limits" }
 
 // coachState is what the limits hold a change of a user's plan to:
-// calibration's state, as the summary reads it, the levels of the limits,
-// and the targets.
+// calibration's state, as the summary reads it but for the trend weight,
+// which takes today's weigh-in too; the levels of the limits; and the
+// phases and the targets.
 type coachState struct {
 	state   limits.State
 	levels  limits.Levels
+	phases  []plan.Phase
 	targets []plan.Target
 }
 
@@ -148,7 +150,11 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 	if err != nil {
 		return coachState{}, err
 	}
-	data, err := s.readSummary(ctx, p.User.ID, cal, today, now)
+	// The summary's days, and today: the TDEE is of the days up to
+	// yesterday, as today is open, but a plan made on the day of a first
+	// weigh-in has a weight to go by.
+	yesterday := today.AddDays(-1)
+	data, err := s.readDays(ctx, p.User.ID, cal, yesterday.AddDays(1-max(calibration.FullDays(calibration.DefaultParams()), 7*summaryWeeks)), today, today, now)
 	if err != nil {
 		return coachState{}, err
 	}
@@ -160,7 +166,7 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 	if err != nil {
 		return coachState{}, err
 	}
-	e := calibration.Calibrate(data.calDays, data.phases, today.AddDays(-1), data.params)
+	e := calibration.Calibrate(data.calDays, data.phases, yesterday, data.params)
 	var ph *plan.Phase
 	if got, ok := plan.PhaseOn(data.phases, today); ok {
 		ph = &got
@@ -169,9 +175,13 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 	if got, ok := plan.TargetOn(data.targets, today); ok {
 		t = &got
 	}
+	st := calibration.StateOf(e, today, pr, ph, t, data.training)
+	if kg, _ := calibration.TrendAt(calibration.Trend(data.calDays, data.params.TrendAlpha), today); kg > 0 {
+		st.TrendKg = kg
+	}
 	return coachState{
-		state:  calibration.StateOf(e, today, pr, ph, t, data.training),
-		levels: limits.Levels{Instance: s.instance, User: user}, targets: data.targets,
+		state:  st,
+		levels: limits.Levels{Instance: s.instance, User: user}, phases: data.phases, targets: data.targets,
 	}, nil
 }
 
@@ -186,7 +196,7 @@ func (s *sessions) check(ctx context.Context, p auth.Principal, now time.Time, c
 		if *cs, err = s.coachState(ctx, p, now); err != nil {
 			return err
 		}
-		*found = c.Check(cs.state, cs.levels, cs.targets)
+		*found = c.Check(cs.state, cs.levels, cs.phases, cs.targets)
 		for _, ck := range *found {
 			if !ck.OK() {
 				return &refusedError{checks: *found}

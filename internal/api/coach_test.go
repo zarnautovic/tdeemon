@@ -12,6 +12,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
@@ -616,5 +617,26 @@ func TestMCPRefusalHoldsTheViolations(t *testing.T) {
 	})
 	if !isErr || !strings.Contains(text, `"rule":"kcal_floor"`) || !strings.Contains(text, `"limit":1500`) || !strings.Contains(text, `"proposed":1300`) {
 		t.Errorf("the refusal through MCP = %s", text)
+	}
+}
+
+// On the first day, a weigh-in of today's gives the trend weight a plan
+// needs.
+func TestProposeOnTheFirstDay(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	now := in.clock.Now()
+	today := day.DateOf(now)
+	pr := profile.Profile{Sex: profile.Male, BirthDate: day.Date{Year: 1990, Month: 6, Day: 15}, HeightCm: 180}
+	if err := in.db.SetProfile(t.Context(), in.user.ID, isolationActor, pr, today, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.db.SetMetric(t.Context(), in.user.ID, isolationActor, today, metric.Value{Kind: metric.Weight, Value: 90, Source: metric.Manual}, now); err != nil {
+		t.Fatal(err)
+	}
+	var a proposeAnswer
+	if code := post(t, in, session, "/api/v1/proposals", stepBody(today, 2200), &a); code != http.StatusCreated || !nearPtr(a.Preview.TrendKg, 90, 0) {
+		t.Errorf("a plan on the first day: %d %+v", code, a)
 	}
 }

@@ -94,7 +94,7 @@ func TestChangesCheck(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := rules(tc.c.Check(s, levels(), targets)); !mapsEqual(got, tc.want) {
+			if got := rules(tc.c.Check(s, levels(), []plan.Phase{*s.Phase}, targets)); !mapsEqual(got, tc.want) {
 				t.Errorf("Check = %v, want %v", got, tc.want)
 			}
 		})
@@ -126,7 +126,7 @@ func TestChangesCheckTheTargetInForce(t *testing.T) {
 	cs := Changes{
 		Targets:          []TargetChange{{From: date(t, "2026-11-02"), Before: &targets[1]}},
 		TrainingWeekdays: &WeekdaysChange{Before: s.TrainingDays, After: newDays},
-	}.Check(s, levels(), targets)
+	}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
 	if len(cs) != 2 {
 		t.Fatalf("Check = %+v, want the target and the training weekdays today", cs)
 	}
@@ -136,7 +136,7 @@ func TestChangesCheckTheTargetInForce(t *testing.T) {
 		}
 	}
 	// A check of a phase holds no target, and the weekdays as they are.
-	cs = Changes{Phases: []PhaseChange{{Start: s.Phase.Start, Before: s.Phase, After: cut(t, "2026-09-07", "", -0.6)}}}.Check(s, levels(), targets)
+	cs = Changes{Phases: []PhaseChange{{Start: s.Phase.Start, Before: s.Phase, After: cut(t, "2026-09-07", "", -0.6)}}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
 	if len(cs) != 1 || cs[0].Target != nil || cs[0].TrainingDays != s.TrainingDays {
 		t.Errorf("the check of a phase = %+v", cs)
 	}
@@ -149,7 +149,7 @@ func TestChangesCheckUnderweight(t *testing.T) {
 
 	s, targets := checkState(t)
 	s.TrendKg, s.PhaseStartTrendKg = 59, 60
-	cs := Changes{Targets: []TargetChange{{From: date(t, "2026-10-27"), After: target(t, "2026-10-27", 2100)}}}.Check(s, levels(), targets)
+	cs := Changes{Targets: []TargetChange{{From: date(t, "2026-10-27"), After: target(t, "2026-10-27", 2100)}}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
 	if len(cs) != 1 || !slices.ContainsFunc(cs[0].Violations, func(v limits.Violation) bool {
 		return v.Rule == limits.RuleUnderweightLoss && v.Level == limits.LevelCode
 	}) {
@@ -180,7 +180,7 @@ func TestChangesCheckWeekdaysWithoutATarget(t *testing.T) {
 
 	s, _ := checkState(t)
 	s.Target = nil
-	if cs := (Changes{TrainingWeekdays: &WeekdaysChange{After: 1}}).Check(s, levels(), nil); len(cs) != 0 {
+	if cs := (Changes{TrainingWeekdays: &WeekdaysChange{After: 1}}).Check(s, levels(), nil, nil); len(cs) != 0 {
 		t.Errorf("Check = %+v, want none", cs)
 	}
 }
@@ -195,9 +195,30 @@ func TestChangesCheckTheTargetsToCome(t *testing.T) {
 	// on a rest day, of -0.43 % a week with three training days, of -1.07
 	// with none.
 	targets[1].Training.Kcal, targets[1].Rest.Kcal = 3000, 1600
-	cs := Changes{TrainingWeekdays: &WeekdaysChange{Before: s.TrainingDays, After: 0}}.Check(s, levels(), targets)
+	cs := Changes{TrainingWeekdays: &WeekdaysChange{Before: s.TrainingDays, After: 0}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
 	want := map[string][]string{"training_weekdays 2026-10-26": {}, "training_weekdays 2026-11-02": {limits.RuleImpliedLossRate}}
 	if got := rules(cs); !mapsEqual(got, want) {
 		t.Errorf("Check = %v, want %v", got, want)
+	}
+}
+
+// A target is held to the phase in force on its day as the changes leave
+// it: a cut that started at a BMI over 30 allows a faster loss than a new
+// one started under it.
+func TestChangesCheckATargetInANewPhase(t *testing.T) {
+	t.Parallel()
+
+	s, targets := checkState(t)
+	// 95 kg at 180 cm is a BMI of 29.3; the cut started at 100, of 30.9.
+	s.TrendKg, s.PhaseStartTrendKg = 95, 100
+	// 1660 kcal a day with a TDEE of 2600: -0.9 % a week.
+	step := TargetChange{From: s.Today, After: target(t, "2026-10-26", 1660)}
+	if cs := (Changes{Targets: []TargetChange{step}}).Check(s, levels(), []plan.Phase{*s.Phase}, targets); len(cs) != 1 || !cs[0].OK() {
+		t.Errorf("in the cut that started over 30: %+v, want it allowed", cs)
+	}
+	fresh := cut(t, "2026-10-26", "", -0.5)
+	cs := Changes{Phases: []PhaseChange{{Start: s.Today, After: fresh}}, Targets: []TargetChange{step}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
+	if got := rules(cs); !slices.Equal(got["target 2026-10-26"], []string{limits.RuleImpliedLossRate}) {
+		t.Errorf("in a new cut: %v, want implied_loss_rate", got)
 	}
 }

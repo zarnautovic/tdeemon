@@ -35,18 +35,19 @@ type Checked struct {
 }
 
 // Check holds the changes c to the limits (limits.Validate), s being the
-// state now, before them, and targets the timeline of targets before
-// them, in the order they take effect. It checks each phase the changes
-// set, as a change of the current phase (s.Phase), and the target in
-// force from each day they change a target from, against the one in
-// force then before, with the training weekdays they leave; and, when
+// state now, before them, and phases and targets the timelines before
+// them, in order. It checks each phase the changes set, as a change of
+// the current phase (s.Phase), and the target in force from each day
+// they change a target from, against the one in force then before, in
+// the phase in force then as they leave it (a new phase starts at the
+// trend weight now), with the training weekdays they leave; and, when
 // they change the training weekdays, which move a split target's weekly
 // average, the target in force today and each to come with them (a
 // derived value the change sets, docs/limits.md). A delete of a phase
 // sets nothing to check.
 // The data and the limits are those of now for a change ahead too: what
 // the server knows when the user consents.
-func (c Changes) Check(s limits.State, lv limits.Levels, targets []plan.Target) []Checked {
+func (c Changes) Check(s limits.State, lv limits.Levels, phases []plan.Phase, targets []plan.Target) []Checked {
 	training := s.TrainingDays
 	var days *plan.Weekdays
 	if w := c.TrainingWeekdays; w != nil {
@@ -60,6 +61,7 @@ func (c Changes) Check(s limits.State, lv limits.Levels, targets []plan.Target) 
 		}
 	}
 	after := c.TargetTimeline(targets)
+	timeline := c.Timeline(phases)
 	of := map[day.Date]Of{}
 	if days != nil {
 		// New training weekdays move the weekly average of the target in
@@ -75,11 +77,27 @@ func (c Changes) Check(s limits.State, lv limits.Levels, targets []plan.Target) 
 		of[ch.From] = OfTarget
 	}
 	for _, d := range slices.SortedFunc(maps.Keys(of), day.Date.Compare) {
-		if ck := checkTarget(of[d], d, s, lv, targets, after, days, training); ck.Target != nil {
+		if ck := checkTarget(of[d], d, inPhase(s, timeline, d), lv, targets, after, days, training); ck.Target != nil {
 			out = append(out, ck)
 		}
 	}
 	return out
+}
+
+// inPhase returns s in the phase of the timeline phases in force on d:
+// the phase's start weight is s's for the phase s is in, else unknown,
+// which the limits take as the trend weight now.
+func inPhase(s limits.State, phases []plan.Phase, d day.Date) limits.State {
+	ph, ok := plan.PhaseOn(phases, d)
+	if !ok {
+		s.Phase, s.PhaseStartTrendKg = nil, 0
+		return s
+	}
+	if s.Phase == nil || s.Phase.Start != ph.Start || s.Phase.Type != ph.Type {
+		s.PhaseStartTrendKg = 0
+	}
+	s.Phase = &ph
+	return s
 }
 
 // checkTarget checks the target in force from d in after, with days, the
