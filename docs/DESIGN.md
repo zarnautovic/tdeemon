@@ -206,8 +206,8 @@ duplicate food would stay in the list.
 | `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`, twice its window) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
 | `get_history(from?, to?, granularity?)` | coaching: a day or week table of intake against target, the measurements, the trend weight and the TDEE measured up to each day, at most 366 days up to today (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits that hold, the pending proposal and the latest revisions, of the last 365 days and those to come (§8) |
-| `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/profile/notes + preview; applies nothing |
-| `apply_proposal(id)` / `reject_proposal(id)` / `revert(id)` | **apply only after explicit user consent**; recorded with actor and rationale |
+| `propose_changes(rationale, model?, window?, phases?, targets?, training_weekdays?)` | a change of the plan, held to its rules (no change of the past) and to the limits in the transaction that stores it: one past them is refused (422), each violation an error detail with the rule, the day type, the limit, the value proposed and the level as its value; else it waits, replacing any other, and answers with a preview (each check, the target's weekly kcal and the rate it implies with a trusted TDEE, warnings); applies nothing |
+| `apply_proposal(id)` / `reject_proposal(id)` / `revert_proposal(id, rationale)` | **apply only after explicit user consent**: held to the limits again (422), a proposal that waits no more is a 409, and applied again it answers as it is; recorded with actor and rationale. `revert_proposal` proposes the inverse of an applied one, as `propose_changes` does, while the plan is as it left it and its changes are still to come |
 | `update_profile_notes(notes)` | preferences and life context the coach should remember, replaced whole (empty deletes them); undo takes it back |
 | `shopping_list(op, items?)` | |
 
@@ -636,10 +636,21 @@ it read while researching. So limits are enforced by the server.
   say now (among them the trend weight now and when the phase started,
   the measured TDEE and whether calibration trusts it, the autopilot's
   drift and last step, the days logged and the weigh-ins), runs on
-  `propose_changes` (the preview shows violations), again on
+  `propose_changes` (a violation refuses it), again on
   `apply_proposal` (the data or the limits may have changed since the
   proposal), on every autopilot step, and on manual target edits in the
-  UI.
+  UI. A proposal of several changes is held as `proposal.Changes.Check`
+  splits it: each phase it sets as a change of the current one, and the
+  target in force from each day it changes one from, against the one in
+  force then before, in the phase in force then as it leaves it (a new
+  phase starts at the trend weight now, which takes today's weigh-in
+  too), with the training weekdays it leaves (new ones move
+  a split target's weekly average, so they check today's target and each
+  to come); with the data and the limits of now for a change ahead too.
+  The check reads them in the transaction that stores or applies the
+  proposal, which holds the one write connection, so a change of the
+  limits meanwhile cannot slip past it. Through MCP, a refusal's text
+  carries each violation as its JSON.
 - **Machine-readable violations.** A violation names the rule, the limit and the
   proposed value, e.g. `{rule: "kcal_floor", limit: 1800, proposed: 1500}`, the
   type of day for a limit of each, and the level that refuses it (the code, the
@@ -729,7 +740,8 @@ The coach gets enough to reason with, without raw dumps:
 - **The methodology as an MCP resource**, i.e. how TDEE and verdicts are
   computed, so the coach understands the numbers it reads.
 - **Tool annotations:** `readOnlyHint` on reads and `destructiveHint` on
-  apply/revert, so clients ask before writes.
+  `apply_proposal`, so clients ask before writes; `revert_proposal` only
+  proposes.
 
 ### Training uses the same pattern (P3+)
 

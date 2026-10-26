@@ -150,6 +150,64 @@ func (s *sessions) tools() []tool {
 		}, s.getPlan).
 			briefly("The plan, for a coach: phases, the last year's targets with what each came to (intake vs target, measured TDEE, " +
 				"rate vs planned), the limits a change must keep, the pending proposal, the latest revisions. Explain it; do not compute it again."),
+		newTool("propose_changes", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID:   "propose-changes",
+			Method:        http.MethodPost,
+			Path:          Prefix + "/proposals",
+			Summary:       "Propose a change of the plan",
+			DefaultStatus: http.StatusCreated,
+			Description: "Proposes a change of the plan: phases and targets to set or delete, and the training weekdays, with why and the days it was drawn from. " +
+				"Nothing changes until the user consents and apply_proposal applies it. The server holds it to the limits (docs/limits.md): " +
+				"one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed " +
+				"and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). " +
+				"A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. " +
+				"Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, " +
+				"the weekly average of each target with the rate it implies with the measured TDEE, and warnings.",
+			Tags:   []string{"plan"},
+			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		}, s.proposeChanges).
+			briefly("Proposes a change of the plan (phases, targets from today on, training weekdays), applied only once the user agrees. " +
+				"Past the limits: 422, each violation as data (rule, limit, proposed, level); explain it, propose what they allow. " +
+				"Else it waits, replacing any other, with a preview (weekly kcal, implied rate, warnings): show it, ask the user.").mayWriteAgain(),
+		newTool("apply_proposal", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "apply-proposal",
+			Method:      http.MethodPost,
+			Path:        Prefix + "/proposals/{id}/apply",
+			Summary:     "Apply a proposal",
+			Description: "Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. " +
+				"The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). " +
+				"A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; " +
+				"applied again it answers as it is.",
+			Tags:   []string{"plan"},
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
+		}, s.applyProposal).
+			briefly("Applies a pending proposal, making its changes the plan. Call it only after the user said yes to that proposal, never on your own. " +
+				"The limits are checked again (422); one that waits no more is a 409.").destroys(),
+		newTool("reject_proposal", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID: "reject-proposal",
+			Method:      http.MethodPost,
+			Path:        Prefix + "/proposals/{id}/reject",
+			Summary:     "Reject a proposal",
+			Description: "Rejects a pending proposal the user turned down; one that waits no more is a 409, a rejected one again answers as it is.",
+			Tags:        []string{"plan"},
+			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict},
+		}, s.rejectProposal).
+			briefly("Rejects a pending proposal the user turned down."),
+		newTool("revert_proposal", []auth.Scope{auth.ScopeTools}, huma.Operation{
+			OperationID:   "revert-proposal",
+			Method:        http.MethodPost,
+			Path:          Prefix + "/proposals/{id}/revert",
+			Summary:       "Propose taking a revision back",
+			DefaultStatus: http.StatusCreated,
+			Description: "Proposes taking an applied proposal back: each of its changes put back as it was, as a new pending proposal with a preview, " +
+				"held to the limits as propose_changes is; applied, it marks the one it takes back reverted. " +
+				"It needs the plan as the proposal left it (a later change would be lost) and changes still to come: " +
+				"a change that took effect is refused (422); propose the old values from today instead.",
+			Tags:   []string{"plan"},
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusUnprocessableEntity},
+		}, s.revertProposal).
+			briefly("Proposes taking an applied proposal back, as a pending one the user must agree to. " +
+				"A change that took effect cannot be: propose the old values from today.").mayWriteAgain(),
 		newTool("update_profile_notes", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "set-notes",
 			Method:      http.MethodPut,

@@ -58,6 +58,7 @@ func TestToolsAreNamed(t *testing.T) {
 		"log_meal": "log-meal", "update_meal": "update-meal", "delete_meal": "delete-meal",
 		"log_metric": "log-metric", "delete_metric": "delete-metric", "checkin": "check-in",
 		"get_history": "get-history", "get_plan": "get-plan", "update_profile_notes": "set-notes", "undo_last": "undo-last",
+		"propose_changes": "propose-changes", "apply_proposal": "apply-proposal", "reject_proposal": "reject-proposal", "revert_proposal": "revert-proposal",
 	} {
 		if got[name] != op {
 			t.Errorf("tool %s is operation %q, want %q", name, got[name], op)

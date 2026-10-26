@@ -187,8 +187,9 @@ func (m *mcpServer) call(ctx context.Context, p auth.Principal, t *mcpTool, args
 		var problem struct {
 			Detail string `json:"detail"`
 			Errors []struct {
-				Message  string `json:"message"`
-				Location string `json:"location"`
+				Message  string          `json:"message"`
+				Location string          `json:"location"`
+				Value    json.RawMessage `json:"value"`
 			} `json:"errors"`
 		}
 		if json.Unmarshal(body, &problem) != nil || problem.Detail == "" {
@@ -198,6 +199,11 @@ func (m *mcpServer) call(ctx context.Context, p auth.Principal, t *mcpTool, args
 		msg.WriteString(problem.Detail)
 		for _, e := range problem.Errors {
 			msg.WriteString("; " + strings.TrimPrefix(e.Location+": ", ": ") + e.Message)
+			// A value of the server's own that is data, as a violation of
+			// the limits, goes with it as it is, for the model to read.
+			if bytes.HasPrefix(e.Value, []byte("{")) {
+				msg.WriteString(" " + string(e.Value))
+			}
 		}
 		return toolError(msg.String())
 	}

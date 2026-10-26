@@ -294,14 +294,16 @@ func newAPI(mux *http.ServeMux, logger *slog.Logger) huma.API {
 // sent: huma puts the offending value into each error detail, and for a
 // sign-in that is the password (a body that does not parse, a field of
 // the wrong type). The location and the message say enough. A value the
-// server gives of its own (ownValue) stays.
+// server gives of its own (ownValue, a violation of the limits) stays.
 func dropErrorValues(_ huma.Context, _ string, v any) (any, error) {
 	if e, ok := v.(*huma.ErrorModel); ok {
 		for _, d := range e.Errors {
 			if d == nil {
 				continue
 			}
-			if _, own := d.Value.(ownValue); !own {
+			switch d.Value.(type) {
+			case ownValue, violationValue:
+			default:
 				d.Value = nil
 			}
 		}

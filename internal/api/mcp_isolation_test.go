@@ -73,6 +73,10 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 	name := func(e isolationEnv) []string { return []string{e.other.user.Name} }
 	ownersBread := func(e isolationEnv) string { return e.owner.bread.ID.String() }
 	ownBread := func(e isolationEnv) string { return e.other.bread.ID.String() }
+	ownersPending := func(e isolationEnv) string { return e.owner.pending.String() }
+	ownPending := func(e isolationEnv) string { return e.other.pending.String() }
+	ownersApplied := func(e isolationEnv) string { return e.owner.applied.String() }
+	ownApplied := func(e isolationEnv) string { return e.other.applied.String() }
 	ownersMeal := func(e isolationEnv) string { return e.owner.meal.String() }
 	ownMeal := func(e isolationEnv) string { return e.other.meal.String() }
 	return map[string]mcpIsolationCase{
@@ -81,6 +85,12 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 		"get_summary": mcpWorks("get_summary", nil, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user)), fmt.Sprintf(`"kcal":%v`, isolationKcal(e.other.user))}
 		}),
+		"propose_changes": mcpWorks("propose_changes", func(e isolationEnv) map[string]any {
+			return map[string]any{"rationale": e.other.user.Name + " trains on Sundays.", "training_weekdays": []string{"sunday"}}
+		}, func(e isolationEnv) []string { return []string{e.other.user.Name + " trains on Sundays."} }),
+		"apply_proposal":  mcpOnTheirs("apply_proposal", ownersPending, ownPending, nil),
+		"reject_proposal": mcpOnTheirs("reject_proposal", ownersPending, ownPending, nil),
+		"revert_proposal": mcpOnTheirs("revert_proposal", ownersApplied, ownApplied, map[string]any{"rationale": "Back."}),
 		"get_plan": mcpWorks("get_plan", nil, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + " trains on weekends now."}
 		}),

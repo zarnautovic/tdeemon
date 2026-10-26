@@ -139,6 +139,7 @@ func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 		"find-foods": true, "get-food": true, "upsert-food": true,
 		"log-meal": true, "update-meal": true, "delete-meal": true,
 		"log-metric": true, "delete-metric": true, "check-in": true, "undo-last": true,
+		"propose-changes": true, "apply-proposal": true, "reject-proposal": true, "revert-proposal": true,
 	}
 	in, session := signedIn(t)
 	tok, _ := in.createToken(t, session, `{"name":"Claude","scopes":["tools","read","ingest"]}`)

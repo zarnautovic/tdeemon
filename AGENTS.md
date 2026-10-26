@@ -20,21 +20,23 @@ the list of foods, a new food, the history and the plan, calibration
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
 `find_foods`, `get_food`, `upsert_food`, `log_meal`, `update_meal`,
 `delete_meal`, `log_metric`, `delete_metric`, `checkin`,
-`update_profile_notes` and `undo_last`, the MCP server that serves them
-at `/mcp`, the API contract and the web app's frame (signing in and out,
-its sections, in English and Croatian) with the day (what was eaten
-against the target, the meals, the measurements, and the check-in, the
-measurements, a meal's corrections, a meal logged by hand and a meal
-repeated taken there) and the foods (their list and search, a food made,
-corrected or archived), the charts (ECharts, loaded with them) and the
-settings (the name, language, time zone and day's start, the notes for a
-coach, the API tokens, the profile and the limits of a plan) exist.
+`update_profile_notes`, `propose_changes`, `apply_proposal`,
+`reject_proposal`, `revert_proposal` and `undo_last`, the MCP server
+that serves them at `/mcp`, the API contract and the web app's frame
+(signing in and out, its sections, in English and Croatian) with the day
+(what was eaten against the target, the meals, the measurements, and the
+check-in, the measurements, a meal's corrections, a meal logged by hand
+and a meal repeated taken there) and the foods (their list and search, a
+food made, corrected or archived), the charts (ECharts, loaded with
+them) and the settings (the name, language, time zone and day's start,
+the notes for a coach, the API tokens, the profile and the limits of a
+plan) exist.
 
 | Path | What |
 | --- | --- |
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create`, `user set-password`, `user set-telegram`, `user set-locale` and `import-history` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
-| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `proposal` (a proposed change of the plan, each change with the state before and after, and its life: pending, applied, rejected, expired, superseded, reverted; DESIGN.md §8), `calibration` (the trend weight, the measured TDEE with its interval, of the window up to a day or of a target's days, and the verdict on a phase, DESIGN.md §7), `recovery` (the last week's sleep, resting heart rate and HRV against the weeks before), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
+| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `proposal` (a proposed change of the plan, each change with the state before and after, its life (pending, applied, rejected, expired, superseded, reverted) and its check against the limits; DESIGN.md §8), `calibration` (the trend weight, the measured TDEE with its interval, of the window up to a day or of a target's days, and the verdict on a phase, DESIGN.md §7), `recovery` (the last week's sleep, resting heart rate and HRV against the weeks before), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
 | `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/ingest` | what devices and apps send (Health Auto Export, a simple JSON form) turned into a day's metrics: which value a day keeps, units, a check of each value; the days of workouts in Strong's CSV export; the archive of the bodies |
 | `internal/history` | the one-off import of a user's history from the predecessor: days' metrics and meals from its database, with the rest of a day's total, foods from its food table, and a plan file written from its goals note; and the split of its meals and of its table's combinations (DESIGN.md §10) |
@@ -44,7 +46,7 @@ coach, the API tokens, the profile and the limits of a plan) exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods and a new food (web session only), the imports (API token only), and the tools, the history, the plan and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods and a new food (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |

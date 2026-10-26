@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -74,7 +75,7 @@ func coachDraft(t *testing.T) proposal.Draft {
 
 func propose(t *testing.T, db *store.DB, userID uuid.UUID, d proposal.Draft, now time.Time) proposal.Proposal {
 	t.Helper()
-	p, err := db.CreateProposal(t.Context(), userID, coachActor, d, day.DateOf(now), now)
+	p, err := db.CreateProposal(t.Context(), userID, coachActor, d, day.DateOf(now), now, nil)
 	if err != nil {
 		t.Fatalf("CreateProposal: %v", err)
 	}
@@ -83,7 +84,7 @@ func propose(t *testing.T, db *store.DB, userID uuid.UUID, d proposal.Draft, now
 
 func apply(t *testing.T, db *store.DB, userID, id uuid.UUID, now time.Time) proposal.Proposal {
 	t.Helper()
-	p, err := db.ApplyProposal(t.Context(), userID, testActor, id, day.DateOf(now), now)
+	p, err := db.ApplyProposal(t.Context(), userID, testActor, id, day.DateOf(now), now, nil)
 	if err != nil {
 		t.Fatalf("ApplyProposal: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestProposalsAreTheUsers(t *testing.T) {
 	if got, err := db.Proposals(t.Context(), ivo, 10, t0); err != nil || len(got) != 0 {
 		t.Errorf("Ivo's Proposals = %+v, %v", got, err)
 	}
-	if _, err := db.ApplyProposal(t.Context(), ivo, testActor, p.ID, day.DateOf(t0), t0); !errors.Is(err, store.ErrNotFound) {
+	if _, err := db.ApplyProposal(t.Context(), ivo, testActor, p.ID, day.DateOf(t0), t0, nil); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Ivo applying Ana's = %v, want ErrNotFound", err)
 	}
 	if _, err := db.RejectProposal(t.Context(), ivo, testActor, p.ID, t0); !errors.Is(err, store.ErrNotFound) {
@@ -196,6 +197,14 @@ func TestProposalsAreTheUsers(t *testing.T) {
 	// Ivo's own proposal leaves Ana's waiting.
 	propose(t, db, ivo, coachDraft(t), t0)
 	wantStatus(t, db, ana, p.ID, t0, proposal.Pending)
+
+	apply(t, db, ana, p.ID, t0)
+	if _, err := db.RevertProposal(t.Context(), ivo, coachActor, p.ID, "Back.", day.DateOf(t0), t0, nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("Ivo reverting Ana's = %v, want ErrNotFound", err)
+	}
+	if _, err := db.RevertProposal(t.Context(), ana, coachActor, uuid.NewV7(), "Back.", day.DateOf(t0), t0, nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a revert of none = %v, want ErrNotFound", err)
+	}
 }
 
 func TestCreateProposalRefuses(t *testing.T) {
@@ -229,7 +238,7 @@ func TestCreateProposalRefuses(t *testing.T) {
 			d := coachDraft(t)
 			tc.edit(&d)
 			n := countRows(t, db, "events")
-			_, err := db.CreateProposal(t.Context(), ana, coachActor, d, today, t0)
+			_, err := db.CreateProposal(t.Context(), ana, coachActor, d, today, t0, nil)
 			if !errors.Is(err, tc.wrong) || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("CreateProposal = %v, want %q", err, tc.want)
 			}
@@ -247,13 +256,13 @@ func TestProposalsNeedTheUser(t *testing.T) {
 
 	db, ana, _ := withPlans(t)
 	for _, a := range []event.Actor{{Kind: event.User}, {Kind: event.Import, Client: "history"}} {
-		if _, err := db.CreateProposal(t.Context(), ana, a, coachDraft(t), day.DateOf(t0), t0); err == nil ||
+		if _, err := db.CreateProposal(t.Context(), ana, a, coachDraft(t), day.DateOf(t0), t0, nil); err == nil ||
 			!strings.Contains(err.Error(), "invalid actor") {
 			t.Errorf("CreateProposal of %+v = %v", a, err)
 		}
 	}
 	p := propose(t, db, ana, coachDraft(t), t0)
-	if _, err := db.ApplyProposal(t.Context(), ana, event.Actor{}, p.ID, day.DateOf(t0), t0); err == nil ||
+	if _, err := db.ApplyProposal(t.Context(), ana, event.Actor{}, p.ID, day.DateOf(t0), t0, nil); err == nil ||
 		!strings.Contains(err.Error(), "invalid actor") {
 		t.Errorf("ApplyProposal without an actor = %v", err)
 	}
@@ -518,7 +527,7 @@ func TestApplyProposalRefusesOneClosed(t *testing.T) {
 
 	db, ana, _ := withPlans(t)
 	applyAt := func(id uuid.UUID, now time.Time) error {
-		_, err := db.ApplyProposal(t.Context(), ana, testActor, id, day.DateOf(now), now)
+		_, err := db.ApplyProposal(t.Context(), ana, testActor, id, day.DateOf(now), now, nil)
 		return err
 	}
 	rejected := propose(t, db, ana, coachDraft(t), t0)
@@ -554,7 +563,7 @@ func TestApplyProposalADayLate(t *testing.T) {
 	d.Changes.Targets[0].From, d.Changes.Targets[0].After.EffectiveFrom = today, today
 	p := propose(t, db, ana, d, t0)
 	late := t0.Add(24 * time.Hour)
-	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(late), late); !errors.Is(err, store.ErrInvalidProposal) ||
+	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(late), late, nil); !errors.Is(err, store.ErrInvalidProposal) ||
 		!strings.Contains(err.Error(), "before today") {
 		t.Errorf("ApplyProposal a day late = %v", err)
 	}
@@ -574,7 +583,7 @@ func TestApplyProposalAsTheNextPhaseStarts(t *testing.T) {
 	d.Changes.Targets, d.Changes.TrainingWeekdays = nil, nil
 	p := propose(t, db, ana, d, t0)
 	late := t0.Add(48 * time.Hour)
-	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(late), late); !errors.Is(err, store.ErrInvalidProposal) ||
+	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(late), late, nil); !errors.Is(err, store.ErrInvalidProposal) ||
 		!strings.Contains(err.Error(), "the phase from 2026-09-07 ended on 2026-10-21") {
 		t.Errorf("ApplyProposal after the next phase started = %v", err)
 	}
@@ -588,7 +597,7 @@ func TestApplyProposalUnderAChangedPlan(t *testing.T) {
 	db, ana, _ := withPlans(t)
 	p := propose(t, db, ana, coachDraft(t), t0)
 	exec(t, db, "UPDATE plan_settings SET training_weekdays = 1 WHERE user_id = ?", ana.String())
-	_, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(t0), t0)
+	_, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(t0), t0, nil)
 	wantClosed(t, err, proposal.Superseded)
 	wantDecided(t, db, ana, p.ID, proposal.Superseded, testActor, t0)
 	if got, _ := db.Phases(t.Context(), ana); len(got) != 1 || got[0].RatePctWeek != -0.5 {
@@ -647,7 +656,7 @@ func TestRejectProposalRefusesOneClosed(t *testing.T) {
 
 func revertOf(t *testing.T, db *store.DB, userID, id uuid.UUID, now time.Time) proposal.Proposal {
 	t.Helper()
-	p, err := db.RevertProposal(t.Context(), userID, coachActor, id, "Too hungry.", day.DateOf(now), now)
+	p, err := db.RevertProposal(t.Context(), userID, coachActor, id, "Too hungry.", day.DateOf(now), now, nil)
 	if err != nil {
 		t.Fatalf("RevertProposal: %v", err)
 	}
@@ -703,18 +712,14 @@ func TestRevertProposalRefuses(t *testing.T) {
 		{"a pending proposal", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
 			t.Helper()
 			return propose(t, db, userID, coachDraft(t), t0).ID, t0
-		}, "no applied proposal"},
-		{"no proposal", func(t *testing.T, _ *store.DB, _ uuid.UUID) (uuid.UUID, time.Time) {
-			t.Helper()
-			return uuid.NewV7(), t0
-		}, "no applied proposal"},
+		}, "the proposal is pending, not applied"},
 		{"a reverted proposal", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
 			t.Helper()
 			p := propose(t, db, userID, coachDraft(t), t0)
 			apply(t, db, userID, p.ID, t0)
 			apply(t, db, userID, revertOf(t, db, userID, p.ID, t0).ID, t0)
 			return p.ID, t0
-		}, "no applied proposal"},
+		}, "the proposal is reverted, not applied"},
 		{"a target changed since", func(t *testing.T, db *store.DB, userID uuid.UUID) (uuid.UUID, time.Time) {
 			t.Helper()
 			p := propose(t, db, userID, coachDraft(t), t0)
@@ -738,7 +743,7 @@ func TestRevertProposalRefuses(t *testing.T) {
 			db, ana, _ := withPlans(t)
 			id, now := tc.revert(t, db, ana)
 			n := countRows(t, db, "events")
-			_, err := db.RevertProposal(t.Context(), ana, coachActor, id, "Back.", day.DateOf(now), now)
+			_, err := db.RevertProposal(t.Context(), ana, coachActor, id, "Back.", day.DateOf(now), now, nil)
 			if !errors.Is(err, store.ErrInvalidProposal) || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("RevertProposal = %v, want %q", err, tc.want)
 			}
@@ -777,16 +782,93 @@ func TestProposalStoreFailures(t *testing.T) {
 	if _, err := db.Proposals(t.Context(), ana, 10, t0); err == nil {
 		t.Error("Proposals of changes that do not decode = nil")
 	}
-	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(t0), t0); err == nil {
+	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(t0), t0, nil); err == nil {
 		t.Error("ApplyProposal of changes that do not decode = nil")
 	}
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0); err == nil {
+	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0, nil); err == nil {
 		t.Error("CreateProposal on a closed database = nil")
 	}
 	if _, err := db.RejectProposal(t.Context(), ana, testActor, p.ID, t0); err == nil {
 		t.Error("RejectProposal on a closed database = nil")
+	}
+}
+
+// errRefused stands in for a refusal of the limits.
+var errRefused = errors.New("past the limits")
+
+// A check of the limits runs in the transaction, on the changes with the
+// plan before each, and its refusal writes nothing.
+func TestProposalChecks(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	ph, _ := planValues(t)
+	var got proposal.Changes
+	check := func(c proposal.Changes) error {
+		got = c
+		return errRefused
+	}
+	n := countRows(t, db, "events")
+	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0, check); !errors.Is(err, errRefused) {
+		t.Errorf("CreateProposal refused = %v", err)
+	}
+	if got.Phases[0].Before == nil || *got.Phases[0].Before != ph {
+		t.Errorf("the check had %+v, want the changes with the plan before", got)
+	}
+	if countRows(t, db, "events") != n {
+		t.Error("a refused proposal recorded an event")
+	}
+	p := propose(t, db, ana, coachDraft(t), t0)
+	if _, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(t0), t0, check); !errors.Is(err, errRefused) {
+		t.Errorf("ApplyProposal refused = %v", err)
+	}
+	wantStatus(t, db, ana, p.ID, t0, proposal.Pending)
+	apply(t, db, ana, p.ID, t0)
+	n = countRows(t, db, "events")
+	if _, err := db.RevertProposal(t.Context(), ana, coachActor, p.ID, "Back.", day.DateOf(t0), t0, check); !errors.Is(err, errRefused) {
+		t.Errorf("RevertProposal refused = %v", err)
+	}
+	if countRows(t, db, "events") != n {
+		t.Error("a refused revert recorded an event")
+	}
+}
+
+// What a check reads through the store, no write changes until the
+// proposal is stored: its transaction holds the one write connection,
+// so a change of the limits made meanwhile waits for it.
+func TestAProposalCheckSeesNoWriteBeforeItsCommit(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	l := limits.UserDefaults()
+	l.KcalFloorMale = 1850
+	done := make(chan error, 1)
+	check := func(proposal.Changes) error {
+		go func() {
+			done <- db.SetUserLimits(context.WithoutCancel(t.Context()), ana, testActor, l, limits.Instance(), t0)
+		}()
+		select {
+		case err := <-done:
+			t.Errorf("a change of the limits made while the check ran: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
+		if got, err := db.UserLimits(t.Context(), ana); err != nil || got.KcalFloorMale == 1850 {
+			t.Errorf("the check read %v, %v; want the limits before", got.KcalFloorMale, err)
+		}
+		return nil
+	}
+	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0, check); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the change of the limits: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("the change of the limits never went through")
 	}
 }

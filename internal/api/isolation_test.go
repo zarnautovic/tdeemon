@@ -45,6 +45,9 @@ type party struct {
 	bread food.Food
 	// meal is their lunch's id.
 	meal uuid.UUID
+	// applied and pending are their proposals: one applied, a target
+	// from tomorrow, and one that waits.
+	applied, pending uuid.UUID
 }
 
 // tokenName is the name of the party's token, which only they may see.
@@ -98,7 +101,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		p.bread = saveIsolationFoods(t, in.db, p.user, now)
 		p.meal = saveIsolationMeals(t, in.db, p.user, p.bread, now)
 		saveIsolationMetrics(t, in.db, p.user, now)
-		saveIsolationPlan(t, in.db, p.user, now)
+		p.applied, p.pending = saveIsolationPlan(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
@@ -256,8 +259,9 @@ func isolationWeight(u user.User) float64 { return 80 + float64(u.Name[0]%20)/10
 // saveIsolationPlan gives u a profile, a phase, a target, training
 // weekdays, limits of their own, a toggle of a day's type, a day of a
 // workout, notes for a coach and proposals, applied and pending, whose
-// notes and rationales name u, so they are text unique to u.
-func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
+// notes and rationales name u, so they are text unique to u; and returns
+// the proposals' ids.
+func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) (applied, pending uuid.UUID) {
 	t.Helper()
 	today := day.DateOf(now)
 	ctx := t.Context()
@@ -300,23 +304,24 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	}
 	// A proposal applied, a target from tomorrow, and one pending.
 	tomorrow := today.AddDays(1)
-	applied, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
+	step, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
 		Rationale: u.Name + "'s trend fell slower than the cut's rate.",
 		Window:    &proposal.Window{From: today.AddDays(-28), To: today},
 		Changes: proposal.Changes{Targets: []proposal.TargetChange{{From: tomorrow, After: &plan.Target{
 			EffectiveFrom: tomorrow, Training: plan.DayTarget{Kcal: 2000 + float64(n), Protein: 150, Fat: 60}, Rest: d,
 		}}}},
-	}, today, now)
+	}, today, now, nil)
 	if err != nil {
 		t.Fatalf("save %s's proposal: %v", u.Name, err)
 	}
-	if _, err := db.ApplyProposal(ctx, u.ID, isolationActor, applied.ID, today, now); err != nil {
+	if _, err := db.ApplyProposal(ctx, u.ID, isolationActor, step.ID, today, now, nil); err != nil {
 		t.Fatalf("apply %s's proposal: %v", u.Name, err)
 	}
-	if _, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
+	waits, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
 		Rationale: u.Name + " trains on weekends now.",
 		Changes:   proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: plan.Weekdays(0b1000001)}},
-	}, today, now); err != nil {
+	}, today, now, nil)
+	if err != nil {
 		t.Fatalf("save %s's pending proposal: %v", u.Name, err)
 	}
 	if _, err := db.CheckIn(ctx, u.ID, isolationActor, today, func(c store.DayCheckIn) store.DayCheckIn {
@@ -325,6 +330,7 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	}, now); err != nil {
 		t.Fatalf("save %s's check-in: %v", u.Name, err)
 	}
+	return step.ID, waits.ID
 }
 
 // noOnesData are the tables that hold no user's data.
@@ -606,6 +612,35 @@ func isolateUndo(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateProposeChanges is propose-changes' case: the other proposes a
+// change of their own plan; the owner's stays as it was, and so does the
+// owner's proposal that waits.
+func isolateProposeChanges(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := `{"rationale": "` + e.other.user.Name + ` trains on Sundays.", "training_weekdays": ["sunday"]}`
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/proposals", body, nil, bearer(e.other.token.Token)); rec.Code != http.StatusCreated {
+		t.Errorf("their own proposal: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// isolateProposal is the case of an operation on a proposal by its id
+// (apply, reject, revert, with body): the owner's proposal answers the
+// other as one that does not exist; their own answers ok.
+func isolateProposal(action, body string, of func(p party) uuid.UUID, ok int) isolationCase {
+	return func(t *testing.T, e isolationEnv) {
+		t.Helper()
+		path := func(id uuid.UUID) string { return "/api/v1/proposals/" + id.String() + "/" + action }
+		theirs := e.in.do(t, http.MethodPost, path(of(e.owner)), body, nil, bearer(e.other.token.Token))
+		none := e.in.do(t, http.MethodPost, path(uuid.NewV7()), body, nil, bearer(e.other.token.Token))
+		if theirs.Code != http.StatusNotFound || theirs.Body.String() != none.Body.String() {
+			t.Errorf("the owner's proposal: %d %s; one that does not exist: %d %s; want the same 404", theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
+		}
+		if own := e.in.do(t, http.MethodPost, path(of(e.other)), body, nil, bearer(e.other.token.Token)); own.Code != ok {
+			t.Errorf("their own proposal: %d %s, want %d", own.Code, own.Body.String(), ok)
+		}
+	}
+}
+
 // isolateLogMeal is log-meal's case: the other logs a meal of their own,
 // of their own bread; the owner's meals stay as they were. (TestLogMealIDsArePerUser
 // logs under the owner's meal's id, which this case cannot: its answer
@@ -755,9 +790,13 @@ func isolationCases() map[string]isolationCase {
 		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),
-		"set-settings":  isolateSetSettings,
-		"set-notes":     isolateSetNotes,
-		"revoke-tokens": isolateRevokeTokens,
+		"set-settings":    isolateSetSettings,
+		"set-notes":       isolateSetNotes,
+		"revoke-tokens":   isolateRevokeTokens,
+		"propose-changes": isolateProposeChanges,
+		"apply-proposal":  isolateProposal("apply", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
+		"reject-proposal": isolateProposal("reject", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
+		"revert-proposal": isolateProposal("revert", `{"rationale": "Back."}`, func(p party) uuid.UUID { return p.applied }, http.StatusCreated),
 		"get-plan": read("/api/v1/plan", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + " trains on weekends now.", e.other.user.Name + "'s trend fell slower than the cut's rate."}
 		}),

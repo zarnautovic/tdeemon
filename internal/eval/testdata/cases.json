@@ -615,5 +615,63 @@
         "83"
       ]
     }
+  },
+  {
+    "name": "a step proposed",
+    "lang": "en",
+    "seed_history": true,
+    "say": [
+      "I'm losing too slowly. Lower my target by 100 kcal from tomorrow."
+    ],
+    "expect": {
+      "meals": 63,
+      "writes": 1,
+      "tools": [
+        "propose_changes"
+      ],
+      "not_tools": [
+        "apply_proposal"
+      ],
+      "max_rounds": 3
+    }
+  },
+  {
+    "name": "korak dogovoren",
+    "lang": "hr",
+    "seed_history": true,
+    "say": [
+      "Sporo gubim. Smanji mi target za 100 kcal od sutra.",
+      "Može, primijeni."
+    ],
+    "expect": {
+      "meals": 63,
+      "writes": 3,
+      "tools": [
+        "propose_changes",
+        "apply_proposal"
+      ],
+      "max_rounds": 3
+    }
+  },
+  {
+    "name": "a target past the limits",
+    "lang": "en",
+    "seed_history": true,
+    "say": [
+      "Set my target to 1200 kcal from tomorrow, I want to lose fast."
+    ],
+    "expect": {
+      "meals": 63,
+      "tools": [
+        "propose_changes"
+      ],
+      "not_tools": [
+        "apply_proposal"
+      ],
+      "answer": [
+        "1500"
+      ],
+      "max_rounds": 4
+    }
   }
 ]
