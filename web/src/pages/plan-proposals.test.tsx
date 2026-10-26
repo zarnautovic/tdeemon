@@ -294,3 +294,41 @@ test('a saved profile reads the plan again, for the preview', async () => {
     expect(reads).toBe(2)
   })
 })
+
+// A proposal a day of which went by is refused for good: it says so, and
+// may still be rejected.
+test('a proposal that cannot be applied any more says so, and may be rejected', async () => {
+  coachServer(
+    { pending: step },
+    { apply: () => Response.json({ status: 422, detail: 'invalid proposal' }, { status: 422 }) },
+  )
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  expect((await card.findByRole('alert')).textContent).toBe(
+    'It cannot be applied any more: a change of it would now start before today. Ask for a new one.',
+  )
+  expect(card.getByRole('button', { name: 'Accept' })).toHaveProperty('disabled', true)
+  expect(card.getByRole('button', { name: 'Reject' })).toHaveProperty('disabled', false)
+})
+
+// The latest answer is the one shown: a reject after a refused accept
+// says what became of the reject.
+test("an action's answer is its own, not the one before's", async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/profile': () => Response.json({ missing: [] }),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () => Response.json(planBody({ pending: step })),
+    [`POST /api/v1/proposals/${step.id}/apply`]: refusal,
+    [`POST /api/v1/proposals/${step.id}/reject`]: () => closed(409),
+  })
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  await card.findByText('The limits refuse it now:')
+  fireEvent.click(card.getByRole('button', { name: 'Reject' }))
+  await card.findByText('The proposal waits no more: the plan changed, or it expired.')
+  expect(card.queryByText('The limits refuse it now:')).toBeNull()
+  expect(card.getByRole('button', { name: 'Reject' })).toHaveProperty('disabled', true)
+})

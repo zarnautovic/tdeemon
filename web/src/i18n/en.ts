@@ -483,6 +483,8 @@ export const en = {
       gone: 'The proposal waits no more: the plan changed, or it expired.',
       refusedNow: 'The limits refuse it now:',
       failed: 'It did not go through. Try again.',
+      stale:
+        'It cannot be applied any more: a change of it would now start before today. Ask for a new one.',
       average: (from: string, kcal: string) => `From ${from}: ${kcal} kcal a day on average`,
       rate: (pct: string, kg: string) => `, ${pct} a week (${kg} kg)`,
     },

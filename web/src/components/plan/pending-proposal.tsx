@@ -38,12 +38,16 @@ export function PendingProposal({
   const accept = $api.useMutation('post', '/api/v1/proposals/{id}/apply', { onSuccess: done })
   const reject = $api.useMutation('post', '/api/v1/proposals/{id}/reject', { onSuccess: done })
   const path = { params: { path: { id: proposal.id } } }
+  // Each action starts by forgetting the other's answer, so the one shown
+  // is the latest.
   const error = accept.error ?? reject.error
   const failed = accept.isError || reject.isError
   // 409: it waits no more (applied or rejected elsewhere, superseded,
-  // expired); 422: the limits refuse it now, or a day of it went by.
+  // expired); 422: the limits refuse it now, or, without a violation, a
+  // day of it went by and it can never apply, though it may be rejected.
   const gone = statusOf(error) === 409
   const refused = violationsOf(error)
+  const stale = statusOf(error) === 422 && refused.length === 0
   const busy = accept.isPending || reject.isPending
   const p = t.plan.pending
 
@@ -79,6 +83,8 @@ export function PendingProposal({
                 ))}
               </ul>
             </>
+          ) : stale ? (
+            <p>{p.stale}</p>
           ) : (
             <p>{p.failed}</p>
           )}
@@ -86,8 +92,9 @@ export function PendingProposal({
       )}
       <div className="flex gap-2">
         <Button
-          disabled={busy || gone}
+          disabled={busy || gone || stale}
           onClick={() => {
+            reject.reset()
             accept.mutate(path)
           }}
         >
@@ -97,6 +104,7 @@ export function PendingProposal({
           variant="outline"
           disabled={busy || gone}
           onClick={() => {
+            accept.reset()
             reject.mutate(path)
           }}
         >

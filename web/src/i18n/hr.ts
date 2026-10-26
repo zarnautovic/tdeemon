@@ -465,6 +465,8 @@ export const hr: Messages = {
       gone: 'Prijedlog više ne čeka: plan se promijenio ili je istekao.',
       refusedNow: 'Granice ga sada ne dopuštaju:',
       failed: 'Nije prošlo. Pokušaj ponovno.',
+      stale:
+        'Više se ne može primijeniti: promjena bi sada počela prije današnjeg dana. Zatraži novi prijedlog.',
       average: (from: string, kcal: string) => `Od ${from}: prosječno ${kcal} kcal na dan`,
       rate: (pct: string, kg: string) => `, ${pct} tjedno (${kg} kg)`,
     },
