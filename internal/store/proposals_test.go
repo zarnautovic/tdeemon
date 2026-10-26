@@ -291,6 +291,47 @@ func TestANewProposalSupersedesThePending(t *testing.T) {
 	}
 }
 
+// Proposals of the statuses asked for: an expired one is stored pending.
+func TestProposalsByStatus(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	applied := propose(t, db, ana, coachDraft(t), t0)
+	apply(t, db, ana, applied.ID, t0)
+	superseded := propose(t, db, ana, proposal.Draft{Rationale: "Rest days lower.", Changes: proposal.Changes{
+		TrainingWeekdays: &proposal.WeekdaysChange{After: 1},
+	}}, t0)
+	pending := propose(t, db, ana, proposal.Draft{Rationale: "Two days.", Changes: proposal.Changes{
+		TrainingWeekdays: &proposal.WeekdaysChange{After: 3},
+	}}, t0)
+	ids := func(ps []proposal.Proposal) []uuid.UUID {
+		var out []uuid.UUID
+		for i := range ps {
+			out = append(out, ps[i].ID)
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		name     string
+		now      time.Time
+		statuses []proposal.Status
+		want     []uuid.UUID
+	}{
+		{"all", t0, nil, []uuid.UUID{pending.ID, superseded.ID, applied.ID}},
+		{"pending", t0, []proposal.Status{proposal.Pending}, []uuid.UUID{pending.ID}},
+		{"the revisions", t0, []proposal.Status{proposal.Applied, proposal.Reverted}, []uuid.UUID{applied.ID}},
+		{"pending, expired", t0.Add(proposal.TTL), []proposal.Status{proposal.Pending}, []uuid.UUID{pending.ID}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := db.Proposals(t.Context(), ana, 10, tc.now, tc.statuses...)
+			if err != nil || !reflect.DeepEqual(ids(got), tc.want) {
+				t.Errorf("Proposals = %v, %v; want %v", ids(got), err, tc.want)
+			}
+		})
+	}
+}
+
 // An expired proposal stays expired, superseded by nothing.
 func TestAnExpiredProposalIsNotSuperseded(t *testing.T) {
 	t.Parallel()

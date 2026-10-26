@@ -205,7 +205,7 @@ duplicate food would stay in the list.
 | `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
 | `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`, twice its window) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
 | `get_history(from?, to?, granularity?)` | coaching: a day or week table of intake against target, the measurements, the trend weight and the TDEE measured up to each day, at most 366 days up to today (§8) |
-| `get_plan()` | phases, target history **with outcomes**, the limits, pending proposals |
+| `get_plan()` | phases, target history **with outcomes**, the limits that hold, the pending proposal and the latest revisions, of the last 365 days and those to come (§8) |
 | `propose_changes(changes, rationale, window)` | validated diff of phases/targets/settings/profile/notes + preview; applies nothing |
 | `apply_proposal(id)` / `reject_proposal(id)` / `revert(id)` | **apply only after explicit user consent**; recorded with actor and rationale |
 | `update_profile_notes(notes)` | preferences and life context the coach should remember, replaced whole (empty deletes them); undo takes it back |
@@ -274,7 +274,14 @@ too) where `upsert_food` would correct that food. The charts read
 90 up to it by default), or its weeks, with what was eaten against the
 day's target, the measurements, the trend weight and the TDEE
 calibration measures up to each day, as the summary computes them, the
-table a coach looks back with (§8). The settings are a web session's
+table a coach looks back with (§8). `GET /api/v1/plan`, the tool
+`get_plan`, is the plan a coach reads (§8): the phases and the targets
+in force within the last 365 days and those to come, the limits that
+hold, the proposal that waits for consent and the latest 10 revisions.
+Each target's days up to yesterday come with their outcome: the intake
+and the target of the logged days, and what calibration measures of
+them (`calibration.Measure`, without a phase's first 14 days) against
+the phase's planned rate. The settings are a web session's
 only: `PATCH /api/v1/me` changes the name, the language, the time zone
 and the day's start hour, those given (what was logged keeps its day).
 `PUT /api/v1/me/notes`, the tool `update_profile_notes`, replaces the
@@ -706,7 +713,11 @@ The coach gets enough to reason with, without raw dumps:
   and excluded days with reasons.
 - `get_plan`: the phase timeline and the target history *with
   outcomes*, i.e. planned vs measured rate and adherence for every
-  target period.
+  target period: the intake against the target, and the TDEE and the
+  rate calibration measures of the period's days, leaving out a phase's
+  first 14 as `get_summary` does; the limits that hold; the pending
+  proposal and the latest revisions, each with its changes before and
+  after.
 - `get_summary`: the deterministic calibration. The server computes, the
   model interprets.
 

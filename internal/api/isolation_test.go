@@ -758,6 +758,9 @@ func isolationCases() map[string]isolationCase {
 		"set-settings":  isolateSetSettings,
 		"set-notes":     isolateSetNotes,
 		"revoke-tokens": isolateRevokeTokens,
+		"get-plan": read("/api/v1/plan", true, func(e isolationEnv) []string {
+			return []string{e.other.user.Name + " trains on weekends now.", e.other.user.Name + "'s trend fell slower than the cut's rate."}
+		}),
 		"get-history": read("/api/v1/history", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
 		}),

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 	"uuid"
 
@@ -299,15 +300,23 @@ func (db *DB) Proposal(ctx context.Context, userID, id uuid.UUID, now time.Time)
 
 // Proposals returns up to limit of userID's latest proposals, newest
 // first, each with its status at now: what waits, and the plan's
-// revisions; none for a limit of 0 or less.
-func (db *DB) Proposals(ctx context.Context, userID uuid.UUID, limit int, now time.Time) ([]proposal.Proposal, error) {
+// revisions; none for a limit of 0 or less. Given statuses, it returns
+// those stored in one of them alone: an expired proposal is stored
+// pending, and comes back expired.
+func (db *DB) Proposals(ctx context.Context, userID uuid.UUID, limit int, now time.Time, statuses ...proposal.Status) ([]proposal.Proposal, error) {
 	out := []proposal.Proposal{}
 	if limit <= 0 {
 		return out, nil
 	}
+	query, args := "SELECT "+proposalColumns+" FROM proposals WHERE user_id = ?", []any{userID.String()}
+	if len(statuses) > 0 {
+		query += " AND status IN (?" + strings.Repeat(", ?", len(statuses)-1) + ")"
+		for _, st := range statuses {
+			args = append(args, string(st))
+		}
+	}
 	err := db.readTx(ctx, func(tx *sql.Tx) error {
-		rows, err := tx.QueryContext(ctx, "SELECT "+proposalColumns+" FROM proposals WHERE user_id = ? ORDER BY rowid DESC LIMIT ?",
-			userID.String(), limit)
+		rows, err := tx.QueryContext(ctx, query+" ORDER BY rowid DESC LIMIT ?", append(args, limit)...)
 		if err != nil {
 			return err
 		}

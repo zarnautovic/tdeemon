@@ -93,7 +93,7 @@ func TestMCPListsTheTools(t *testing.T) {
 			if strings.Contains(string(schema), "$ref") || !strings.Contains(string(schema), `"type":"object"`) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
-			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "find_foods", "get_food"}, tl.Name)
+			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "find_foods", "get_food"}, tl.Name)
 			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last", "update_profile_notes"}, tl.Name)
 			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive || tl.Description == "" {
 				t.Errorf("%s: annotations %+v, description %q", tl.Name, tl.Annotations, tl.Description)
@@ -103,12 +103,12 @@ func TestMCPListsTheTools(t *testing.T) {
 		return out
 	}
 	all := names(`"tools"`)
-	for _, want := range []string{"checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_profile", "get_summary", "log_meal", "update_profile_notes", "upsert_food"} {
+	for _, want := range []string{"checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "update_profile_notes", "upsert_food"} {
 		if !slices.Contains(all, want) {
 			t.Errorf("the tools %v lack %s", all, want)
 		}
 	}
-	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_history", "get_profile", "get_summary"}) {
+	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary"}) {
 		t.Errorf("a read token's tools = %v", read)
 	}
 }
@@ -256,11 +256,12 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // the eval measures them (DESIGN.md §6). A change that grows them past it
 // needs a reason, and the eval run again. 13,500 bytes until October
 // 2026, raised for the rules of a meal's parts, then for the coach's
-// history and notes, then for an item's quantities and a search again.
+// history and notes, then for an item's quantities and a search again,
+// then for the coach's plan.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 16500
+	const budget = 16750
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
