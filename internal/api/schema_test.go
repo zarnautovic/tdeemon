@@ -189,6 +189,11 @@ func answerCases() map[string]answerCase {
 			in.createToken(t, session, `{"name":"phone","scopes":["read"]}`)
 			in.do(t, http.MethodDelete, "/api/v1/tokens", "", []*http.Cookie{session}, nil)
 		},
+		"get-plan": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			savePlan(t, in)
+			in.do(t, http.MethodGet, "/api/v1/plan", "", []*http.Cookie{session}, nil)
+		},
 		"get-history": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			saveHistory(t, in)

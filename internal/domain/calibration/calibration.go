@@ -268,6 +268,29 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 // ends less than Params.WindowDays before last.
 func FullDays(p Params) int { return 2 * p.WindowDays }
 
+// Measure measures the TDEE over the days from to to, as Calibrate does
+// over its window: the span of a target, whose outcome it is. Of the
+// span it leaves out the first Params.WaterDays after the intake last
+// changed on or before to (a phase's start, or the day after its planned
+// end), and the days before the user's first day with a meal; a span
+// with fewer than Params.MinDays left is not measured (DoubtFewDays). It
+// reads the days of the span alone, so the trend weight, which the
+// weigh-ins before make, is the caller's (TrendKg is 0).
+func Measure(days map[day.Date]Day, phases []plan.Phase, from, to day.Date, p Params) Estimate {
+	if change := latestChange(intakeChanges(phases), to); !change.IsZero() {
+		if w := change.AddDays(p.WaterDays); from.Before(w) {
+			from = w
+		}
+	}
+	if first := firstData(days); from.Before(first) {
+		from = first
+	}
+	if to.Before(from) {
+		from = to.AddDays(1)
+	}
+	return measure(days, from, to, p)
+}
+
 // firstData returns the first day of days with a meal, the zero Date for
 // none.
 func firstData(days map[day.Date]Day) day.Date {

@@ -7,7 +7,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 	"uuid"
 
@@ -138,6 +137,19 @@ func (s *sessions) tools() []tool {
 			briefly("The user's days, or weeks, from from to to (90 days to today by default, 366 at most): intake against target, " +
 				"weight and trend, the TDEE measured to each day, sleep, resting HR, HRV. For a look back (a trend, a month), by week for a long span; " +
 				"the verdict, today's TDEE and the averages now: get_summary."),
+		newTool("get_plan", readScopes, huma.Operation{
+			OperationID: "get-plan",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/plan",
+			Summary:     "Get your plan",
+			Description: "The plan as a coach reads it: the goal timeline, the targets in force within the last 365 days and those to come, " +
+				"each with what its days came to (the intake against the target, and the TDEE and the rate calibration measures of them, " +
+				"against the phase's planned rate), the limits a change of the plan must keep, the proposal that waits for the user's consent, " +
+				"and the latest revisions. The server computes the outcomes: explain them, do not compute them again.",
+			Errors: []int{http.StatusUnauthorized},
+		}, s.getPlan).
+			briefly("The plan, for a coach: phases, the last year's targets with what each came to (intake vs target, measured TDEE, " +
+				"rate vs planned), the limits a change must keep, the pending proposal, the latest revisions. Explain it; do not compute it again."),
 		newTool("update_profile_notes", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "set-notes",
 			Method:      http.MethodPut,
@@ -435,12 +447,9 @@ func (s *sessions) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	}
 	b := meBody{
 		Name: p.User.Name, Locale: p.User.Locale, TimeZone: p.User.TimeZone, DayStartHour: p.User.DayStartHour,
-		Today: today.String(), Now: now.In(cal.Location).Truncate(time.Second), TodayType: string(dt), TrainingWeekdays: []string{},
+		Today: today.String(), Now: now.In(cal.Location).Truncate(time.Second), TodayType: string(dt), TrainingWeekdays: weekdayNames(weekdays),
 		Profile: MeProfile{ProfileBody: newProfileBody(pr)}, Notes: notes,
 		Units: unitsBody{Energy: "kcal", Nutrients: "g", Weight: "kg", Height: "cm"},
-	}
-	for _, d := range weekdays.Days() {
-		b.TrainingWeekdays = append(b.TrainingWeekdays, strings.ToLower(d.String()))
 	}
 	if !pr.BirthDate.IsZero() {
 		b.Profile.Age = new(pr.AgeOn(today))

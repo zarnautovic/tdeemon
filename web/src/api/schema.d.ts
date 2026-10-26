@@ -448,6 +448,26 @@ export interface paths {
         patch: operations["update-meal"];
         trace?: never;
     };
+    "/api/v1/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your plan
+         * @description The plan as a coach reads it: the goal timeline, the targets in force within the last 365 days and those to come, each with what its days came to (the intake against the target, and the TDEE and the rate calibration measures of them, against the phase's planned rate), the limits a change of the plan must keep, the proposal that waits for the user's consent, and the latest revisions. The server computes the outcomes: explain them, do not compute them again.
+         */
+        get: operations["get-plan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profile": {
         parameters: {
             query?: never;
@@ -564,6 +584,20 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        ActorBody: {
+            /** @description What it came through: mcp, web, telegram. */
+            client: string;
+            /** @description The AI model that acted for the user. */
+            model?: string;
+        };
+        ChangesBody: {
+            /** @description The phases it changes, by their start. */
+            phases: components["schemas"]["PhaseChangeBody"][];
+            /** @description The targets it changes, by their first day. */
+            targets: components["schemas"]["TargetChangeBody"][];
+            /** @description The training weekdays, when it changes them. */
+            training_weekdays?: components["schemas"]["WeekdaysChangeBody"];
+        };
         CheckInBody: {
             /** @description Why the day is out of calibration (restaurant, sick, not logged); empty brings it back. */
             excluded_reason?: string;
@@ -1271,6 +1305,91 @@ export interface components {
              */
             name: string;
         };
+        OutcomeBody: {
+            /** Format: int64 */
+            days: number;
+            /** @description Why the estimate is missing or not trusted: few_days, few_weigh_ins, few_logged_days, wide_interval. */
+            doubts: string[];
+            /**
+             * Format: date
+             * @description The first day counted: the target's, or 365 days before today.
+             */
+            from: string;
+            /**
+             * Format: double
+             * @description Half its 80 % interval.
+             */
+            half_width?: number;
+            /**
+             * Format: double
+             * @description The average intake of the logged days.
+             */
+            intake_kcal?: number;
+            /**
+             * Format: double
+             * @description The average grams of protein of the logged days.
+             */
+            intake_protein?: number;
+            /**
+             * Format: double
+             * @description The weight's slope over them, a minus being a loss.
+             */
+            kg_per_week?: number;
+            /**
+             * Format: int64
+             * @description The complete days with a meal, not excluded.
+             */
+            logged_days: number;
+            /** @description Whether the days measured held enough for an estimate; doubts say what is missing. */
+            measured: boolean;
+            /**
+             * Format: date
+             * @description The first day measured: a phase's first 14 days are left out, as water and glycogen move the weight then; the day after to when no day is left.
+             */
+            measured_from: string;
+            /**
+             * Format: double
+             * @description The measured rate, in % of the trend weight a week: against planned_pct_week, what the target came to.
+             */
+            measured_pct_week?: number;
+            /**
+             * @description The phase of the last day counted; absent without one.
+             * @enum {string}
+             */
+            phase?: "cut" | "maintain" | "bulk" | "recomp";
+            /**
+             * Format: double
+             * @description That phase's target rate, in % of the trend weight a week, a minus being a loss.
+             */
+            planned_pct_week?: number;
+            /**
+             * Format: double
+             * @description The average target of the logged days, each day's type's: what the intake is held to.
+             */
+            target_kcal?: number;
+            /**
+             * Format: double
+             * @description The average target of protein of the logged days.
+             */
+            target_protein?: number;
+            /**
+             * Format: double
+             * @description The TDEE measured over them, in kcal a day.
+             */
+            tdee?: number;
+            /**
+             * Format: date
+             * @description The last day counted: the target's, or yesterday.
+             */
+            to: string;
+            /** @description Whether its interval and data are enough to trust it. */
+            trusted: boolean;
+            /**
+             * Format: int64
+             * @description The weigh-ins of the days not excluded.
+             */
+            weigh_ins: number;
+        };
         PhaseBody: {
             /**
              * Format: date
@@ -1299,6 +1418,35 @@ export interface components {
             start: string;
             /** @enum {string} */
             type: "cut" | "maintain" | "bulk" | "recomp";
+        };
+        PhaseChangeBody: {
+            /** @description The phase after; absent for a delete. */
+            after?: components["schemas"]["PhaseBody"];
+            /** @description The phase before; absent for a new one. */
+            before?: components["schemas"]["PhaseBody"];
+            /** Format: date */
+            start: string;
+        };
+        PlanBody: {
+            /** @description The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; the user may loosen theirs in the app, up to the instance's. */
+            limits: {
+                [key: string]: number;
+            };
+            /** @description The proposal that waits for the user's consent; absent when none does. */
+            pending?: components["schemas"]["ProposalBody"];
+            /** @description The goal timeline, in order: the phases in force within the last 365 days, and those to come. */
+            phases: components["schemas"]["PhaseBody"][];
+            /** @description The plan's latest revisions, the proposals applied (reverted ones too), newest first, up to 10. */
+            revisions: components["schemas"]["ProposalBody"][];
+            /** @description The targets, in order: those in force within the last 365 days, and those to come, each with what its days came to. */
+            targets: components["schemas"]["TargetPeriodBody"][];
+            /**
+             * Format: date
+             * @description The user's day now. The outcomes are of the days up to yesterday, as today is open.
+             */
+            today: string;
+            /** @description The days of the week the plan makes training days. */
+            training_weekdays: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[];
         };
         ProfileBody: {
             /**
@@ -1335,6 +1483,46 @@ export interface components {
              * @enum {string}
              */
             sex?: "male" | "female";
+        };
+        ProposalBody: {
+            /** @description Who proposed it. */
+            by: components["schemas"]["ActorBody"];
+            changes: components["schemas"]["ChangesBody"];
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When it stopped waiting: applied, rejected, or superseded.
+             */
+            decided_at?: string;
+            /** @description Who applied it, rejected it, or changed the plan under it. */
+            decided_by?: components["schemas"]["ActorBody"];
+            /**
+             * Format: date-time
+             * @description When it expires, if it still waits then.
+             */
+            expires_at: string;
+            /** Format: uuid */
+            id: string;
+            /** @description Why it was proposed. */
+            rationale: string;
+            /**
+             * Format: uuid
+             * @description The proposal that took it back.
+             */
+            reverted_by?: string;
+            /**
+             * Format: uuid
+             * @description The applied proposal it takes back.
+             */
+            reverts?: string;
+            /**
+             * @description pending waits for the user's consent, for a week; superseded is one the plan changed under, or a newer one replaced; reverted is an applied one a later one took back.
+             * @enum {string}
+             */
+            status: "pending" | "applied" | "rejected" | "expired" | "superseded" | "reverted";
+            /** @description The days it was drawn from. */
+            window?: components["schemas"]["WindowBody"];
         };
         QuantityBody: {
             /** Format: double */
@@ -1513,6 +1701,36 @@ export interface components {
             /** @description On a rest day. */
             rest: components["schemas"]["DayTargetBody"];
             /** @description On a training day. */
+            training: components["schemas"]["DayTargetBody"];
+        };
+        TargetChangeBody: {
+            /** @description The target after; absent for a delete. */
+            after?: components["schemas"]["TargetValuesBody"];
+            /** @description The target before; absent for a new one. */
+            before?: components["schemas"]["TargetValuesBody"];
+            /** Format: date */
+            from: string;
+        };
+        TargetPeriodBody: {
+            /**
+             * Format: date
+             * @description The first day the targets hold.
+             */
+            effective_from: string;
+            /** @description What its days up to yesterday, of the last 365, came to; absent for a target still to come. */
+            outcome?: components["schemas"]["OutcomeBody"];
+            /** @description On a rest day. */
+            rest: components["schemas"]["DayTargetBody"];
+            /**
+             * Format: date
+             * @description The last day they hold, the day before the next takes over; absent for the last.
+             */
+            to?: string;
+            /** @description On a training day. */
+            training: components["schemas"]["DayTargetBody"];
+        };
+        TargetValuesBody: {
+            rest: components["schemas"]["DayTargetBody"];
             training: components["schemas"]["DayTargetBody"];
         };
         TdeeBody: {
@@ -1820,6 +2038,10 @@ export interface components {
              */
             weight_kg?: number;
         };
+        WeekdaysChangeBody: {
+            after: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[];
+            before: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[];
+        };
         WhoamiOutputBody: {
             /** @description What the token may do (via token). */
             scopes?: ("ingest" | "tools" | "read")[];
@@ -1829,6 +2051,12 @@ export interface components {
              * @enum {string}
              */
             via: "session" | "token";
+        };
+        WindowBody: {
+            /** Format: date */
+            from: string;
+            /** Format: date */
+            to: string;
         };
     };
     responses: never;
@@ -4217,6 +4445,72 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
