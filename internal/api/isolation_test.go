@@ -23,6 +23,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
+	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -254,7 +255,8 @@ func isolationWeight(u user.User) float64 { return 80 + float64(u.Name[0]%20)/10
 
 // saveIsolationPlan gives u a profile, a phase, a target, training
 // weekdays, limits of their own, a toggle of a day's type, a day of a
-// workout and notes for a coach, which name u, so they are text unique to u.
+// workout, notes for a coach and proposals, applied and pending, whose
+// notes and rationales name u, so they are text unique to u.
 func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	t.Helper()
 	today := day.DateOf(now)
@@ -295,6 +297,27 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	}
 	if err := db.SetProfileNotes(ctx, u.ID, isolationActor, "Notes of "+u.Name+": no fish, trains at dawn.", now); err != nil {
 		t.Fatalf("save %s's notes: %v", u.Name, err)
+	}
+	// A proposal applied, a target from tomorrow, and one pending.
+	tomorrow := today.AddDays(1)
+	applied, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
+		Rationale: u.Name + "'s trend fell slower than the cut's rate.",
+		Window:    &proposal.Window{From: today.AddDays(-28), To: today},
+		Changes: proposal.Changes{Targets: []proposal.TargetChange{{From: tomorrow, After: &plan.Target{
+			EffectiveFrom: tomorrow, Training: plan.DayTarget{Kcal: 2000 + float64(n), Protein: 150, Fat: 60}, Rest: d,
+		}}}},
+	}, today, now)
+	if err != nil {
+		t.Fatalf("save %s's proposal: %v", u.Name, err)
+	}
+	if _, err := db.ApplyProposal(ctx, u.ID, isolationActor, applied.ID, today, now); err != nil {
+		t.Fatalf("apply %s's proposal: %v", u.Name, err)
+	}
+	if _, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
+		Rationale: u.Name + " trains on weekends now.",
+		Changes:   proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: plan.Weekdays(0b1000001)}},
+	}, today, now); err != nil {
+		t.Fatalf("save %s's pending proposal: %v", u.Name, err)
 	}
 	if _, err := db.CheckIn(ctx, u.ID, isolationActor, today, func(c store.DayCheckIn) store.DayCheckIn {
 		c.Mood, c.Hunger, c.Note = 1+n%5, 1+(n+2)%5, u.Name+"'s check-in: a long walk"

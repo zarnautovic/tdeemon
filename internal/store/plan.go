@@ -282,7 +282,8 @@ func (db *DB) Phases(ctx context.Context, userID uuid.UUID) ([]plan.Phase, error
 }
 
 // SetPhase stores p as userID's phase that starts on p.Start, a new one
-// or an edit of the one that starts then, as a's event. A phase that
+// or an edit of the one that starts then, as a's event; a change
+// supersedes the user's pending proposals (recordPlan). A phase that
 // would overlap another is refused with ErrPhaseOverlap. The limits of a
 // plan are Validate's, which runs before.
 func (db *DB) SetPhase(ctx context.Context, userID uuid.UUID, a event.Actor, p plan.Phase, now time.Time) error {
@@ -293,22 +294,10 @@ func (db *DB) SetPhase(ctx context.Context, userID uuid.UUID, a event.Actor, p p
 		return fmt.Errorf("invalid actor: %w", err)
 	}
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		before, err := phaseOf(ctx, tx, userID, p.Start)
-		if err != nil {
+		if err := setPhaseIn(ctx, tx, userID, a, p, now); err != nil {
 			return err
 		}
-		if err := putPhase(ctx, tx, userID, p.Start, new(phaseStateOf(p)), now); err != nil {
-			return err
-		}
-		if err := checkTimeline(ctx, tx, userID); err != nil {
-			return err
-		}
-		after, err := phaseOf(ctx, tx, userID, p.Start)
-		if err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.PhaseSet, p.Start.String(), before, after, now)
-		return err
+		return checkTimeline(ctx, tx, userID)
 	})
 	if errors.Is(err, ErrPhaseOverlap) {
 		return err
@@ -317,6 +306,24 @@ func (db *DB) SetPhase(ctx context.Context, userID uuid.UUID, a event.Actor, p p
 		return fmt.Errorf("set phase: %w", err)
 	}
 	return nil
+}
+
+// setPhaseIn stores p as userID's phase that starts on p.Start in tx, as
+// a's change of the plan (recordPlan); the timeline is the caller's to
+// check.
+func setPhaseIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, p plan.Phase, now time.Time) error {
+	before, err := phaseOf(ctx, tx, userID, p.Start)
+	if err != nil {
+		return err
+	}
+	if err := putPhase(ctx, tx, userID, p.Start, new(phaseStateOf(p)), now); err != nil {
+		return err
+	}
+	after, err := phaseOf(ctx, tx, userID, p.Start)
+	if err != nil {
+		return err
+	}
+	return recordPlan(ctx, tx, userID, a, event.PhaseSet, p.Start.String(), before, after, now)
 }
 
 // checkTimeline reports ErrPhaseOverlap when userID's phases overlap. A
@@ -338,26 +345,14 @@ func checkTimeline(ctx context.Context, tx *sql.Tx, userID uuid.UUID) error {
 	return nil
 }
 
-// DeletePhase deletes userID's phase that starts on start, as a's event;
-// ErrNotFound when there is none.
+// DeletePhase deletes userID's phase that starts on start, as a's event,
+// superseding the user's pending proposals; ErrNotFound when there is
+// none.
 func (db *DB) DeletePhase(ctx context.Context, userID uuid.UUID, a event.Actor, start day.Date, now time.Time) error {
 	if err := a.Validate(); err != nil {
 		return fmt.Errorf("invalid actor: %w", err)
 	}
-	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		before, err := phaseOf(ctx, tx, userID, start)
-		if err != nil {
-			return err
-		}
-		if before == nil {
-			return ErrNotFound
-		}
-		if err := putPhase(ctx, tx, userID, start, nil, now); err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.PhaseDelete, start.String(), before, nil, now)
-		return err
-	})
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error { return deletePhaseIn(ctx, tx, userID, a, start, now) })
 	if errors.Is(err, ErrNotFound) {
 		return err
 	}
@@ -365,6 +360,22 @@ func (db *DB) DeletePhase(ctx context.Context, userID uuid.UUID, a event.Actor, 
 		return fmt.Errorf("delete phase: %w", err)
 	}
 	return nil
+}
+
+// deletePhaseIn deletes userID's phase that starts on start in tx, as a's
+// change of the plan (recordPlan); ErrNotFound when there is none.
+func deletePhaseIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, start day.Date, now time.Time) error {
+	before, err := phaseOf(ctx, tx, userID, start)
+	if err != nil {
+		return err
+	}
+	if before == nil {
+		return ErrNotFound
+	}
+	if err := putPhase(ctx, tx, userID, start, nil, now); err != nil {
+		return err
+	}
+	return recordPlan(ctx, tx, userID, a, event.PhaseDelete, start.String(), before, nil, now)
 }
 
 // dayTargetState is a day type's part of a target's state.
@@ -468,8 +479,9 @@ func (db *DB) Targets(ctx context.Context, userID uuid.UUID) ([]plan.Target, err
 }
 
 // SetTarget stores t as userID's target from t.EffectiveFrom, a new one
-// or an edit of the one from that day, as a's event. The limits of a plan
-// are Validate's, which runs before.
+// or an edit of the one from that day, as a's event; a change supersedes
+// the user's pending proposals. The limits of a plan are Validate's,
+// which runs before.
 func (db *DB) SetTarget(ctx context.Context, userID uuid.UUID, a event.Actor, t plan.Target, now time.Time) error {
 	if err := t.Validate(); err != nil {
 		return fmt.Errorf("invalid target: %w", err)
@@ -477,48 +489,40 @@ func (db *DB) SetTarget(ctx context.Context, userID uuid.UUID, a event.Actor, t 
 	if err := a.Validate(); err != nil {
 		return fmt.Errorf("invalid actor: %w", err)
 	}
-	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		before, err := targetOf(ctx, tx, userID, t.EffectiveFrom)
-		if err != nil {
-			return err
-		}
-		s := targetState{Training: dayTargetStateOf(t.Training), Rest: dayTargetStateOf(t.Rest)}
-		if err := putTarget(ctx, tx, userID, t.EffectiveFrom, &s, now); err != nil {
-			return err
-		}
-		after, err := targetOf(ctx, tx, userID, t.EffectiveFrom)
-		if err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.TargetSet, t.EffectiveFrom.String(), before, after, now)
-		return err
-	})
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error { return setTargetIn(ctx, tx, userID, a, t, nil, now) })
 	if err != nil {
 		return fmt.Errorf("set target: %w", err)
 	}
 	return nil
 }
 
-// DeleteTarget deletes userID's target from day from, as a's event;
-// ErrNotFound when there is none.
+// setTargetIn stores t as userID's target from t.EffectiveFrom in tx, set
+// by the proposal proposalID or by none for nil, as a's change of the
+// plan (recordPlan).
+func setTargetIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, t plan.Target, proposalID *string, now time.Time) error {
+	before, err := targetOf(ctx, tx, userID, t.EffectiveFrom)
+	if err != nil {
+		return err
+	}
+	s := targetState{Training: dayTargetStateOf(t.Training), Rest: dayTargetStateOf(t.Rest), ProposalID: proposalID}
+	if err := putTarget(ctx, tx, userID, t.EffectiveFrom, &s, now); err != nil {
+		return err
+	}
+	after, err := targetOf(ctx, tx, userID, t.EffectiveFrom)
+	if err != nil {
+		return err
+	}
+	return recordPlan(ctx, tx, userID, a, event.TargetSet, t.EffectiveFrom.String(), before, after, now)
+}
+
+// DeleteTarget deletes userID's target from day from, as a's event,
+// superseding the user's pending proposals; ErrNotFound when there is
+// none.
 func (db *DB) DeleteTarget(ctx context.Context, userID uuid.UUID, a event.Actor, from day.Date, now time.Time) error {
 	if err := a.Validate(); err != nil {
 		return fmt.Errorf("invalid actor: %w", err)
 	}
-	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		before, err := targetOf(ctx, tx, userID, from)
-		if err != nil {
-			return err
-		}
-		if before == nil {
-			return ErrNotFound
-		}
-		if err := putTarget(ctx, tx, userID, from, nil, now); err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.TargetDelete, from.String(), before, nil, now)
-		return err
-	})
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error { return deleteTargetIn(ctx, tx, userID, a, from, now) })
 	if errors.Is(err, ErrNotFound) {
 		return err
 	}
@@ -526,6 +530,22 @@ func (db *DB) DeleteTarget(ctx context.Context, userID uuid.UUID, a event.Actor,
 		return fmt.Errorf("delete target: %w", err)
 	}
 	return nil
+}
+
+// deleteTargetIn deletes userID's target from day from in tx, as a's
+// change of the plan (recordPlan); ErrNotFound when there is none.
+func deleteTargetIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, from day.Date, now time.Time) error {
+	before, err := targetOf(ctx, tx, userID, from)
+	if err != nil {
+		return err
+	}
+	if before == nil {
+		return ErrNotFound
+	}
+	if err := putTarget(ctx, tx, userID, from, nil, now); err != nil {
+		return err
+	}
+	return recordPlan(ctx, tx, userID, a, event.TargetDelete, from.String(), before, nil, now)
 }
 
 // trainingDayState is the state of a day's toggle of its type: nil when
@@ -667,7 +687,7 @@ func (db *DB) TrainingWeekdays(ctx context.Context, userID uuid.UUID) (plan.Week
 }
 
 // SetTrainingWeekdays stores w as the training weekdays of userID's plan,
-// as a's event.
+// as a's event; a change supersedes the user's pending proposals.
 func (db *DB) SetTrainingWeekdays(ctx context.Context, userID uuid.UUID, a event.Actor, w plan.Weekdays, now time.Time) error {
 	if err := w.Validate(); err != nil {
 		return fmt.Errorf("invalid training weekdays: %w", err)
@@ -675,21 +695,24 @@ func (db *DB) SetTrainingWeekdays(ctx context.Context, userID uuid.UUID, a event
 	if err := a.Validate(); err != nil {
 		return fmt.Errorf("invalid actor: %w", err)
 	}
-	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
-		before, err := weekdaysOf(ctx, tx, userID)
-		if err != nil {
-			return err
-		}
-		if err := putWeekdays(ctx, tx, userID, int(w), now); err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.WeekdaysSet, weekdaysEntity, before, weekdaysState{int(w)}, now)
-		return err
-	})
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error { return setWeekdaysIn(ctx, tx, userID, a, w, now) })
 	if err != nil {
 		return fmt.Errorf("set training weekdays: %w", err)
 	}
 	return nil
+}
+
+// setWeekdaysIn stores w as the training weekdays of userID's plan in tx,
+// as a's change of the plan (recordPlan).
+func setWeekdaysIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, w plan.Weekdays, now time.Time) error {
+	before, err := weekdaysOf(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if err := putWeekdays(ctx, tx, userID, int(w), now); err != nil {
+		return err
+	}
+	return recordPlan(ctx, tx, userID, a, event.WeekdaysSet, weekdaysEntity, before, weekdaysState{int(w)}, now)
 }
 
 // limitsState is the state of a user's limits: each limit that is not at
