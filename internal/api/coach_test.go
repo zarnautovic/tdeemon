@@ -283,6 +283,35 @@ func TestGetPlanShowsTheRevisions(t *testing.T) {
 	}
 }
 
+// A target's outcome on the plan's first day, 365 days back, measures
+// its days from then, as the intake before tells: a phase that starts
+// then and keeps the intake leaves no days out for water.
+func TestGetPlanMeasuresFromItsFirstDay(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	ctx, db, id, now := t.Context(), in.db, in.user.ID, in.clock.Now()
+	today := day.DateOf(now)
+	since := today.AddDays(-365)
+	saveDays(t, in, since.AddDays(-28), since.AddDays(30))
+	if err := db.SetPhase(ctx, id, isolationActor, plan.Phase{Type: plan.Maintain, Start: since}, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []day.Date{since, since.AddDays(21)} {
+		d := plan.DayTarget{Kcal: 2000, Protein: 150, Fat: 60}
+		if err := db.SetTarget(ctx, id, isolationActor, plan.Target{EffectiveFrom: from, Training: d, Rest: d}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ts := getPlan(t, in, []*http.Cookie{session}, nil).Targets
+	if len(ts) != 2 || ts[0].Outcome == nil {
+		t.Fatalf("targets = %+v, want 2", ts)
+	}
+	if o := ts[0].Outcome; o.From != since.String() || o.MeasuredFrom != since.String() || !o.Measured {
+		t.Errorf("the first target's outcome = %+v, want its 21 days measured", o)
+	}
+}
+
 func TestGetPlanOfNoPlan(t *testing.T) {
 	t.Parallel()
 

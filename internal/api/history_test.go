@@ -40,10 +40,17 @@ type historyDay struct {
 // a weigh-in that loses 0.05 kg a day, made up; and returns today.
 func saveHistory(t *testing.T, in *instance) day.Date {
 	t.Helper()
+	today := day.DateOf(in.clock.Now())
+	saveDays(t, in, today.AddDays(-60), today.AddDays(-1))
+	return today
+}
+
+// saveDays gives the user the days from from to to of saveHistory: a 2000
+// kcal day, and a weigh-in that starts at 85 kg and loses 0.05 kg a day.
+func saveDays(t *testing.T, in *instance, from, to day.Date) {
+	t.Helper()
 	now := in.clock.Now()
-	today := day.DateOf(now)
-	for i := 60; i >= 1; i-- {
-		d := today.AddDays(-i)
+	for d := from; !to.Before(d); d = d.AddDays(1) {
 		at := time.Date(d.Year, d.Month, d.Day, 12, 0, 0, 0, time.UTC)
 		item, err := meal.Estimate("Plate", food.Nutrients{Kcal: 2000, Protein: 150, Carbs: 200, Fat: 67}, "")
 		if err != nil {
@@ -54,14 +61,13 @@ func saveHistory(t *testing.T, in *instance) day.Date {
 			t.Fatal(err)
 		}
 		if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, d, []metric.Value{
-			{Kind: metric.Weight, Value: 85 - 0.05*float64(60-i), Source: metric.Import},
+			{Kind: metric.Weight, Value: 85 - 0.05*float64(d.DaysSince(from)), Source: metric.Import},
 			{Kind: metric.Steps, Value: 8000, Source: metric.Import},
 			{Kind: metric.Sleep, Value: 7.25, Source: metric.Import},
 		}, now); err != nil {
 			t.Fatal(err)
 		}
 	}
-	return today
 }
 
 func getHistory(t *testing.T, in *instance, session *http.Cookie, query string) (int, []historyDay, string) {

@@ -283,8 +283,9 @@ in force within the last 365 days and those to come, the limits that
 hold, the proposal that waits for consent and the latest 10 revisions.
 Each target's days up to yesterday come with their outcome: the intake
 and the target of the logged days, and what calibration measures of
-them (`calibration.Measure`, without a phase's first 14 days) against
-the phase's planned rate. The pending proposal comes with its preview
+them (`calibration.Measure`, without the first 14 days after a change
+of intake, which the 28 days before a target's first day tell too)
+against the phase's planned rate. The pending proposal comes with its preview
 (`pending_preview`), by the data and the limits now: what the limits
 would refuse, if they changed since it was made, shows before the user
 tries to apply it. The settings are a web session's

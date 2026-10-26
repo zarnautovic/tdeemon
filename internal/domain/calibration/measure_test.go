@@ -2,6 +2,7 @@ package calibration
 
 import (
 	"math"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -226,5 +227,41 @@ func TestIntakeChangesOfAShortPhase(t *testing.T) {
 	}
 	if got := intakeChanges(days, phases, last, DefaultParams()); !slices.Contains(got, brk) || !slices.Contains(got, back) {
 		t.Errorf("intakeChanges = %v, want the break's start %s and its end %s", got, brk, back)
+	}
+}
+
+// Of the days before a span Measure reads the LeadDays: the intake
+// around a boundary whose water days reach it. One 13 days before the
+// span, of the same intake as the one day, the furthest of the 14 before
+// it, tells, leaves the span whole.
+func TestMeasureReadsTheLeadDays(t *testing.T) {
+	t.Parallel()
+
+	p := DefaultParams()
+	from, to := last.AddDays(-20), last
+	days := map[day.Date]Day{}
+	line(days, last, 100, 145, -0.09, 2000)
+	for d, v := range days {
+		if ago := from.DaysSince(d); ago > 13 && ago < 27 {
+			v.Meals = 0
+			days[d] = v
+		}
+	}
+	phases := []plan.Phase{{Type: plan.Maintain, Start: from.AddDays(-13)}}
+	cut := map[day.Date]Day{}
+	first := firstData(days)
+	for d, v := range days {
+		if from.DaysSince(d) <= LeadDays(p) || d == first {
+			cut[d] = v
+		} else if v.WeightKg > 0 {
+			cut[d] = Day{Status: v.Status, WeightKg: v.WeightKg}
+		}
+	}
+	want := Measure(days, phases, from, to, p)
+	if want.From != from {
+		t.Fatalf("Measure of the whole history from %s, want %s", want.From, from)
+	}
+	if got := Measure(cut, phases, from, to, p); !reflect.DeepEqual(got, want) {
+		t.Errorf("Measure of the cut history = %+v, of the whole %+v", got, want)
 	}
 }

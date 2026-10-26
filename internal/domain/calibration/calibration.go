@@ -300,8 +300,9 @@ func FullDays(p Params) int {
 // changed on or before to (a phase's start, or the day after its planned
 // end), and the days before the user's first day with a meal; a span
 // with fewer than Params.MinDays left is not measured (DoubtFewDays). It
-// reads the days of the span alone, so the trend weight, which the
-// weigh-ins before make, is the caller's (TrendKg is 0).
+// reads the days of the span, and the LeadDays before it for whether the
+// intake changed, so the trend weight, which the weigh-ins before make,
+// is the caller's (TrendKg is 0).
 func Measure(days map[day.Date]Day, phases []plan.Phase, from, to day.Date, p Params) Estimate {
 	if change := latestChange(intakeChanges(days, phases, to, p), to); !change.IsZero() {
 		if w := change.AddDays(p.WaterDays); from.Before(w) {
@@ -316,6 +317,11 @@ func Measure(days map[day.Date]Day, phases []plan.Phase, from, to day.Date, p Pa
 	}
 	return measure(days, from, to, p)
 }
+
+// LeadDays returns how many days before a span Measure reads in full with
+// p: the intake of the Params.WaterDays before a phase's boundary whose
+// water days reach the span.
+func LeadDays(p Params) int { return 2 * p.WaterDays }
 
 // firstData returns the first day of days with a meal, the zero Date for
 // none.
