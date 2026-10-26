@@ -36,7 +36,9 @@ export function CurrentPlan({ plan }: { plan: Plan }) {
       <h2 id={id} className="text-lg font-semibold">
         {c.title}
       </h2>
-      {plan.phases.length === 0 && plan.targets.length === 0 ? (
+      {plan.phases.length === 0 &&
+      plan.targets.length === 0 &&
+      plan.training_weekdays.length === 0 ? (
         <p className="text-sm text-muted-foreground">{c.none}</p>
       ) : (
         <>

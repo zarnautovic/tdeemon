@@ -422,3 +422,12 @@ test('no plan yet says how to get one', async () => {
     ),
   ).toBeTruthy()
 })
+
+// Training days alone are a plan too: they give each day its type.
+test('a plan of training days alone shows them', async () => {
+  coachServer({ training_weekdays: ['monday', 'wednesday'] })
+  renderAt('/settings/plan')
+  const now = within(await screen.findByRole('region', { name: 'Current plan' }))
+  now.getByText('Mon, Wed')
+  expect(now.queryByText(/^No plan yet/)).toBeNull()
+})
