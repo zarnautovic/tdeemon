@@ -696,6 +696,8 @@ export interface components {
             expected_pct_week?: number;
             /** @enum {string} */
             of: "phase" | "target" | "training_weekdays";
+            /** @description What the limits refuse now: for a pending proposal, what would refuse it if applied. */
+            violations: components["schemas"]["ViolationValue"][];
             /** @description What is past a threshold without refusing it: below_bmr, low_energy_availability, low_carbs. */
             warnings: components["schemas"]["LimitWarningBody"][];
             /**
@@ -1585,6 +1587,8 @@ export interface components {
             };
             /** @description The proposal that waits for the user's consent; absent when none does. */
             pending?: components["schemas"]["ProposalBody"];
+            /** @description What the pending proposal would come to, by the data and the limits now, as propose_changes previews it; with what the limits would refuse, if they changed since. */
+            pending_preview?: components["schemas"]["PreviewBody"];
             /** @description The goal timeline, in order: the phases in force within the last 365 days, and those to come. */
             phases: components["schemas"]["PhaseBody"][];
             /** @description The plan's latest revisions, the proposals applied (reverted ones too), newest first, up to 10. */
@@ -2178,6 +2182,15 @@ export interface components {
              * @description How far apart they may be.
              */
             tolerance_pct_week?: number;
+        };
+        ViolationValue: {
+            day_type?: string;
+            level?: string;
+            /** Format: double */
+            limit: number;
+            /** Format: double */
+            proposed: number;
+            rule: string;
         };
         WarningBody: {
             /**

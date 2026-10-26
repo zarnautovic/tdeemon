@@ -15,7 +15,9 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
@@ -68,6 +70,8 @@ func TestMorningSummaryJob(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	waitingProposal(t, db, ana.ID, today, now)
+
 	job := api.MorningSummaryJob(api.Config{DB: db, Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }},
 		&telegram.Bot{Token: "123456:made-up-token-for-tests-only-0123", BaseURL: srv.URL})
 	if _, due := job.Due(ana, now.Add(-10*time.Minute)); due {
@@ -88,13 +92,24 @@ func TestMorningSummaryJob(t *testing.T) {
 		t.Fatalf("sent = %v, want one message to Ana's chat", sent)
 	}
 	text, _ := sent[0]["text"].(string)
-	for _, want := range []string{"Jutarnji sažetak, petak 23. 10.", "San: 7 h 30 min", "Težina: 81,2 kg", "Jučer: ništa upisano", "koraci 9100", "Kalibracija: nema plana"} {
+	for _, want := range []string{"Jutarnji sažetak, petak 23. 10.", "San: 7 h 30 min", "Težina: 81,2 kg", "Jučer: ništa upisano", "koraci 9100", "Kalibracija: nema plana", "Plan: prijedlog promjene čeka tvoj odgovor, do 30. 10."} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no %q in\n%s", want, text)
 		}
 	}
 	if strings.Contains(text, "4 h") {
 		t.Errorf("yesterday's sleep in\n%s", text)
+	}
+}
+
+// waitingProposal gives userID a proposal that waits for their answer,
+// until a week after now.
+func waitingProposal(t *testing.T, db *store.DB, userID uuid.UUID, today day.Date, now time.Time) {
+	t.Helper()
+	if _, err := db.CreateProposal(t.Context(), userID, isolationActor, proposal.Draft{
+		Rationale: "Train on Sundays too.", Changes: proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: 1}},
+	}, today, now, nil); err != nil {
+		t.Fatal(err)
 	}
 }
 

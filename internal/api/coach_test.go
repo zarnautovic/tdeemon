@@ -53,7 +53,13 @@ type planAnswer struct {
 	Targets          []planTarget       `json:"targets"`
 	Limits           map[string]float64 `json:"limits"`
 	Pending          *planProposal      `json:"pending"`
-	Revisions        []planProposal     `json:"revisions"`
+	PendingPreview   *struct {
+		Checks []struct {
+			Of         string            `json:"of"`
+			Violations []json.RawMessage `json:"violations"`
+		} `json:"checks"`
+	} `json:"pending_preview"`
+	Revisions []planProposal `json:"revisions"`
 }
 
 // planTarget is a target of get_plan's, as the tests read it.
@@ -638,5 +644,32 @@ func TestProposeOnTheFirstDay(t *testing.T) {
 	var a proposeAnswer
 	if code := post(t, in, session, "/api/v1/proposals", stepBody(today, 2200), &a); code != http.StatusCreated || !nearPtr(a.Preview.TrendKg, 90, 0) {
 		t.Errorf("a plan on the first day: %d %+v", code, a)
+	}
+}
+
+// The pending proposal comes with its preview, by the data and the
+// limits now: one the limits refuse now says so, before the user tries.
+func TestGetPlanPreviewsThePending(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	b := getPlan(t, in, []*http.Cookie{session}, nil)
+	if pv := b.PendingPreview; pv == nil || len(pv.Checks) == 0 || pv.Checks[0].Of != "training_weekdays" || len(pv.Checks[0].Violations) != 0 {
+		t.Fatalf("pending_preview = %+v", pv)
+	}
+	proposeStep(t, in, session, today, 1800)
+	l := limits.UserDefaults()
+	l.KcalFloorMale = 1850
+	if err := in.db.SetUserLimits(t.Context(), in.user.ID, isolationActor, l, limits.Instance(), in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	b = getPlan(t, in, []*http.Cookie{session}, nil)
+	if b.Pending == nil {
+		t.Fatal("the proposal past the limits waits no more")
+	}
+	if pv := b.PendingPreview; pv == nil || len(pv.Checks) != 1 || len(pv.Checks[0].Violations) == 0 ||
+		!strings.Contains(string(pv.Checks[0].Violations[0]), limits.RuleKcalFloor) {
+		t.Errorf("the preview of a proposal past the limits now = %+v", pv)
 	}
 }

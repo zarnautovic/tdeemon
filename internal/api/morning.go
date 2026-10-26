@@ -12,6 +12,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/notify"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
@@ -76,21 +77,30 @@ func (s *sessions) morning(ctx context.Context, u user.User, now time.Time) (str
 	if err != nil {
 		return "", err
 	}
-	return morningText(date, td, yd, sum, u.Locale), nil
+	var waits day.Date
+	pending, err := s.db.Proposals(ctx, u.ID, 1, now, proposal.Pending)
+	if err != nil {
+		return "", err
+	}
+	if len(pending) > 0 && pending[0].Status == proposal.Pending {
+		waits = day.DateOf(pending[0].ExpiresAt.In(cal.Location))
+	}
+	return morningText(date, td, yd, sum, waits, u.Locale), nil
 }
 
 // morningText is the morning summary of today, from today so far (last
-// night's sleep and this morning's weighing), yesterday and the summary:
-// a line for each part that has something to say, in the language of
-// locale (English, or Croatian for hr). A value that did not come is left
-// out, and nothing is guessed: the sleep is only the night that ended
-// today.
-func morningText(today day.Date, td, yd dayBody, sum summaryBody, locale string) string {
+// night's sleep and this morning's weighing), yesterday, the summary and
+// waits, the day a proposal of the plan waits for the user's answer until
+// (the zero Date for none): a line for each part that has something to
+// say, in the language of locale (English, or Croatian for hr). A value
+// that did not come is left out, and nothing is guessed: the sleep is
+// only the night that ended today.
+func morningText(today day.Date, td, yd dayBody, sum summaryBody, waits day.Date, locale string) string {
 	w := writer{phrasesOf(locale)}
 	lines := []string{w.title + ", " + w.date(today)}
 	for _, l := range []string{
 		w.sleepLine(td), w.weightLine(td, sum, today), w.yesterdayLine(yd), w.activityLine(yd),
-		w.calibrationLine(sum.Verdict), w.recoveryLine(sum.Recovery),
+		w.calibrationLine(sum.Verdict), w.planLine(waits), w.recoveryLine(sum.Recovery),
 	} {
 		if l != "" {
 			lines = append(lines, l)
@@ -106,6 +116,7 @@ type phrases struct {
 	activity, steps, active, exercise                      string
 	calibration, noPlan, noEstimate, pace, perWeek, target string
 	onTarget, below, above, proposal, perDay               string
+	plan, waits                                            string
 	moreProteinOrKcal, smallerSurplus, toMaintenance       string
 	recovery, shortSleep, average, highRestingHR, lowHRV   string
 	weekdays                                               [7]string
@@ -121,6 +132,7 @@ var english = phrases{
 	calibration: "Calibration", noPlan: "no plan (a phase and a target), so no rate to judge",
 	noEstimate: "no estimate to trust yet", pace: "rate", perWeek: "%/wk", target: "target",
 	onTarget: "on plan", below: "below plan", above: "above plan", proposal: "proposed", perDay: "kcal/day",
+	plan: "Plan", waits: "a proposed change waits for your answer, until",
 	moreProteinOrKcal: "more protein or kcal", smallerSurplus: "a smaller surplus", toMaintenance: "move to maintenance",
 	recovery: "Recovery", shortSleep: "short sleep", average: "average", highRestingHR: "high resting heart rate", lowHRV: "low HRV",
 	weekdays: [7]string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
@@ -137,6 +149,7 @@ var croatian = phrases{
 	calibration: "Kalibracija", noPlan: "nema plana (faze i cilja), pa nema tempa za ocijeniti",
 	noEstimate: "još nema pouzdane procjene", pace: "tempo", perWeek: "%/tj", target: "cilj",
 	onTarget: "u planu", below: "ispod plana", above: "iznad plana", proposal: "prijedlog", perDay: "kcal/dan",
+	plan: "Plan", waits: "prijedlog promjene čeka tvoj odgovor, do",
 	moreProteinOrKcal: "više proteina ili kcal", smallerSurplus: "manji suficit", toMaintenance: "prijeđi na održavanje",
 	recovery: "Oporavak", shortSleep: "kratak san", average: "prosjek", highRestingHR: "povišen puls u mirovanju", lowHRV: "nizak HRV",
 	weekdays:     [7]string{"nedjelja", "ponedjeljak", "utorak", "srijeda", "četvrtak", "petak", "subota"},
@@ -299,6 +312,15 @@ func (w writer) action(v verdictBody) string {
 }
 
 // recoveryLine names what recovery flags, with its average.
+// planLine says that a proposal of the plan waits for the user's answer,
+// until the day waits; none for no proposal.
+func (w writer) planLine(waits day.Date) string {
+	if waits.IsZero() {
+		return ""
+	}
+	return w.plan + ": " + w.waits + " " + w.shortDate(waits)
+}
+
 func (w writer) recoveryLine(r recoveryBody) string {
 	var parts []string
 	for _, f := range r.Flags {

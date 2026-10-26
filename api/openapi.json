@@ -72,6 +72,13 @@
             ],
             "type": "string"
           },
+          "violations": {
+            "description": "What the limits refuse now: for a pending proposal, what would refuse it if applied.",
+            "items": {
+              "$ref": "#/components/schemas/ViolationValue"
+            },
+            "type": "array"
+          },
           "warnings": {
             "description": "What is past a threshold without refusing it: below_bmr, low_energy_availability, low_carbs.",
             "items": {
@@ -88,7 +95,8 @@
         "required": [
           "of",
           "day",
-          "warnings"
+          "warnings",
+          "violations"
         ],
         "type": "object"
       },
@@ -2065,6 +2073,10 @@
             "$ref": "#/components/schemas/ProposalBody",
             "description": "The proposal that waits for the user's consent; absent when none does."
           },
+          "pending_preview": {
+            "$ref": "#/components/schemas/PreviewBody",
+            "description": "What the pending proposal would come to, by the data and the limits now, as propose_changes previews it; with what the limits would refuse, if they changed since."
+          },
           "phases": {
             "description": "The goal timeline, in order: the phases in force within the last 365 days, and those to come.",
             "items": {
@@ -3360,6 +3372,34 @@
           "gap_kcal",
           "step_kcal",
           "flags"
+        ],
+        "type": "object"
+      },
+      "ViolationValue": {
+        "additionalProperties": false,
+        "properties": {
+          "day_type": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "double",
+            "type": "number"
+          },
+          "proposed": {
+            "format": "double",
+            "type": "number"
+          },
+          "rule": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule",
+          "limit",
+          "proposed"
         ],
         "type": "object"
       },
