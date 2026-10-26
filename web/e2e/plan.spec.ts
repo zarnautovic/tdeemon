@@ -8,7 +8,7 @@ test('the profile is set, and a limit tightened and loosened again', async ({ pa
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('link', { name: 'Settings' })
     .click()
-  await page.getByRole('link', { name: /Profile and limits of the plan/ }).click()
+  await page.getByRole('link', { name: /^Plan/ }).click()
 
   const profile = page.getByRole('form', { name: 'Profile' })
   await profile.getByRole('radio', { name: 'Female' }).check()

@@ -5,13 +5,17 @@ import { useState } from 'react'
 import { $api } from '@/api/client'
 import { LoadError } from '@/components/load-error'
 import { LimitsForm } from '@/components/plan/limits-form'
+import { PendingProposal } from '@/components/plan/pending-proposal'
 import { ProfileForm } from '@/components/plan/profile-form'
+import { Revisions } from '@/components/plan/revisions'
 import { buttonVariants } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 
-// PlanPage is what a plan needs of the user, their profile, and how far
-// it may go, their limits; both change only in a web session, as a plan
-// rests on them (docs/limits.md).
+// PlanPage is the user's plan in the app: a proposed change that waits
+// for their answer, the history of the plan's changes, what a plan needs
+// of the user, their profile, and how far it may go, their limits. The
+// profile and the limits change only in a web session, as a plan rests on
+// them (docs/limits.md).
 export function PlanPage() {
   const t = useMessages()
   const profile = $api.useQuery('get', '/api/v1/profile')
@@ -19,6 +23,7 @@ export function PlanPage() {
   const [opened] = useState(Date.now)
   const fresh = profile.data !== undefined && profile.dataUpdatedAt >= opened
   const limits = $api.useQuery('get', '/api/v1/limits')
+  const plan = $api.useQuery('get', '/api/v1/plan')
 
   return (
     <section className="space-y-6">
@@ -27,6 +32,11 @@ export function PlanPage() {
         {t.plan.back}
       </Link>
       <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
+      {plan.isError && <LoadError error={plan.error} onRetry={() => void plan.refetch()} />}
+      {plan.data?.pending !== undefined && (
+        <PendingProposal proposal={plan.data.pending} preview={plan.data.pending_preview} />
+      )}
+      {plan.data !== undefined && <Revisions revisions={plan.data.revisions} />}
       {/* Loading too while a cached profile is asked again. */}
       {!fresh && !profile.isError && (
         <output className="block text-muted-foreground">{t.loading}</output>

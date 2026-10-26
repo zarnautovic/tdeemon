@@ -1,4 +1,21 @@
+import type { components } from '@/api/schema'
 import type { LimitsBody } from '@/components/plan/limit-fields'
+
+// planBody is a plan of nothing yet, as GET /api/v1/plan answers it; over
+// is laid over it.
+export function planBody(
+  over: Partial<components['schemas']['PlanBody']> = {},
+): components['schemas']['PlanBody'] {
+  return {
+    today: '2026-10-23',
+    phases: [],
+    training_weekdays: [],
+    targets: [],
+    limits: limitsBody().effective,
+    revisions: [],
+    ...over,
+  }
+}
 
 // limitsBody is the limits of a user at the start, on an instance's
 // defaults, with over laid over the user's.

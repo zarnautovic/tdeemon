@@ -604,16 +604,20 @@ Claude/ChatGPT subscription.
    part of the plan: `update_profile_notes` writes them, and undo takes
    them back.
 2. **Consent.** The user agrees in plain language ("može", "yes") and the
-   AI calls `apply_proposal`. Pending proposals also show in the web UI
-   with Accept/Reject, so a proposal made in Claude can be accepted in
-   the app.
+   AI calls `apply_proposal`. Mostly a chat ends so; a proposal it left
+   undecided waits, shows in the web app's plan (Settings → Plan) with
+   what it changes, its preview by the data now, Accept and Reject, so a
+   proposal made in Claude can be accepted in the app, and the morning
+   summary says it waits.
 3. **History.** Applied proposals are the revision history: who (user,
    model name, client), when, why, before → after. `revert` creates the
    inverse proposal, each change put back as it was before; applied, it
    marks the one it takes back reverted. It needs the plan as the
    proposal left it, so no later change is lost, and changes that keep
    the past as it was: a change that took effect moves on by a new
-   proposal.
+   proposal. The web app shows the history, and takes a revision back
+   in one step: the user, there, consents to the inverse, which applies
+   at once (a revert the limits refuse waits, as any proposal).
 4. **Lifetime.** A proposal waits a week for consent, then expires. It
    is superseded when the plan changes under it (any write of a phase,
    a target or the training weekdays, an applied proposal included), or
