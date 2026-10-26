@@ -151,7 +151,7 @@
     ],
     "expect": {
       "meals": 1,
-      "items": 1,
+      "items": 3,
       "kcal": [
         600,
         1500
@@ -459,7 +459,7 @@
     ],
     "expect": {
       "meals": 1,
-      "items": 1,
+      "items": 3,
       "kcal": [
         600,
         1500
