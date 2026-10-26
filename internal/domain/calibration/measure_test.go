@@ -203,3 +203,28 @@ func TestCalibrateTakesAnEndWithoutAChangeForNone(t *testing.T) {
 		t.Errorf("Calibrate = %s to %s, before the phase %v; want the window across the end", e.From, e.To, e.BeforePhase)
 	}
 }
+
+// A short phase's intake is held to its own days, and the next phase's to
+// theirs: a diet break of a week, 400 kcal over the cut around it, is two
+// changes, not an average that hides both.
+func TestIntakeChangesOfAShortPhase(t *testing.T) {
+	t.Parallel()
+
+	days := map[day.Date]Day{}
+	line(days, last, 90, 145, -0.09, 2000)
+	brk, back := last.AddDays(-20), last.AddDays(-13)
+	for d, v := range days {
+		if !d.Before(brk) && d.Before(back) {
+			v.Kcal = 2400
+			days[d] = v
+		}
+	}
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: last.AddDays(-80), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: brk},
+		{Type: plan.Cut, Start: back, RatePctWeek: -0.5},
+	}
+	if got := intakeChanges(days, phases, last, DefaultParams()); !slices.Contains(got, brk) || !slices.Contains(got, back) {
+		t.Errorf("intakeChanges = %v, want the break's start %s and its end %s", got, brk, back)
+	}
+}

@@ -287,8 +287,12 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 // FullDays returns how many days up to last Calibrate reads in full with
 // p: its window, and the one before a phase it may fall back to, which
 // ends less than Params.WindowDays before last, each as long as
-// Params.LongWindowDays.
-func FullDays(p Params) int { return p.WindowDays + max(p.WindowDays, p.LongWindowDays) }
+// Params.LongWindowDays, and the intake around a phase's boundary that
+// may begin one, Params.WaterDays before the window and as many before
+// the boundary, to tell whether the intake changed there.
+func FullDays(p Params) int {
+	return p.WindowDays + max(p.WindowDays, p.LongWindowDays) + 2*p.WaterDays
+}
 
 // Measure measures the TDEE over the days from to to, as Calibrate does
 // over its window: the span of a target, whose outcome it is. Of the
@@ -355,11 +359,24 @@ func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) floa
 // those after which the logged intake, of the Params.WaterDays from it up
 // to last, differs from that of the Params.WaterDays before it by more
 // than Params.IntakeChange; one with fewer than Params.ChangeDays logged
-// days after it, or none logged before it, is taken for a change.
+// days after it, or none logged before it, is taken for a change. Each
+// side stops at the neighbouring day a phase changes the intake on, so a
+// short phase, as a diet break, is held to its own days.
 func intakeChanges(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Params) []day.Date {
 	var out []day.Date
-	for _, c := range phaseChanges(phases) {
-		if !last.Before(c) && sameIntake(days, c, last, p) {
+	cs := phaseChanges(phases)
+	for i, c := range cs {
+		from, to := c.AddDays(-p.WaterDays), c.AddDays(p.WaterDays-1)
+		if i > 0 && from.Before(cs[i-1]) {
+			from = cs[i-1]
+		}
+		if i+1 < len(cs) && !to.Before(cs[i+1]) {
+			to = cs[i+1].AddDays(-1)
+		}
+		if last.Before(to) {
+			to = last
+		}
+		if !last.Before(c) && sameIntake(days, from, c, to, p) {
 			continue
 		}
 		out = append(out, c)
@@ -367,16 +384,11 @@ func intakeChanges(days map[day.Date]Day, phases []plan.Phase, last day.Date, p 
 	return out
 }
 
-// sameIntake reports whether the logged intake after c, of up to
-// Params.WaterDays from it up to last, is within Params.IntakeChange of
-// the logged intake of the Params.WaterDays before it, both of days
-// enough to tell.
-func sameIntake(days map[day.Date]Day, c, last day.Date, p Params) bool {
-	before, nb := loggedMean(days, c.AddDays(-p.WaterDays), c.AddDays(-1))
-	to := c.AddDays(p.WaterDays - 1)
-	if last.Before(to) {
-		to = last
-	}
+// sameIntake reports whether the logged intake from c to to is within
+// Params.IntakeChange of the logged intake from from to the day before c,
+// both of days enough to tell.
+func sameIntake(days map[day.Date]Day, from, c, to day.Date, p Params) bool {
+	before, nb := loggedMean(days, from, c.AddDays(-1))
 	after, na := loggedMean(days, c, to)
 	return nb > 0 && na >= p.ChangeDays && math.Abs(after-before) <= p.IntakeChange*before
 }

@@ -824,6 +824,63 @@ func TestDefaultParamsTakeTheAutopilotsData(t *testing.T) {
 // Calibrate reads the FullDays days up to last in full, and of the days
 // before them only the weigh-ins and the first day with a meal: a history
 // cut so gives the same estimate as the whole one.
+// cutHistory returns of days, up to last, what a caller loads of them:
+// the FullDays in full, and before them the weigh-ins and the first day
+// with a meal.
+func cutHistory(days map[day.Date]Day, last day.Date, p Params) map[day.Date]Day {
+	cut := map[day.Date]Day{}
+	first := firstData(days)
+	for d, v := range days {
+		switch {
+		case last.Before(d):
+		case last.DaysSince(d) < FullDays(p):
+			cut[d] = v
+		case d == first:
+			cut[d] = Day{Status: v.Status, Meals: v.Meals, WeightKg: v.WeightKg}
+		case v.WeightKg > 0:
+			cut[d] = Day{Status: v.Status, WeightKg: v.WeightKg}
+		}
+	}
+	return cut
+}
+
+// The days loaded tell the intake around each phase's boundary a window
+// may reach, the long window's before a phase too: an estimate of them
+// is the whole history's.
+func TestCalibrateReadsTheIntakeBeforeABoundary(t *testing.T) {
+	t.Parallel()
+
+	p := DefaultParams()
+	days := map[day.Date]Day{}
+	waves(days, last, 300, 0.8, 2000)
+	// The same intake across the boundary 116 days ago, the furthest that
+	// could shorten the window before the phase 40 days ago, as one day,
+	// the furthest of the 14 before it, tells; less from 40 days ago, the
+	// same again from 15.
+	for d, v := range days {
+		switch ago := last.DaysSince(d); {
+		case ago > 116 && ago < 130:
+			v.Meals = 0
+		case ago <= 40 && ago > 15:
+			v.Kcal = 1600
+		}
+		days[d] = v
+	}
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: last.AddDays(-200), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: last.AddDays(-116)},
+		{Type: plan.Cut, Start: last.AddDays(-40), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: last.AddDays(-15)},
+	}
+	want := Calibrate(days, phases, last, p)
+	if !want.BeforePhase || want.Days != p.LongWindowDays {
+		t.Fatalf("the whole history gives %d days, before the phase %v; want the long window before the phase", want.Days, want.BeforePhase)
+	}
+	if got := Calibrate(cutHistory(days, last, p), phases, last, p); !reflect.DeepEqual(got, want) {
+		t.Errorf("the cut history gives %+v, the whole one %+v", got, want)
+	}
+}
+
 func TestCalibrateReadsTheFullDaysAndTheWeighInsBefore(t *testing.T) {
 	t.Parallel()
 
@@ -854,19 +911,7 @@ func TestCalibrateReadsTheFullDaysAndTheWeighInsBefore(t *testing.T) {
 	}
 	for _, n := range []int{399, 330, 305, 301, 270, 262, 230, 190} {
 		last := start.AddDays(n)
-		cut := map[day.Date]Day{}
-		first := firstData(days)
-		for d, v := range days {
-			switch {
-			case last.Before(d):
-			case last.DaysSince(d) < FullDays(p):
-				cut[d] = v
-			case d == first:
-				cut[d] = Day{Status: v.Status, Meals: v.Meals, WeightKg: v.WeightKg}
-			case v.WeightKg > 0:
-				cut[d] = Day{Status: v.Status, WeightKg: v.WeightKg}
-			}
-		}
+		cut := cutHistory(days, last, p)
 		if got, want := Calibrate(cut, phases, last, p), Calibrate(days, phases, last, p); !reflect.DeepEqual(got, want) {
 			t.Errorf("day %d: the cut history gives %+v, the whole one %+v", n, got, want)
 		}

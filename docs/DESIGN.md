@@ -206,7 +206,7 @@ duplicate food would stay in the list.
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
 | `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
-| `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`, twice its window) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
+| `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`: its window, the one before a phase it may fall back to, and the intake of the 14 days before a boundary that may begin one, 133 days) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
 | `get_history(from?, to?, granularity?)` | coaching: a day or week table of intake against target, the measurements, the trend weight and the TDEE measured up to each day, at most 366 days up to today (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits that hold, the pending proposal and the latest revisions, of the last 365 days and those to come (§8) |
 | `propose_changes(rationale, model?, window?, phases?, targets?, training_weekdays?)` | a change of the plan, held to its rules (no change of the past) and to the limits in the transaction that stores it: one past them is refused (422), each violation an error detail with the rule, the day type, the limit, the value proposed and the level as its value; else it waits, replacing any other, and answers with a preview (each check, the target's weekly kcal and the rate it implies with a trusted TDEE, warnings); applies nothing |
@@ -388,7 +388,14 @@ The replacement:
   with. Over 28 days the estimate swung with
   water the weight held for weeks, as after a change of training; over
   42 it kept closer to the past manual revisions and still followed the
-  TDEE as it fell.
+  TDEE as it fell. Where the weigh-ins' residuals of the 42 days carry
+  over by 0.7 or more (water that holds for days, as a heavier body's
+  does), the window is 63 days, as far as the last change of intake and
+  the first data let it: such water leaves 42 days few independent moves
+  of the weight, so a wide interval, and the longer window more. It is
+  taken by the autocorrelation, not by which interval is narrower, so
+  the interval still covers about 80 % (a simulation of a long history
+  checks it).
 - **Weight trend:** an exponentially smoothed trend weight, which takes a
   tenth a day of each weigh-in's difference from it: after a gap of n
   days, 1 − 0.9ⁿ, so after weeks without weighing it follows the weight
@@ -489,15 +496,24 @@ The replacement:
     literature; the summary flags a maintenance phase whose trend
     strays 3 % from the one it started with.
 - **Guards, by phase type:**
-  - Water/glycogen window: the first 14 days of *every* phase (glycogen
+  - Water/glycogen window: the first 14 days of a phase (glycogen
     refills on a bulk start too), and of the days after a phase's
-    planned end when no phase follows, are left out. A window needs 14
-    days of the phase after them, so until the phase's 28th day the
-    estimate is the latest one from before the phase, marked as such,
-    with no verdict on the phase. It goes back past a phase too short to
-    give one, as a diet break, but not past one with days enough and too
-    little data in them, nor to a window that ends 42 days or more
-    before: an estimate from before those would be too old.
+    planned end when no phase follows, are left out when the intake
+    changes there: when the logged intake after it, of 3 days or more,
+    differs from the 14 days before it by more than a tenth, as a cut of
+    1000 kcal or a reverse diet does. A step of 100 or 200 kcal moves no
+    water to wait out, so the window runs on across it, and a first plan
+    that names how the user has been eating keeps their history. Each
+    side stops at the neighbouring phase's boundary, so a diet break of
+    a week is held to its own days, not averaged with the cut after it.
+    With fewer than 3 logged days after it, or none before, it is a
+    change. A window needs 14 days of the phase after them, so until
+    the phase's 28th day the estimate is the latest one from before the
+    phase, marked as such, with no verdict on the phase. It goes back
+    past a phase too short to give one, as a diet break, but not past
+    one with days enough and too little data in them, nor to a window
+    that ends 42 days or more before: an estimate from before those
+    would be too old.
   - The guards below come in order, and the first that trips takes the
     verdict's action.
   - Underweight: a loss under way below a BMI of 18.5, by the trend
