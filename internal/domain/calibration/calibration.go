@@ -72,6 +72,13 @@ const maxAutocorrelation = 0.9
 type Params struct {
 	// WindowDays is how many days, up to the last, an estimate reads.
 	WindowDays int
+	// LongWindowDays is how many it reads, as far as the intake's last
+	// change and the first data let it, when the weigh-ins' residuals of
+	// WindowDays carry over by StrongAutocorrelation or more: water that
+	// holds for days leaves a short window few independent moves of the
+	// weight, and a longer one more.
+	LongWindowDays        int
+	StrongAutocorrelation float64
 	// MinDays is the fewest days a window needs once the first days of a
 	// phase are left out.
 	MinDays int
@@ -111,7 +118,8 @@ type Params struct {
 // they are DefaultParams.
 
 // DefaultParams returns the settings of DESIGN.md §7: a window of 42
-// days with at least 14 left after a phase's first 14, a trend that takes
+// days with at least 14 left after a phase's first 14, of 63 where the
+// weigh-ins carry over by 0.7 or more, a trend that takes
 // a tenth a day, and trust at an interval of ±200 kcal or narrower with
 // the data an autopilot step needs (docs/limits.md); a verdict that
 // tolerates ±0.1 % a week around the target, holds at steps 30 % off,
@@ -122,7 +130,7 @@ type Params struct {
 func DefaultParams() Params {
 	l := limits.UserDefaults()
 	return Params{
-		WindowDays: 42, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
+		WindowDays: 42, LongWindowDays: 63, StrongAutocorrelation: 0.7, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
 		TrustedKcal: 200, LoggedDays: l.LoggedDays, WeighIns: l.WeighIns,
 		TolerancePctWeek: 0.1, StepsChange: 0.3, LeanLossKgWeek: 0.5, DriftShare: 0.03,
 	}
@@ -195,9 +203,10 @@ type Estimate struct {
 	IntakeKcal float64
 	// KgPerWeek is the slope of the weigh-ins, a minus being a loss, and
 	// KgPerWeekSE its standard error, widened by the residuals'
-	// autocorrelation.
-	KgPerWeek   float64
-	KgPerWeekSE float64
+	// autocorrelation, Autocorrelation, which a long window answers.
+	KgPerWeek       float64
+	KgPerWeekSE     float64
+	Autocorrelation float64
 	// Trusted is true when the estimate is measured, its interval narrow
 	// enough and its data enough; Doubts say why not. A verdict on the
 	// current phase needs it not to be BeforePhase too.
@@ -238,14 +247,14 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	first := firstData(days)
 	changes := intakeChanges(phases)
 	change := latestChange(changes, last.AddDays(1))
-	e := measure(days, windowFrom(last, change, first, p), last, p)
+	e := window(days, last, change, first, p)
 	for e.Days < p.MinDays && !change.IsZero() {
 		before := change.AddDays(-1)
 		if last.DaysSince(before) >= p.WindowDays {
 			break
 		}
 		change = latestChange(changes, before)
-		if b := measure(days, windowFrom(before, change, first, p), before, p); b.Days >= p.MinDays {
+		if b := window(days, before, change, first, p); b.Days >= p.MinDays {
 			if b.Measured {
 				b.BeforePhase = true
 				e = b
@@ -265,8 +274,9 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 
 // FullDays returns how many days up to last Calibrate reads in full with
 // p: its window, and the one before a phase it may fall back to, which
-// ends less than Params.WindowDays before last.
-func FullDays(p Params) int { return 2 * p.WindowDays }
+// ends less than Params.WindowDays before last, each as long as
+// Params.LongWindowDays.
+func FullDays(p Params) int { return p.WindowDays + max(p.WindowDays, p.LongWindowDays) }
 
 // Measure measures the TDEE over the days from to to, as Calibrate does
 // over its window: the span of a target, whose outcome it is. Of the
@@ -353,12 +363,34 @@ func latestChange(changes []day.Date, d day.Date) day.Date {
 	return day.Date{}
 }
 
-// windowFrom returns the first day of the window that ends on last, whose
-// intake last changed on change (the zero Date for never): the window
-// leaves out the first Params.WaterDays from it, and the days before
-// first, the user's first day with a meal.
-func windowFrom(last, change, first day.Date, p Params) day.Date {
-	from := last.AddDays(1 - p.WindowDays)
+// window measures the window that ends on last, whose intake last changed
+// on change, of the user's first data on first: the Params.WindowDays up
+// to last, or the Params.LongWindowDays when their weigh-ins' residuals
+// carry over by Params.StrongAutocorrelation or more and the change and
+// the first data let it reach back further. It takes the long window by
+// the short one's autocorrelation, not by which is narrower, so the
+// choice leaves the interval's coverage as it is.
+func window(days map[day.Date]Day, last, change, first day.Date, p Params) Estimate {
+	e := measure(days, windowFrom(last, change, first, p.WindowDays, p), last, p)
+	if !e.Measured || e.Autocorrelation < p.StrongAutocorrelation {
+		return e
+	}
+	from := windowFrom(last, change, first, p.LongWindowDays, p)
+	if !from.Before(e.From) {
+		return e
+	}
+	if long := measure(days, from, last, p); long.Measured {
+		return long
+	}
+	return e
+}
+
+// windowFrom returns the first day of the window of n days that ends on
+// last, whose intake last changed on change (the zero Date for never):
+// the window leaves out the first Params.WaterDays from it, and the days
+// before first, the user's first day with a meal.
+func windowFrom(last, change, first day.Date, n int, p Params) day.Date {
+	from := last.AddDays(1 - n)
 	if !change.IsZero() {
 		if w := change.AddDays(p.WaterDays); from.Before(w) {
 			from = w
@@ -434,7 +466,7 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 	if e.Measured {
 		f := regress(xs, kgs)
 		e.IntakeKcal = mean(span)
-		e.KgPerWeek, e.KgPerWeekSE = 7*f.slope, 7*f.se
+		e.KgPerWeek, e.KgPerWeekSE, e.Autocorrelation = 7*f.slope, 7*f.se, f.rho
 		// The weight's slope is the energy balance: what was eaten less
 		// what was spent, KcalPerKg a kg, over the days it spans.
 		e.TDEE = e.IntakeKcal - f.slope*plan.KcalPerKg
@@ -519,8 +551,8 @@ func btoi(b bool) int {
 // fit is a regression line's slope, its standard error and the degrees
 // of freedom the error has.
 type fit struct {
-	slope, se float64
-	df        int
+	slope, se, rho float64
+	df             int
 }
 
 // regress fits a line to the weigh-ins kgs on the days xs, which are
@@ -556,6 +588,7 @@ func regress(xs, kgs []float64) fit {
 	sse = max(sse, floor)
 	return fit{
 		slope: slope,
+		rho:   rho,
 		se:    math.Sqrt(sse / (n - 2) / sxx * inflation),
 		df:    max(1, int(n/inflation)-2),
 	}

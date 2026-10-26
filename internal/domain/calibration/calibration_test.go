@@ -336,20 +336,27 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 		// phaseAgo is how many days ago a phase started, 0 for none: its
 		// first 14 days leave a shorter window.
 		phaseAgo int
+		// history is how many days there are, 42 when 0: more let a window
+		// of water that carries over reach back further.
+		history int
 	}{
-		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0},
-		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0},
-		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25, 0},
-		{"a window of 17 days", 1, false, 1, 0.5, 0.75, 0.88, 0, 40, 30},
+		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0, 0},
+		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0, 0},
+		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25, 0, 0},
+		{"a window of 17 days", 1, false, 1, 0.5, 0.75, 0.88, 0, 40, 30, 0},
 		// Days missing at random: the intake's error takes them to differ
 		// together, so the interval covers more than 80 %.
-		{"most days", 0.85, false, 0.8, 0.5, 0.82, 0.92, 0, 25, 0},
-		{"some days", 0.6, false, 0.5, 0.5, 0.92, 1, 0, 25, 0},
+		{"most days", 0.85, false, 0.8, 0.5, 0.82, 0.92, 0, 25, 0, 0},
+		{"some days", 0.6, false, 0.5, 0.5, 0.92, 1, 0, 25, 0, 0},
 		// Weekends never logged, 400 kcal over the weekdays: the TDEE is
 		// 2 × 400 / 7 = 114 kcal low. No interval can know that; this one
 		// still covers the TDEE in about 61 % of the windows, where one
 		// that took the days not logged for a random sample covered 41 %.
-		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25, 0},
+		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25, 0, 0},
+		// A long history: where water carries over, the window reaches
+		// back to Params.LongWindowDays, and covers as the shorter one.
+		{"a long history, most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0, 90},
+		{"a long history, some water carried over", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0, 90},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -362,7 +369,11 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 				if tc.phaseAgo > 0 {
 					phases = []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-tc.phaseAgo), RatePctWeek: -0.5}}
 				}
-				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), phases, last, DefaultParams())
+				n := 42
+				if tc.history > 0 {
+					n = tc.history
+				}
+				e := Calibrate(simulate(r, n, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), phases, last, DefaultParams())
 				if !e.Measured {
 					continue
 				}

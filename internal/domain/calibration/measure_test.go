@@ -1,6 +1,7 @@
 package calibration
 
 import (
+	"math"
 	"slices"
 	"testing"
 
@@ -84,5 +85,57 @@ func TestMeasureStartsAtTheFirstData(t *testing.T) {
 	}
 	if e := Measure(days, nil, last.AddDays(-59), last, DefaultParams()); e.From != last.AddDays(-29) || !e.Measured {
 		t.Errorf("Measure = from %s, measured %v; want from the first meal, %s", e.From, e.Measured, last.AddDays(-29))
+	}
+}
+
+// waves fills days with n days up to to: a line that loses 0.07 kg a day,
+// a meal of kcal each, and water in waves of amp kg that last weeks, so
+// the residuals carry over from day to day.
+func waves(days map[day.Date]Day, to day.Date, n int, amp, kcal float64) {
+	for i := range n {
+		d := float64(i)
+		days[to.AddDays(-i)] = Day{Status: day.Complete, Meals: 1, Kcal: kcal, WeightKg: 145 + 0.07*d + amp*math.Sin(2*math.Pi*d/23)}
+	}
+}
+
+func TestCalibrateLengthensAWindowOfWater(t *testing.T) {
+	t.Parallel()
+
+	p := DefaultParams()
+	for _, tc := range []struct {
+		name   string
+		amp    float64
+		n      int
+		phases []plan.Phase
+		want   int
+	}{
+		{"water that carries over", 0.8, 90, nil, p.LongWindowDays},
+		{"no water", 0, 90, nil, p.WindowDays},
+		{"water, as far as the first data", 0.8, 55, nil, 55},
+		{"water, as far as the phase's first days", 0.8, 90, []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-49), RatePctWeek: -0.5}}, 50 - p.WaterDays},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			days := map[day.Date]Day{}
+			waves(days, last, tc.n, tc.amp, 2000)
+			e := Calibrate(days, tc.phases, last, p)
+			if !e.Measured || e.Days != tc.want || e.To != last {
+				t.Errorf("Calibrate = %d days to %s, measured %v, autocorrelation %.2f; want %d", e.Days, e.To, e.Measured, e.Autocorrelation, tc.want)
+			}
+		})
+	}
+}
+
+// The estimate from before a phase too short to give one reaches back as
+// far as the water asks.
+func TestCalibrateLengthensTheWindowBeforeAPhase(t *testing.T) {
+	t.Parallel()
+
+	days := map[day.Date]Day{}
+	waves(days, last, 120, 0.8, 2000)
+	p := DefaultParams()
+	e := Calibrate(days, []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-9), RatePctWeek: -0.5}}, last, p)
+	if !e.BeforePhase || e.Days != p.LongWindowDays || e.To != last.AddDays(-10) {
+		t.Errorf("Calibrate = %d days to %s, before the phase %v; want %d to %s", e.Days, e.To, e.BeforePhase, p.LongWindowDays, last.AddDays(-10))
 	}
 }
