@@ -1,4 +1,5 @@
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { focusManager } from '@tanstack/react-query'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
@@ -230,4 +231,66 @@ test('a change that took effect cannot be taken back, and says so', async () => 
   expect((await history.findByRole('alert')).textContent).toBe(
     'This change cannot be taken back any more: it took effect, or the plan changed since. Ask for a new change instead.',
   )
+})
+
+// A proposal that came in place of one that waits no more starts afresh:
+// its buttons work.
+test('a new proposal, in place of one that waits no more, can be answered', async () => {
+  let plan = planBody({ pending: step })
+  const smaller: Proposal = {
+    ...step,
+    id: '0193c3a5-0000-7000-8000-0000000000a2',
+    rationale: 'A smaller step.',
+  }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/profile': () => Response.json({ missing: [] }),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () => Response.json(plan),
+    [`POST /api/v1/proposals/${step.id}/apply`]: () => {
+      plan = planBody({ pending: smaller })
+      return closed(409)
+    },
+  })
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  await card.findByText('The proposal waits no more: the plan changed, or it expired.')
+  // The plan is read again, as when the app comes back to the front.
+  act(() => {
+    focusManager.setFocused(false)
+    focusManager.setFocused(true)
+  })
+  await screen.findByText('A smaller step.')
+  const fresh = within(screen.getByRole('region', { name: 'A proposed change' }))
+  expect(fresh.queryByRole('alert')).toBeNull()
+  expect(fresh.getByRole('button', { name: 'Accept' })).toHaveProperty('disabled', false)
+  focusManager.setFocused(undefined)
+})
+
+// A saved profile or limits change what the limits hold the proposal to:
+// the plan, and its preview, are read again.
+test('a saved profile reads the plan again, for the preview', async () => {
+  let reads = 0
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/profile': () => Response.json({ missing: ['sex', 'birth_date', 'height_cm'] }),
+    'PUT /api/v1/profile': () =>
+      Response.json({ sex: 'male', missing: ['birth_date', 'height_cm'] }),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () => {
+      reads++
+      return Response.json(planBody({ pending: step, pending_preview: preview }))
+    },
+  })
+  renderAt('/settings/plan')
+  const form = await screen.findByRole('form', { name: 'Profile' })
+  await waitFor(() => {
+    expect(reads).toBe(1)
+  })
+  fireEvent.click(within(form).getByRole('radio', { name: 'Male' }))
+  fireEvent.click(within(form).getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(reads).toBe(2)
+  })
 })

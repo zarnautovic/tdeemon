@@ -34,7 +34,13 @@ export function PlanPage() {
       <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
       {plan.isError && <LoadError error={plan.error} onRetry={() => void plan.refetch()} />}
       {plan.data?.pending !== undefined && (
-        <PendingProposal proposal={plan.data.pending} preview={plan.data.pending_preview} />
+        // A proposal in place of another starts afresh, without the
+        // other's answer.
+        <PendingProposal
+          key={plan.data.pending.id}
+          proposal={plan.data.pending}
+          preview={plan.data.pending_preview}
+        />
       )}
       {plan.data !== undefined && <Revisions revisions={plan.data.revisions} />}
       {/* Loading too while a cached profile is asked again. */}

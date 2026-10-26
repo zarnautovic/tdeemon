@@ -42,6 +42,10 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
   const save = $api.useMutation('put', '/api/v1/limits', {
     onSuccess: (answer) => {
       queryClient.setQueryData(limitsKey, answer)
+      // A proposal's preview says what the limits refuse of it.
+      void queryClient.invalidateQueries({
+        queryKey: $api.queryOptions('get', '/api/v1/plan').queryKey,
+      })
       setTyped({})
       setAsking(false)
     },
