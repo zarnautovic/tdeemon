@@ -27,8 +27,10 @@ var ErrInvalidProposal = errors.New("invalid proposal")
 // ProposalCheck checks a proposal's changes, with the plan before each,
 // against the limits (proposal.Changes.Check). It runs in the
 // transaction once the changes keep their own rules, before anything is
-// written: its error is returned as it is, and nothing is written. nil
-// checks nothing.
+// written: its error is returned as it is, and nothing is written. The
+// transaction holds the one write connection, so what the check reads
+// through the store's reads (the limits, the profile, the data) no write
+// changes until it ends. nil checks nothing.
 type ProposalCheck func(proposal.Changes) error
 
 // ProposalClosedError reports a proposal that waits no more: Status says

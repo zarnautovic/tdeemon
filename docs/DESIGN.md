@@ -642,8 +642,13 @@ it read while researching. So limits are enforced by the server.
   UI. A proposal of several changes is held as `proposal.Changes.Check`
   splits it: each phase it sets as a change of the current one, and the
   target in force from each day it changes one from, against the one in
-  force then before, with the training weekdays it leaves; with the
-  data and the limits of now for a change ahead too.
+  force then before, with the training weekdays it leaves (new ones move
+  a split target's weekly average, so they check today's target and each
+  to come); with the data and the limits of now for a change ahead too.
+  The check reads them in the transaction that stores or applies the
+  proposal, which holds the one write connection, so a change of the
+  limits meanwhile cannot slip past it. Through MCP, a refusal's text
+  carries each violation as its JSON.
 - **Machine-readable violations.** A violation names the rule, the limit and the
   proposed value, e.g. `{rule: "kcal_floor", limit: 1800, proposed: 1500}`, the
   type of day for a limit of each, and the level that refuses it (the code, the

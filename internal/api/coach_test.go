@@ -602,3 +602,19 @@ func TestProposalsTakeAToolsToken(t *testing.T) {
 		t.Errorf("with a tools token: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// Through MCP, a refusal of the limits holds each violation as data too.
+func TestMCPRefusalHoldsTheViolations(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
+	text, isErr := callTool(t, cs, "propose_changes", map[string]any{
+		"rationale": "Faster.",
+		"targets":   []any{map[string]any{"from": today.AddDays(1).String(), "training": map[string]any{"kcal": 1300, "protein": 160, "fat": 60}}},
+	})
+	if !isErr || !strings.Contains(text, `"rule":"kcal_floor"`) || !strings.Contains(text, `"limit":1500`) || !strings.Contains(text, `"proposed":1300`) {
+		t.Errorf("the refusal through MCP = %s", text)
+	}
+}

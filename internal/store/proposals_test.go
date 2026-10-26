@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -832,5 +833,42 @@ func TestProposalChecks(t *testing.T) {
 	}
 	if countRows(t, db, "events") != n {
 		t.Error("a refused revert recorded an event")
+	}
+}
+
+// What a check reads through the store, no write changes until the
+// proposal is stored: its transaction holds the one write connection,
+// so a change of the limits made meanwhile waits for it.
+func TestAProposalCheckSeesNoWriteBeforeItsCommit(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	l := limits.UserDefaults()
+	l.KcalFloorMale = 1850
+	done := make(chan error, 1)
+	check := func(proposal.Changes) error {
+		go func() {
+			done <- db.SetUserLimits(context.WithoutCancel(t.Context()), ana, testActor, l, limits.Instance(), t0)
+		}()
+		select {
+		case err := <-done:
+			t.Errorf("a change of the limits made while the check ran: %v", err)
+		case <-time.After(100 * time.Millisecond):
+		}
+		if got, err := db.UserLimits(t.Context(), ana); err != nil || got.KcalFloorMale == 1850 {
+			t.Errorf("the check read %v, %v; want the limits before", got.KcalFloorMale, err)
+		}
+		return nil
+	}
+	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0, check); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("the change of the limits: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("the change of the limits never went through")
 	}
 }

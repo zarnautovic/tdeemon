@@ -80,12 +80,12 @@ func TestChangesCheck(t *testing.T) {
 		{
 			"the training weekdays alone",
 			Changes{TrainingWeekdays: &WeekdaysChange{Before: s.TrainingDays, After: newDays}},
-			map[string][]string{"training_weekdays 2026-10-26": {}},
+			map[string][]string{"training_weekdays 2026-10-26": {}, "training_weekdays 2026-11-02": {}},
 		},
 		{"a target from today, with the training weekdays", Changes{
 			Targets:          []TargetChange{{From: s.Today, After: target(t, "2026-10-26", 2200)}},
 			TrainingWeekdays: &WeekdaysChange{Before: s.TrainingDays, After: newDays},
-		}, map[string][]string{"target 2026-10-26": {}}},
+		}, map[string][]string{"target 2026-10-26": {}, "training_weekdays 2026-11-02": {}}},
 		{
 			"a target ahead deleted",
 			Changes{Targets: []TargetChange{{From: date(t, "2026-11-02"), Before: &targets[1]}}},
@@ -182,5 +182,22 @@ func TestChangesCheckWeekdaysWithoutATarget(t *testing.T) {
 	s.Target = nil
 	if cs := (Changes{TrainingWeekdays: &WeekdaysChange{After: 1}}).Check(s, levels(), nil); len(cs) != 0 {
 		t.Errorf("Check = %+v, want none", cs)
+	}
+}
+
+// New training weekdays move the weekly average of every split target to
+// come: each is checked with them.
+func TestChangesCheckTheTargetsToCome(t *testing.T) {
+	t.Parallel()
+
+	s, targets := checkState(t)
+	// A split target from 2026-11-02: 3000 kcal on a training day, 1600
+	// on a rest day, of -0.43 % a week with three training days, of -1.07
+	// with none.
+	targets[1].Training.Kcal, targets[1].Rest.Kcal = 3000, 1600
+	cs := Changes{TrainingWeekdays: &WeekdaysChange{Before: s.TrainingDays, After: 0}}.Check(s, levels(), targets)
+	want := map[string][]string{"training_weekdays 2026-10-26": {}, "training_weekdays 2026-11-02": {limits.RuleImpliedLossRate}}
+	if got := rules(cs); !mapsEqual(got, want) {
+		t.Errorf("Check = %v, want %v", got, want)
 	}
 }

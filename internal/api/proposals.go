@@ -134,15 +134,13 @@ type refusedError struct{ checks []proposal.Checked }
 
 func (e *refusedError) Error() string { return "the proposal breaks the limits" }
 
-// coachState is what the limits hold a change of p's user's plan to at
-// now: calibration's state, as the summary reads it, the levels of the
-// limits, the targets, and the user's calendar and day.
+// coachState is what the limits hold a change of a user's plan to:
+// calibration's state, as the summary reads it, the levels of the limits,
+// and the targets.
 type coachState struct {
 	state   limits.State
 	levels  limits.Levels
 	targets []plan.Target
-	cal     day.Calendar
-	today   day.Date
 }
 
 func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Time) (coachState, error) {
@@ -173,14 +171,21 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 	}
 	return coachState{
 		state:  calibration.StateOf(e, today, pr, ph, t, data.training),
-		levels: limits.Levels{Instance: s.instance, User: user}, targets: data.targets, cal: cal, today: today,
+		levels: limits.Levels{Instance: s.instance, User: user}, targets: data.targets,
 	}, nil
 }
 
-// check returns a check of a proposal's changes against cs's limits,
-// which keeps what it found in *found and refuses a violation.
-func (cs coachState) check(found *[]proposal.Checked) store.ProposalCheck {
+// check returns a check of a proposal's changes against the limits of p's
+// user at now, which refuses a violation. It reads the state in the
+// store's transaction (store.ProposalCheck), so a change of the limits,
+// the profile or the data meanwhile cannot slip past it, and keeps it in
+// *cs, and what it found in *found.
+func (s *sessions) check(ctx context.Context, p auth.Principal, now time.Time, cs *coachState, found *[]proposal.Checked) store.ProposalCheck {
 	return func(c proposal.Changes) error {
+		var err error
+		if *cs, err = s.coachState(ctx, p, now); err != nil {
+			return err
+		}
 		*found = c.Check(cs.state, cs.levels, cs.targets)
 		for _, ck := range *found {
 			if !ck.OK() {
@@ -206,16 +211,17 @@ func (s *sessions) proposeChanges(ctx context.Context, in *proposeInput) (*propo
 		return nil, err
 	}
 	now := s.now()
-	cs, err := s.coachState(ctx, p, now)
+	cal, today, err := userDay(p, now)
 	if err != nil {
-		return nil, internalError("reading the plan failed", err)
+		return nil, internalError("making the proposal failed", err)
 	}
+	var cs coachState
 	var checks []proposal.Checked
-	made, err := s.db.CreateProposal(ctx, p.User.ID, a, d, cs.today, now, cs.check(&checks))
+	made, err := s.db.CreateProposal(ctx, p.User.ID, a, d, today, now, s.check(ctx, p, now, &cs, &checks))
 	if err != nil {
 		return nil, proposalProblem("making the proposal failed", err)
 	}
-	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(made, cs.cal.Location), Preview: cs.preview(checks)}}, nil
+	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(made, cal.Location), Preview: cs.preview(checks)}}, nil
 }
 
 func (s *sessions) applyProposal(ctx context.Context, in *proposalIDInput) (*proposalOutput, error) {
@@ -224,21 +230,22 @@ func (s *sessions) applyProposal(ctx context.Context, in *proposalIDInput) (*pro
 		return nil, err
 	}
 	now := s.now()
-	cs, err := s.coachState(ctx, p, now)
+	cal, today, err := userDay(p, now)
 	if err != nil {
-		return nil, internalError("reading the plan failed", err)
+		return nil, internalError("applying the proposal failed", err)
 	}
 	id, err := uuid.Parse(in.ID)
 	if err != nil {
 		return nil, errNoProposal
 	}
+	var cs coachState
 	var checks []proposal.Checked
-	applied, err := s.db.ApplyProposal(ctx, p.User.ID, actorOf(p), id, cs.today, now, cs.check(&checks))
+	applied, err := s.db.ApplyProposal(ctx, p.User.ID, actorOf(p), id, today, now, s.check(ctx, p, now, &cs, &checks))
 	if err != nil {
 		return nil, proposalProblem("applying the proposal failed", err)
 	}
 	out := &proposalOutput{}
-	out.Body.Proposal = newProposalBody(applied, cs.cal.Location)
+	out.Body.Proposal = newProposalBody(applied, cal.Location)
 	return out, nil
 }
 
@@ -275,20 +282,21 @@ func (s *sessions) revertProposal(ctx context.Context, in *revertInput) (*propos
 		return nil, err
 	}
 	now := s.now()
-	cs, err := s.coachState(ctx, p, now)
+	cal, today, err := userDay(p, now)
 	if err != nil {
-		return nil, internalError("reading the plan failed", err)
+		return nil, internalError("making the revert failed", err)
 	}
 	id, err := uuid.Parse(in.ID)
 	if err != nil {
 		return nil, errNoProposal
 	}
+	var cs coachState
 	var checks []proposal.Checked
-	made, err := s.db.RevertProposal(ctx, p.User.ID, a, id, in.Body.Rationale, cs.today, now, cs.check(&checks))
+	made, err := s.db.RevertProposal(ctx, p.User.ID, a, id, in.Body.Rationale, today, now, s.check(ctx, p, now, &cs, &checks))
 	if err != nil {
 		return nil, proposalProblem("making the revert failed", err)
 	}
-	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(made, cs.cal.Location), Preview: cs.preview(checks)}}, nil
+	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(made, cal.Location), Preview: cs.preview(checks)}}, nil
 }
 
 // coachActor is who proposes for the request of p, with the model that

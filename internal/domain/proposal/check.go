@@ -1,6 +1,7 @@
 package proposal
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
@@ -39,8 +40,10 @@ type Checked struct {
 // set, as a change of the current phase (s.Phase), and the target in
 // force from each day they change a target from, against the one in
 // force then before, with the training weekdays they leave; and, when
-// they change the training weekdays and no target from today, the target
-// in force today with them. A delete of a phase sets nothing to check.
+// they change the training weekdays, which move a split target's weekly
+// average, the target in force today and each to come with them (a
+// derived value the change sets, docs/limits.md). A delete of a phase
+// sets nothing to check.
 // The data and the limits are those of now for a change ahead too: what
 // the server knows when the user consents.
 func (c Changes) Check(s limits.State, lv limits.Levels, targets []plan.Target) []Checked {
@@ -57,18 +60,22 @@ func (c Changes) Check(s limits.State, lv limits.Levels, targets []plan.Target) 
 		}
 	}
 	after := c.TargetTimeline(targets)
-	var froms []day.Date
-	for _, ch := range c.Targets {
-		froms = append(froms, ch.From)
-	}
-	slices.SortFunc(froms, day.Date.Compare)
-	if days != nil && !slices.Contains(froms, s.Today) {
-		if ck := checkTarget(OfTrainingWeekdays, s.Today, s, lv, targets, after, days, training); ck.Target != nil {
-			out = append(out, ck)
+	of := map[day.Date]Of{}
+	if days != nil {
+		// New training weekdays move the weekly average of the target in
+		// force today and of each to come.
+		of[s.Today] = OfTrainingWeekdays
+		for _, t := range after {
+			if s.Today.Before(t.EffectiveFrom) {
+				of[t.EffectiveFrom] = OfTrainingWeekdays
+			}
 		}
 	}
-	for _, from := range froms {
-		if ck := checkTarget(OfTarget, from, s, lv, targets, after, days, training); ck.Target != nil {
+	for _, ch := range c.Targets {
+		of[ch.From] = OfTarget
+	}
+	for _, d := range slices.SortedFunc(maps.Keys(of), day.Date.Compare) {
+		if ck := checkTarget(of[d], d, s, lv, targets, after, days, training); ck.Target != nil {
 			out = append(out, ck)
 		}
 	}
