@@ -55,6 +55,9 @@ test('a proposed change is accepted in the app, and taken back from its history'
   await expect(card.getByText(/^New target from/)).toBeVisible()
   await card.getByRole('button', { name: 'Accept' }).click()
   await expect(card).toBeHidden()
+  // The current plan has its target, from tomorrow.
+  const current = page.getByRole('region', { name: 'Current plan' })
+  await expect(current.getByText(/^From .*: 2,100 kcal/)).toBeVisible()
 
   const history = page.getByRole('region', { name: 'History of the plan' })
   const revision = history.getByRole('listitem').filter({ hasText: rationale })
@@ -62,6 +65,7 @@ test('a proposed change is accepted in the app, and taken back from its history'
   await revision.getByRole('button', { name: 'Take back' }).click()
   await revision.getByRole('button', { name: 'Take back' }).click()
   await expect(revision.getByText(/Taken back$/)).toBeVisible()
+  await expect(current.getByText(/^No plan yet/)).toBeVisible()
 
   // What the plan needed cleared again, for the other tests.
   expect((await page.request.put('/api/v1/profile', { data: {} })).ok()).toBe(true)

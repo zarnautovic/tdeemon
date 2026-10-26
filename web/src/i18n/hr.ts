@@ -454,6 +454,16 @@ export const hr: Messages = {
     keep: 'Natrag',
     unchanged: 'Nema se što spremiti.',
     refused: (detail: string) => `Server to nije prihvatio: ${detail}`,
+    current: {
+      title: 'Trenutni plan',
+      phase: 'Faza',
+      target: 'Cilj',
+      since: (date: string) => `od ${date}`,
+      ahead: 'Dolazi',
+      from: (date: string) => `Od ${date}`,
+      nothing: 'nema',
+      none: 'Plana još nema. Zatraži ga od svog AI trenera: „pogledaj zadnji mjesec i predloži plan".',
+    },
     pending: {
       title: 'Prijedlog promjene',
       by: (who: string) => `Predložio ${who}`,
