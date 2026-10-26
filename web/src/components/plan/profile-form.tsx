@@ -51,6 +51,10 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   const save = $api.useMutation('put', '/api/v1/profile', {
     onSuccess: (answer) => {
       queryClient.setQueryData($api.queryOptions('get', '/api/v1/profile').queryKey, answer)
+      // The limits hold a proposal to the profile: its preview changes.
+      void queryClient.invalidateQueries({
+        queryKey: $api.queryOptions('get', '/api/v1/plan').queryKey,
+      })
     },
   })
 

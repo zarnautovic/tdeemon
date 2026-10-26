@@ -6,7 +6,7 @@ import type { components } from '@/api/schema'
 import type { LimitsBody } from '@/components/plan/limit-fields'
 import { setLocale } from '@/i18n/locale'
 import { fakeServer, problem, renderAt, signedIn } from '@/test/app'
-import { limitsBody } from '@/test/plan'
+import { limitsBody, planBody } from '@/test/plan'
 
 afterEach(() => {
   cleanup()
@@ -32,6 +32,7 @@ function planServer(
     ...signedIn(),
     'GET /api/v1/profile': () => (profileFails ? problem(503) : Response.json(profile)),
     'GET /api/v1/limits': () => Response.json(limits),
+    'GET /api/v1/plan': () => Response.json(planBody()),
     'PUT /api/v1/profile': async (r) => {
       const body: unknown = await r.json()
       ;(sent['PUT /api/v1/profile'] ??= []).push(body)
@@ -120,11 +121,11 @@ const save = (form: string) => {
   )
 }
 
-test('the settings lead to the profile and limits of the plan', async () => {
+test('the settings lead to the plan', async () => {
   planServer()
   const router = renderAt('/settings')
-  fireEvent.click(await screen.findByRole('link', { name: /Profile and limits of the plan/ }))
-  await screen.findByRole('heading', { name: 'Profile and limits', level: 1 })
+  fireEvent.click(await screen.findByRole('link', { name: /^Plan/ }))
+  await screen.findByRole('heading', { name: 'Plan', level: 1 })
   expect(router.state.location.pathname).toBe('/settings/plan')
   fireEvent.click(within(page()).getByRole('link', { name: 'Settings' }))
   await screen.findByRole('heading', { name: 'Settings', level: 1 })
@@ -167,7 +168,7 @@ test("the profile is the server's, not one a cache kept from before", async () =
   await screen.findByRole('heading', { name: 'Settings', level: 1 })
   // Changed in another tab meanwhile.
   setProfile({ sex: 'male', missing: ['birth_date', 'height_cm'] })
-  fireEvent.click(screen.getByRole('link', { name: /Profile and limits of the plan/ }))
+  fireEvent.click(screen.getByRole('link', { name: /^Plan/ }))
   await waitFor(() => {
     expect(screen.getByRole('radio', { name: 'Male' })).toHaveProperty('checked', true)
   })
@@ -240,8 +241,8 @@ test('a cached profile asked again says it is loading, not nothing', async () =>
   fireEvent.click(within(page()).getByRole('link', { name: 'Settings' }))
   await screen.findByRole('heading', { name: 'Settings', level: 1 })
   hang = true
-  fireEvent.click(screen.getByRole('link', { name: /Profile and limits of the plan/ }))
-  await screen.findByRole('heading', { name: 'Profile and limits', level: 1 })
+  fireEvent.click(screen.getByRole('link', { name: /^Plan/ }))
+  await screen.findByRole('heading', { name: 'Plan', level: 1 })
   expect(screen.getByText('Loading…')).toBeTruthy()
   expect(screen.queryByRole('form', { name: 'Profile' })).toBeNull()
 })
