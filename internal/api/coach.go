@@ -36,6 +36,7 @@ type planBody struct {
 	Targets          []targetPeriodBody `json:"targets" nullable:"false" doc:"The targets, in order: those in force within the last 365 days, and those to come, each with what its days came to."`
 	Limits           map[string]float64 `json:"limits" doc:"The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; the user may loosen theirs in the app, up to the instance's."`
 	Pending          *proposalBody      `json:"pending,omitempty" doc:"The proposal that waits for the user's consent; absent when none does."`
+	PendingPreview   *previewBody       `json:"pending_preview,omitempty" doc:"What the pending proposal would come to, by the data and the limits now, as propose_changes previews it; with what the limits would refuse, if they changed since."`
 	Revisions        []proposalBody     `json:"revisions" nullable:"false" doc:"The plan's latest revisions, the proposals applied (reverted ones too), newest first, up to 10."`
 }
 
@@ -162,6 +163,11 @@ func (s *sessions) getPlan(ctx context.Context, _ *struct{}) (*planOutput, error
 	loc := cal.Location
 	if len(pending) > 0 && pending[0].Status == proposal.Pending {
 		b.Pending = new(newProposalBody(pending[0], loc))
+		cs, err := s.coachState(ctx, p, now)
+		if err != nil {
+			return nil, internalError("reading the plan failed", err)
+		}
+		b.PendingPreview = new(cs.preview(pending[0].Changes.Check(cs.state, cs.levels, cs.phases, cs.targets)))
 	}
 	for i := range revisions {
 		b.Revisions = append(b.Revisions, newProposalBody(revisions[i], loc))

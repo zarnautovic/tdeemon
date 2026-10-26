@@ -284,7 +284,10 @@ hold, the proposal that waits for consent and the latest 10 revisions.
 Each target's days up to yesterday come with their outcome: the intake
 and the target of the logged days, and what calibration measures of
 them (`calibration.Measure`, without a phase's first 14 days) against
-the phase's planned rate. The settings are a web session's
+the phase's planned rate. The pending proposal comes with its preview
+(`pending_preview`), by the data and the limits now: what the limits
+would refuse, if they changed since it was made, shows before the user
+tries to apply it. The settings are a web session's
 only: `PATCH /api/v1/me` changes the name, the language, the time zone
 and the day's start hour, those given (what was logged keeps its day).
 `PUT /api/v1/me/notes`, the tool `update_profile_notes`, replaces the
@@ -797,7 +800,8 @@ the first spec.
   `telegram_chats` is answered, and a command writes nothing. The
   adapter with the agent loop (§6) will take the bot's other messages.
 - **Morning summary:** a deterministic template (sleep, yesterday vs
-  target, weight trend, calibration line, recovery flags), the
+  target, weight trend, calibration line, a proposal of the plan that
+  waits for an answer, recovery flags), the
   scheduler's job at 10:00 on the user's clock, sent to their Telegram
   chat (`internal/api/morning.go`, from the same reads as `get_day` and
   `get_summary`). The sleep is only the night that ended today; what did

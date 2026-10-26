@@ -104,6 +104,7 @@ type checkBody struct {
 	ExpectedPctWeek *float64           `json:"expected_pct_week,omitempty" doc:"The rate it implies with the measured TDEE, in % of the trend weight a week."`
 	ExpectedKgWeek  *float64           `json:"expected_kg_week,omitempty" doc:"The same in kg a week."`
 	Warnings        []limitWarningBody `json:"warnings" nullable:"false" doc:"What is past a threshold without refusing it: below_bmr, low_energy_availability, low_carbs."`
+	Violations      []violationValue   `json:"violations" nullable:"false" doc:"What the limits refuse now: for a pending proposal, what would refuse it if applied."`
 }
 
 type limitWarningBody struct {
@@ -127,6 +128,10 @@ type violationValue struct {
 
 // errNoProposal answers an id the user has no proposal under.
 var errNoProposal = huma.Error404NotFound("no proposal under this id")
+
+func newViolationValue(v limits.Violation) violationValue {
+	return violationValue{Rule: v.Rule, DayType: string(v.DayType), Limit: round2(v.Limit), Proposed: round2(v.Proposed), Level: string(v.Level)}
+}
 
 // refusedError is a proposal's changes past the limits: the checks that
 // found violations.
@@ -356,9 +361,7 @@ func limitsRefusal(checks []proposal.Checked) error {
 			details = append(details, &huma.ErrorDetail{
 				Location: at,
 				Message:  violationMessage(v),
-				Value: violationValue{
-					Rule: v.Rule, DayType: string(v.DayType), Limit: round2(v.Limit), Proposed: round2(v.Proposed), Level: string(v.Level),
-				},
+				Value:    newViolationValue(v),
 			})
 		}
 	}
@@ -396,7 +399,10 @@ func (cs coachState) preview(checks []proposal.Checked) previewBody {
 		b.TDEE = new(math.Round(st.TDEE))
 	}
 	for _, ck := range checks {
-		c := checkBody{Of: string(ck.Of), Day: ck.Day.String(), Warnings: []limitWarningBody{}}
+		c := checkBody{Of: string(ck.Of), Day: ck.Day.String(), Warnings: []limitWarningBody{}, Violations: []violationValue{}}
+		for _, v := range ck.Violations {
+			c.Violations = append(c.Violations, newViolationValue(v))
+		}
 		if ck.Target != nil {
 			weekly := ck.Target.WeeklyAverage(ck.TrainingDays.Count()).Kcal
 			c.WeeklyKcal = new(math.Round(weekly))
