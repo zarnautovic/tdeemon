@@ -144,7 +144,9 @@ func (s *sessions) getPlan(ctx context.Context, _ *struct{}) (*planOutput, error
 		return nil, internalError("reading the plan failed", err)
 	}
 	yesterday, since := today.AddDays(-1), today.AddDays(-planDays)
-	data, err := s.readDays(ctx, p.User.ID, cal, since, yesterday, yesterday, now)
+	// An outcome from since reads the intake before it too.
+	lead := calibration.LeadDays(calibration.DefaultParams())
+	data, err := s.readDays(ctx, p.User.ID, cal, since.AddDays(-lead), yesterday, yesterday, now)
 	if err != nil {
 		return nil, internalError("reading the plan failed", err)
 	}

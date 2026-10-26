@@ -27,6 +27,18 @@ func line(days map[day.Date]Day, to day.Date, n int, kgEnd, kgPerDay, kcal float
 	}
 }
 
+// eatLessFrom makes the logged intake of days from start on a fifth less:
+// a change of intake, as a phase's start brings one, whose water
+// calibration leaves out.
+func eatLessFrom(days map[day.Date]Day, start day.Date) {
+	for d, v := range days {
+		if !d.Before(start) && v.Meals > 0 {
+			v.Kcal *= 0.8
+			days[d] = v
+		}
+	}
+}
+
 func TestCalibrateExactLine(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +212,7 @@ func TestCalibrateWithoutEnoughDaysOfAPhase(t *testing.T) {
 		}, func() map[day.Date]Day {
 			days := map[day.Date]Day{}
 			line(days, last, 15, 80, 0, 2400)
+			eatLessFrom(days, start)
 			return days
 		}()},
 	} {
@@ -336,20 +349,27 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 		// phaseAgo is how many days ago a phase started, 0 for none: its
 		// first 14 days leave a shorter window.
 		phaseAgo int
+		// history is how many days there are, 42 when 0: more let a window
+		// of water that carries over reach back further.
+		history int
 	}{
-		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0},
-		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0},
-		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25, 0},
-		{"a window of 17 days", 1, false, 1, 0.5, 0.75, 0.88, 0, 40, 30},
+		{"every day", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0, 0},
+		{"most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0, 0},
+		{"no water carried over", 1, false, 1, 0, 0.75, 0.88, 0, 25, 0, 0},
+		{"a window of 17 days", 1, false, 1, 0.5, 0.75, 0.88, 0, 40, 30, 0},
 		// Days missing at random: the intake's error takes them to differ
 		// together, so the interval covers more than 80 %.
-		{"most days", 0.85, false, 0.8, 0.5, 0.82, 0.92, 0, 25, 0},
-		{"some days", 0.6, false, 0.5, 0.5, 0.92, 1, 0, 25, 0},
+		{"most days", 0.85, false, 0.8, 0.5, 0.82, 0.92, 0, 25, 0, 0},
+		{"some days", 0.6, false, 0.5, 0.5, 0.92, 1, 0, 25, 0, 0},
 		// Weekends never logged, 400 kcal over the weekdays: the TDEE is
 		// 2 × 400 / 7 = 114 kcal low. No interval can know that; this one
 		// still covers the TDEE in about 61 % of the windows, where one
 		// that took the days not logged for a random sample covered 41 %.
-		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25, 0},
+		{"weekdays only", 1, true, 1, 0.5, 0.55, 0.7, -114, 25, 0, 0},
+		// A long history: where water carries over, the window reaches
+		// back to Params.LongWindowDays, and covers as the shorter one.
+		{"a long history, most water carried over", 1, false, 1, 0.85, 0.75, 0.88, 0, 25, 0, 90},
+		{"a long history, some water carried over", 1, false, 1, 0.5, 0.75, 0.88, 0, 25, 0, 90},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -362,7 +382,11 @@ func TestCalibrateIntervalCoversTheTDEE(t *testing.T) {
 				if tc.phaseAgo > 0 {
 					phases = []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-tc.phaseAgo), RatePctWeek: -0.5}}
 				}
-				e := Calibrate(simulate(r, 42, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), phases, last, DefaultParams())
+				n := 42
+				if tc.history > 0 {
+					n = tc.history
+				}
+				e := Calibrate(simulate(r, n, tdee, tc.logged, tc.weekdays, tc.weighed, tc.carry), phases, last, DefaultParams())
 				if !e.Measured {
 					continue
 				}
@@ -600,6 +624,13 @@ func TestCalibrateDoesNotGoBackFar(t *testing.T) {
 	}
 	days := map[day.Date]Day{}
 	line(days, last, 400, 80, -0.03, 2000)
+	// Each break eats a quarter more than the cut around it.
+	for d, v := range days {
+		if ph, ok := plan.PhaseOn(phases, d); ok && ph.Type == plan.Maintain {
+			v.Kcal *= 1.25
+			days[d] = v
+		}
+	}
 	e := Calibrate(days, phases, last, DefaultParams())
 	if e.Measured || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
 		t.Errorf("window %s to %s, %d days before %s, doubts %v; want no estimate for few days",
@@ -615,8 +646,6 @@ func TestCalibrateWithFewerMinDaysThanAWeek(t *testing.T) {
 	// data, never a number that is none.
 	p := DefaultParams()
 	p.MinDays = 0
-	days := map[day.Date]Day{}
-	line(days, last, 60, 80, -0.05, 2000)
 	for _, tc := range []struct {
 		name   string
 		phases []plan.Phase
@@ -625,6 +654,9 @@ func TestCalibrateWithFewerMinDaysThanAWeek(t *testing.T) {
 		{"a window of 6 days", []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-19), RatePctWeek: -0.5}}, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
 		{"an empty window", []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-5), RatePctWeek: -0.5}}, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
 	} {
+		days := map[day.Date]Day{}
+		line(days, last, 60, 80, -0.05, 2000)
+		eatLessFrom(days, tc.phases[0].Start)
 		if e := Calibrate(days, tc.phases, last, p); !slices.Equal(e.Doubts, tc.want) {
 			t.Errorf("%s: %d days, doubts %v; want %v", tc.name, e.Days, e.Doubts, tc.want)
 		}
@@ -792,6 +824,63 @@ func TestDefaultParamsTakeTheAutopilotsData(t *testing.T) {
 // Calibrate reads the FullDays days up to last in full, and of the days
 // before them only the weigh-ins and the first day with a meal: a history
 // cut so gives the same estimate as the whole one.
+// cutHistory returns of days, up to last, what a caller loads of them:
+// the FullDays in full, and before them the weigh-ins and the first day
+// with a meal.
+func cutHistory(days map[day.Date]Day, last day.Date, p Params) map[day.Date]Day {
+	cut := map[day.Date]Day{}
+	first := firstData(days)
+	for d, v := range days {
+		switch {
+		case last.Before(d):
+		case last.DaysSince(d) < FullDays(p):
+			cut[d] = v
+		case d == first:
+			cut[d] = Day{Status: v.Status, Meals: v.Meals, WeightKg: v.WeightKg}
+		case v.WeightKg > 0:
+			cut[d] = Day{Status: v.Status, WeightKg: v.WeightKg}
+		}
+	}
+	return cut
+}
+
+// The days loaded tell the intake around each phase's boundary a window
+// may reach, the long window's before a phase too: an estimate of them
+// is the whole history's.
+func TestCalibrateReadsTheIntakeBeforeABoundary(t *testing.T) {
+	t.Parallel()
+
+	p := DefaultParams()
+	days := map[day.Date]Day{}
+	waves(days, last, 300, 0.8, 2000)
+	// The same intake across the boundary 116 days ago, the furthest that
+	// could shorten the window before the phase 40 days ago, as one day,
+	// the furthest of the 14 before it, tells; less from 40 days ago, the
+	// same again from 15.
+	for d, v := range days {
+		switch ago := last.DaysSince(d); {
+		case ago > 116 && ago < 130:
+			v.Meals = 0
+		case ago <= 40 && ago > 15:
+			v.Kcal = 1600
+		}
+		days[d] = v
+	}
+	phases := []plan.Phase{
+		{Type: plan.Cut, Start: last.AddDays(-200), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: last.AddDays(-116)},
+		{Type: plan.Cut, Start: last.AddDays(-40), RatePctWeek: -0.5},
+		{Type: plan.Maintain, Start: last.AddDays(-15)},
+	}
+	want := Calibrate(days, phases, last, p)
+	if !want.BeforePhase || want.Days != p.LongWindowDays {
+		t.Fatalf("the whole history gives %d days, before the phase %v; want the long window before the phase", want.Days, want.BeforePhase)
+	}
+	if got := Calibrate(cutHistory(days, last, p), phases, last, p); !reflect.DeepEqual(got, want) {
+		t.Errorf("the cut history gives %+v, the whole one %+v", got, want)
+	}
+}
+
 func TestCalibrateReadsTheFullDaysAndTheWeighInsBefore(t *testing.T) {
 	t.Parallel()
 
@@ -822,19 +911,7 @@ func TestCalibrateReadsTheFullDaysAndTheWeighInsBefore(t *testing.T) {
 	}
 	for _, n := range []int{399, 330, 305, 301, 270, 262, 230, 190} {
 		last := start.AddDays(n)
-		cut := map[day.Date]Day{}
-		first := firstData(days)
-		for d, v := range days {
-			switch {
-			case last.Before(d):
-			case last.DaysSince(d) < FullDays(p):
-				cut[d] = v
-			case d == first:
-				cut[d] = Day{Status: v.Status, Meals: v.Meals, WeightKg: v.WeightKg}
-			case v.WeightKg > 0:
-				cut[d] = Day{Status: v.Status, WeightKg: v.WeightKg}
-			}
-		}
+		cut := cutHistory(days, last, p)
 		if got, want := Calibrate(cut, phases, last, p), Calibrate(days, phases, last, p); !reflect.DeepEqual(got, want) {
 			t.Errorf("day %d: the cut history gives %+v, the whole one %+v", n, got, want)
 		}
