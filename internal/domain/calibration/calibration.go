@@ -82,10 +82,20 @@ type Params struct {
 	// MinDays is the fewest days a window needs once the first days of a
 	// phase are left out.
 	MinDays int
-	// WaterDays is how many days at the start of every phase calibration
-	// leaves out: glycogen and water move the weight then, not the energy
-	// balance (a bulk's start refills them too).
+	// WaterDays is how many days at the start of a phase calibration
+	// leaves out, when the intake changes with it: glycogen and water
+	// move the weight then, not the energy balance (a bulk's start refills
+	// them too).
 	WaterDays int
+	// IntakeChange is the share of the logged intake of the WaterDays
+	// before a phase's start (or the day after its planned end) by which
+	// the logged intake after it must differ for it to be a change of
+	// intake: a step of 100 or 200 kcal moves no water a window must wait
+	// out, a cut of 1000 kcal or a reverse diet does. ChangeDays is how
+	// many logged days after it tell; with fewer, or none logged before,
+	// it is taken for a change.
+	IntakeChange float64
+	ChangeDays   int
 	// TrendAlpha is how much of a weigh-in's difference from the trend
 	// weight the trend takes a day, from 0 to 1.
 	TrendAlpha float64
@@ -118,8 +128,9 @@ type Params struct {
 // they are DefaultParams.
 
 // DefaultParams returns the settings of DESIGN.md §7: a window of 42
-// days with at least 14 left after a phase's first 14, of 63 where the
-// weigh-ins carry over by 0.7 or more, a trend that takes
+// days with at least 14 left after a phase's first 14, when the intake
+// changed by more than a tenth with it (by 3 logged days or more), of 63
+// where the weigh-ins carry over by 0.7 or more, a trend that takes
 // a tenth a day, and trust at an interval of ±200 kcal or narrower with
 // the data an autopilot step needs (docs/limits.md); a verdict that
 // tolerates ±0.1 % a week around the target, holds at steps 30 % off,
@@ -130,7 +141,8 @@ type Params struct {
 func DefaultParams() Params {
 	l := limits.UserDefaults()
 	return Params{
-		WindowDays: 42, LongWindowDays: 63, StrongAutocorrelation: 0.7, MinDays: 14, WaterDays: 14, TrendAlpha: 0.1,
+		WindowDays: 42, LongWindowDays: 63, StrongAutocorrelation: 0.7, MinDays: 14, WaterDays: 14,
+		IntakeChange: 0.1, ChangeDays: 3, TrendAlpha: 0.1,
 		TrustedKcal: 200, LoggedDays: l.LoggedDays, WeighIns: l.WeighIns,
 		TolerancePctWeek: 0.1, StepsChange: 0.3, LeanLossKgWeek: 0.5, DriftShare: 0.03,
 	}
@@ -245,7 +257,7 @@ type Estimate struct {
 // added; logging an estimate of such a day keeps it whole.
 func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Params) Estimate {
 	first := firstData(days)
-	changes := intakeChanges(phases)
+	changes := intakeChanges(days, phases, last, p)
 	change := latestChange(changes, last.AddDays(1))
 	e := window(days, last, change, first, p)
 	for e.Days < p.MinDays && !change.IsZero() {
@@ -287,7 +299,7 @@ func FullDays(p Params) int { return p.WindowDays + max(p.WindowDays, p.LongWind
 // reads the days of the span alone, so the trend weight, which the
 // weigh-ins before make, is the caller's (TrendKg is 0).
 func Measure(days map[day.Date]Day, phases []plan.Phase, from, to day.Date, p Params) Estimate {
-	if change := latestChange(intakeChanges(phases), to); !change.IsZero() {
+	if change := latestChange(intakeChanges(days, phases, to, p), to); !change.IsZero() {
 		if w := change.AddDays(p.WaterDays); from.Before(w) {
 			from = w
 		}
@@ -338,10 +350,57 @@ func startTrend(days map[day.Date]Day, trend []Point, start, last day.Date) floa
 	return 0
 }
 
-// intakeChanges returns the days the intake changes on, in order: each
-// phase's start, and the day after a phase's planned end when no phase
-// starts then.
-func intakeChanges(phases []plan.Phase) []day.Date {
+// intakeChanges returns the days the intake changed on, in order, as the
+// days up to last tell: of the days a phase changes it (phaseChanges),
+// those after which the logged intake, of the Params.WaterDays from it up
+// to last, differs from that of the Params.WaterDays before it by more
+// than Params.IntakeChange; one with fewer than Params.ChangeDays logged
+// days after it, or none logged before it, is taken for a change.
+func intakeChanges(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Params) []day.Date {
+	var out []day.Date
+	for _, c := range phaseChanges(phases) {
+		if !last.Before(c) && sameIntake(days, c, last, p) {
+			continue
+		}
+		out = append(out, c)
+	}
+	return out
+}
+
+// sameIntake reports whether the logged intake after c, of up to
+// Params.WaterDays from it up to last, is within Params.IntakeChange of
+// the logged intake of the Params.WaterDays before it, both of days
+// enough to tell.
+func sameIntake(days map[day.Date]Day, c, last day.Date, p Params) bool {
+	before, nb := loggedMean(days, c.AddDays(-p.WaterDays), c.AddDays(-1))
+	to := c.AddDays(p.WaterDays - 1)
+	if last.Before(to) {
+		to = last
+	}
+	after, na := loggedMean(days, c, to)
+	return nb > 0 && na >= p.ChangeDays && math.Abs(after-before) <= p.IntakeChange*before
+}
+
+// loggedMean returns the average intake of the logged days of days from
+// from to to, both included, and how many there are.
+func loggedMean(days map[day.Date]Day, from, to day.Date) (float64, int) {
+	var sum float64
+	var n int
+	for d := from; !to.Before(d); d = d.AddDays(1) {
+		if v := days[d]; v.Logged() {
+			sum, n = sum+v.Kcal, n+1
+		}
+	}
+	if n == 0 {
+		return 0, 0
+	}
+	return sum / float64(n), n
+}
+
+// phaseChanges returns the days a phase may change the intake on, in
+// order: each phase's start, and the day after a phase's planned end when
+// no phase starts then.
+func phaseChanges(phases []plan.Phase) []day.Date {
 	var out []day.Date
 	for i, ph := range phases {
 		out = append(out, ph.Start)

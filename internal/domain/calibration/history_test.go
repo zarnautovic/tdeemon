@@ -663,7 +663,9 @@ func checkHistory(t *testing.T, h history, private bool) []string {
 // bound between them, and calibration is to follow the data.
 func (b built) checkSteady(t *testing.T, private bool) {
 	t.Helper()
-	changes := intakeChanges(b.phases)
+	// Any day a phase may change the intake on: whether it did, the days
+	// after it tell, and the window may move to it then.
+	changes := phaseChanges(b.phases)
 	var prev *Estimate
 	var measured, trusted int
 	for last := b.first(); last.Before(b.today); last = last.AddDays(1) {

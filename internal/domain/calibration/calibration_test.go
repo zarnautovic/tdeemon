@@ -27,6 +27,18 @@ func line(days map[day.Date]Day, to day.Date, n int, kgEnd, kgPerDay, kcal float
 	}
 }
 
+// eatLessFrom makes the logged intake of days from start on a fifth less:
+// a change of intake, as a phase's start brings one, whose water
+// calibration leaves out.
+func eatLessFrom(days map[day.Date]Day, start day.Date) {
+	for d, v := range days {
+		if !d.Before(start) && v.Meals > 0 {
+			v.Kcal *= 0.8
+			days[d] = v
+		}
+	}
+}
+
 func TestCalibrateExactLine(t *testing.T) {
 	t.Parallel()
 
@@ -200,6 +212,7 @@ func TestCalibrateWithoutEnoughDaysOfAPhase(t *testing.T) {
 		}, func() map[day.Date]Day {
 			days := map[day.Date]Day{}
 			line(days, last, 15, 80, 0, 2400)
+			eatLessFrom(days, start)
 			return days
 		}()},
 	} {
@@ -611,6 +624,13 @@ func TestCalibrateDoesNotGoBackFar(t *testing.T) {
 	}
 	days := map[day.Date]Day{}
 	line(days, last, 400, 80, -0.03, 2000)
+	// Each break eats a quarter more than the cut around it.
+	for d, v := range days {
+		if ph, ok := plan.PhaseOn(phases, d); ok && ph.Type == plan.Maintain {
+			v.Kcal *= 1.25
+			days[d] = v
+		}
+	}
 	e := Calibrate(days, phases, last, DefaultParams())
 	if e.Measured || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
 		t.Errorf("window %s to %s, %d days before %s, doubts %v; want no estimate for few days",
@@ -626,8 +646,6 @@ func TestCalibrateWithFewerMinDaysThanAWeek(t *testing.T) {
 	// data, never a number that is none.
 	p := DefaultParams()
 	p.MinDays = 0
-	days := map[day.Date]Day{}
-	line(days, last, 60, 80, -0.05, 2000)
 	for _, tc := range []struct {
 		name   string
 		phases []plan.Phase
@@ -636,6 +654,9 @@ func TestCalibrateWithFewerMinDaysThanAWeek(t *testing.T) {
 		{"a window of 6 days", []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-19), RatePctWeek: -0.5}}, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
 		{"an empty window", []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-5), RatePctWeek: -0.5}}, []string{DoubtFewWeighIns, DoubtFewLoggedDays}},
 	} {
+		days := map[day.Date]Day{}
+		line(days, last, 60, 80, -0.05, 2000)
+		eatLessFrom(days, tc.phases[0].Start)
 		if e := Calibrate(days, tc.phases, last, p); !slices.Equal(e.Doubts, tc.want) {
 			t.Errorf("%s: %d days, doubts %v; want %v", tc.name, e.Days, e.Doubts, tc.want)
 		}

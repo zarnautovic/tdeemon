@@ -29,8 +29,6 @@ func TestMeasureASpan(t *testing.T) {
 func TestMeasureLeavesOutAPhasesFirstDays(t *testing.T) {
 	t.Parallel()
 
-	days := map[day.Date]Day{}
-	line(days, last, 90, 80, -0.07, 2000)
 	from, to := last.AddDays(-55), last.AddDays(-14)
 	p := DefaultParams()
 	for _, tc := range []struct {
@@ -49,6 +47,12 @@ func TestMeasureLeavesOutAPhasesFirstDays(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			// Each phase changes the intake.
+			days := map[day.Date]Day{}
+			line(days, last, 90, 80, -0.07, 2000)
+			for _, ph := range tc.phases {
+				eatLessFrom(days, ph.Start)
+			}
 			if e := Measure(days, tc.phases, from, to, p); e.From != tc.want || e.To != to || !e.Measured {
 				t.Errorf("Measure = %s to %s, measured %v; want from %s", e.From, e.To, e.Measured, tc.want)
 			}
@@ -62,12 +66,16 @@ func TestMeasureAShortSpan(t *testing.T) {
 	days := map[day.Date]Day{}
 	line(days, last, 90, 80, -0.07, 2000)
 	from := last.AddDays(-20)
+	eatLessFrom(days, from)
 	// Fourteen days left out of 21 leave 7, under the 14 a window needs.
 	e := Measure(days, []plan.Phase{{Type: plan.Cut, Start: from, RatePctWeek: -0.5}}, from, last, DefaultParams())
 	if e.Measured || e.Days != 7 || !slices.Equal(e.Doubts, []string{DoubtFewDays}) {
 		t.Errorf("Measure = %d days, measured %v, doubts %v; want 7, none, few_days", e.Days, e.Measured, e.Doubts)
 	}
 	// A span the water days take whole has no day.
+	days = map[day.Date]Day{}
+	line(days, last, 90, 80, -0.07, 2000)
+	eatLessFrom(days, last.AddDays(-5))
 	e = Measure(days, []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-5), RatePctWeek: -0.5}}, last.AddDays(-5), last, DefaultParams())
 	if e.Measured || e.Days != 0 || e.From != last.AddDays(1) {
 		t.Errorf("Measure of water days alone = %s, %d days, measured %v; want none", e.From, e.Days, e.Measured)
@@ -118,6 +126,9 @@ func TestCalibrateLengthensAWindowOfWater(t *testing.T) {
 			t.Parallel()
 			days := map[day.Date]Day{}
 			waves(days, last, tc.n, tc.amp, 2000)
+			for _, ph := range tc.phases {
+				eatLessFrom(days, ph.Start)
+			}
 			e := Calibrate(days, tc.phases, last, p)
 			if !e.Measured || e.Days != tc.want || e.To != last {
 				t.Errorf("Calibrate = %d days to %s, measured %v, autocorrelation %.2f; want %d", e.Days, e.To, e.Measured, e.Autocorrelation, tc.want)
@@ -133,9 +144,62 @@ func TestCalibrateLengthensTheWindowBeforeAPhase(t *testing.T) {
 
 	days := map[day.Date]Day{}
 	waves(days, last, 120, 0.8, 2000)
+	eatLessFrom(days, last.AddDays(-9))
 	p := DefaultParams()
 	e := Calibrate(days, []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-9), RatePctWeek: -0.5}}, last, p)
 	if !e.BeforePhase || e.Days != p.LongWindowDays || e.To != last.AddDays(-10) {
 		t.Errorf("Calibrate = %d days to %s, before the phase %v; want %d to %s", e.Days, e.To, e.BeforePhase, p.LongWindowDays, last.AddDays(-10))
+	}
+}
+
+// A phase's start leaves out its first days of water only when the
+// intake changes with it: a step of a few percent moves no water, a cut
+// of a fifth or a reverse diet does; with days too few after it to tell,
+// it is a change.
+func TestCalibrateLeavesOutWaterOnlyAfterAChangeOfIntake(t *testing.T) {
+	t.Parallel()
+
+	p := DefaultParams()
+	for _, tc := range []struct {
+		name    string
+		ago     int
+		share   float64
+		spanned bool
+	}{
+		{"the same intake", 20, 1.025, true},
+		{"a little less", 20, 0.92, true},
+		{"a cut of a fifth", 20, 0.8, false},
+		{"a reverse diet", 20, 1.2, false},
+		{"days too few after it", 1, 1, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			days := map[day.Date]Day{}
+			line(days, last, 90, 145, -0.09, 2340)
+			start := last.AddDays(-tc.ago)
+			for d, v := range days {
+				if !d.Before(start) {
+					v.Kcal *= tc.share
+					days[d] = v
+				}
+			}
+			e := Calibrate(days, []plan.Phase{{Type: plan.Cut, Start: start, RatePctWeek: -0.4}}, last, p)
+			if spanned := !e.BeforePhase && e.To == last && e.From.Before(start); spanned != tc.spanned {
+				t.Errorf("Calibrate = %s to %s, before the phase %v; want the window across the start %v", e.From, e.To, e.BeforePhase, tc.spanned)
+			}
+		})
+	}
+}
+
+// A planned end the intake goes on through is no change either.
+func TestCalibrateTakesAnEndWithoutAChangeForNone(t *testing.T) {
+	t.Parallel()
+
+	days := map[day.Date]Day{}
+	line(days, last, 90, 145, -0.09, 2340)
+	end := last.AddDays(-10)
+	e := Calibrate(days, []plan.Phase{{Type: plan.Cut, Start: last.AddDays(-80), End: end, RatePctWeek: -0.4}}, last, DefaultParams())
+	if e.BeforePhase || e.To != last || !e.From.Before(end) {
+		t.Errorf("Calibrate = %s to %s, before the phase %v; want the window across the end", e.From, e.To, e.BeforePhase)
 	}
 }
