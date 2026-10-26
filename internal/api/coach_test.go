@@ -2,14 +2,18 @@ package api_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
+	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 )
 
@@ -44,16 +48,19 @@ type planAnswer struct {
 		Start       string  `json:"start"`
 		RatePctWeek float64 `json:"rate_pct_week"`
 	} `json:"phases"`
-	TrainingWeekdays []string `json:"training_weekdays"`
-	Targets          []struct {
-		EffectiveFrom string `json:"effective_from"`
-		To            string `json:"to"`
-		Training      struct{ Kcal float64 }
-		Outcome       *planOutcome `json:"outcome"`
-	} `json:"targets"`
-	Limits    map[string]float64 `json:"limits"`
-	Pending   *planProposal      `json:"pending"`
-	Revisions []planProposal     `json:"revisions"`
+	TrainingWeekdays []string           `json:"training_weekdays"`
+	Targets          []planTarget       `json:"targets"`
+	Limits           map[string]float64 `json:"limits"`
+	Pending          *planProposal      `json:"pending"`
+	Revisions        []planProposal     `json:"revisions"`
+}
+
+// planTarget is a target of get_plan's, as the tests read it.
+type planTarget struct {
+	EffectiveFrom string `json:"effective_from"`
+	To            string `json:"to"`
+	Training      struct{ Kcal float64 }
+	Outcome       *planOutcome `json:"outcome"`
 }
 
 // planProposal is a proposal of get_plan's, as the tests read it.
@@ -84,6 +91,8 @@ type planProposal struct {
 	DecidedBy *struct {
 		Client string `json:"client"`
 	} `json:"decided_by"`
+	Reverts    *string `json:"reverts"`
+	RevertedBy *string `json:"reverted_by"`
 }
 
 // savePlan gives the user of saveHistory a cut from the history's first
@@ -118,17 +127,17 @@ func savePlan(t *testing.T, in *instance) day.Date {
 		Changes: proposal.Changes{Targets: []proposal.TargetChange{{
 			From: today.AddDays(3), After: &plan.Target{EffectiveFrom: today.AddDays(3), Training: d, Rest: d},
 		}}},
-	}, today, now)
+	}, today, now, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.ApplyProposal(ctx, id, isolationActor, step.ID, today, now); err != nil {
+	if _, err := db.ApplyProposal(ctx, id, isolationActor, step.ID, today, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.CreateProposal(ctx, id, coach, proposal.Draft{
 		Rationale: "Train on Sundays too.",
 		Changes:   proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: 0b0101011}},
-	}, today, now); err != nil {
+	}, today, now, nil); err != nil {
 		t.Fatal(err)
 	}
 	return today
@@ -293,5 +302,303 @@ func TestGetPlanTakesAReadToken(t *testing.T) {
 	}
 	if rec := in.do(t, http.MethodGet, "/api/v1/plan", "", nil, bearer(phone.Token)); rec.Code != http.StatusForbidden {
 		t.Errorf("with an ingest token: %d %s, want 403", rec.Code, rec.Body.String())
+	}
+}
+
+// saveCoach is savePlan with the profile a plan needs, of a man of 180
+// cm, so the limits can hold a change to it.
+func saveCoach(t *testing.T, in *instance) day.Date {
+	t.Helper()
+	today := savePlan(t, in)
+	pr := profile.Profile{Sex: profile.Male, BirthDate: day.Date{Year: 1990, Month: 6, Day: 15}, HeightCm: 180}
+	if err := in.db.SetProfile(t.Context(), in.user.ID, isolationActor, pr, today, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	return today
+}
+
+// proposeAnswer is propose_changes' and revert_proposal's answer, as the
+// tests read it.
+type proposeAnswer struct {
+	Proposal planProposal `json:"proposal"`
+	Preview  struct {
+		TrendKg *float64 `json:"trend_kg"`
+		TDEE    *float64 `json:"tdee"`
+		Checks  []struct {
+			Of              string   `json:"of"`
+			Day             string   `json:"day"`
+			WeeklyKcal      *float64 `json:"weekly_kcal"`
+			ExpectedPctWeek *float64 `json:"expected_pct_week"`
+			ExpectedKgWeek  *float64 `json:"expected_kg_week"`
+			Warnings        []struct {
+				Rule string `json:"rule"`
+			} `json:"warnings"`
+		} `json:"checks"`
+	} `json:"preview"`
+}
+
+// problem is an error's answer, as the tests read it.
+type problem struct {
+	Detail string `json:"detail"`
+	Errors []struct {
+		Location string          `json:"location"`
+		Message  string          `json:"message"`
+		Value    json.RawMessage `json:"value"`
+	} `json:"errors"`
+}
+
+func post(t *testing.T, in *instance, session *http.Cookie, path, body string, out any) int {
+	t.Helper()
+	rec := in.do(t, http.MethodPost, path, body, []*http.Cookie{session}, nil)
+	if out != nil {
+		if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+			t.Fatalf("POST %s: %d %s: %v", path, rec.Code, rec.Body.String(), err)
+		}
+	}
+	return rec.Code
+}
+
+// stepBody proposes a target of kcal from day d, its rest days as its
+// training days.
+func stepBody(d day.Date, kcal int) string {
+	return fmt.Sprintf(`{"rationale": "The loss is under the cut's rate.", "model": "claude-opus-5-5",
+		"targets": [{"from": %q, "training": {"kcal": %d, "protein": 160, "fat": 60}}]}`, d, kcal)
+}
+
+func TestProposeChanges(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	tomorrow := today.AddDays(1)
+	body := fmt.Sprintf(`{"rationale": "The loss is under the cut's rate.", "model": "claude-opus-5-5",
+		"window": {"from": %q, "to": %q},
+		"targets": [{"from": %q, "training": {"kcal": 1900, "protein": 160, "fat": 60}}]}`, today.AddDays(-28), today.AddDays(-1), tomorrow)
+	var a proposeAnswer
+	if code := post(t, in, session, "/api/v1/proposals", body, &a); code != http.StatusCreated {
+		t.Fatalf("propose: %d %+v", code, a)
+	}
+	p := a.Proposal
+	if p.Status != "pending" || p.By.Client != "web" || p.By.Model != "claude-opus-5-5" || p.Window == nil || len(p.Changes.Targets) != 1 {
+		t.Fatalf("the proposal = %+v", p)
+	}
+	if c := p.Changes.Targets[0]; c.From != tomorrow.String() || c.Before != nil || c.After == nil || c.After.Training.Kcal != 1900 {
+		t.Errorf("its target = %+v", c)
+	}
+	// It waits, in place of the one before.
+	if b := getPlan(t, in, []*http.Cookie{session}, nil); b.Pending == nil || b.Pending.ID != p.ID {
+		t.Errorf("pending = %+v, want %s", b.Pending, p.ID)
+	}
+}
+
+// The preview of a target: the rate 1900 kcal a day implies with the TDEE
+// of 2385, at a trend weight near 82.5 kg.
+func TestProposeChangesPreview(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	tomorrow := today.AddDays(1)
+	var a proposeAnswer
+	if code := post(t, in, session, "/api/v1/proposals", stepBody(tomorrow, 1900), &a); code != http.StatusCreated {
+		t.Fatalf("propose: %d %+v", code, a)
+	}
+	pv := a.Preview
+	if !nearPtr(pv.TDEE, 2385, 1) || !nearPtr(pv.TrendKg, 82.5, 0.1) || len(pv.Checks) != 1 {
+		t.Fatalf("the preview = %+v", pv)
+	}
+	if c := pv.Checks[0]; c.Of != "target" || c.Day != tomorrow.String() || !nearPtr(c.WeeklyKcal, 1900, 0) ||
+		!nearPtr(c.ExpectedPctWeek, -0.53, 0.01) || !nearPtr(c.ExpectedKgWeek, -0.44, 0.01) {
+		t.Errorf("the check = %+v", c)
+	}
+}
+
+func TestProposeChangesRefusesPastTheLimits(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	before := getPlan(t, in, []*http.Cookie{session}, nil).Pending
+	var pr problem
+	if code := post(t, in, session, "/api/v1/proposals", stepBody(today.AddDays(1), 1300), &pr); code != http.StatusUnprocessableEntity {
+		t.Fatalf("propose 1300 kcal: %d %+v", code, pr)
+	}
+	var floor *struct {
+		Rule, Level     string
+		Limit, Proposed float64
+	}
+	for _, e := range pr.Errors {
+		var v struct {
+			Rule, Level     string
+			Limit, Proposed float64
+		}
+		if err := json.Unmarshal(e.Value, &v); err == nil && v.Rule == limits.RuleKcalFloor {
+			floor = &v
+			if e.Location != "target "+today.AddDays(1).String() || e.Message == "" {
+				t.Errorf("the violation's detail = %+v", e)
+			}
+		}
+	}
+	if floor == nil || floor.Limit != 1500 || floor.Proposed != 1300 || floor.Level == "" {
+		t.Errorf("the refusal = %+v, want kcal_floor, 1500, 1300", pr)
+	}
+	// Nothing was stored: the proposal before waits on.
+	if after := getPlan(t, in, []*http.Cookie{session}, nil).Pending; after == nil || after.ID != before.ID {
+		t.Errorf("pending = %+v, want %+v", after, before)
+	}
+}
+
+func TestProposeChangesRefusesItsShape(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	for name, tc := range map[string]struct{ body, want string }{
+		"a target in the past": {stepBody(today.AddDays(-1), 1900), "before today"},
+		"a target without its values": {
+			fmt.Sprintf(`{"rationale": "Why.", "targets": [{"from": %q}]}`, today.AddDays(1)),
+			"training is required",
+		},
+		"nothing": {`{"rationale": "Why."}`, "changes nothing"},
+		"a delete of no phase": {
+			fmt.Sprintf(`{"rationale": "Why.", "phases": [{"start": %q, "delete": true}]}`, today.AddDays(9)),
+			"no phase from",
+		},
+	} {
+		var pr problem
+		if code := post(t, in, session, "/api/v1/proposals", tc.body, &pr); code != http.StatusUnprocessableEntity || !strings.Contains(pr.Detail, tc.want) {
+			t.Errorf("%s: %d %+v, want 422 %q", name, code, pr, tc.want)
+		}
+	}
+}
+
+// proposeStep proposes a target of kcal from tomorrow, and returns it.
+func proposeStep(t *testing.T, in *instance, session *http.Cookie, today day.Date, kcal int) planProposal {
+	t.Helper()
+	var a proposeAnswer
+	if code := post(t, in, session, "/api/v1/proposals", stepBody(today.AddDays(1), kcal), &a); code != http.StatusCreated {
+		t.Fatalf("propose: %d %+v", code, a)
+	}
+	return a.Proposal
+}
+
+func TestApplyProposal(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	p := proposeStep(t, in, session, today, 1900)
+	var a struct{ Proposal planProposal }
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/apply", "", &a); code != http.StatusOK ||
+		a.Proposal.Status != "applied" || a.Proposal.DecidedBy == nil || a.Proposal.DecidedBy.Client != "web" {
+		t.Fatalf("apply: %d %+v", code, a)
+	}
+	// The plan has the target, and the revision.
+	b := getPlan(t, in, []*http.Cookie{session}, nil)
+	if !slices.ContainsFunc(b.Targets, func(tg planTarget) bool {
+		return tg.EffectiveFrom == today.AddDays(1).String() && tg.Training.Kcal == 1900
+	}) ||
+		len(b.Revisions) != 2 || b.Revisions[0].ID != p.ID {
+		t.Errorf("the plan = %+v", b)
+	}
+	// Applied again, as a retry would, it is as it was.
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/apply", "", &a); code != http.StatusOK || a.Proposal.Status != "applied" {
+		t.Errorf("apply again: %d %+v", code, a)
+	}
+}
+
+func TestApplyProposalRefuses(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	// Within the limits when proposed, past them when applied: the user
+	// raised their floor since.
+	p := proposeStep(t, in, session, today, 1800)
+	l := limits.UserDefaults()
+	l.KcalFloorMale = 1850
+	if err := in.db.SetUserLimits(t.Context(), in.user.ID, isolationActor, l, limits.Instance(), in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	var pr problem
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/apply", "", &pr); code != http.StatusUnprocessableEntity ||
+		!strings.Contains(string(pr.Errors[0].Value), limits.RuleKcalFloor) {
+		t.Errorf("apply past the limits: %d %+v", code, pr)
+	}
+	if b := getPlan(t, in, []*http.Cookie{session}, nil); b.Pending == nil || b.Pending.ID != p.ID {
+		t.Errorf("pending = %+v, want it waiting", b.Pending)
+	}
+	// Rejected, it applies no more; one that does not exist is no one's.
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/reject", "", nil); code != http.StatusOK {
+		t.Fatalf("reject: %d", code)
+	}
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/apply", "", &pr); code != http.StatusConflict || !strings.Contains(pr.Detail, "rejected") {
+		t.Errorf("apply a rejected one: %d %+v", code, pr)
+	}
+	if code := post(t, in, session, "/api/v1/proposals/"+uuid.NewV7().String()+"/apply", "", nil); code != http.StatusNotFound {
+		t.Errorf("apply none: %d, want 404", code)
+	}
+}
+
+func TestRejectProposal(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	p := proposeStep(t, in, session, today, 1900)
+	var a struct{ Proposal planProposal }
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/reject", "", &a); code != http.StatusOK || a.Proposal.Status != "rejected" {
+		t.Errorf("reject: %d %+v", code, a)
+	}
+	if b := getPlan(t, in, []*http.Cookie{session}, nil); b.Pending != nil {
+		t.Errorf("pending = %+v, want none", b.Pending)
+	}
+	applied := proposeStep(t, in, session, today, 2000)
+	post(t, in, session, "/api/v1/proposals/"+applied.ID+"/apply", "", nil)
+	var pr problem
+	if code := post(t, in, session, "/api/v1/proposals/"+applied.ID+"/reject", "", &pr); code != http.StatusConflict || !strings.Contains(pr.Detail, "applied") {
+		t.Errorf("reject an applied one: %d %+v", code, pr)
+	}
+}
+
+func TestRevertProposal(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	p := proposeStep(t, in, session, today, 1900)
+	post(t, in, session, "/api/v1/proposals/"+p.ID+"/apply", "", nil)
+	var a proposeAnswer
+	if code := post(t, in, session, "/api/v1/proposals/"+p.ID+"/revert", `{"rationale": "Too hungry.", "model": "claude-opus-5-5"}`, &a); code != http.StatusCreated {
+		t.Fatalf("revert: %d %+v", code, a)
+	}
+	r := a.Proposal
+	if r.Status != "pending" || r.Reverts == nil || *r.Reverts != p.ID || len(r.Changes.Targets) != 1 || r.Changes.Targets[0].After != nil || len(a.Preview.Checks) != 1 {
+		t.Fatalf("the revert = %+v", a)
+	}
+	post(t, in, session, "/api/v1/proposals/"+r.ID+"/apply", "", nil)
+	b := getPlan(t, in, []*http.Cookie{session}, nil)
+	if len(b.Revisions) < 2 || b.Revisions[0].ID != r.ID || b.Revisions[1].Status != "reverted" || b.Revisions[1].RevertedBy == nil {
+		t.Errorf("the revisions = %+v", b.Revisions)
+	}
+	if code := post(t, in, session, "/api/v1/proposals/"+uuid.NewV7().String()+"/revert", `{"rationale": "Back."}`, nil); code != http.StatusNotFound {
+		t.Errorf("revert none: %d, want 404", code)
+	}
+}
+
+// The tools that write the plan take a tools token, not a read one.
+func TestProposalsTakeAToolsToken(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveCoach(t, in)
+	read, _ := in.createToken(t, session, `{"name":"reader","scopes":["read"]}`)
+	if rec := in.do(t, http.MethodPost, "/api/v1/proposals", stepBody(today.AddDays(1), 1900), nil, bearer(read.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("with a read token: %d %s, want 403", rec.Code, rec.Body.String())
+	}
+	tools, _ := in.createToken(t, session, `{"name":"claude","scopes":["tools"]}`)
+	rec := in.do(t, http.MethodPost, "/api/v1/proposals", stepBody(today.AddDays(1), 1900), nil, bearer(tools.Token))
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"client":"api"`) {
+		t.Errorf("with a tools token: %d %s", rec.Code, rec.Body.String())
 	}
 }

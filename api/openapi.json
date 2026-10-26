@@ -46,6 +46,52 @@
         ],
         "type": "object"
       },
+      "CheckBody": {
+        "additionalProperties": false,
+        "properties": {
+          "day": {
+            "description": "The phase's start, or the target's day.",
+            "format": "date",
+            "type": "string"
+          },
+          "expected_kg_week": {
+            "description": "The same in kg a week.",
+            "format": "double",
+            "type": "number"
+          },
+          "expected_pct_week": {
+            "description": "The rate it implies with the measured TDEE, in % of the trend weight a week.",
+            "format": "double",
+            "type": "number"
+          },
+          "of": {
+            "enum": [
+              "phase",
+              "target",
+              "training_weekdays"
+            ],
+            "type": "string"
+          },
+          "warnings": {
+            "description": "What is past a threshold without refusing it: below_bmr, low_energy_availability, low_carbs.",
+            "items": {
+              "$ref": "#/components/schemas/LimitWarningBody"
+            },
+            "type": "array"
+          },
+          "weekly_kcal": {
+            "description": "The target's average day of a week, over the training weekdays.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "of",
+          "day",
+          "warnings"
+        ],
+        "type": "object"
+      },
       "CheckInBody": {
         "additionalProperties": false,
         "properties": {
@@ -376,6 +422,29 @@
           "protein",
           "fat",
           "carbs"
+        ],
+        "type": "object"
+      },
+      "DayTargetIn": {
+        "additionalProperties": false,
+        "properties": {
+          "fat": {
+            "format": "double",
+            "type": "number"
+          },
+          "kcal": {
+            "format": "double",
+            "type": "number"
+          },
+          "protein": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "kcal",
+          "protein",
+          "fat"
         ],
         "type": "object"
       },
@@ -1190,6 +1259,41 @@
         ],
         "type": "object"
       },
+      "LimitWarningBody": {
+        "additionalProperties": false,
+        "properties": {
+          "day_type": {
+            "description": "Absent for an unsplit target.",
+            "enum": [
+              "training",
+              "rest"
+            ],
+            "type": "string"
+          },
+          "rule": {
+            "enum": [
+              "below_bmr",
+              "low_energy_availability",
+              "low_carbs"
+            ],
+            "type": "string"
+          },
+          "threshold": {
+            "format": "double",
+            "type": "number"
+          },
+          "value": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rule",
+          "threshold",
+          "value"
+        ],
+        "type": "object"
+      },
       "LimitsBody": {
         "additionalProperties": false,
         "properties": {
@@ -1902,6 +2006,50 @@
         ],
         "type": "object"
       },
+      "PhaseChangeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "delete": {
+            "type": "boolean"
+          },
+          "end": {
+            "description": "Left out: until the next.",
+            "format": "date",
+            "type": "string"
+          },
+          "goal_weight": {
+            "format": "double",
+            "type": "number"
+          },
+          "milestone_weight": {
+            "format": "double",
+            "type": "number"
+          },
+          "rate_pct_week": {
+            "description": "% of the trend weight a week, a minus a loss.",
+            "format": "double",
+            "type": "number"
+          },
+          "start": {
+            "description": "Edits the phase from it, or adds one.",
+            "format": "date",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "cut",
+              "maintain",
+              "bulk",
+              "recomp"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "start"
+        ],
+        "type": "object"
+      },
       "PlanBody": {
         "additionalProperties": false,
         "properties": {
@@ -1967,6 +2115,32 @@
           "targets",
           "limits",
           "revisions"
+        ],
+        "type": "object"
+      },
+      "PreviewBody": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "description": "What the limits checked: each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays.",
+            "items": {
+              "$ref": "#/components/schemas/CheckBody"
+            },
+            "type": "array"
+          },
+          "tdee": {
+            "description": "The measured TDEE the expected rates take; absent while calibration trusts none.",
+            "format": "double",
+            "type": "number"
+          },
+          "trend_kg": {
+            "description": "The trend weight the limits and the rates take.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "checks"
         ],
         "type": "object"
       },
@@ -2115,6 +2289,95 @@
         ],
         "type": "object"
       },
+      "ProposalOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/ProposalBody"
+          }
+        },
+        "required": [
+          "proposal"
+        ],
+        "type": "object"
+      },
+      "ProposeInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "description": "The AI model you are.",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseChangeIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "rationale": {
+            "description": "Why: what the data show, what you agreed.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetChangeIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "training_weekdays": {
+            "description": "From now on; [] for none; left out, as they are.",
+            "items": {
+              "enum": [
+                "sunday",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday"
+              ],
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "window": {
+            "$ref": "#/components/schemas/WindowBody",
+            "description": "The days you drew it from."
+          }
+        },
+        "required": [
+          "rationale"
+        ],
+        "type": "object"
+      },
+      "ProposedBody": {
+        "additionalProperties": false,
+        "properties": {
+          "preview": {
+            "$ref": "#/components/schemas/PreviewBody"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/ProposalBody"
+          }
+        },
+        "required": [
+          "proposal",
+          "preview"
+        ],
+        "type": "object"
+      },
       "QuantityBody": {
         "additionalProperties": false,
         "properties": {
@@ -2216,6 +2479,24 @@
           "protein",
           "fat",
           "carbs"
+        ],
+        "type": "object"
+      },
+      "RevertInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "model": {
+            "maxLength": 100,
+            "type": "string"
+          },
+          "rationale": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "rationale"
         ],
         "type": "object"
       },
@@ -2487,6 +2768,31 @@
           "from": {
             "format": "date",
             "type": "string"
+          }
+        },
+        "required": [
+          "from"
+        ],
+        "type": "object"
+      },
+      "TargetChangeIn": {
+        "additionalProperties": false,
+        "properties": {
+          "delete": {
+            "type": "boolean"
+          },
+          "from": {
+            "description": "Today or later.",
+            "format": "date",
+            "type": "string"
+          },
+          "rest": {
+            "$ref": "#/components/schemas/DayTargetIn",
+            "description": "Left out: as training."
+          },
+          "training": {
+            "$ref": "#/components/schemas/DayTargetIn",
+            "description": "Required unless delete."
           }
         },
         "required": [
@@ -6612,6 +6918,487 @@
         "summary": "Set your profile",
         "tags": [
           "plan"
+        ]
+      }
+    },
+    "/api/v1/proposals": {
+      "post": {
+        "description": "Proposes a change of the plan: phases and targets to set or delete, and the training weekdays, with why and the days it was drawn from. Nothing changes until the user consents and apply_proposal applies it. The server holds it to the limits (docs/limits.md): one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, the weekly average of each target with the rate it implies with the measured TDEE, and warnings.",
+        "operationId": "propose-changes",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposedBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Propose a change of the plan",
+        "tags": [
+          "plan",
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/proposals/{id}/apply": {
+      "post": {
+        "description": "Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; applied again it answers as it is.",
+        "operationId": "apply-proposal",
+        "parameters": [
+          {
+            "description": "The proposal's id, as get_plan or propose_changes gave it.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The proposal's id, as get_plan or propose_changes gave it.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Apply a proposal",
+        "tags": [
+          "plan",
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/proposals/{id}/reject": {
+      "post": {
+        "description": "Rejects a pending proposal the user turned down; one that waits no more is a 409, a rejected one again answers as it is.",
+        "operationId": "reject-proposal",
+        "parameters": [
+          {
+            "description": "The proposal's id, as get_plan or propose_changes gave it.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The proposal's id, as get_plan or propose_changes gave it.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalOutputBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Reject a proposal",
+        "tags": [
+          "plan",
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/proposals/{id}/revert": {
+      "post": {
+        "description": "Proposes taking an applied proposal back: each of its changes put back as it was, as a new pending proposal with a preview, held to the limits as propose_changes is; applied, it marks the one it takes back reverted. It needs the plan as the proposal left it (a later change would be lost) and changes still to come: a change that took effect is refused (422); propose the old values from today instead.",
+        "operationId": "revert-proposal",
+        "parameters": [
+          {
+            "description": "The applied proposal to take back.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "description": "The applied proposal to take back.",
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevertInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposedBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Propose taking a revision back",
+        "tags": [
+          "plan",
+          "tools"
         ]
       }
     },

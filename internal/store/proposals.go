@@ -24,6 +24,13 @@ import (
 // applied.
 var ErrInvalidProposal = errors.New("invalid proposal")
 
+// ProposalCheck checks a proposal's changes, with the plan before each,
+// against the limits (proposal.Changes.Check). It runs in the
+// transaction once the changes keep their own rules, before anything is
+// written: its error is returned as it is, and nothing is written. nil
+// checks nothing.
+type ProposalCheck func(proposal.Changes) error
+
 // ProposalClosedError reports a proposal that waits no more: Status says
 // what became of it.
 type ProposalClosedError struct {
@@ -344,11 +351,12 @@ func (db *DB) Proposals(ctx context.Context, userID uuid.UUID, limit int, now ti
 // user's day now, and returns it. Each change gets the plan as it is
 // before it (Before); the changes must keep their rules
 // (proposal.Changes.Validate) and leave a timeline without an overlap,
-// or ErrInvalidProposal. The limits of a plan are limits.Validate's,
-// which runs before. The proposal supersedes the user's pending ones:
-// what they showed is what it changes now. It waits proposal.TTL for the
-// user's consent.
-func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Actor, d proposal.Draft, today day.Date, now time.Time) (proposal.Proposal, error) {
+// or ErrInvalidProposal; check then holds them to the limits. The
+// proposal supersedes the user's pending ones: what they showed is what
+// it changes now. It waits proposal.TTL for the user's consent.
+func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Actor, d proposal.Draft, today day.Date, now time.Time,
+	check ProposalCheck,
+) (proposal.Proposal, error) {
 	if err := checkDraft(a, d, today); err != nil {
 		return proposal.Proposal{}, err
 	}
@@ -358,7 +366,7 @@ func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 		if err != nil {
 			return err
 		}
-		p, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now)
+		p, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now, check)
 		return err
 	})
 	if err != nil {
@@ -370,12 +378,15 @@ func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 // RevertProposal makes the proposal that takes userID's applied proposal
 // id back, a's, with why, today being the user's day now, and returns
 // it, pending as any other: each change of id put back as it was before
-// (proposal.Changes.Inverse). It needs an applied proposal, the plan it
+// (proposal.Changes.Inverse); ErrNotFound when there is none. It needs an
+// applied proposal, the plan it
 // changed as it left it (a later change would be lost), and changes that
 // keep the past as it was (a change that took effect is moved on by a
-// proposal of its own), or ErrInvalidProposal. Applied, it marks id
-// reverted.
-func (db *DB) RevertProposal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, rationale string, today day.Date, now time.Time) (proposal.Proposal, error) {
+// proposal of its own), or ErrInvalidProposal. check holds the inverse to
+// the limits. Applied, it marks id reverted.
+func (db *DB) RevertProposal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, rationale string, today day.Date, now time.Time,
+	check ProposalCheck,
+) (proposal.Proposal, error) {
 	d := proposal.Draft{Rationale: rationale}
 	if err := checkDraft(a, d, today); err != nil {
 		return proposal.Proposal{}, err
@@ -386,8 +397,11 @@ func (db *DB) RevertProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 		if err != nil {
 			return err
 		}
-		if s == nil || proposal.Status(s.Status) != proposal.Applied {
-			return fmt.Errorf("%w: no applied proposal %s to revert", ErrInvalidProposal, id)
+		if s == nil {
+			return ErrNotFound
+		}
+		if proposal.Status(s.Status) != proposal.Applied {
+			return fmt.Errorf("%w: the proposal is %s, not applied", ErrInvalidProposal, s.Status)
 		}
 		applied, err := s.proposal(id.String(), now)
 		if err != nil {
@@ -401,7 +415,7 @@ func (db *DB) RevertProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 		if err := changedSince(c, back); err != nil {
 			return fmt.Errorf("%w: %w", ErrInvalidProposal, err)
 		}
-		p, err = createProposalIn(ctx, tx, userID, a, d, c, id, today, now)
+		p, err = createProposalIn(ctx, tx, userID, a, d, c, id, today, now, check)
 		return err
 	})
 	if err != nil {
@@ -453,10 +467,10 @@ func changedSince(c, back proposal.Changes) error {
 // createProposalIn stores d as userID's new pending proposal in tx, a's,
 // with c, its changes with the plan before each, and reverts, the
 // proposal it takes back or uuid.Nil, and returns it; ErrInvalidProposal
-// for changes that break their rules or leave a timeline that overlaps.
-// It supersedes the user's pending proposals.
+// for changes that break their rules or leave a timeline that overlaps,
+// or check's error. It supersedes the user's pending proposals.
 func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, d proposal.Draft, c proposal.Changes,
-	reverts uuid.UUID, today day.Date, now time.Time,
+	reverts uuid.UUID, today day.Date, now time.Time, check ProposalCheck,
 ) (proposal.Proposal, error) {
 	phases, err := phasesIn(ctx, tx, userID)
 	if err != nil {
@@ -467,6 +481,11 @@ func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event
 	}
 	if err := plan.ValidateTimeline(c.Timeline(phases)); err != nil {
 		return proposal.Proposal{}, fmt.Errorf("%w: the phases it leaves: %w", ErrInvalidProposal, err)
+	}
+	if check != nil {
+		if err := check(c); err != nil {
+			return proposal.Proposal{}, err
+		}
 	}
 	if err := supersedeProposals(ctx, tx, userID, a, now); err != nil {
 		return proposal.Proposal{}, err
@@ -592,9 +611,11 @@ func (db *DB) RejectProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 // there is none; a *ProposalClosedError when it waits no more, or the
 // plan it changes is no longer as it was (the proposal is superseded);
 // ErrInvalidProposal when a change would now change the past (a day
-// went by, or the next phase started). The limits of a plan are limits.Validate's, which runs again
-// before: the data or the limits may have changed since.
-func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, today day.Date, now time.Time) (proposal.Proposal, error) {
+// went by, or the next phase started). check holds the changes to the
+// limits again, as the data or the limits may have changed since.
+func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, today day.Date, now time.Time,
+	check ProposalCheck,
+) (proposal.Proposal, error) {
 	if err := a.Validate(); err != nil {
 		return proposal.Proposal{}, fmt.Errorf("invalid actor: %w", err)
 	}
@@ -618,19 +639,10 @@ func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor
 			}
 			return err
 		}
-		if err := closeProposal(ctx, tx, userID, a, id, proposal.Applied, now); err != nil {
+		if p, err = applyIn(ctx, tx, userID, a, p, now, check); err != nil {
 			return err
 		}
-		if p.Reverts != uuid.Nil() {
-			if err := revertProposal(ctx, tx, userID, a, p.Reverts, id, now); err != nil {
-				return err
-			}
-		}
-		if err := applyChanges(ctx, tx, userID, a, id, p.Changes, now); err != nil {
-			return err
-		}
-		p, err = readProposal(ctx, tx, userID, id, now)
-		return err
+		return nil
 	})
 	if err != nil {
 		return proposal.Proposal{}, proposalError("apply proposal", err)
@@ -639,6 +651,28 @@ func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor
 		return proposal.Proposal{}, &ProposalClosedError{Status: proposal.Superseded}
 	}
 	return p, nil
+}
+
+// applyIn applies userID's pending proposal p in tx, as a's consent,
+// once check passes its changes, and returns it as it then is.
+func applyIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, p proposal.Proposal, now time.Time, check ProposalCheck) (proposal.Proposal, error) {
+	if check != nil {
+		if err := check(p.Changes); err != nil {
+			return proposal.Proposal{}, err
+		}
+	}
+	if err := closeProposal(ctx, tx, userID, a, p.ID, proposal.Applied, now); err != nil {
+		return proposal.Proposal{}, err
+	}
+	if p.Reverts != uuid.Nil() {
+		if err := revertProposal(ctx, tx, userID, a, p.Reverts, p.ID, now); err != nil {
+			return proposal.Proposal{}, err
+		}
+	}
+	if err := applyChanges(ctx, tx, userID, a, p.ID, p.Changes, now); err != nil {
+		return proposal.Proposal{}, err
+	}
+	return readProposal(ctx, tx, userID, p.ID, now)
 }
 
 // changedUnder reports whether userID's plan in tx is no longer as p

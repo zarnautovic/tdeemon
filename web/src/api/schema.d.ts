@@ -492,6 +492,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose a change of the plan
+         * @description Proposes a change of the plan: phases and targets to set or delete, and the training weekdays, with why and the days it was drawn from. Nothing changes until the user consents and apply_proposal applies it. The server holds it to the limits (docs/limits.md): one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, the weekly average of each target with the rate it implies with the measured TDEE, and warnings.
+         */
+        post: operations["propose-changes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proposals/{id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply a proposal
+         * @description Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; applied again it answers as it is.
+         */
+        post: operations["apply-proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proposals/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a proposal
+         * @description Rejects a pending proposal the user turned down; one that waits no more is a 409, a rejected one again answers as it is.
+         */
+        post: operations["reject-proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/proposals/{id}/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose taking a revision back
+         * @description Proposes taking an applied proposal back: each of its changes put back as it was, as a new pending proposal with a preview, held to the limits as propose_changes is; applied, it marks the one it takes back reverted. It needs the plan as the proposal left it (a later change would be lost) and changes still to come: a change that took effect is refused (422); propose the old values from today instead.
+         */
+        post: operations["revert-proposal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/summary": {
         parameters: {
             query?: never;
@@ -597,6 +677,32 @@ export interface components {
             targets: components["schemas"]["TargetChangeBody"][];
             /** @description The training weekdays, when it changes them. */
             training_weekdays?: components["schemas"]["WeekdaysChangeBody"];
+        };
+        CheckBody: {
+            /**
+             * Format: date
+             * @description The phase's start, or the target's day.
+             */
+            day: string;
+            /**
+             * Format: double
+             * @description The same in kg a week.
+             */
+            expected_kg_week?: number;
+            /**
+             * Format: double
+             * @description The rate it implies with the measured TDEE, in % of the trend weight a week.
+             */
+            expected_pct_week?: number;
+            /** @enum {string} */
+            of: "phase" | "target" | "training_weekdays";
+            /** @description What is past a threshold without refusing it: below_bmr, low_energy_availability, low_carbs. */
+            warnings: components["schemas"]["LimitWarningBody"][];
+            /**
+             * Format: double
+             * @description The target's average day of a week, over the training weekdays.
+             */
+            weekly_kcal?: number;
         };
         CheckInBody: {
             /** @description Why the day is out of calibration (restaurant, sick, not logged); empty brings it back. */
@@ -755,6 +861,14 @@ export interface components {
              * Format: double
              * @description Grams of protein.
              */
+            protein: number;
+        };
+        DayTargetIn: {
+            /** Format: double */
+            fat: number;
+            /** Format: double */
+            kcal: number;
+            /** Format: double */
             protein: number;
         };
         DayTotalBody: {
@@ -1097,6 +1211,19 @@ export interface components {
             /** @enum {string} */
             unit: "g" | "ml" | "portion";
         };
+        LimitWarningBody: {
+            /**
+             * @description Absent for an unsplit target.
+             * @enum {string}
+             */
+            day_type?: "training" | "rest";
+            /** @enum {string} */
+            rule: "below_bmr" | "low_energy_availability" | "low_carbs";
+            /** Format: double */
+            threshold: number;
+            /** Format: double */
+            value: number;
+        };
         LimitsBody: {
             /** @description A user's limits at the start. */
             defaults: {
@@ -1427,6 +1554,30 @@ export interface components {
             /** Format: date */
             start: string;
         };
+        PhaseChangeIn: {
+            delete?: boolean;
+            /**
+             * Format: date
+             * @description Left out: until the next.
+             */
+            end?: string;
+            /** Format: double */
+            goal_weight?: number;
+            /** Format: double */
+            milestone_weight?: number;
+            /**
+             * Format: double
+             * @description % of the trend weight a week, a minus a loss.
+             */
+            rate_pct_week?: number;
+            /**
+             * Format: date
+             * @description Edits the phase from it, or adds one.
+             */
+            start: string;
+            /** @enum {string} */
+            type?: "cut" | "maintain" | "bulk" | "recomp";
+        };
         PlanBody: {
             /** @description The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; the user may loosen theirs in the app, up to the instance's. */
             limits: {
@@ -1447,6 +1598,20 @@ export interface components {
             today: string;
             /** @description The days of the week the plan makes training days. */
             training_weekdays: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[];
+        };
+        PreviewBody: {
+            /** @description What the limits checked: each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays. */
+            checks: components["schemas"]["CheckBody"][];
+            /**
+             * Format: double
+             * @description The measured TDEE the expected rates take; absent while calibration trusts none.
+             */
+            tdee?: number;
+            /**
+             * Format: double
+             * @description The trend weight the limits and the rates take.
+             */
+            trend_kg?: number;
         };
         ProfileBody: {
             /**
@@ -1524,6 +1689,25 @@ export interface components {
             /** @description The days it was drawn from. */
             window?: components["schemas"]["WindowBody"];
         };
+        ProposalOutputBody: {
+            proposal: components["schemas"]["ProposalBody"];
+        };
+        ProposeInputBody: {
+            /** @description The AI model you are. */
+            model?: string;
+            phases?: components["schemas"]["PhaseChangeIn"][] | null;
+            /** @description Why: what the data show, what you agreed. */
+            rationale: string;
+            targets?: components["schemas"]["TargetChangeIn"][] | null;
+            /** @description From now on; [] for none; left out, as they are. */
+            training_weekdays?: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[] | null;
+            /** @description The days you drew it from. */
+            window?: components["schemas"]["WindowBody"];
+        };
+        ProposedBody: {
+            preview: components["schemas"]["PreviewBody"];
+            proposal: components["schemas"]["ProposalBody"];
+        };
         QuantityBody: {
             /** Format: double */
             amount?: number;
@@ -1592,6 +1776,10 @@ export interface components {
              * @description The target's grams of protein less the total's.
              */
             protein: number;
+        };
+        RevertInputBody: {
+            model?: string;
+            rationale: string;
         };
         RevokeTokensOutputBody: {
             /**
@@ -1710,6 +1898,18 @@ export interface components {
             before?: components["schemas"]["TargetValuesBody"];
             /** Format: date */
             from: string;
+        };
+        TargetChangeIn: {
+            delete?: boolean;
+            /**
+             * Format: date
+             * @description Today or later.
+             */
+            from: string;
+            /** @description Left out: as training. */
+            rest?: components["schemas"]["DayTargetIn"];
+            /** @description Required unless delete. */
+            training?: components["schemas"]["DayTargetIn"];
         };
         TargetPeriodBody: {
             /**
@@ -4656,6 +4856,400 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "propose-changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProposeInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposedBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "apply-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal's id, as get_plan or propose_changes gave it. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "reject-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The proposal's id, as get_plan or propose_changes gave it. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposalOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "revert-proposal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The applied proposal to take back. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RevertInputBody"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposedBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

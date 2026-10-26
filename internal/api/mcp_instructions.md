@@ -77,3 +77,12 @@ token only reads: say so.
   the weeks holding the averages, days only when asked.
 - A meal to suggest fits what `get_day` says remains, of foods the user
   has (`find_foods`).
+
+## Coaching the plan
+
+- A review ("look at the last month"): `get_plan`, `get_summary`, and
+  `get_history` by week; explain their numbers, never compute your own.
+- A change of the plan is `propose_changes`, with why: show its preview,
+  and ask. `apply_proposal` only after the user says yes to that
+  proposal. A refusal: explain its violations, propose what the limits
+  allow.
