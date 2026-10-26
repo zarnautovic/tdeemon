@@ -3,9 +3,20 @@ import { useQuery } from '@tanstack/react-query'
 import type { components } from '@/api/schema'
 import { sessionQuery } from '@/api/session'
 import { useFormat } from '@/i18n/format'
+import { useLocale } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
 
 export type Violation = components['schemas']['ViolationValue']
+type Phase = components['schemas']['PhaseBody']
+type DayTarget = components['schemas']['DayTargetBody']
+
+// TargetValues are a target's values on each type of day.
+interface TargetValues {
+  training: DayTarget
+  rest: DayTarget
+}
+
+const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
 
 type Messages = ReturnType<typeof useMessages>
 type Rule = keyof Messages['plan']['rules']
@@ -81,4 +92,36 @@ export function useDate(): (date: string) => string {
   const session = useQuery(sessionQuery)
   const timeZone = session.data?.user.timezone ?? 'UTC'
   return (date) => f.calendarDay(date, timeZone)
+}
+
+// usePlanWords says the parts of a plan in words, as a proposal's changes
+// and the current plan show them: a phase (its type, rate, end, goal and
+// milestone), a target (once for an unsplit one, else each type of
+// day's) and the training weekdays.
+export function usePlanWords() {
+  const t = useMessages()
+  const f = useFormat()
+  const locale = useLocale()
+  const date = useDate()
+  const c = t.plan.change
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' })
+  // 2026-10-25 was a Sunday.
+  const weekdayName = (name: string) =>
+    weekday.format(Date.UTC(2026, 9, 25 + weekdays.indexOf(name)))
+  const day = (d: DayTarget) =>
+    c.day(f.number(d.kcal), f.number(d.protein, 1), f.number(d.carbs, 1), f.number(d.fat, 1))
+  return {
+    phase: (p: Phase) =>
+      [
+        `${c.types[p.type]}, ${c.rate(f.percent(p.rate_pct_week, 2))}`,
+        ...(p.end === undefined ? [] : [c.until(date(p.end))]),
+        ...(p.goal_weight === undefined ? [] : [c.goal(f.number(p.goal_weight, 1))]),
+        ...(p.milestone_weight === undefined ? [] : [c.milestone(f.number(p.milestone_weight, 1))]),
+      ].join(', '),
+    target: (v: TargetValues) =>
+      day(v.training) === day(v.rest)
+        ? day(v.training)
+        : `${c.training}: ${day(v.training)}; ${c.rest}: ${day(v.rest)}`,
+    days: (names: string[]) => (names.length === 0 ? c.noDays : names.map(weekdayName).join(', ')),
+  }
 }

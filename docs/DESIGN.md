@@ -615,7 +615,9 @@ Claude/ChatGPT subscription.
    marks the one it takes back reverted. It needs the plan as the
    proposal left it, so no later change is lost, and changes that keep
    the past as it was: a change that took effect moves on by a new
-   proposal. The web app shows the history, and takes a revision back
+   proposal. The web app shows the plan as it holds today (the phase and
+   the target in force, by their numbers, the training days, and what is
+   to come), the history, and takes a revision back
    in one step: the user, there, consents to the inverse, which applies
    at once (a revert the limits refuse waits, as any proposal).
 4. **Lifetime.** A proposal waits a week for consent, then expires. It

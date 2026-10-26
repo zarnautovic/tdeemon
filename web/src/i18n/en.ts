@@ -472,6 +472,16 @@ export const en = {
     keep: 'Back',
     unchanged: 'Nothing to save.',
     refused: (detail: string) => `The server did not take it: ${detail}`,
+    current: {
+      title: 'Current plan',
+      phase: 'Phase',
+      target: 'Target',
+      since: (date: string) => `since ${date}`,
+      ahead: 'To come',
+      from: (date: string) => `From ${date}`,
+      nothing: 'none',
+      none: 'No plan yet. Ask your AI coach for one: "look at the last month and propose a plan".',
+    },
     pending: {
       title: 'A proposed change',
       by: (who: string) => `Proposed by ${who}`,

@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { $api } from '@/api/client'
 import { LoadError } from '@/components/load-error'
+import { CurrentPlan } from '@/components/plan/current-plan'
 import { LimitsForm } from '@/components/plan/limits-form'
 import { PendingProposal } from '@/components/plan/pending-proposal'
 import { ProfileForm } from '@/components/plan/profile-form'
@@ -11,8 +12,9 @@ import { Revisions } from '@/components/plan/revisions'
 import { buttonVariants } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 
-// PlanPage is the user's plan in the app: a proposed change that waits
-// for their answer, the history of the plan's changes, what a plan needs
+// PlanPage is the user's plan in the app: the plan as it holds today, a
+// proposed change that waits for their answer, the history of the plan's
+// changes, what a plan needs
 // of the user, their profile, and how far it may go, their limits. The
 // profile and the limits change only in a web session, as a plan rests on
 // them (docs/limits.md).
@@ -33,6 +35,7 @@ export function PlanPage() {
       </Link>
       <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
       {plan.isError && <LoadError error={plan.error} onRetry={() => void plan.refetch()} />}
+      {plan.data !== undefined && <CurrentPlan plan={plan.data} />}
       {plan.data?.pending !== undefined && (
         // A proposal in place of another starts afresh, without the
         // other's answer.

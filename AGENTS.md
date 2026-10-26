@@ -29,9 +29,9 @@ check-in, the measurements, a meal's corrections, a meal logged by hand
 and a meal repeated taken there) and the foods (their list and search, a
 food made, corrected or archived), the charts (ECharts, loaded with
 them) and the settings (the name, language, time zone and day's start,
-the notes for a coach, the API tokens, and the plan: a proposal that
-waits, the history of its revisions with a revert, the profile and the
-limits) exist.
+the notes for a coach, the API tokens, and the plan: the plan as it
+holds, a proposal that waits, the history of its revisions with a
+revert, the profile and the limits) exist.
 
 | Path | What |
 | --- | --- |

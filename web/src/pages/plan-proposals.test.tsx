@@ -362,3 +362,63 @@ test("a change's date of another year says its year", async () => {
   card.getByText('Cut, -0.5% a week, until Dec 31, 2027')
   expect(card.getByText('was Cut, -0.5% a week, until Dec 31')).toBeTruthy()
 })
+
+// The current plan: the phase and the target in force today, the
+// training days, and what is to come.
+test('the current plan shows its numbers, and what is to come', async () => {
+  coachServer({
+    phases: [{ type: 'cut', start: '2026-09-07', rate_pct_week: -0.5, goal_weight: 80 }],
+    targets: [
+      {
+        effective_from: '2026-09-07',
+        to: '2026-10-25',
+        training: { kcal: 2300, protein: 160, carbs: 230, fat: 70 },
+        rest: { kcal: 2000, protein: 160, carbs: 170, fat: 60 },
+      },
+      {
+        effective_from: '2026-10-26',
+        training: { kcal: 2200, protein: 160, carbs: 205, fat: 70 },
+        rest: { kcal: 2200, protein: 160, carbs: 205, fat: 70 },
+      },
+    ],
+    training_weekdays: ['monday', 'wednesday'],
+  })
+  renderAt('/settings/plan')
+  const now = within(await screen.findByRole('region', { name: 'Current plan' }))
+  now.getByText('Cut, -0.5% a week, goal 80 kg, since Sep 7')
+  now.getByText(
+    'Training day: 2,300 kcal · P 160 g · C 230 g · F 70 g; Rest day: 2,000 kcal · P 160 g · C 170 g · F 60 g, since Sep 7',
+  )
+  now.getByText('Mon, Wed')
+  expect(now.getByText('From Oct 26: 2,200 kcal · P 160 g · C 205 g · F 70 g')).toBeTruthy()
+})
+
+// A plan that starts tomorrow is all to come.
+test('a plan that starts tomorrow is one to come', async () => {
+  coachServer({
+    phases: [{ type: 'cut', start: '2026-10-24', rate_pct_week: -0.4 }],
+    targets: [
+      {
+        effective_from: '2026-10-24',
+        training: { kcal: 2400, protein: 200, carbs: 231, fat: 75 },
+        rest: { kcal: 2400, protein: 200, carbs: 231, fat: 75 },
+      },
+    ],
+  })
+  renderAt('/settings/plan')
+  const now = within(await screen.findByRole('region', { name: 'Current plan' }))
+  expect(now.getAllByText('none')).toHaveLength(3)
+  now.getByText('From Oct 24: Cut, -0.4% a week')
+  expect(now.getByText('From Oct 24: 2,400 kcal · P 200 g · C 231 g · F 75 g')).toBeTruthy()
+})
+
+test('no plan yet says how to get one', async () => {
+  coachServer({})
+  renderAt('/settings/plan')
+  const now = within(await screen.findByRole('region', { name: 'Current plan' }))
+  expect(
+    now.getByText(
+      'No plan yet. Ask your AI coach for one: "look at the last month and propose a plan".',
+    ),
+  ).toBeTruthy()
+})
