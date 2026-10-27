@@ -674,7 +674,8 @@ it read while researching. So limits are enforced by the server.
   proposal), on every autopilot step, and on manual target edits in the
   UI. A proposal of several changes is held as `proposal.Changes.Check`
   splits it: a change of the user's limits against the instance's (one
-  past them a violation of the instance's level, named by the limit),
+  past them, or a minimum past the instance's maximum, a violation of
+  the instance's level, named by the limit),
   and the rest against the limits as it leaves them, so a faster cut
   comes with the limit that allows it: each phase it sets as a change of
   the current one, and the

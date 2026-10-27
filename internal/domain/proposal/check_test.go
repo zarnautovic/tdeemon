@@ -197,6 +197,58 @@ func TestChangesCheckALimitPastTheInstances(t *testing.T) {
 	}
 }
 
+// A limit the proposal changes may not cross its pair (a minimum its
+// maximum) as the instance's hold over the user's: the limits that hold
+// would allow no plan.
+func TestChangesCheckALimitPastTheInstancesPair(t *testing.T) {
+	t.Parallel()
+
+	s, targets := checkState(t)
+	for _, tc := range []struct {
+		name string
+		// instance tightens the instance's limits.
+		instance func(*limits.Limits)
+		change   LimitChange
+		want     limits.Violation
+	}{
+		{
+			"a protein floor over the instance's ceiling",
+			func(l *limits.Limits) { l.ProteinCeiling = 2 },
+			LimitChange{Name: "protein_floor", Before: 1.6, After: 2.1},
+			limits.Violation{Rule: "protein_floor", Limit: 2, Proposed: 2.1, Level: limits.LevelInstance},
+		},
+		{
+			"a recomp's least rate over the instance's most",
+			func(l *limits.Limits) { l.RecompMax = 0.1 },
+			LimitChange{Name: "recomp_min", Before: -0.5, After: 0.2},
+			limits.Violation{Rule: "recomp_min", Limit: 0.1, Proposed: 0.2, Level: limits.LevelInstance},
+		},
+		{
+			"a recomp's most rate under the instance's least",
+			func(l *limits.Limits) { l.RecompMin = -0.3 },
+			LimitChange{Name: "recomp_max", Before: 0.25, After: -0.4},
+			limits.Violation{Rule: "recomp_max", Limit: -0.3, Proposed: -0.4, Level: limits.LevelInstance},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			lv := levels()
+			tc.instance(&lv.Instance)
+			cs := Changes{Limits: []LimitChange{tc.change}}.Check(s, lv, []plan.Phase{*s.Phase}, targets)
+			if len(cs) != 1 || !slices.Equal(cs[0].Violations, []limits.Violation{tc.want}) {
+				t.Errorf("Check = %+v, want %+v", cs, tc.want)
+			}
+		})
+	}
+	// Within the instance's pair, it passes.
+	lv := levels()
+	lv.Instance.ProteinCeiling = 2
+	cs := Changes{Limits: []LimitChange{{Name: "protein_floor", Before: 1.6, After: 1.9}}}.Check(s, lv, []plan.Phase{*s.Phase}, targets)
+	if len(cs) != 1 || !cs[0].OK() {
+		t.Errorf("a protein floor under the instance's ceiling: %+v", cs)
+	}
+}
+
 // Below a BMI of 18.5 a lower target is refused, by the floor in the
 // code, whatever the limits.
 func TestChangesCheckUnderweight(t *testing.T) {

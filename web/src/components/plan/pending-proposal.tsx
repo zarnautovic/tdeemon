@@ -114,7 +114,7 @@ export function PendingProposal({
       {asking && (
         <Loosen
           names={loosened.map((ch) => limit.label(ch.name)).join(', ')}
-          pending={accept.isPending}
+          pending={busy}
           onYes={() => {
             accept.mutate({ ...path, body: { confirm: true } })
           }}
@@ -143,6 +143,7 @@ export function PendingProposal({
           disabled={busy || gone}
           onClick={() => {
             accept.reset()
+            setAsking(false)
             reject.mutate(path)
           }}
         >

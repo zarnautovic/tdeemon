@@ -290,7 +290,10 @@ change that breaks a rule of its shape, or a state or limits that break
 theirs (a stored value written past its rules, a number that is no
 number), is `invalid_change`. A proposal's change of a user's limit
 past the instance's is named by the limit (`cut_rate`,
-`kcal_floor_male`, …), of the level `instance`. What starts
+`kcal_floor_male`, …), of the level `instance`, and so is a minimum it
+sets past the instance's maximum, or a maximum under its minimum
+(`recomp_min` and `recomp_max`, `protein_floor` and `protein_ceiling`),
+which would leave the limits that hold allowing no plan. What starts
 the autopilot's waits again, and what counts as a logged day, are the
 autopilot's to decide; `Validate` holds the numbers it is given to the
 limits.

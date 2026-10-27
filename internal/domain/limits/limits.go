@@ -150,6 +150,16 @@ func (f Field) Looser(a, b float64) bool {
 	return a > b
 }
 
+// Pair is a minimum and its maximum, by their names: no level has them
+// the other way round, nor may the limits that hold (Effective), the
+// instance's over the user's.
+type Pair struct{ Min, Max string }
+
+// Pairs lists the limits that bound one another.
+func Pairs() []Pair {
+	return []Pair{{"recomp_min", "recomp_max"}, {"protein_floor", "protein_ceiling"}}
+}
+
 // FieldNamed returns the limit of name, and whether there is one.
 func FieldNamed(name string) (Field, bool) {
 	for _, f := range Fields() {

@@ -199,6 +199,13 @@ func TestFieldNamed(t *testing.T) {
 			t.Errorf("FieldNamed(%s) = %+v, %v", f.Name, got, ok)
 		}
 	}
+	for _, p := range Pairs() {
+		lo, okLo := FieldNamed(p.Min)
+		hi, okHi := FieldNamed(p.Max)
+		if !okLo || !okHi || lo.LooserBelow == hi.LooserBelow {
+			t.Errorf("%+v is no minimum and its maximum", p)
+		}
+	}
 	if _, ok := FieldNamed("speed"); ok {
 		t.Error("FieldNamed(speed) found a limit")
 	}

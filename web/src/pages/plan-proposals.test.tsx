@@ -497,6 +497,19 @@ test('a proposal of the limits shows each, loosened or tightened, and asks befor
   })
 })
 
+// Rejected while the question is open, it is rejected alone: the
+// question goes, so no apply follows the reject.
+test('a proposal rejected while the loosening is asked closes the question', async () => {
+  const { applied } = limitsServer(faster)
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  card.getByRole('button', { name: 'Loosen' })
+  fireEvent.click(card.getByRole('button', { name: 'Reject' }))
+  expect(card.queryByRole('button', { name: 'Loosen' })).toBeNull()
+  expect(applied).toEqual([])
+})
+
 test('a proposal that only tightens the limits is accepted without a question', async () => {
   const tighter: Proposal = {
     ...faster,

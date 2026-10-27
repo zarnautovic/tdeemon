@@ -48,7 +48,9 @@ type Checked struct {
 // derived value the change sets, docs/limits.md). A delete of a phase
 // sets nothing to check. A change of the user's limits goes no further
 // than the instance's: each past it is a violation of the instance's
-// level, its limit the instance's and the value proposed its own; and
+// level, its limit the instance's and the value proposed its own, and so
+// is a minimum past the instance's maximum, or a maximum under its
+// minimum, which would leave the limits that hold allowing no plan; and
 // the rest of the changes are held to the user's limits as they leave
 // them, so a faster cut comes with the limit that allows it.
 // The data and the limits are those of now for a change ahead too: what
@@ -56,7 +58,7 @@ type Checked struct {
 func (c Changes) Check(s limits.State, lv limits.Levels, phases []plan.Phase, targets []plan.Target) []Checked {
 	var out []Checked
 	if len(c.Limits) > 0 {
-		out = append(out, c.checkLimits(s.Today, lv.Instance))
+		out = append(out, c.checkLimits(s.Today, lv.User, lv.Instance))
 		lv.User = c.LimitsOf(lv.User)
 	}
 	training := s.TrainingDays
@@ -99,15 +101,32 @@ func (c Changes) Check(s limits.State, lv limits.Levels, phases []plan.Phase, ta
 }
 
 // checkLimits checks each limit the changes set against the instance's,
-// on today.
-func (c Changes) checkLimits(today day.Date, instance limits.Limits) Checked {
+// on today, user being the user's limits before them: the limit itself,
+// and then the pair it is of, as the limits that hold leave it.
+func (c Changes) checkLimits(today day.Date, user, instance limits.Limits) Checked {
 	ck := Checked{Of: OfLimits, Day: today}
+	changed := map[string]bool{}
 	for _, ch := range c.Limits {
 		f, ok := limits.FieldNamed(ch.Name)
 		if ok && f.Looser(ch.After, f.Get(instance)) {
 			ck.Violations = append(ck.Violations, limits.Violation{
 				Rule: ch.Name, Limit: f.Get(instance), Proposed: ch.After, Level: limits.LevelInstance,
 			})
+			continue
+		}
+		changed[ch.Name] = ok
+	}
+	held := limits.Effective(c.LimitsOf(user), instance)
+	for _, p := range limits.Pairs() {
+		lo, _ := limits.FieldNamed(p.Min)
+		hi, _ := limits.FieldNamed(p.Max)
+		minimum, maximum := lo.Get(held), hi.Get(held)
+		switch {
+		case minimum <= maximum:
+		case changed[p.Min]:
+			ck.Violations = append(ck.Violations, limits.Violation{Rule: p.Min, Limit: maximum, Proposed: minimum, Level: limits.LevelInstance})
+		case changed[p.Max]:
+			ck.Violations = append(ck.Violations, limits.Violation{Rule: p.Max, Limit: minimum, Proposed: maximum, Level: limits.LevelInstance})
 		}
 	}
 	return ck
