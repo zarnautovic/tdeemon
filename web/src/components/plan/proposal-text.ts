@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 
 import type { components } from '@/api/schema'
 import { sessionQuery } from '@/api/session'
+import { limitFields, shown } from '@/components/plan/limit-fields'
 import { useFormat } from '@/i18n/format'
 import { useLocale } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
@@ -21,6 +22,7 @@ const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'frida
 type Messages = ReturnType<typeof useMessages>
 type Rule = keyof Messages['plan']['rules']
 type Level = keyof Messages['plan']['levels']
+type Limit = keyof Messages['plan']['limit']
 
 // violationsOf are the violations of the limits a refusal (422) names, as
 // its error details' values.
@@ -62,15 +64,39 @@ export function violationsOf(error: unknown): Violation[] {
   })
 }
 
+// useLimitWords says a limit of the user's in words, as the limits'
+// form shows it: its name, and a value of it with its unit (a loss as how
+// fast). A name the app does not know is said as it is.
+export function useLimitWords() {
+  const t = useMessages()
+  const f = useFormat()
+  const isLimit = (name: string): name is Limit => Object.hasOwn(t.plan.limit, name)
+  return {
+    label: (name: string) => (isLimit(name) ? t.plan.limit[name] : name),
+    value: (name: string, v: number) => {
+      const field = limitFields.find((lf) => lf.name === name)
+      if (field === undefined) {
+        return f.field(v)
+      }
+      const n = shown(field, v)
+      const unit = t.plan.unit[field.unit]
+      return `${f.field(n)} ${typeof unit === 'string' ? unit : unit(n)}`
+    },
+  }
+}
+
 // useViolationText says a violation of the limits in words: what it is
-// of, the value proposed and the limit, and who could allow it.
+// of, the value proposed and the limit, and who could allow it. A
+// limit's own, past the instance's, is named as the limits' form names
+// it.
 export function useViolationText(): (v: Violation) => string {
   const t = useMessages()
   const f = useFormat()
+  const limit = useLimitWords()
   const isRule = (r: string): r is Rule => Object.hasOwn(t.plan.rules, r)
   const isLevel = (l: string): l is Level => Object.hasOwn(t.plan.levels, l)
   return (v) => {
-    const rule = isRule(v.rule) ? t.plan.rules[v.rule] : v.rule
+    const rule = isRule(v.rule) ? t.plan.rules[v.rule] : limit.label(v.rule)
     const on =
       v.day_type === 'training'
         ? ` (${t.plan.change.training})`

@@ -273,7 +273,7 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 		}
 		prm, isParam := t.params[name]
 		if !isParam {
-			if !t.body {
+			if !t.body || slices.Contains(t.tool.webOnly, name) {
 				return "", nil, nil, fmt.Errorf("no argument %q: %s takes %s", name, t.tool.name, strings.Join(slices.Sorted(maps.Keys(t.params)), ", "))
 			}
 			body[name] = raw
@@ -405,7 +405,7 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 		return mcpTool{}, err
 	}
 	if op.RequestBody != nil {
-		req, err := d.body(op, props)
+		req, err := d.body(op, props, t.webOnly)
 		if err != nil {
 			return mcpTool{}, err
 		}
@@ -488,9 +488,9 @@ func (d openAPIDoc) params(op openAPIOp, mt *mcpTool, props map[string]any) ([]s
 	return required, nil
 }
 
-// body adds the properties of op's JSON body to props, and returns those
-// required.
-func (d openAPIDoc) body(op openAPIOp, props map[string]any) ([]string, error) {
+// body adds the properties of op's JSON body to props, but for those
+// webOnly names, and returns those required.
+func (d openAPIDoc) body(op openAPIOp, props map[string]any, webOnly []string) ([]string, error) {
 	raw, ok := op.RequestBody.Content["application/json"]
 	if !ok {
 		return nil, errors.New("its body is not JSON")
@@ -502,6 +502,9 @@ func (d openAPIDoc) body(op openAPIOp, props map[string]any) ([]string, error) {
 	body, _ := s.(map[string]any)
 	bodyProps, _ := body["properties"].(map[string]any)
 	for name, p := range bodyProps {
+		if slices.Contains(webOnly, name) {
+			continue
+		}
 		if _, taken := props[name]; taken {
 			return nil, fmt.Errorf("%q is both a parameter and a property of the body", name)
 		}

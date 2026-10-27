@@ -18,9 +18,26 @@
         ],
         "type": "object"
       },
+      "ApplyBody": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "description": "Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused.",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
       "ChangesBody": {
         "additionalProperties": false,
         "properties": {
+          "limits": {
+            "description": "The user's limits it changes, by name: a proposal with one applies only in the app.",
+            "items": {
+              "$ref": "#/components/schemas/LimitChangeBody"
+            },
+            "type": "array"
+          },
           "phases": {
             "description": "The phases it changes, by their start.",
             "items": {
@@ -42,7 +59,8 @@
         },
         "required": [
           "phases",
-          "targets"
+          "targets",
+          "limits"
         ],
         "type": "object"
       },
@@ -50,7 +68,7 @@
         "additionalProperties": false,
         "properties": {
           "day": {
-            "description": "The phase's start, or the target's day.",
+            "description": "The phase's start, the target's day, or today for the training weekdays alone and the limits.",
             "format": "date",
             "type": "string"
           },
@@ -68,7 +86,8 @@
             "enum": [
               "phase",
               "target",
-              "training_weekdays"
+              "training_weekdays",
+              "limits"
             ],
             "type": "string"
           },
@@ -1267,6 +1286,34 @@
         ],
         "type": "object"
       },
+      "LimitChangeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "format": "double",
+            "type": "number"
+          },
+          "before": {
+            "format": "double",
+            "type": "number"
+          },
+          "loosens": {
+            "description": "Whether after is looser than before: applying it takes the user's confirmation.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "The limit's name (docs/limits.md).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "before",
+          "after",
+          "loosens"
+        ],
+        "type": "object"
+      },
       "LimitWarningBody": {
         "additionalProperties": false,
         "properties": {
@@ -1881,7 +1928,7 @@
             "type": "boolean"
           },
           "measured_from": {
-            "description": "The first day measured: a phase's first 14 days are left out, as water and glycogen move the weight then; the day after to when no day is left.",
+            "description": "The first day measured: the first 14 days after a change of intake (a phase's start that changes it by more than a tenth) are left out, as water and glycogen move the weight then; the day after to when no day is left.",
             "format": "date",
             "type": "string"
           },
@@ -2066,7 +2113,7 @@
               "format": "double",
               "type": "number"
             },
-            "description": "The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; the user may loosen theirs in the app, up to the instance's.",
+            "description": "The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; a proposal may change the user's, up to the instance's, which the user accepts in the app.",
             "type": "object"
           },
           "pending": {
@@ -2134,7 +2181,7 @@
         "additionalProperties": false,
         "properties": {
           "checks": {
-            "description": "What the limits checked: each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays.",
+            "description": "What the limits checked: the user's limits it changes, against the instance's; each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays, against the limits it leaves.",
             "items": {
               "$ref": "#/components/schemas/CheckBody"
             },
@@ -2316,6 +2363,14 @@
       "ProposeInputBody": {
         "additionalProperties": false,
         "properties": {
+          "limits": {
+            "additionalProperties": {
+              "format": "double",
+              "type": "number"
+            },
+            "description": "Limits to change: get_plan's names, new values. Only the app applies these.",
+            "type": "object"
+          },
           "model": {
             "description": "The AI model you are.",
             "maxLength": 100,
@@ -6963,7 +7018,7 @@
     },
     "/api/v1/proposals": {
       "post": {
-        "description": "Proposes a change of the plan: phases and targets to set or delete, and the training weekdays, with why and the days it was drawn from. Nothing changes until the user consents and apply_proposal applies it. The server holds it to the limits (docs/limits.md): one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, the weekly average of each target with the rate it implies with the measured TDEE, and warnings.",
+        "description": "Proposes a change of the plan: phases and targets to set or delete, the training weekdays, and the user's limits, with why and the days it was drawn from. Nothing changes until the user consents and apply_proposal applies it; one that changes the limits applies only in the app, a web session. The server holds it to the limits (docs/limits.md), a limit it changes to the instance's and the rest to the limits it leaves: one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, the weekly average of each target with the rate it implies with the measured TDEE, and warnings.",
         "operationId": "propose-changes",
         "requestBody": {
           "content": {
@@ -7086,7 +7141,7 @@
     },
     "/api/v1/proposals/{id}/apply": {
       "post": {
-        "description": "Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; applied again it answers as it is.",
+        "description": "Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. One that changes the user's limits applies only in a web session, never with a token (403), and one that loosens a limit only with confirm (409), the user's confirmation in the app. The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; applied again it answers as it is.",
         "operationId": "apply-proposal",
         "parameters": [
           {
@@ -7101,6 +7156,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyBody",
+                "description": "The web app's alone."
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -7111,6 +7176,16 @@
               }
             },
             "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {
@@ -7142,6 +7217,16 @@
             },
             "description": "Not Found"
           },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
           "409": {
             "content": {
               "application/problem+json": {
@@ -7151,6 +7236,26 @@
               }
             },
             "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
           },
           "422": {
             "content": {

@@ -40,9 +40,11 @@ page changes with it.
 
 One function, `Validate`, checks every change of a plan against all
 three, and says which rule a change breaks, with the limit and the
-value proposed. An AI client can propose a change of the user's limits
-or profile, but only the user applies it, from a web session (DESIGN.md
-§8).
+value proposed. An AI client can propose a change of the user's limits,
+but only the user applies it, from a web session, with the confirmation
+a loosening takes; the rest of the proposal is held to the limits as it
+leaves them, so a faster cut comes with the limit that allows it
+(DESIGN.md §8). The profile only the user sets.
 
 ## A plan needs the profile
 
@@ -54,7 +56,8 @@ target without sex (for the energy equations), birth date and height
 the coach knows what to ask. Logging works without them.
 
 Since the profile moves the limits, it changes only from a web session,
-as they do; a coach may propose a change. The weight is a measurement,
+as they do, and only the user changes it: a coach proposes no change of
+it. The weight is a measurement,
 which any client may log; it moves the BMI and the reference mass too,
 a gap the limits do not close. The lean mass, also a measurement, moves
 only the warning on energy availability.
@@ -285,7 +288,12 @@ TDEE to measure its drift against) and `autopilot_shape` (a step is a
 shift of the weekly average of the target before, and nothing else). A
 change that breaks a rule of its shape, or a state or limits that break
 theirs (a stored value written past its rules, a number that is no
-number), is `invalid_change`. What starts
+number), is `invalid_change`. A proposal's change of a user's limit
+past the instance's is named by the limit (`cut_rate`,
+`kcal_floor_male`, …), of the level `instance`, and so is a minimum it
+sets past the instance's maximum, or a maximum under its minimum
+(`recomp_min` and `recomp_max`, `protein_floor` and `protein_ceiling`),
+which would leave the limits that hold allowing no plan. What starts
 the autopilot's waits again, and what counts as a logged day, are the
 autopilot's to decide; `Validate` holds the numbers it is given to the
 limits.

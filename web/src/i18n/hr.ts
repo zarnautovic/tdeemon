@@ -477,6 +477,8 @@ export const hr: Messages = {
       failed: 'Nije prošlo. Pokušaj ponovno.',
       stale:
         'Više se ne može primijeniti: promjena bi sada počela prije današnjeg dana. Zatraži novi prijedlog.',
+      limitsHere:
+        'Promjenu svojih granica prihvaćaš samo ovdje, u aplikaciji, nikad tvoj AI trener.',
       average: (from: string, kcal: string) => `Od ${from}: prosječno ${kcal} kcal na dan`,
       rate: (pct: string, kg: string) => `, ${pct} tjedno (${kg} kg)`,
     },
@@ -499,6 +501,9 @@ export const hr: Messages = {
       day: (kcal: string, protein: string, carbs: string, fat: string) =>
         `${kcal} kcal · P ${protein} g · UH ${carbs} g · M ${fat} g`,
       was: (what: string) => `bilo je ${what}`,
+      limit: (name: string) => `Granica: ${name}`,
+      loosened: 'otpuštena',
+      tightened: 'stegnuta',
     },
     revisions: {
       title: 'Povijest plana',
@@ -507,6 +512,8 @@ export const hr: Messages = {
       reverted: 'Vraćeno',
       revert: 'Vrati',
       confirm: 'Vratiti ovu promjenu, od sada nadalje?',
+      loosens: (names: string) =>
+        `Vraćanje otpušta granicu (${names}), što dopušta plan koji je granica odbijala.`,
       yes: 'Vrati',
       no: 'Zadrži',
       reason: 'Vraćeno u aplikaciji.',

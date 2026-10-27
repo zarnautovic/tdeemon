@@ -142,12 +142,32 @@ func (f Field) Get(l Limits) float64 { return *f.get(&l) }
 // Set sets f's value in l to v.
 func (f Field) Set(l *Limits, v float64) { *f.get(l) = v }
 
-// looser reports whether a is looser than b.
-func (f Field) looser(a, b float64) bool {
+// Looser reports whether a is a looser value of f than b.
+func (f Field) Looser(a, b float64) bool {
 	if f.LooserBelow {
 		return a < b
 	}
 	return a > b
+}
+
+// Pair is a minimum and its maximum, by their names: no level has them
+// the other way round, nor may the limits that hold (Effective), the
+// instance's over the user's.
+type Pair struct{ Min, Max string }
+
+// Pairs lists the limits that bound one another.
+func Pairs() []Pair {
+	return []Pair{{"recomp_min", "recomp_max"}, {"protein_floor", "protein_ceiling"}}
+}
+
+// FieldNamed returns the limit of name, and whether there is one.
+func FieldNamed(name string) (Field, bool) {
+	for _, f := range Fields() {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	return Field{}, false
 }
 
 // Fields lists every limit, in a fixed order.
@@ -254,7 +274,7 @@ func ValidateInstance(l Limits) error {
 		switch v := f.Get(l); {
 		case f.UserOnly && v != 0:
 			errs = append(errs, fmt.Errorf("%s: a user's limit, not the instance's", f.Name))
-		case f.TightenOnly && f.looser(v, f.Get(def)):
+		case f.TightenOnly && f.Looser(v, f.Get(def)):
 			errs = append(errs, fmt.Errorf("%s %v: the instance may only tighten it from %v", f.Name, v, f.Get(def)))
 		}
 	}
@@ -268,7 +288,7 @@ func ValidateInstance(l Limits) error {
 func Effective(user, instance Limits) Limits {
 	out := user
 	for _, f := range Fields() {
-		if v := f.Get(instance); f.looser(f.Get(user), v) {
+		if v := f.Get(instance); f.Looser(f.Get(user), v) {
 			f.Set(&out, v)
 		}
 	}
@@ -280,7 +300,7 @@ func Effective(user, instance Limits) Limits {
 func Beyond(user, instance Limits) []string {
 	var out []string
 	for _, f := range Fields() {
-		if f.looser(f.Get(user), f.Get(instance)) {
+		if f.Looser(f.Get(user), f.Get(instance)) {
 			out = append(out, f.Name)
 		}
 	}
@@ -293,7 +313,7 @@ func Beyond(user, instance Limits) []string {
 func Loosened(from, to Limits) []string {
 	var out []string
 	for _, f := range Fields() {
-		if f.looser(f.Get(to), f.Get(from)) {
+		if f.Looser(f.Get(to), f.Get(from)) {
 			out = append(out, f.Name)
 		}
 	}

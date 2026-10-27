@@ -91,6 +91,47 @@ func TestChangesCheck(t *testing.T) {
 			Changes{Targets: []TargetChange{{From: date(t, "2026-11-02"), Before: &targets[1]}}},
 			map[string][]string{"target 2026-11-02": {}},
 		},
+		{
+			"a limit loosened up to the instance's",
+			Changes{Limits: []LimitChange{{Name: "cut_rate", Before: -0.7, After: -1.0}}},
+			map[string][]string{"limits 2026-10-26": {}},
+		},
+		{
+			"limits past the instance's",
+			Changes{Limits: []LimitChange{
+				{Name: "cut_rate", Before: -0.7, After: -1.2},
+				{Name: "protein_floor", Before: 1.6, After: 1.8},
+				{Name: "kcal_floor_male", Before: 1500, After: 1100},
+			}},
+			map[string][]string{"limits 2026-10-26": {"cut_rate", "kcal_floor_male"}},
+		},
+		{
+			"a cut faster, with its limit loosened",
+			Changes{
+				Limits: []LimitChange{{Name: "cut_rate", Before: -0.7, After: -1.0}},
+				Phases: []PhaseChange{{Start: s.Phase.Start, Before: s.Phase, After: cut(t, "2026-09-07", "", -0.9)}},
+			},
+			map[string][]string{"limits 2026-10-26": {}, "phase 2026-09-07": {}},
+		},
+		{
+			"a cut faster, its limit as it is",
+			Changes{Phases: []PhaseChange{{Start: s.Phase.Start, Before: s.Phase, After: cut(t, "2026-09-07", "", -0.9)}}},
+			map[string][]string{"phase 2026-09-07": {limits.RuleCutRate}},
+		},
+		{
+			// 1900 kcal with a TDEE of 2600: -0.75 % a week.
+			"a lower target, with the limit of its rate loosened",
+			Changes{
+				Limits:  []LimitChange{{Name: "cut_rate", Before: -0.7, After: -1.0}},
+				Targets: []TargetChange{{From: tomorrow, After: target(t, "2026-10-27", 1900)}},
+			},
+			map[string][]string{"limits 2026-10-26": {}, "target 2026-10-27": {}},
+		},
+		{
+			"a lower target, the limit of its rate as it is",
+			Changes{Targets: []TargetChange{{From: tomorrow, After: target(t, "2026-10-27", 1900)}}},
+			map[string][]string{"target 2026-10-27": {limits.RuleImpliedLossRate}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -139,6 +180,72 @@ func TestChangesCheckTheTargetInForce(t *testing.T) {
 	cs = Changes{Phases: []PhaseChange{{Start: s.Phase.Start, Before: s.Phase, After: cut(t, "2026-09-07", "", -0.6)}}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
 	if len(cs) != 1 || cs[0].Target != nil || cs[0].TrainingDays != s.TrainingDays {
 		t.Errorf("the check of a phase = %+v", cs)
+	}
+}
+
+// A limit past the instance's is refused by the instance's level, which
+// only the admin loosens: the limit is the instance's, the value the one
+// proposed, in the limit's units.
+func TestChangesCheckALimitPastTheInstances(t *testing.T) {
+	t.Parallel()
+
+	s, targets := checkState(t)
+	cs := Changes{Limits: []LimitChange{{Name: "cut_rate", Before: -0.7, After: -1.2}}}.Check(s, levels(), []plan.Phase{*s.Phase}, targets)
+	want := []limits.Violation{{Rule: "cut_rate", Limit: -1.0, Proposed: -1.2, Level: limits.LevelInstance}}
+	if len(cs) != 1 || cs[0].Of != OfLimits || cs[0].Day != s.Today || cs[0].Target != nil || !slices.Equal(cs[0].Violations, want) {
+		t.Errorf("Check = %+v, want %+v", cs, want)
+	}
+}
+
+// A limit the proposal changes may not cross its pair (a minimum its
+// maximum) as the instance's hold over the user's: the limits that hold
+// would allow no plan.
+func TestChangesCheckALimitPastTheInstancesPair(t *testing.T) {
+	t.Parallel()
+
+	s, targets := checkState(t)
+	for _, tc := range []struct {
+		name string
+		// instance tightens the instance's limits.
+		instance func(*limits.Limits)
+		change   LimitChange
+		want     limits.Violation
+	}{
+		{
+			"a protein floor over the instance's ceiling",
+			func(l *limits.Limits) { l.ProteinCeiling = 2 },
+			LimitChange{Name: "protein_floor", Before: 1.6, After: 2.1},
+			limits.Violation{Rule: "protein_floor", Limit: 2, Proposed: 2.1, Level: limits.LevelInstance},
+		},
+		{
+			"a recomp's least rate over the instance's most",
+			func(l *limits.Limits) { l.RecompMax = 0.1 },
+			LimitChange{Name: "recomp_min", Before: -0.5, After: 0.2},
+			limits.Violation{Rule: "recomp_min", Limit: 0.1, Proposed: 0.2, Level: limits.LevelInstance},
+		},
+		{
+			"a recomp's most rate under the instance's least",
+			func(l *limits.Limits) { l.RecompMin = -0.3 },
+			LimitChange{Name: "recomp_max", Before: 0.25, After: -0.4},
+			limits.Violation{Rule: "recomp_max", Limit: -0.3, Proposed: -0.4, Level: limits.LevelInstance},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			lv := levels()
+			tc.instance(&lv.Instance)
+			cs := Changes{Limits: []LimitChange{tc.change}}.Check(s, lv, []plan.Phase{*s.Phase}, targets)
+			if len(cs) != 1 || !slices.Equal(cs[0].Violations, []limits.Violation{tc.want}) {
+				t.Errorf("Check = %+v, want %+v", cs, tc.want)
+			}
+		})
+	}
+	// Within the instance's pair, it passes.
+	lv := levels()
+	lv.Instance.ProteinCeiling = 2
+	cs := Changes{Limits: []LimitChange{{Name: "protein_floor", Before: 1.6, After: 1.9}}}.Check(s, lv, []plan.Phase{*s.Phase}, targets)
+	if len(cs) != 1 || !cs[0].OK() {
+		t.Errorf("a protein floor under the instance's ceiling: %+v", cs)
 	}
 }
 

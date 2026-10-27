@@ -2,7 +2,7 @@ import type { components } from '@/api/schema'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
-import { useDate, usePlanWords, useViolationText } from './proposal-text'
+import { useDate, useLimitWords, usePlanWords, useViolationText } from './proposal-text'
 
 export type Proposal = components['schemas']['ProposalBody']
 export type Preview = components['schemas']['PreviewBody']
@@ -10,11 +10,13 @@ type Changes = components['schemas']['ChangesBody']
 type LimitWarning = components['schemas']['LimitWarningBody']
 
 // ProposalChanges lists what a proposal changes of the plan, each change
-// as it leaves it and, beside it, as it was.
+// as it leaves it and, beside it, as it was; a limit, whether it loosens
+// or tightens it.
 export function ProposalChanges({ changes }: { changes: Changes }) {
   const t = useMessages()
   const date = useDate()
   const { phase, target, days } = usePlanWords()
+  const limit = useLimitWords()
   const c = t.plan.change
 
   return (
@@ -58,6 +60,17 @@ export function ProposalChanges({ changes }: { changes: Changes }) {
           </span>
         </li>
       )}
+      {changes.limits.map((ch) => (
+        <li key={`limit ${ch.name}`}>
+          <span className="block font-medium">{c.limit(limit.label(ch.name))}</span>
+          <span className="block">
+            {`${limit.value(ch.name, ch.after)}, ${ch.loosens ? c.loosened : c.tightened}`}
+          </span>
+          <span className="block text-muted-foreground">
+            {c.was(limit.value(ch.name, ch.before))}
+          </span>
+        </li>
+      ))}
     </ul>
   )
 }

@@ -257,11 +257,12 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // needs a reason, and the eval run again. 13,500 bytes until October
 // 2026, raised for the rules of a meal's parts, then for the coach's
 // history and notes, then for an item's quantities and a search again,
-// then for the coach's plan, then for its proposals.
+// then for the coach's plan, then for its proposals, then for the limits
+// they change.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 20500
+	const budget = 20900
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
