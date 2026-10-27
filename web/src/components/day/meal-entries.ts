@@ -1,11 +1,14 @@
 import type { components } from '@/api/schema'
-import type { Food, Item, Meal } from '@/api/types'
+import type { Food, Item, Meal, Nutrients } from '@/api/types'
+import type { Messages } from '@/i18n/en'
+import type { useFormat } from '@/i18n/format'
 import limits from '@/lib/limits.json'
 import { nameKey } from '@/lib/name-key'
 import { uuidv7 } from '@/lib/uuid'
 
 type ItemInput = components['schemas']['ItemInput']
 type LogMealBody = components['schemas']['LogMealBody']
+type Format = ReturnType<typeof useFormat>
 
 // An entry is an item of a meal being logged, as typed: a food of the
 // user's in an amount and a unit of it, or an estimate of a whole plate.
@@ -48,7 +51,7 @@ export function servingOf(unit: string): string | undefined {
 
 // foodEntry is a food added to the meal, in the amount it was eaten in
 // last, or else 100 of its unit, or one portion.
-export function foodEntry(food: Food, field: (n: number) => string): Entry {
+export function foodEntry(food: Food, field: (n: number) => string): FoodEntry {
   const key = uuidv7()
   const q = food.last_use?.quantity
   const units = unitsOf(food)
@@ -135,6 +138,53 @@ export function converted(food: Food, from: string, to: string, n: number): numb
   const worked = (n * fromGrams) / toGrams
   const rounded = Math.round(worked * 100) / 100
   return Math.abs(worked - rounded) <= 1e-9 * Math.max(1, rounded) ? rounded : worked
+}
+
+// Values are the four values every food and item has.
+export type Values = Pick<Nutrients, 'kcal' | 'protein' | 'carbs' | 'fat'>
+
+// nutrientsIn is what n of a food in unit (unitsOf) brings, as the server
+// works it out: the food's values for 100 g or ml times the grams or ml,
+// or for a portion times the portions; or undefined when the food does
+// not say how much one of unit is (unitGrams), or a food by the portion
+// is given in a serving, which the server refuses.
+export function nutrientsIn(food: Food, unit: string, n: number): Values | undefined {
+  let times: number | undefined
+  if (food.basis === 'portion') {
+    if (unit === 'portion') {
+      times = n
+    } else if (unit === 'g' && food.portion_grams) {
+      times = n / food.portion_grams
+    }
+  } else {
+    const grams = unitGrams(food, unit)
+    times = grams === undefined ? undefined : (n * grams) / 100
+  }
+  if (times === undefined) {
+    return undefined
+  }
+  const { kcal, protein, carbs, fat } = food.nutrients
+  return { kcal: kcal * times, protein: protein * times, carbs: carbs * times, fat: fat * times }
+}
+
+// entryValues is what an entry brings, with parse reading its numbers: a
+// food's in its amount (nutrientsIn), an estimate's as typed; undefined
+// while one is not a number.
+export function entryValues(
+  entry: Entry,
+  parse: (s: string) => number | undefined,
+): Values | undefined {
+  if (entry.kind === 'food') {
+    const n = entry.exact ?? parse(entry.amount)
+    return n === undefined ? undefined : nutrientsIn(entry.food, entry.unit, n)
+  }
+  const kcal = parse(entry.kcal)
+  const protein = parse(entry.protein)
+  const carbs = parse(entry.carbs)
+  const fat = parse(entry.fat)
+  return kcal === undefined || protein === undefined || carbs === undefined || fat === undefined
+    ? undefined
+    : { kcal, protein, carbs, fat }
 }
 
 // shownAmount is an amount a unit chosen worked out, as its field shows
@@ -343,4 +393,20 @@ export function repeatOf(meal: Meal): LogMealBody {
     ...(meal.note === undefined || meal.note === '' ? {} : { note: meal.note }),
     items: meal.items.map(inputOf),
   }
+}
+
+// lastAmountOf is how much of a food was eaten last, as it was given: "2
+// slice", "1.5 portions", "200 g"; undefined for a food not eaten yet.
+export function lastAmountOf(food: Food, t: Messages, f: Format): string | undefined {
+  const last = food.last_use
+  if (last === undefined) {
+    return undefined
+  }
+  const { servings, serving } = last.quantity
+  if (servings !== undefined && serving !== undefined) {
+    return `${f.number(servings, 2)} ${serving}`
+  }
+  return last.unit === 'portion'
+    ? t.day.portions(f.number(last.amount, 2), last.amount)
+    : t.unit[last.unit](f.number(last.amount))
 }

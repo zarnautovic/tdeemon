@@ -4,10 +4,12 @@ import type { Food, Item, Meal } from '@/api/types'
 import {
   amountOf,
   converted,
+  entryValues,
   foodEntry,
   inputOf,
   inUnit,
   itemOf,
+  nutrientsIn,
   repeatOf,
   tooMuch,
   unitGrams,
@@ -302,9 +304,6 @@ test('an item holds no more than the server takes', () => {
   expect(tooMuch(undefined, 'serving:slice', 101)).toBe(true)
 
   const entry = foodEntry(bread, field)
-  if (entry.kind !== 'food') {
-    throw new Error('a food gives no food entry')
-  }
   expect(itemOf({ ...entry, unit: 'serving:slice', amount: '99999' }, parse)).toBeUndefined()
   const plate = {
     key: '0193c3a5-0000-7000-8000-0000000000e1',
@@ -317,4 +316,46 @@ test('an item holds no more than the server takes', () => {
   }
   expect(itemOf(plate, parse)).toBeUndefined()
   expect(itemOf({ ...plate, kcal: '10000' }, parse)).toBeDefined()
+})
+
+// near expects values near kcal and protein.
+function near(v: { kcal: number; protein: number } | undefined, kcal: number, protein: number) {
+  expect(v?.kcal).toBeCloseTo(kcal)
+  expect(v?.protein).toBeCloseTo(protein)
+}
+
+test('what an amount of a food brings is worked out as the server does', () => {
+  near(nutrientsIn(bread, 'g', 60), 155.4, 5.1)
+  near(nutrientsIn(bread, 'serving:slice', 2), 207.2, 6.8)
+  near(nutrientsIn(stew, 'portion', 1.5), 388.5, 12.75)
+  near(nutrientsIn(stew, 'g', 225), 129.5, 4.25)
+  // Of what the food does not say: its portion's grams, or ml of a food
+  // in grams; a food by the portion takes no serving.
+  const { portion_grams: _grams, ...unweighed } = stew
+  expect(nutrientsIn(unweighed, 'g', 100)).toBeUndefined()
+  expect(nutrientsIn(bread, 'ml', 100)).toBeUndefined()
+  expect(
+    nutrientsIn({ ...stew, servings: [{ name: 'ladle', amount: 200 }] }, 'serving:ladle', 1),
+  ).toBeUndefined()
+})
+
+test("an entry brings its food's amount, or an estimate's values, once they are numbers", () => {
+  const food: Entry = { key: 'k', kind: 'food', food: bread, amount: '2', unit: 'serving:slice' }
+  expect(entryValues(food, parse)?.kcal).toBeCloseTo(207.2)
+  // What a unit chosen worked out counts over the amount shown.
+  expect(
+    entryValues({ ...food, unit: 'g', amount: '33.33', exact: 100 / 3 }, parse)?.kcal,
+  ).toBeCloseTo(86.33)
+  expect(entryValues({ ...food, amount: 'two' }, parse)).toBeUndefined()
+  const estimate: Entry = {
+    key: 'e',
+    kind: 'estimate',
+    name: 'Pasta',
+    kcal: '850',
+    protein: '32',
+    carbs: '105',
+    fat: '30',
+  }
+  expect(entryValues(estimate, parse)).toEqual({ kcal: 850, protein: 32, carbs: 105, fat: 30 })
+  expect(entryValues({ ...estimate, fat: '' }, parse)).toBeUndefined()
 })
