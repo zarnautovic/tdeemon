@@ -71,7 +71,15 @@ function repeatServer(post?: Handler, meals: Meal[] = []) {
   return { sent, routes }
 }
 
-const repeat = () => screen.findByRole('button', { name: 'Repeat today: Breakfast' })
+// repeat opens the meal's row, and finds its repeat.
+async function repeat() {
+  const meal = (await screen.findAllByRole('article'))[0]
+  if (meal === undefined) {
+    throw new Error('no meal')
+  }
+  fireEvent.click(within(meal).getByRole('button', { expanded: false }))
+  return within(meal).getByRole('button', { name: 'Repeat today: Breakfast' })
+}
 
 test("yesterday's meal is repeated today at this time, and today is a tap away", async () => {
   const server = repeatServer()

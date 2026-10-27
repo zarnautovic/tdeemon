@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { signIn } from './user.ts'
+import { openMeal, signIn } from './user.ts'
 
 test('a meal is corrected, deleted, and brought back by undo', async ({ page }) => {
   await signIn(page)
@@ -32,6 +32,7 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
 
   await page.goto('/')
   const porridge = page.getByRole('article').filter({ hasText: 'Porridge' })
+  await openMeal(porridge)
   await expect(porridge).toContainText('80 g')
 
   await porridge.getByRole('button', { name: 'Change the meal: Porridge' }).click()
@@ -50,6 +51,7 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
 
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(page.getByText('Taken back: a meal deleted.')).toBeVisible()
+  await openMeal(porridge)
   await expect(porridge).toContainText('100 g')
 })
 
@@ -65,6 +67,7 @@ test('a meal moved to the day before says so, and its toast brings it back', asy
   const snack = page.getByRole('article').filter({ hasText: 'Late snack' })
 
   await page.goto('/')
+  await openMeal(snack)
   await snack.getByRole('button', { name: 'Change the meal: Late snack' }).click()
   const day = snack.getByLabel('Day')
   const today = await day.inputValue()
@@ -93,6 +96,7 @@ test('a meal is repeated today in a tap', async ({ page }) => {
   await page.goto('/')
   const toast = page.getByRole('article').filter({ hasText: 'Toast' })
   await expect(toast).toHaveCount(1)
+  await openMeal(toast)
   await toast.getByRole('button', { name: 'Repeat today: Toast' }).click()
   await expect(page.getByText('Logged again, today at this time.')).toBeVisible()
   await expect(toast).toHaveCount(2)
@@ -130,6 +134,7 @@ test("a meal's item is given in another unit, and an estimate saved as a food", 
 
   await page.goto('/')
   const lunch = page.getByRole('article').filter({ hasText: 'Office lunch' })
+  await openMeal(lunch)
   await lunch.getByRole('button', { name: 'Change the meal: Office lunch' }).click()
   // 45 g are half a cup of 90 g.
   await lunch.getByLabel('Unit: Muesli').selectOption({ label: 'cup' })

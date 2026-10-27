@@ -1,6 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { useState } from 'react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
@@ -10,6 +11,7 @@ import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
 import { MealCard } from '@/components/day/meal-card'
 import { MealLog } from '@/components/day/meal-log'
+import { slotAt } from '@/components/day/meal-slot'
 import { WeekStrip } from '@/components/day/week-strip'
 import { LoadError } from '@/components/load-error'
 import { buttonVariants } from '@/components/ui/button'
@@ -56,7 +58,10 @@ export function DayPage() {
   )
   const me = $api.useQuery('get', '/api/v1/me')
   const session = useQuery(sessionQuery)
+  const timeZone = session.data?.user.timezone ?? 'UTC'
   const today = me.data?.today
+  // When the page opened, for the meal of the hour to add.
+  const [now] = useState(Date.now)
 
   if (day.isPending) {
     return <output className="block text-muted-foreground">{t.loading}</output>
@@ -86,7 +91,7 @@ export function DayPage() {
   const hasNext = todayDate !== undefined && shown < todayDate
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="max-w-3xl space-y-4 lg:max-w-none">
       <DayKeys before={searchOf(before)} after={hasNext ? searchOf(after) : undefined} />
       <header className="flex items-center gap-2">
         <div className="flex shrink-0 items-center">
@@ -136,49 +141,77 @@ export function DayPage() {
         aria-busy={waiting}
         // What is changed while it waits would be the day before's.
         inert={waiting}
-        className={`space-y-4 ${waiting ? 'opacity-60' : ''}`}
+        className={`grid gap-4 lg:grid-cols-12 lg:items-start ${waiting ? 'opacity-60' : ''}`}
       >
-        <DaySummary day={day.data} />
-        {/* Its fields start again with each day. */}
-        <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
-        <section aria-labelledby="day-meals" className="space-y-2">
-          <h2 id="day-meals" className="font-medium">
-            {t.day.meals}
-          </h2>
-          {day.data.meals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t.day.noMeals}</p>
-          ) : (
-            day.data.meals.map((meal) => (
-              <MealCard
-                key={meal.id}
-                meal={meal}
+        {/* A desktop's columns: the day and its meals, and beside them
+            what the user says of it and measures. A phone has them one
+            after the other. */}
+        <div className="space-y-4 lg:col-span-8">
+          <DaySummary day={day.data} />
+          <section aria-labelledby="day-meals" className="space-y-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <h2 id="day-meals" className="text-h2">
+                {t.day.meals}
+              </h2>
+              {day.data.meals.length > 0 && (
+                <span className="text-small text-muted-foreground">
+                  {t.day.mealsTotal(day.data.meals.length, f.number(day.data.total.kcal))}
+                </span>
+              )}
+            </div>
+            {day.data.meals.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t.day.noMeals}</p>
+            ) : (
+              <ul className="space-y-2">
+                {day.data.meals.map((meal) => (
+                  <li key={meal.id}>
+                    <MealCard
+                      meal={meal}
+                      date={day.data.date}
+                      today={todayDate ?? day.data.date}
+                      timeZone={timeZone}
+                      startHour={session.data?.user.day_start_hour ?? 0}
+                    />
+                  </li>
+                ))}
+              </ul>
+            )}
+            {!future && (
+              <MealLog
+                key={`log ${day.data.date}`}
+                opening={log === true}
+                onOpened={() => {
+                  void navigate({ to: '/', search: {}, replace: true })
+                }}
+                // Today's names the meal of the hour, and what is left.
+                label={
+                  isToday
+                    ? [
+                        t.log.add[slotAt(now, timeZone)],
+                        ...(day.data.remaining && day.data.remaining.kcal > 0
+                          ? [t.log.left(f.number(day.data.remaining.kcal))]
+                          : []),
+                      ].join(' · ')
+                    : undefined
+                }
                 date={day.data.date}
-                today={todayDate ?? day.data.date}
-                timeZone={session.data?.user.timezone ?? 'UTC'}
+                today={isToday}
+                timeZone={timeZone}
                 startHour={session.data?.user.day_start_hour ?? 0}
               />
-            ))
-          )}
-          {!future && (
-            <MealLog
-              key={`log ${day.data.date}`}
-              opening={log === true}
-              onOpened={() => {
-                void navigate({ to: '/', search: {}, replace: true })
-              }}
-              date={day.data.date}
-              today={isToday}
-              timeZone={session.data?.user.timezone ?? 'UTC'}
-              startHour={session.data?.user.day_start_hour ?? 0}
-            />
-          )}
-        </section>
-        <DayMetrics
-          key={`metrics ${day.data.date}`}
-          date={day.data.date}
-          metrics={day.data.metrics}
-          canLog={!future}
-        />
+            )}
+          </section>
+        </div>
+        <div className="space-y-4 lg:col-span-4">
+          {/* Its fields start again with each day. */}
+          <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
+          <DayMetrics
+            key={`metrics ${day.data.date}`}
+            date={day.data.date}
+            metrics={day.data.metrics}
+            canLog={!future}
+          />
+        </div>
       </div>
       {!isToday && (
         <Link

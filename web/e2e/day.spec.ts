@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { signIn } from './user.ts'
+import { openMeal, signIn } from './user.ts'
 
 test('the day shows what was logged, and the days before it', async ({ page }) => {
   await signIn(page)
@@ -23,6 +23,7 @@ test('the day shows what was logged, and the days before it', async ({ page }) =
 
   const lunch = page.getByRole('article').filter({ hasText: 'Lunch' })
   await expect(lunch).toContainText('640 kcal')
+  await openMeal(lunch)
   await expect(lunch).toContainText('Chicken with rice')
   await expect(page.getByRole('region', { name: 'Measurements' })).toContainText('72.5 kg')
 

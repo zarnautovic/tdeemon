@@ -1,20 +1,35 @@
-import { Pencil } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { ChevronDown, Pencil, Repeat2, Trash2 } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
 
-import { useLogMeal } from '@/api/meals'
+import { statusOf } from '@/api/errors'
+import { useDeleteMeal, useLogMeal } from '@/api/meals'
 import type { Item, Meal } from '@/api/types'
+import { MacroSplit } from '@/components/day/macro-split'
 import { MealEditor } from '@/components/day/meal-editor'
 import { repeatOf, shownAmount } from '@/components/day/meal-entries'
-import { RepeatButton, RepeatStatus } from '@/components/day/repeat-meal'
+import { slotAt } from '@/components/day/meal-slot'
+import { RepeatStatus } from '@/components/day/repeat-meal'
+import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { sayChange } from '@/lib/toast'
+import { cn } from '@/lib/utils'
 
-// MealCard is a meal: when it was eaten and what, its kcal, and each item
-// with how much of it and what it brought. It can be changed (MealEditor),
-// or be repeated, today at this time; a toast says what the server warned
-// of either, with Undo.
+// The clients a model logs through: its meals are marked AI.
+const models: ReadonlySet<Meal['client']> = new Set(['mcp', 'chat', 'telegram'])
+
+// The longest description a meal's row takes for its name. A longer one,
+// a model's list of what was eaten, goes under the name, which is then
+// the meal of the day it was eaten at (Lunch).
+const nameLength = 40
+
+// MealCard is a meal as a row of the day: when it was eaten, its name and
+// kcal, its macros as a bar and in grams, whether a model logged it and
+// whether it holds an estimate, and how many items. A tap shows its items
+// with how much of each and what each brought, and the ways to change it
+// (MealEditor), repeat it today at this time, or delete it; a toast says
+// what was done, with what the server warned of it, and Undo.
 export function MealCard({
   meal,
   date,
@@ -32,9 +47,15 @@ export function MealCard({
 }) {
   const t = useMessages()
   const f = useFormat()
+  const id = useId()
+  const time = f.time(meal.eaten_at, timeZone)
+  const long = meal.description.length > nameLength
+  const name =
+    meal.description && !long
+      ? meal.description
+      : t.meal.slots[slotAt(Date.parse(meal.eaten_at), timeZone)]
   // A repeat is today's, but goes in turn with the changes of the day
-  // shown, the undo of its page among them: an undo tapped meanwhile
-  // takes back the repeat, not the change before it.
+  // shown: a change of the day made meanwhile waits for it.
   const repeat = useLogMeal(date, (answer) => {
     sayChange(
       {
@@ -46,16 +67,22 @@ export function MealCard({
       { last: { action: 'meal.create', entity: answer.meal.id }, date },
     )
   })
+  const remove = useDeleteMeal(date, () => {
+    sayChange(
+      { title: t.toast.deleted(name) },
+      { last: { action: 'meal.delete', entity: meal.id }, date },
+    )
+  })
+  const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
-  // The pencil, which takes the focus back when the editor closes.
-  const pencil = useRef<HTMLButtonElement>(null)
+  // The row, which takes the focus back when the editor closes.
+  const row = useRef<HTMLButtonElement>(null)
   const [closed, setClosed] = useState(false)
   useEffect(() => {
     if (closed) {
-      pencil.current?.focus()
+      row.current?.focus()
     }
   }, [closed])
-  const time = f.time(meal.eaten_at, timeZone)
 
   // amount is how much of an item, in its unit; of a named serving, as
   // it was given, with that: "2 slices (80 g)", as the editor has it.
@@ -76,80 +103,155 @@ export function MealCard({
   }
 
   return (
-    <article className="space-y-2 rounded-lg border bg-card p-4">
-      <header className="flex items-baseline justify-between gap-2">
-        <h3 className="min-w-0 font-medium break-words">
-          <time dateTime={meal.eaten_at} className="text-muted-foreground tabular-nums">
-            {time}
-          </time>{' '}
-          {meal.description}
-        </h3>
-        {/* The energy on one line, whatever the description's length. */}
-        <div className="flex shrink-0 items-baseline gap-1">
-          <p className="font-semibold whitespace-nowrap tabular-nums">
-            {t.unit.kcal(f.number(meal.total.kcal))}
-          </p>
-          {!editing && (
-            <RepeatButton
-              label={t.meal.repeat(meal.description || time)}
-              pending={repeat.isPending}
-              onClick={() => {
-                repeat.mutate({ body: repeatOf(meal) })
-              }}
-            />
-          )}
-          {!editing && (
-            <Button
-              ref={pencil}
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t.meal.edit(meal.description || time)}
-              className="self-center"
-              onClick={() => {
-                setEditing(true)
-                setClosed(false)
-              }}
-            >
-              <Pencil aria-hidden />
-            </Button>
-          )}
-        </div>
-      </header>
+    <article aria-labelledby={`${id}-name`} className="rounded-lg border bg-card">
       {editing ? (
-        <MealEditor
-          meal={meal}
-          date={date}
-          today={today}
-          timeZone={timeZone}
-          startHour={startHour}
-          onDone={() => {
-            setEditing(false)
-            setClosed(true)
-          }}
-        />
+        <div className="space-y-2 p-4">
+          <h3 id={`${id}-name`} className="min-w-0 font-medium break-words">
+            <time dateTime={meal.eaten_at} className="text-muted-foreground">
+              {time}
+            </time>{' '}
+            {name}
+          </h3>
+          <MealEditor
+            meal={meal}
+            date={date}
+            today={today}
+            timeZone={timeZone}
+            startHour={startHour}
+            onDone={() => {
+              setEditing(false)
+              setClosed(true)
+            }}
+          />
+        </div>
       ) : (
         <>
-          {meal.note && (
-            <p className="text-sm whitespace-pre-line text-muted-foreground">{meal.note}</p>
-          )}
-          <ul className="divide-y text-sm">
-            {meal.items.map((item) => (
-              <li key={item.id} className="flex items-baseline justify-between gap-2 py-1.5">
+          <h3>
+            <button
+              ref={row}
+              type="button"
+              aria-expanded={open}
+              aria-controls={`${id}-more`}
+              onClick={() => {
+                setOpen((o) => !o)
+              }}
+              className="flex min-h-14 w-full flex-col gap-1.5 rounded-lg px-4 py-3.5 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              <span className="flex w-full items-baseline gap-2.5">
+                <time
+                  dateTime={meal.eaten_at}
+                  className="w-16 shrink-0 text-small text-muted-foreground"
+                >
+                  {time}
+                </time>
+                <span id={`${id}-name`} className="min-w-0 flex-1 truncate font-semibold">
+                  {name}
+                </span>
+                {/* The energy on one line, whatever the name's length. */}
+                <span className="shrink-0 font-semibold whitespace-nowrap">
+                  {t.unit.kcal(f.number(meal.total.kcal))}
+                </span>
+                <ChevronDown
+                  aria-hidden
+                  className={cn(
+                    'size-4 shrink-0 self-center text-muted-foreground transition-transform motion-reduce:transition-none',
+                    open && 'rotate-180',
+                  )}
+                />
+              </span>
+              {long && (
+                <span className="line-clamp-2 pl-18.5 text-small text-muted-foreground">
+                  {meal.description}
+                </span>
+              )}
+              <span className="flex w-full flex-wrap items-center gap-x-2.5 gap-y-1 pl-18.5 text-caption text-muted-foreground">
+                <MacroSplit nutrients={meal.total} />
                 <span>
-                  {item.name} <span className="text-muted-foreground">{amount(item)}</span>
+                  {t.day.short.protein} {f.grams(meal.total.protein)} · {t.day.short.carbs}{' '}
+                  {f.grams(meal.total.carbs)} · {t.day.short.fat} {f.grams(meal.total.fat)}
                 </span>
-                <span className="text-right text-muted-foreground tabular-nums">
-                  {t.unit.kcal(f.number(item.nutrients.kcal))} · {t.day.short.protein}{' '}
-                  {f.number(item.nutrients.protein)} · {t.day.short.carbs}{' '}
-                  {f.number(item.nutrients.carbs)} · {t.day.short.fat}{' '}
-                  {f.number(item.nutrients.fat)}
+                <span className="ml-auto flex items-center gap-1.5">
+                  {models.has(meal.client) && (
+                    <span className="rounded-full bg-surface-2 px-2 py-0.5">{t.meal.ai}</span>
+                  )}
+                  {meal.items.some((item) => item.source === 'estimate') && (
+                    <span className="rounded-full bg-warning/10 px-2 py-0.5 text-warning">
+                      {t.meal.estimate}
+                    </span>
+                  )}
+                  <span>{t.meal.items(meal.items.length)}</span>
                 </span>
-              </li>
-            ))}
-          </ul>
+              </span>
+            </button>
+          </h3>
+          {open && (
+            <div id={`${id}-more`} className="space-y-3 border-t px-4 pt-3 pb-4">
+              {meal.note && (
+                <p className="text-sm whitespace-pre-line text-muted-foreground">{meal.note}</p>
+              )}
+              <ul className="divide-y text-sm">
+                {meal.items.map((item) => (
+                  <li key={item.id} className="flex items-baseline justify-between gap-2 py-1.5">
+                    <span>
+                      {item.name} <span className="text-muted-foreground">{amount(item)}</span>
+                    </span>
+                    <span className="text-right text-muted-foreground">
+                      {t.unit.kcal(f.number(item.nutrients.kcal))} · {t.day.short.protein}{' '}
+                      {f.grams(item.nutrients.protein)} · {t.day.short.carbs}{' '}
+                      {f.grams(item.nutrients.carbs)} · {t.day.short.fat}{' '}
+                      {f.grams(item.nutrients.fat)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={t.meal.edit(name)}
+                  onClick={() => {
+                    setEditing(true)
+                    setClosed(false)
+                  }}
+                >
+                  <Pencil aria-hidden />
+                  {t.meal.change}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  aria-label={t.meal.repeat(name)}
+                  disabled={repeat.isPending}
+                  onClick={() => {
+                    repeat.mutate({ body: repeatOf(meal) })
+                  }}
+                >
+                  <Repeat2 aria-hidden />
+                  {t.meal.repeatToday}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  aria-label={t.meal.deleteOf(name)}
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    remove.mutate({ params: { path: { id: meal.id } } })
+                  }}
+                >
+                  <Trash2 aria-hidden />
+                  {t.meal.deleteShort}
+                </Button>
+              </div>
+            </div>
+          )}
         </>
       )}
-      <RepeatStatus log={repeat} />
+      <div className="px-4 pb-3 empty:hidden">
+        <RepeatStatus log={repeat} />
+        {/* A meal no longer there (404) was deleted: by this delete, its
+            answer lost, or elsewhere. */}
+        {remove.isError && statusOf(remove.error) !== 404 && <SaveStatus change={remove} />}
+      </div>
     </article>
   )
 }
