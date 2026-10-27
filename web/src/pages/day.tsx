@@ -1,20 +1,22 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { useState } from 'react'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
+import type { Food } from '@/api/types'
 import { BodyToday } from '@/components/day/body-today'
 import { CheckIn } from '@/components/day/check-in'
 import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
 import { MealCard } from '@/components/day/meal-card'
-import { MealLog } from '@/components/day/meal-log'
 import { slotAt } from '@/components/day/meal-slot'
+import { QuickAdd } from '@/components/day/quick-add'
+import { QuickChips } from '@/components/day/quick-chips'
 import { WeekStrip } from '@/components/day/week-strip'
 import { LoadError } from '@/components/load-error'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { useShortcuts } from '@/lib/shortcuts'
@@ -40,9 +42,9 @@ function DayKeys({ before, after }: { before: DaySearch; after: DaySearch | unde
 // DayPage is a day of the user's: today at /, another at /?date=YYYY-MM-DD.
 // It shows the week's days, what was eaten against the target, the
 // meals, the check-in and the measurements, takes the day's type, the
-// check-in and the measurements, and moves a day back or ahead, up to
-// today. /?log=true opens the form to log a meal
-// on today (the app's Log a meal).
+// check-in and the measurements, logs a meal (QuickAdd), and moves a day
+// back or ahead, up to today. /?log=true opens the meal to log on today
+// (the app's Log a meal).
 export function DayPage() {
   const t = useMessages()
   const f = useFormat()
@@ -62,6 +64,25 @@ export function DayPage() {
   const today = me.data?.today
   // When the page opened, for the meal of the hour to add.
   const [now] = useState(Date.now)
+  // The meal being logged, open, and the food it starts with; and what
+  // opened it, which the focus goes back to.
+  const [adding, setAdding] = useState<{ food?: Food } | undefined>(undefined)
+  const opener = useRef<HTMLElement | null>(null)
+  // Asked to open by the address: opened, and the address left as today's.
+  const [asked, setAsked] = useState(false)
+  if ((log === true) !== asked) {
+    setAsked(log === true)
+    if (log === true) {
+      setAdding({})
+    }
+  }
+  useEffect(() => {
+    if (log === true) {
+      // Opened from another page: the focus goes back where it was.
+      opener.current = null
+      void navigate({ to: '/', search: {}, replace: true })
+    }
+  }, [log, navigate])
 
   if (day.isPending) {
     return <output className="block text-muted-foreground">{t.loading}</output>
@@ -141,13 +162,24 @@ export function DayPage() {
         aria-busy={waiting}
         // What is changed while it waits would be the day before's.
         inert={waiting}
-        className={`grid gap-4 lg:grid-cols-12 lg:items-start ${waiting ? 'opacity-60' : ''}`}
+        className={`grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start ${waiting ? 'opacity-60' : ''}`}
       >
         {/* A desktop's columns: the day and its meals, and beside them
             what the user says of it and measures. A phone has them one
             after the other. */}
         <div className="space-y-4 lg:col-span-8">
           <DaySummary day={day.data} />
+          {isToday && (
+            <QuickChips
+              date={day.data.date}
+              timeZone={timeZone}
+              now={now}
+              onFood={(food, from) => {
+                opener.current = from
+                setAdding({ food })
+              }}
+            />
+          )}
           <section aria-labelledby="day-meals" className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
               <h2 id="day-meals" className="text-h2">
@@ -177,28 +209,25 @@ export function DayPage() {
               </ul>
             )}
             {!future && (
-              <MealLog
-                key={`log ${day.data.date}`}
-                opening={log === true}
-                onOpened={() => {
-                  void navigate({ to: '/', search: {}, replace: true })
+              <Button
+                variant="outline"
+                className="h-13 w-full border-2 border-dashed bg-transparent font-semibold text-primary"
+                onClick={(e) => {
+                  opener.current = e.currentTarget
+                  setAdding({})
                 }}
-                // Today's names the meal of the hour, and what is left.
-                label={
-                  isToday
-                    ? [
-                        t.log.add[slotAt(now, timeZone)],
-                        ...(day.data.remaining && day.data.remaining.kcal > 0
-                          ? [t.log.left(f.number(day.data.remaining.kcal))]
-                          : []),
-                      ].join(' · ')
-                    : undefined
-                }
-                date={day.data.date}
-                today={isToday}
-                timeZone={timeZone}
-                startHour={session.data?.user.day_start_hour ?? 0}
-              />
+              >
+                <Plus aria-hidden />
+                {/* Today's names the meal of the hour, and what is left. */}
+                {isToday
+                  ? [
+                      t.log.add[slotAt(now, timeZone)],
+                      ...(day.data.remaining && day.data.remaining.kcal > 0
+                        ? [t.log.left(f.number(day.data.remaining.kcal))]
+                        : []),
+                    ].join(' · ')
+                  : t.log.open}
+              </Button>
             )}
           </section>
         </div>
@@ -213,6 +242,25 @@ export function DayPage() {
           />
         </div>
       </div>
+      {!future && (
+        <QuickAdd
+          // Each day's meal of its own.
+          key={`add ${day.data.date}`}
+          open={adding !== undefined}
+          onOpenChange={(open) => {
+            if (!open) {
+              setAdding(undefined)
+            }
+          }}
+          initial={adding?.food}
+          opener={opener}
+          remaining={day.data.remaining?.kcal}
+          date={day.data.date}
+          today={isToday}
+          timeZone={timeZone}
+          startHour={session.data?.user.day_start_hour ?? 0}
+        />
+      )}
       {!isToday && (
         <Link
           to="/"

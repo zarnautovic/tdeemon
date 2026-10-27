@@ -7,7 +7,7 @@ import type { Item, Meal } from '@/api/types'
 import { MacroSplit } from '@/components/day/macro-split'
 import { MealEditor } from '@/components/day/meal-editor'
 import { repeatOf, shownAmount } from '@/components/day/meal-entries'
-import { slotAt } from '@/components/day/meal-slot'
+import { longName, mealName } from '@/components/day/meal-slot'
 import { RepeatStatus } from '@/components/day/repeat-meal'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
@@ -18,11 +18,6 @@ import { cn } from '@/lib/utils'
 
 // The clients a model logs through: its meals are marked AI.
 const models: ReadonlySet<Meal['client']> = new Set(['mcp', 'chat', 'telegram'])
-
-// The longest description a meal's row takes for its name. A longer one,
-// a model's list of what was eaten, goes under the name, which is then
-// the meal of the day it was eaten at (Lunch).
-const nameLength = 40
 
 // MealCard is a meal as a row of the day: when it was eaten, its name and
 // kcal, its macros as a bar and in grams, whether a model logged it and
@@ -49,11 +44,8 @@ export function MealCard({
   const f = useFormat()
   const id = useId()
   const time = f.time(meal.eaten_at, timeZone)
-  const long = meal.description.length > nameLength
-  const name =
-    meal.description && !long
-      ? meal.description
-      : t.meal.slots[slotAt(Date.parse(meal.eaten_at), timeZone)]
+  const long = longName(meal.description)
+  const name = mealName(meal, timeZone, t.meal.slots)
   // A repeat is today's, but goes in turn with the changes of the day
   // shown: a change of the day made meanwhile waits for it.
   const repeat = useLogMeal(date, (answer) => {

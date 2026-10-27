@@ -112,7 +112,7 @@ test('Log a meal opens the form on today, from another section', async () => {
   }
   fireEvent.click(bar)
 
-  expect(await screen.findByRole('form', { name: 'A new meal' })).toBeDefined()
+  expect(await screen.findByRole('dialog', { name: 'A new meal' })).toBeDefined()
   // Once open, the address is today's again: a reload does not open it.
   await waitFor(() => {
     expect(router.state.location.search).toEqual({})
@@ -129,8 +129,12 @@ test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
   await nav()
 
   fireEvent.keyDown(window, { key: 'n' })
-  expect(await screen.findByRole('form', { name: 'A new meal' })).toBeDefined()
+  const sheet = await screen.findByRole('dialog', { name: 'A new meal' })
   expect(router.state.location.pathname).toBe('/')
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+  })
 
   fireEvent.keyDown(document.body, { key: '/' })
   const search = await screen.findByRole('searchbox', { name: 'Search the foods' })

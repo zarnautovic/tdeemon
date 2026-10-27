@@ -1826,7 +1826,7 @@ test('a unit chosen for an item whose food changes elsewhere starts again with t
   expect(server.sent).toEqual([])
 })
 
-test('an estimate saved as a food is found by a search that was open', async () => {
+test('an estimate saved as a food is found by the next search of a meal to log', async () => {
   let saved = false
   const canteen: Food = {
     ...rye,
@@ -1848,15 +1848,27 @@ test('an estimate saved as a food is found by a search that was open', async () 
 
   // A meal being logged, its search finding nothing yet.
   fireEvent.click(await screen.findByRole('button', { name: logMeal }))
-  const log = within(screen.getByRole('form', { name: 'A new meal' }))
-  fireEvent.change(log.getByLabelText('Find a food of yours'), { target: { value: 'canteen' } })
-  expect(await log.findByText('No food of yours matches: give it as an estimate.')).toBeDefined()
+  let log = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  fireEvent.change(log.getByLabelText('Find a food or a meal'), { target: { value: 'canteen' } })
+  expect(
+    await log.findByText('Nothing of yours matches: give an estimate, or make a new food.'),
+  ).toBeDefined()
+  fireEvent.click(log.getByRole('button', { name: 'Close' }))
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+  })
   await edit()
   fireEvent.click(
     meal().getByRole('button', { name: 'Save as a food of yours: Salad from the canteen' }),
   )
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await waitFor(() => {
+    expect(saved).toBe(true)
+  })
 
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
+  log = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  fireEvent.change(log.getByLabelText('Find a food or a meal'), { target: { value: 'canteen' } })
   expect(await log.findByRole('button', { name: /^Canteen salad/ })).toBeDefined()
 })
 

@@ -17,8 +17,12 @@ test('a phone has the bar at the bottom, a desktop the sidebar, and the keys wor
   await expect(sections.getByRole('link', { name: 'Settings' })).toBeHidden()
   await sections.getByRole('link', { name: 'Foods' }).click()
   await sections.getByRole('link', { name: 'Log a meal' }).click()
-  await expect(page.getByRole('form', { name: 'A new meal' })).toBeVisible()
+  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  await expect(sheet).toBeVisible()
+  await expect(sheet.getByLabel('Find a food or a meal')).toBeFocused()
   await expect(page).toHaveURL('/')
+  await page.keyboard.press('Escape')
+  await expect(sheet).toBeHidden()
 
   // A desktop: the sidebar, 240 px at the left, the settings at its foot.
   await page.setViewportSize({ width: 1440, height: 900 })
