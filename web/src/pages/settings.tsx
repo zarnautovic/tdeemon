@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { ChevronRight } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
 
 import { $api } from '@/api/client'
@@ -10,13 +10,13 @@ import { ApiTokens } from '@/components/settings/api-tokens'
 import { Appearance } from '@/components/settings/appearance'
 import { CoachNotes } from '@/components/settings/coach-notes'
 import { YouForm } from '@/components/settings/you-form'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 
 // SettingsPage is the user's own: their name, language, time zone and
-// day's start, this browser's theme, their notes for a coach, the way to
-// their profile and limits, their API tokens, signing out, and what the
-// server is.
+// day's start, this browser's theme, their notes for a coach, their API
+// tokens, signing out, and what the server is. On a phone they are the
+// plan's, and lead back to it; a desktop's sidebar has both.
 export function SettingsPage() {
   const t = useMessages()
   const session = useQuery(sessionQuery)
@@ -36,7 +36,14 @@ export function SettingsPage() {
   })
 
   return (
-    <section className="space-y-6">
+    <section className="max-w-2xl space-y-6">
+      <Link
+        to="/plan"
+        className={buttonVariants({ variant: 'ghost', className: '-ml-2 lg:hidden' })}
+      >
+        <ChevronLeft aria-hidden />
+        {t.settings.back}
+      </Link>
       <h1 className="text-2xl font-semibold">{t.settings.title}</h1>
       {session.data && <YouForm key={session.data.user.id} user={session.data.user} />}
       <Appearance />
@@ -49,16 +56,6 @@ export function SettingsPage() {
       ) : (
         me.isError && <LoadError error={me.error} onRetry={() => void me.refetch()} />
       )}
-      <Link
-        to="/settings/plan"
-        className="flex items-center justify-between gap-2 rounded-lg border p-3 hover:bg-muted"
-      >
-        <span>
-          <span className="block font-medium">{t.plan.open}</span>
-          <span className="block text-sm text-muted-foreground">{t.plan.openHint}</span>
-        </span>
-        <ChevronRight aria-hidden className="shrink-0" />
-      </Link>
       <ApiTokens />
       <section className="space-y-2">
         <h2 className="font-medium">{t.settings.account}</h2>

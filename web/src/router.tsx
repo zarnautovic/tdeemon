@@ -84,14 +84,16 @@ const loginRoute = createRoute({
 })
 
 // The day's date, YYYY-MM-DD; without it, or with one that is no date
-// (2026-02-31), today.
+// (2026-02-31), today. log opens the form to log a meal (the app's Log a
+// meal), which takes it out of the address once open.
 const dayRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
   // The router keeps the URL's keys a validator leaves out, so a date
   // that is none is set undefined, not left out.
-  validateSearch: (search: Record<string, unknown>): { date?: string | undefined } => ({
+  validateSearch: (search: Record<string, unknown>): DaySearch => ({
     date: typeof search.date === 'string' && isDate(search.date) ? search.date : undefined,
+    log: search.log === true || search.log === 'true' ? true : undefined,
   }),
   component: DayPage,
 })
@@ -117,26 +119,46 @@ const foodRoute = createRoute({
   path: '/foods/$id',
   component: FoodPage,
 })
-// The charts, over the span of days the address says (90 by default),
-// load ECharts with them, not with the app.
-const chartsRoute = createRoute({
+// The progress, over the span of days the address says (90 by default):
+// its charts load ECharts with them, not with the app.
+function spanOf(search: Record<string, unknown>): { days?: 30 | 180 | 365 | undefined } {
+  const days = Number(search.days)
+  return { days: days === 30 || days === 180 || days === 365 ? days : undefined }
+}
+const progressRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: '/charts',
-  validateSearch: (search: Record<string, unknown>): { days?: 30 | 180 | 365 | undefined } => {
-    const days = Number(search.days)
-    return { days: days === 30 || days === 180 || days === 365 ? days : undefined }
-  },
+  path: '/progress',
+  validateSearch: spanOf,
   component: lazyRouteComponent(() => import('@/pages/charts'), 'ChartsPage'),
+})
+const planRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/plan',
+  component: PlanPage,
 })
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
   component: SettingsPage,
 })
-const planRoute = createRoute({
-  getParentRoute: () => appRoute,
+// The addresses of before, the charts' and the plan's under the settings,
+// lead where they are now.
+const chartsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/charts',
+  validateSearch: spanOf,
+  beforeLoad: ({ search }) => {
+    // oxlint-disable-next-line typescript/only-throw-error -- the router's redirect is thrown by design
+    throw redirect({ to: '/progress', search, replace: true })
+  },
+})
+const oldPlanRoute = createRoute({
+  getParentRoute: () => rootRoute,
   path: '/settings/plan',
-  component: PlanPage,
+  beforeLoad: () => {
+    // oxlint-disable-next-line typescript/only-throw-error -- the router's redirect is thrown by design
+    throw redirect({ to: '/plan', replace: true })
+  },
 })
 
 const routeTree = rootRoute.addChildren([
@@ -145,11 +167,13 @@ const routeTree = rootRoute.addChildren([
     foodsRoute,
     newFoodRoute,
     foodRoute,
-    chartsRoute,
-    settingsRoute,
+    progressRoute,
     planRoute,
+    settingsRoute,
   ]),
   loginRoute,
+  chartsRoute,
+  oldPlanRoute,
 ])
 
 export function createAppRouter(options: { queryClient: QueryClient; history?: RouterHistory }) {
@@ -201,6 +225,12 @@ declare module '@tanstack/react-router' {
   }
 }
 
+// DaySearch is the day a day's page shows, and whether to log a meal.
+export interface DaySearch {
+  date?: string | undefined
+  log?: true | undefined
+}
+
 // FoodsSearch is what the foods page shows: its search, its list and its
 // order.
 export interface FoodsSearch {
@@ -213,5 +243,7 @@ declare module '@tanstack/history' {
   interface HistoryState {
     // The foods page a food's page was opened from, to go back to.
     foods?: FoodsSearch
+    // The foods' search takes the focus (the shortcut /).
+    find?: true
   }
 }

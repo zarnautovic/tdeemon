@@ -28,9 +28,15 @@ interface Day {
 // MealLog logs a meal of the day by hand: foods of the user's in their
 // amounts, and estimates of whole plates, at a time of the day. Logging
 // through a model stays the main way; this is for when there is none.
-export function MealLog(day: Day) {
+// opening opens it from outside (the app's Log a meal), which onOpened
+// hears of.
+export function MealLog({
+  opening = false,
+  onOpened,
+  ...day
+}: Day & { opening?: boolean; onOpened?: () => void }) {
   const t = useMessages()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(opening)
   // What the server warned of the meal logged last.
   const [logged, setLogged] = useState<Warning[] | undefined>(undefined)
   // The button takes the focus back when the form closes.
@@ -41,6 +47,21 @@ export function MealLog(day: Day) {
       button.current?.focus()
     }
   }, [closed])
+  // Asked to open while on the page already.
+  const [asked, setAsked] = useState(opening)
+  if (opening !== asked) {
+    setAsked(opening)
+    if (opening) {
+      setOpen(true)
+      setClosed(false)
+      setLogged(undefined)
+    }
+  }
+  useEffect(() => {
+    if (opening) {
+      onOpened?.()
+    }
+  }, [opening, onOpened])
 
   if (open) {
     return (

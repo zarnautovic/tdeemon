@@ -23,7 +23,7 @@ test('the charts show the days logged, as charts and in words', async ({ page })
 
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Charts' })
+    .getByRole('link', { name: 'Progress' })
     .click()
 
   const weight = page.getByRole('region', { name: 'Weight and trend' })

@@ -45,9 +45,8 @@ test('a proposed change is accepted in the app, and taken back from its history'
   const rationale = await propose(page)
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Settings' })
+    .getByRole('link', { name: 'Plan' })
     .click()
-  await page.getByRole('link', { name: /^Plan/ }).click()
 
   const card = page.getByRole('region', { name: 'A proposed change' })
   await expect(card.getByText(rationale)).toBeVisible()
@@ -86,9 +85,8 @@ test('a proposed change of the limits is accepted in the app, once the user loos
   expect(made.status()).toBe(201)
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Settings' })
+    .getByRole('link', { name: 'Plan' })
     .click()
-  await page.getByRole('link', { name: /^Plan/ }).click()
 
   const card = page.getByRole('region', { name: 'A proposed change' })
   await expect(card.getByText('Limit: Cut, fastest loss, BMI below 30')).toBeVisible()

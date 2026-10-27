@@ -121,21 +121,23 @@ const save = (form: string) => {
   )
 }
 
-test('the settings lead to the plan', async () => {
+test('the plan leads to the settings, and they back to it', async () => {
   planServer()
-  const router = renderAt('/settings')
-  fireEvent.click(await screen.findByRole('link', { name: /^Plan/ }))
+  const router = renderAt('/plan')
   await screen.findByRole('heading', { name: 'Plan', level: 1 })
-  expect(router.state.location.pathname).toBe('/settings/plan')
   fireEvent.click(within(page()).getByRole('link', { name: 'Settings' }))
   await screen.findByRole('heading', { name: 'Settings', level: 1 })
+  expect(router.state.location.pathname).toBe('/settings')
+  fireEvent.click(within(page()).getByRole('link', { name: 'Plan' }))
+  await screen.findByRole('heading', { name: 'Plan', level: 1 })
+  expect(router.state.location.pathname).toBe('/plan')
 })
 
 test('the profile says what a plan still needs, and is saved whole', async () => {
   const { sent } = planServer({
     profile: { sex: 'female', height_cm: 168.5, missing: ['birth_date'] },
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   expect(within(form).getByText('A plan still needs: birth date.')).toBeTruthy()
   expect(within(form).getByRole('radio', { name: 'Female' })).toHaveProperty('checked', true)
@@ -162,13 +164,13 @@ test("the profile is the server's, not one a cache kept from before", async () =
   const { setProfile } = planServer({
     profile: { sex: 'female', missing: ['birth_date', 'height_cm'] },
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   expect(await screen.findByRole('radio', { name: 'Female' })).toHaveProperty('checked', true)
   fireEvent.click(within(page()).getByRole('link', { name: 'Settings' }))
   await screen.findByRole('heading', { name: 'Settings', level: 1 })
   // Changed in another tab meanwhile.
   setProfile({ sex: 'male', missing: ['birth_date', 'height_cm'] })
-  fireEvent.click(screen.getByRole('link', { name: /^Plan/ }))
+  fireEvent.click(within(page()).getByRole('link', { name: 'Plan' }))
   await waitFor(() => {
     expect(screen.getByRole('radio', { name: 'Male' })).toHaveProperty('checked', true)
   })
@@ -176,7 +178,7 @@ test("the profile is the server's, not one a cache kept from before", async () =
 
 test('a profile typed stays when it cannot be asked again', async () => {
   const { fetch, failProfile } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   type(within(form).getByRole('textbox', { name: /Height/ }), '181')
   // The page comes back to the front while the server is down: the
@@ -209,7 +211,7 @@ test('a profile or limits that did not come say why, and come when asked again',
     { 'GET /api/v1/limits': () => (fails ? problem(503) : Response.json(limitsBody())) },
   )
   failProfile(true)
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const again = await screen.findAllByRole('button', { name: 'Try again' })
   expect(again).toHaveLength(2)
   expect(screen.queryByRole('form', { name: 'Profile' })).toBeNull()
@@ -236,12 +238,12 @@ test('a cached profile asked again says it is loading, not nothing', async () =>
           : Response.json({ missing: ['sex', 'birth_date', 'height_cm'] }),
     },
   )
-  renderAt('/settings/plan')
+  renderAt('/plan')
   await screen.findByRole('form', { name: 'Profile' })
   fireEvent.click(within(page()).getByRole('link', { name: 'Settings' }))
   await screen.findByRole('heading', { name: 'Settings', level: 1 })
   hang = true
-  fireEvent.click(screen.getByRole('link', { name: /^Plan/ }))
+  fireEvent.click(within(page()).getByRole('link', { name: 'Plan' }))
   await screen.findByRole('heading', { name: 'Plan', level: 1 })
   expect(screen.getByText('Loading…')).toBeTruthy()
   expect(screen.queryByRole('form', { name: 'Profile' })).toBeNull()
@@ -251,7 +253,7 @@ test('a birth date typed in part is not sent, as it would clear the one stored',
   const { sent } = planServer({
     profile: { birth_date: '1990-06-15', missing: ['sex', 'height_cm'] },
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   const date = within(form).getByLabelText('Birth date')
   // The browser's word for a date part typed: jsdom has none of its own.
@@ -270,7 +272,7 @@ test('a birth date after today, or of an age past the oldest, is not sent', asyn
   const { sent } = planServer({
     profile: { birth_date: '1990-06-15', missing: ['sex', 'height_cm'] },
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   const date = within(form).getByLabelText('Birth date')
 
@@ -298,7 +300,7 @@ test('a birth date after today, or of an age past the oldest, is not sent', asyn
 
 test('a height that is no number, or none the server takes, is not sent', async () => {
   const { sent } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   const height = within(form).getByRole('textbox', { name: /Height/ })
   const refused = async (typed: string) => {
@@ -319,7 +321,7 @@ test('a height that is no number, or none the server takes, is not sent', async 
 
 test('a height is shown as it is stored, not rounded', async () => {
   const { sent } = planServer({ profile: { height_cm: 168.25, missing: ['sex', 'birth_date'] } })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   expect(within(form).getByRole('textbox', { name: /Height/ })).toHaveProperty('value', '168.25')
   fireEvent.click(within(form).getByRole('radio', { name: 'Male' }))
@@ -334,7 +336,7 @@ test('each limit is shown against its default and the instance', async () => {
   // The instance holds the step at its own, 200 kcal.
   body.effective = { ...body.limits, step_kcal: 200 }
   planServer({ limits: body })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const cut = await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
   expect(cut).toHaveProperty('value', '0.5')
   expect(cut.getAttribute('aria-describedby')).toBeTruthy()
@@ -357,7 +359,7 @@ const unitOf = (field: HTMLInputElement) => field.nextElementSibling?.textConten
 
 test('a unit of days agrees with the number typed beside it', async () => {
   planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
   const between = limit('Between two steps, at least')
   expect(unitOf(between)).toBe('days')
@@ -371,7 +373,7 @@ test('a unit of days agrees with the number typed beside it', async () => {
 
 test('in Croatian a unit of days agrees with its number too', async () => {
   planServer({ limits: limitsBody({ first_step_days: 21 }) }, signedIn('hr'))
-  renderAt('/settings/plan')
+  renderAt('/plan')
   await screen.findByRole('textbox', { name: /^Cut, najbrži gubitak, BMI ispod 30/ })
   const between = limit('Između dva koraka, najmanje')
   expect(unitOf(between)).toBe('dana')
@@ -384,7 +386,7 @@ test('in Croatian a unit of days agrees with its number too', async () => {
 
 test('a tightened limit is saved as it is, and only what changed is sent', async () => {
   const { sent } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ }), '0,5')
   type(limit('Kcal of a day, least, male'), '1600')
   save('Limits of the plan')
@@ -397,7 +399,7 @@ test('a tightened limit is saved as it is, and only what changed is sent', async
 
 test('loosening a limit asks first, and is sent with the confirmation', async () => {
   const { sent } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
   type(limit('Protein, least'), '1.8')
   save('Limits of the plan')
@@ -420,7 +422,7 @@ test('loosening a limit asks first, and is sent with the confirmation', async ()
 
 test('a loosening the server finds, the limits changed elsewhere, is asked of the user', async () => {
   const { sent, setLimits } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const bulk = await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ })
   // Another tab tightened the bulk meanwhile, so 0.2 loosens it now.
   setLimits(limitsBody({ bulk_rate: 0.1 }))
@@ -436,7 +438,7 @@ test('a loosening the server finds, the limits changed elsewhere, is asked of th
 
 test('a limit past the instance is not sent, and says how far it may go', async () => {
   const { sent } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const cut = await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
   type(cut, '1.2')
   expect(cut.getAttribute('aria-invalid')).toBe('true')
@@ -452,7 +454,7 @@ test("a limit past the instance's other one says which to lower", async () => {
   const body = limitsBody({ protein_floor: 2.8 })
   body.instance.protein_ceiling = 2.5
   const { sent } = planServer({ limits: body })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   expect(
     await screen.findByText(
       "Past the instance's Protein, most, 2.5: lower it to 2.5 at most, or no change of your limits is taken.",
@@ -473,7 +475,7 @@ test("a limit past the instance's other one says which to lower", async () => {
 
 test('a limit outside what any level may have says so, and is not sent', async () => {
   const { sent } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Logged days a step needs/ }), '8')
   expect(screen.getByText('From 0 to 7.')).toBeTruthy()
   type(limit('Fat, least'), '120')
@@ -485,7 +487,7 @@ test('a limit outside what any level may have says so, and is not sent', async (
 
 test('the question to loosen takes the focus, and a change of a field closes it', async () => {
   planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
   save('Limits of the plan')
   const back = await screen.findByRole('button', { name: 'Back' })
@@ -499,7 +501,7 @@ test('the question to loosen takes the focus, and a change of a field closes it'
 
 test('a loosening on its way cannot be taken back', async () => {
   planServer({}, { 'PUT /api/v1/limits': () => new Promise<Response>(() => undefined) })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
   save('Limits of the plan')
   fireEvent.click(await screen.findByRole('button', { name: 'Loosen' }))
@@ -519,7 +521,7 @@ test('a loosening confirmed and refused says why, the question answered', async 
         ),
     },
   )
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ }), '0.4')
   save('Limits of the plan')
   fireEvent.click(await screen.findByRole('button', { name: 'Loosen' }))
@@ -531,7 +533,7 @@ test('a loosening confirmed and refused says why, the question answered', async 
 
 test('back from a loosening the server found leaves no word of it', async () => {
   const { setLimits } = planServer()
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const bulk = await screen.findByRole('textbox', { name: /^Bulk, fastest gain/ })
   setLimits(limitsBody({ bulk_rate: 0.1 }))
   type(bulk, '0.2')
@@ -555,7 +557,7 @@ test('the limits hold still while they are saved, and a failure goes once they c
             }),
     },
   )
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const cut = await screen.findByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
   type(cut, '0.5')
   save('Limits of the plan')
@@ -590,7 +592,7 @@ test("the server's refusal names the limits as the page does", async () => {
         ),
     },
   )
-  renderAt('/settings/plan')
+  renderAt('/plan')
   type(await screen.findByRole('textbox', { name: /^Drift from/ }), '12')
   save('Limits of the plan')
   expect(
@@ -602,7 +604,7 @@ test("the server's refusal names the limits as the page does", async () => {
 
 test('in Croatian a limit is typed with a decimal comma', async () => {
   const { sent } = planServer({}, signedIn('hr'))
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const cut = await screen.findByRole('textbox', { name: /^Cut, najbrži gubitak, BMI ispod 30/ })
   expect(cut).toHaveProperty('value', '0,7')
   type(cut, '0,6')

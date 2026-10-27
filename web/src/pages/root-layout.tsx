@@ -1,11 +1,11 @@
 import { Outlet } from '@tanstack/react-router'
 
-// The frame every page renders in, the sign-in page too. Its sides keep
-// clear of a phone's notch in landscape (viewport-fit=cover in index.html
-// gives the page the whole screen).
+// The frame every page renders in, the sign-in page too: the whole
+// screen, which the app's sections (AppLayout) and the pages outside them
+// (signing in, not found) each lay out.
 export function RootLayout() {
   return (
-    <div className="mx-auto min-h-dvh max-w-3xl pt-6 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]">
+    <div className="min-h-dvh">
       <Outlet />
     </div>
   )

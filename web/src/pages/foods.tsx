@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
 import { Plus, Search } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import { useFindFoods, useFoodList } from '@/api/foods'
 import { sessionQuery } from '@/api/session'
@@ -44,9 +44,17 @@ export function FoodsPage() {
     }
   }
   const searching = typed.trim() !== ''
+  // The search takes the focus when the shortcut / brought the page.
+  const field = useRef<HTMLInputElement>(null)
+  const find = useLocation({ select: (l) => l.state.find === true })
+  useEffect(() => {
+    if (find) {
+      field.current?.focus()
+    }
+  }, [find])
 
   return (
-    <section className="space-y-4">
+    <section className="max-w-3xl space-y-4">
       <header className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold">{t.foods.title}</h1>
         <Link
@@ -67,8 +75,11 @@ export function FoodsPage() {
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
         />
         <input
+          ref={field}
           id={id}
           type="search"
+          // The shortcut / finds it.
+          data-find
           value={typed}
           placeholder={t.foods.searchHint}
           autoComplete="off"

@@ -285,7 +285,7 @@ test('on another day, the section is still the current one, and no link to a day
   const current = screen
     .getAllByRole('link')
     .filter((a) => a.getAttribute('aria-current') === 'page')
-  expect(current.map((a) => a.textContent)).toEqual(['Day'])
+  expect(current.map((a) => a.textContent)).toEqual(['Today'])
 })
 
 test('a date that is no date is today', async () => {
