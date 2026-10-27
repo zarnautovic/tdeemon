@@ -26,11 +26,13 @@ that serves them at `/mcp`, the API contract and the web app's frame
 (signing in and out, its sections in a bar at the bottom on a phone and
 a sidebar on a desktop, keyboard shortcuts, a light and a dark theme,
 each change said in a toast whose Undo takes it back, in English and
-Croatian) with the day (what was eaten against the target,
-the meals, the measurements, and the check-in, the measurements, a
-meal's corrections, a meal logged by hand and a meal repeated taken
-there), the foods (their list and search, a food made, corrected or
-archived), the progress (its charts, ECharts loaded with them), the plan
+Croatian) with the day (what was eaten against the target in a ring
+and the macros' bars, with the TDEE, the deficit and the phase, the
+week's days, the day's type, the meals, the measurements, and the
+check-in, the measurements, a meal's corrections, a meal logged by
+hand and a meal repeated taken there), the foods (their list and
+search, a food made, corrected or archived), the progress (its charts,
+ECharts loaded with them), the plan
 (the plan as it holds, a proposal that waits, the history of its
 revisions with a revert, a proposal of the limits accepted there alone,
 the profile and the limits) and the settings (the name, language, time

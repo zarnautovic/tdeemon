@@ -1,7 +1,6 @@
 import { useCheckIn } from '@/api/day'
 import type { Day } from '@/api/types'
 import { DayNote } from '@/components/day/day-note'
-import { DayTypePicker } from '@/components/day/day-type-picker'
 import { Exclusion } from '@/components/day/exclusion'
 import { SaveStatus } from '@/components/day/save-status'
 import { Stepper } from '@/components/day/stepper'
@@ -10,8 +9,9 @@ import { useMessages } from '@/i18n/messages'
 import { sayChange } from '@/lib/toast'
 
 // CheckIn is what the user says of a day: their mood and hunger, a note,
-// the day's type, and whether calibration counts it. Each is saved as it
-// is given. A day to come (future) takes its type and exclusion only.
+// and whether calibration counts it; the day's type is the header's
+// (DayTypeChip). Each is saved as it is given. A day to come (future)
+// takes its exclusion only.
 export function CheckIn({ day, future = false }: { day: Day; future?: boolean }) {
   const t = useMessages()
 
@@ -33,7 +33,6 @@ export function CheckIn({ day, future = false }: { day: Day; future?: boolean })
           <DayNote day={day} />
         </>
       )}
-      <DayTypePicker day={day} />
       <Exclusion day={day} />
     </section>
   )

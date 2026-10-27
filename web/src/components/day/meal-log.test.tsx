@@ -276,7 +276,7 @@ test('a day to come has no meal to log', async () => {
   logServer('2026-10-25')
   renderAt('/?date=2026-10-25')
 
-  expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
+  expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
   expect(screen.queryByRole('button', { name: 'Log a meal' })).toBeNull()
 })
 

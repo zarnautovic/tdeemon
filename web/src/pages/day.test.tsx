@@ -3,7 +3,17 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Meal } from '@/api/types'
 import { setLocale } from '@/i18n/locale'
-import { day, fakeServer, me, problem, renderAt, session, signedIn, signedOut } from '@/test/app'
+import {
+  day,
+  fakeServer,
+  me,
+  problem,
+  renderAt,
+  session,
+  signedIn,
+  signedOut,
+  today,
+} from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -41,6 +51,62 @@ const breakfast: Meal = {
   ],
 }
 
+// currentIn are the links of a navigation marked as the current page.
+function currentIn(name: string) {
+  return within(screen.getByRole('navigation', { name }))
+    .getAllByRole('link')
+    .filter((a) => a.getAttribute('aria-current') === 'page')
+}
+
+// energy is the day's summary, its energy and macros.
+function energy() {
+  return screen.getByRole('region', { name: 'Energy and macros' })
+}
+
+// macroOf is what a macro's bar says, its name first.
+function macroOf(summary: HTMLElement, name: string): string | null {
+  return within(summary).getByText(name).closest('p')?.textContent ?? null
+}
+
+// termOf is the value of a term of the summary's list.
+function termOf(summary: HTMLElement, term: string): string | null {
+  return within(summary).getByText(term).nextElementSibling?.textContent ?? null
+}
+
+// summaryOf is calibration's summary of nothing measured yet.
+function summaryOf() {
+  return {
+    date: today,
+    incomplete_days: [],
+    recovery: { flags: [] },
+    tdee: {
+      before_phase: false,
+      doubts: ['few_days'],
+      from: '2026-09-25',
+      to: '2026-10-22',
+      logged_days: 0,
+      measured: false,
+      trusted: false,
+      weigh_ins: 0,
+    },
+    verdict: {
+      action: 'none',
+      flags: [],
+      gap_kcal: 0,
+      guards: [],
+      rate: 'none',
+      reasons: ['no_estimate'],
+      step_kcal: 0,
+    },
+    weeks: [],
+  }
+}
+
+// planOf is a plan of no phase nor target yet.
+function planOf() {
+  return { limits: {}, phases: [], revisions: [], targets: [], today, training_weekdays: [] }
+}
+
 test('today shows what was eaten against the target, the meals and the measurements', async () => {
   fakeServer({
     ...signedIn(),
@@ -62,11 +128,11 @@ test('today shows what was eaten against the target, the meals and the measureme
   renderAt('/')
 
   expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
-  expect(screen.getByText('Friday, October 23 · Rest day')).toBeDefined()
-  const eaten = screen.getByRole('region', { name: 'Eaten' })
-  expect(within(eaten).getByText('of 2,500 kcal')).toBeDefined()
-  expect(within(eaten).getByText('1,040 kcal left')).toBeDefined()
-  expect(within(eaten).getByText('88 / 160 g')).toBeDefined()
+  expect(screen.getByText('Friday, October 23')).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Type of day: Rest day' })).toBeDefined()
+  const summary = screen.getByRole('region', { name: 'Energy and macros' })
+  expect(within(summary).getByText('Eaten 1,460 of 2,500 kcal, 1,040 left')).toBeDefined()
+  expect(macroOf(summary, 'Protein')).toBe('Protein88 / 160 g · 72 to go')
 
   const meal = within(screen.getByRole('region', { name: 'Meals' })).getByRole('article')
   expect(within(meal).getByRole('heading').textContent).toBe('8:45 AM Oats with a banana')
@@ -133,7 +199,7 @@ test("an amount of portions takes the word's form of the number shown", async ()
   expect(await screen.findByText('1 portion')).toBeDefined()
 })
 
-test('a day past its target says by how much', async () => {
+test('a day past its target says by how much, in words and not in colour alone', async () => {
   fakeServer({
     ...signedIn(),
     'GET /api/v1/days/today': () =>
@@ -147,7 +213,148 @@ test('a day past its target says by how much', async () => {
 
   renderAt('/')
 
-  expect(await screen.findByText('200 kcal over')).toBeDefined()
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(within(summary).getByText('Eaten 2,700 of 2,500 kcal, 200 over')).toBeDefined()
+  expect(within(summary).getByText('+200')).toBeDefined()
+  expect(within(summary).getByText('kcal over')).toBeDefined()
+  expect(macroOf(summary, 'Protein')).toBe('Protein170 / 160 g · 10 over')
+})
+
+test('a day on its target has nothing left, and nothing over', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          total: { kcal: 2500, protein: 160, carbs: 280, fat: 80 },
+          remaining: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+        }),
+      ),
+  })
+
+  renderAt('/')
+
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(within(summary).getByText('Eaten 2,500 of 2,500 kcal, 0 left')).toBeDefined()
+  expect(within(summary).getByText('kcal left')).toBeDefined()
+  expect(macroOf(summary, 'Fat')).toBe('Fat80 / 80 g · 0 to go')
+})
+
+test('a few grams keep their decimal, many are whole', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          total: { kcal: 120, protein: 12.4, carbs: 9.6, fat: 1.5 },
+          remaining: { kcal: 2380, protein: 147.6, carbs: 270.4, fat: 78.5 },
+        }),
+      ),
+  })
+
+  renderAt('/')
+
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(macroOf(summary, 'Protein')).toBe('Protein12 / 160 g · 148 to go')
+  expect(macroOf(summary, 'Carbs')).toBe('Carbs9.6 / 280 g · 270 to go')
+  expect(macroOf(summary, 'Fat')).toBe('Fat1.5 / 80 g · 79 to go')
+})
+
+test('the TDEE calibration measures, and the deficit the target makes of it', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/summary': () =>
+      Response.json({
+        ...summaryOf(),
+        tdee: { ...summaryOf().tdee, measured: true, trusted: true, kcal: 2950.4 },
+      }),
+  })
+
+  renderAt('/')
+
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(await within(summary).findByText('TDEE')).toBeDefined()
+  expect(termOf(summary, 'TDEE')).toBe('2,950')
+  expect(termOf(summary, 'Deficit')).toBe('-450')
+})
+
+test('a TDEE not trusted yet is about so much, and a target over it a surplus', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/summary': () =>
+      Response.json({
+        ...summaryOf(),
+        tdee: { ...summaryOf().tdee, measured: true, trusted: false, kcal: 2300 },
+      }),
+  })
+
+  renderAt('/')
+
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(await within(summary).findByText('Surplus')).toBeDefined()
+  expect(termOf(summary, 'TDEE')).toBe('≈2,300')
+  expect(termOf(summary, 'Surplus')).toBe('+200')
+})
+
+test('the phase of the day, its week, and the rate against the phase', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/summary': () =>
+      Response.json({
+        ...summaryOf(),
+        verdict: { ...summaryOf().verdict, rate: 'on_target', measured_pct_week: -0.62 },
+      }),
+    'GET /api/v1/plan': () =>
+      Response.json({
+        ...planOf(),
+        phases: [{ type: 'cut', start: '2026-09-01', end: '2026-11-23', rate_pct_week: -0.75 }],
+      }),
+  })
+
+  renderAt('/')
+
+  const phase = await screen.findByRole('link', { name: /^Cut/ })
+  expect(phase.textContent).toBe('Cut · week 8 of 12 · -0.6 %/wk, in range')
+  expect(phase.getAttribute('href')).toBe('/progress')
+})
+
+test('the week up to today, each day what it ate of its target, linked', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/history': (request) => {
+      const query = new URL(request.url).searchParams
+      expect([query.get('from'), query.get('to')]).toEqual(['2026-10-17', today])
+      return Response.json({
+        from: '2026-10-17',
+        to: today,
+        days: [
+          {
+            date: '2026-10-22',
+            status: 'complete',
+            type: 'rest',
+            meals: 3,
+            intake: { kcal: 2300, protein: 150, carbs: 250, fat: 70 },
+            target: { kcal: 2500, protein: 160, carbs: 280, fat: 80 },
+          },
+        ],
+        weeks: [],
+      })
+    },
+  })
+
+  renderAt('/')
+
+  const week = await screen.findByRole('navigation', { name: 'The week' })
+  const days = within(week).getAllByRole('link')
+  expect(days).toHaveLength(7)
+  expect(
+    await within(week).findByRole('link', { name: 'Thursday, October 22: 2,300 of 2,500 kcal' }),
+  ).toBeDefined()
+  expect(days[0]?.getAttribute('aria-label')).toBe('Saturday, October 17: nothing logged')
+  // Today, the day shown, is the current one.
+  expect(days[6]?.getAttribute('aria-current')).toBe('page')
+  expect(days[6]?.getAttribute('href')).toBe('/')
+  expect(days[5]?.getAttribute('href')).toBe('/?date=2026-10-22')
 })
 
 test('a day before the first target says it has none, and still adds up', async () => {
@@ -167,9 +374,13 @@ test('a day before the first target says it has none, and still adds up', async 
 
   renderAt('/')
 
-  expect(
-    await screen.findByText('No target yet: the plan sets one. P 50 · C 100 · F 30'),
-  ).toBeDefined()
+  const eaten = await screen.findByRole('region', { name: 'Eaten' })
+  expect(within(eaten).getByText('900 kcal')).toBeDefined()
+  expect(within(eaten).getByText('P 50 · C 100 · F 30')).toBeDefined()
+  expect(within(eaten).getByText('A plan gives the day its target.')).toBeDefined()
+  expect(within(eaten).getByRole('link', { name: 'Set up a plan' }).getAttribute('href')).toBe(
+    '/plan',
+  )
 })
 
 test('the days move back and ahead, up to today', async () => {
@@ -269,8 +480,11 @@ test('the day speaks Croatian, its numbers too', async () => {
   renderAt('/')
 
   expect(await screen.findByRole('heading', { name: 'Danas' })).toBeDefined()
-  expect(screen.getByText('petak, 23. listopada · Dan odmora')).toBeDefined()
-  expect(screen.getByText('još 1.040 kcal')).toBeDefined()
+  expect(screen.getByText('petak, 23. listopada')).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Tip dana: Dan odmora' })).toBeDefined()
+  const summary = screen.getByRole('region', { name: 'Energija i makroi' })
+  expect(within(summary).getByText('Pojedeno 1.460 od 2.500 kcal, preostalo 1.040')).toBeDefined()
+  expect(macroOf(summary, 'Proteini')).toBe('Proteini88 / 160 g · još 72')
 })
 
 test('on another day, the section is still the current one, and no link to a day is', async () => {
@@ -282,10 +496,13 @@ test('on another day, the section is still the current one, and no link to a day
   renderAt('/?date=2026-10-22')
 
   expect(await screen.findByRole('link', { name: 'Back to today' })).toBeDefined()
-  const current = screen
+  expect(currentIn('Sections').map((a) => a.textContent)).toEqual(['Today'])
+  // And in the week, the day shown.
+  expect(currentIn('The week').map((a) => a.getAttribute('href'))).toEqual(['/?date=2026-10-22'])
+  const others = screen
     .getAllByRole('link')
-    .filter((a) => a.getAttribute('aria-current') === 'page')
-  expect(current.map((a) => a.textContent)).toEqual(['Today'])
+    .filter((a) => a.getAttribute('aria-current') === 'page' && a.closest('nav') === null)
+  expect(others).toEqual([])
 })
 
 test('a date that is no date is today', async () => {
@@ -354,11 +571,11 @@ test('while another day comes, the page says which, and the one before waits dim
     '/?date=2026-10-21',
   )
   expect(screen.getByRole('link', { name: 'The day after' }).getAttribute('href')).toBe('/')
-  expect(screen.getByRole('region', { name: 'Eaten' }).closest('[aria-busy="true"]')).not.toBeNull()
+  expect(energy().closest('[aria-busy="true"]')).not.toBeNull()
 
   answer?.(Response.json(day({ date: '2026-10-22' })))
 
   await waitFor(() => {
-    expect(screen.getByRole('region', { name: 'Eaten' }).closest('[aria-busy="true"]')).toBeNull()
+    expect(energy().closest('[aria-busy="true"]')).toBeNull()
   })
 })

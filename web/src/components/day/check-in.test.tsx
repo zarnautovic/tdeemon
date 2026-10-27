@@ -158,21 +158,28 @@ test('the note is saved when the field is left, and only when it changed', async
   expect(server.sent).toEqual([{ method: 'PATCH', path, body: { note: 'slept badly\nlong walk' } }])
 })
 
+// typeMenu opens the day type's menu from the chip in the day's header.
+async function typeMenu(chip: string) {
+  fireEvent.click(await screen.findByRole('button', { name: chip }))
+  return within(await screen.findByRole('menu'))
+}
+
 test("the day's type is the user's choice, or the plan's", async () => {
   const server = dayServer()
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
 
-  const type = within(await screen.findByRole('group', { name: 'Type of day' }))
-  expect(type.getByRole('button', { name: 'By plan · rest' }).getAttribute('aria-pressed')).toBe(
-    'true',
-  )
-  fireEvent.click(type.getByRole('button', { name: 'By plan · rest' }))
-  fireEvent.click(type.getByRole('button', { name: 'Training' }))
-
-  expect(await screen.findByText('Friday, October 23 · Training day')).toBeDefined()
-  expect(type.getByRole('button', { name: 'Training' }).getAttribute('aria-pressed')).toBe('true')
+  let menu = await typeMenu('Type of day: Rest day')
+  expect(
+    menu.getByRole('menuitemradio', { name: 'By plan · rest' }).getAttribute('aria-checked'),
+  ).toBe('true')
   // The choice already made is not sent again.
+  fireEvent.click(menu.getByRole('menuitemradio', { name: 'By plan · rest' }))
+  menu = await typeMenu('Type of day: Rest day')
+  fireEvent.click(menu.getByRole('menuitemradio', { name: 'Training' }))
+
+  expect(await screen.findByRole('button', { name: 'Type of day: Training day' })).toBeDefined()
+  expect(await screen.findByText("The day's type is saved")).toBeDefined()
   expect(server.sent).toEqual([{ method: 'PATCH', path, body: { training_day: 'training' } }])
 })
 
@@ -181,9 +188,9 @@ test('by plan, the day says what the plan decided', async () => {
   fakeServer({ ...signedIn(), ...dayServer(day({ type: 'training' })).routes })
   renderAt('/')
 
-  const type = within(await screen.findByRole('group', { name: 'Type of day' }))
+  const menu = await typeMenu('Type of day: Training day')
   expect(
-    type.getByRole('button', { name: 'By plan · training' }).getAttribute('aria-pressed'),
+    menu.getByRole('menuitemradio', { name: 'By plan · training' }).getAttribute('aria-checked'),
   ).toBe('true')
 })
 
@@ -203,26 +210,29 @@ test("the plan's decision is shown once the server has the plan, not before", as
   })
   renderAt('/')
 
-  const type = within(await screen.findByRole('group', { name: 'Type of day' }))
   // Chosen by hand: the plan decides nothing.
-  expect(type.getByRole('button', { name: 'By plan' })).toBeDefined()
-  fireEvent.click(type.getByRole('button', { name: 'By plan' }))
+  let menu = await typeMenu('Type of day: Training day')
+  fireEvent.click(menu.getByRole('menuitemradio', { name: 'By plan' }))
   await waitFor(() => {
     expect(answers).toHaveLength(1)
   })
-  // On its way, the day's type is still the one chosen by hand.
-  expect(type.getByRole('button', { name: 'By plan' }).getAttribute('aria-pressed')).toBe('true')
+  // On its way, the day's type is still the one the day has.
+  expect(screen.getByRole('button', { name: 'Type of day: Training day' })).toBeDefined()
   answers[0]?.()
 
-  expect(await type.findByRole('button', { name: 'By plan · rest' })).toBeDefined()
+  expect(await screen.findByRole('button', { name: 'Type of day: Rest day' })).toBeDefined()
+  menu = await typeMenu('Type of day: Rest day')
+  expect(
+    menu.getByRole('menuitemradio', { name: 'By plan · rest' }).getAttribute('aria-checked'),
+  ).toBe('true')
 })
 
 test("in Croatian the plan's decision is in Croatian", async () => {
   fakeServer({ ...signedIn('hr'), ...dayServer().routes })
   renderAt('/')
 
-  const type = within(await screen.findByRole('group', { name: 'Tip dana' }))
-  expect(type.getByRole('button', { name: 'Po planu · odmor' })).toBeDefined()
+  const menu = await typeMenu('Tip dana: Dan odmora')
+  expect(menu.getByRole('menuitemradio', { name: 'Po planu · odmor' })).toBeDefined()
 })
 
 test('a day is left out of calibration with a reason, and counted again', async () => {
@@ -361,7 +371,7 @@ test('a day to come takes its type and exclusion only', async () => {
   fakeServer({ ...signedIn(), ...dayServer(day({ date: '2026-10-25' })).routes })
   renderAt('/?date=2026-10-25')
 
-  expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
+  expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
   expect(screen.getByRole('button', { name: 'Leave out of calibration' })).toBeDefined()
   expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
   expect(screen.queryByRole('group', { name: 'Hunger' })).toBeNull()
@@ -382,7 +392,7 @@ test('until the app knows which day today is, a day an address names takes no mo
   })
   renderAt('/?date=2026-10-21')
 
-  expect(await screen.findByRole('group', { name: 'Type of day' })).toBeDefined()
+  expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
   expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
   expect(screen.queryByLabelText('Weight')).toBeNull()
 

@@ -17,6 +17,11 @@ export function addDays(date: string, n: number): string {
   return d.toISOString().slice(0, 10)
 }
 
+// daysBetween is how many days to is after from (before, below 0).
+export function daysBetween(from: string, to: string): number {
+  return Math.round((calendarDate(to).getTime() - calendarDate(from).getTime()) / 86_400_000)
+}
+
 // isDate tells a real calendar date, YYYY-MM-DD, from one of its shape
 // only (2026-02-31).
 export function isDate(s: string): boolean {
@@ -88,6 +93,13 @@ function shortDay(
   }).format(at)
 }
 
+// formatGrams is grams as the app shows them, in a language: a decimal
+// below 10 g, which a whole number would bend (1.5 g of fat is not 2),
+// whole from 10 g. kcal are whole (number).
+export function formatGrams(n: number, locale: string): string {
+  return numberFormat(locale, { maximumFractionDigits: Math.abs(n) < 10 ? 1 : 0 }).format(n)
+}
+
 // useFormat formats numbers, dates and times in the app's language.
 export function useFormat() {
   const locale = useLocale()
@@ -95,6 +107,17 @@ export function useFormat() {
     // number rounds to at most digits decimals.
     number: (n: number, digits = 0) =>
       numberFormat(locale, { maximumFractionDigits: digits }).format(n),
+    // signed is a difference, its sign always said but of 0: −490, +0.6.
+    signed: (n: number, digits = 0) =>
+      numberFormat(locale, { maximumFractionDigits: digits, signDisplay: 'exceptZero' }).format(n),
+    // weekday is a day's weekday, short: "Tue" in English, "uto" in
+    // Croatian; dayOfMonth its number in the month.
+    weekday: (date: string) =>
+      dateFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(calendarDate(date)),
+    dayOfMonth: (date: string) =>
+      dateFormat(locale, { day: 'numeric', timeZone: 'UTC' }).format(calendarDate(date)),
+    // grams are grams of a macro (formatGrams).
+    grams: (n: number) => formatGrams(n, locale),
     // field is a number as a field starts with it: every decimal, near
     // enough (digits), and no group separators, which typing around
     // would break.
