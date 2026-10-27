@@ -10,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
+	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -23,9 +24,17 @@ type undoneBody struct {
 	Days   []string  `json:"days" nullable:"false" doc:"The days (YYYY-MM-DD) it was of, in order: a meal's before and after it (two for a meal moved to another day), or a check-in's, a measurement's or a day's; none for a food or the notes. get_day shows each after the undo."`
 }
 
+// lastChange is the change a client means to take back, one it made, as
+// undone names it.
+type lastChange struct {
+	Action string `json:"action" minLength:"1" maxLength:"50" doc:"What the change did, as undone's action: meal.create, meal.delete, metric.set…"`
+	Entity string `json:"entity" minLength:"1" maxLength:"100" doc:"What it changed, as undone's entity: a meal's id, a day, a day and a metric (2026-10-21/weight)."`
+}
+
 type undoInput struct {
 	Body struct {
-		ID string `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 made now (a day back to five minutes ahead): the undo sent again under it takes back nothing more. Left out (not empty), the server makes one, and an undo sent again takes back another change."`
+		ID   string      `json:"id,omitempty" format:"uuid" doc:"A UUIDv7 made now (a day back to five minutes ahead): the undo sent again under it takes back nothing more. Left out (not empty), the server makes one, and an undo sent again takes back another change."`
+		Last *lastChange `json:"last,omitempty" doc:"The change to take back, which the web app's undo of a change it just made names: taken back only while it is the latest. After another, made since through any client, nothing is taken back (412), and the same id may be sent again."`
 	}
 }
 
@@ -50,13 +59,22 @@ func (s *sessions) undoLast(ctx context.Context, in *undoInput) (*undoOutput, er
 			return nil, huma.Error422UnprocessableEntity("the undo's id: " + err.Error())
 		}
 	}
-	e, again, err := s.db.Undo(ctx, p.User.ID, actorOf(p), request, s.now())
+	var e event.Event
+	var again bool
+	if last := in.Body.Last; last != nil {
+		e, again, err = s.db.UndoOf(ctx, p.User.ID, actorOf(p), request, store.Change{Action: event.Action(last.Action), Entity: last.Entity}, s.now())
+	} else {
+		e, again, err = s.db.Undo(ctx, p.User.ID, actorOf(p), request, s.now())
+	}
 	var conflict *store.UndoConflictError
+	var other *store.NotLatestError
 	switch {
 	case errors.Is(err, store.ErrUndoID):
 		return nil, huma.Error422UnprocessableEntity(strings.TrimPrefix(err.Error(), store.ErrUndoID.Error()+": "))
 	case errors.Is(err, store.ErrNothingToUndo):
 		return nil, huma.Error404NotFound("nothing to undo: every change of the user's is undone already, or one undo leaves (the plan, an import's)")
+	case errors.As(err, &other):
+		return nil, huma.Error412PreconditionFailed(other.Error() + ": nothing was taken back")
 	case errors.As(err, &conflict):
 		if conflict.Err != nil {
 			s.logger.DebugContext(ctx, "a change could not be undone", "event", conflict.Event.ID.String(), "error", conflict.Err)
