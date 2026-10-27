@@ -360,6 +360,13 @@ export const en = {
     timeZone: 'Time zone',
     dayStart: 'The day starts at',
     dayStartHint: 'A meal before it belongs to the day before.',
+    appearance: 'Appearance',
+    appearanceHint: 'For this browser only: a phone can be dark and a laptop light.',
+    themes: {
+      system: 'System',
+      light: 'Light',
+      dark: 'Dark',
+    },
     save: 'Save',
     refused: (detail: string) => `The server did not take it: ${detail}`,
     notes: 'Notes for a coach',

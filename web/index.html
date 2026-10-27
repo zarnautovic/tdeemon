@@ -3,6 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!--
+      The browser's bar in the page's colour (--background in src/index.css);
+      src/lib/theme.ts picks one for a theme chosen.
+    -->
+    <meta
+      name="theme-color"
+      data-scheme="light"
+      media="(prefers-color-scheme: light)"
+      content="#F5F6F8"
+    />
+    <meta
+      name="theme-color"
+      data-scheme="dark"
+      media="(prefers-color-scheme: dark)"
+      content="#0A0E15"
+    />
     <title>tdeemon</title>
   </head>
   <body>

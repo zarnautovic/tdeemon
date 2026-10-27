@@ -4,12 +4,12 @@ import { Field } from '@/components/day/field'
 import type { Scale } from '@/i18n/en'
 import { cn } from '@/lib/utils'
 
-// A chosen step's colours: green for the mood (up is good), amber for
-// hunger (a signal, not a fault: in a deficit hunger is expected).
+// A chosen step's colours: the brand's green for the mood (up is good),
+// the warning's amber for hunger (a signal, not a fault: in a deficit
+// hunger is expected).
 const tones = {
-  good: 'aria-pressed:border-emerald-600 aria-pressed:bg-emerald-500/10 aria-pressed:text-emerald-700 dark:aria-pressed:text-emerald-400',
-  signal:
-    'aria-pressed:border-amber-500 aria-pressed:bg-amber-500/10 aria-pressed:text-amber-700 dark:aria-pressed:text-amber-400',
+  good: 'aria-pressed:border-success aria-pressed:bg-primary-soft aria-pressed:text-success',
+  signal: 'aria-pressed:border-warning aria-pressed:bg-warning/10 aria-pressed:text-warning',
 }
 
 // Stepper picks a value of a check-in's scale, 1 to 5, in one tap, each
@@ -46,7 +46,7 @@ export function Stepper({
                 onPick(value === step ? 0 : step)
               }}
               className={cn(
-                'min-h-11 flex-1 rounded-lg border bg-muted/40 px-0.5 py-1.5 text-muted-foreground transition-colors outline-none hover:border-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50',
+                'min-h-11 flex-1 rounded-md border bg-muted/40 px-0.5 py-1.5 text-muted-foreground transition-colors outline-none hover:border-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
                 tones[tone],
               )}
             >

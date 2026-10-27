@@ -900,7 +900,11 @@ the first spec.
     self-host stays one container (multi-stage Docker build).
   - TanStack Query (server state, typed by the OpenAPI document through
     openapi-fetch) and TanStack Router (routes declared in code).
-  - Tailwind + shadcn/ui on Base UI (components owned in-repo).
+  - Tailwind + shadcn/ui on Base UI (components owned in-repo). The
+    look is design tokens in `web/src/index.css`: a light and a dark
+    theme, the system's or one chosen in the browser
+    (`web/src/lib/theme.ts`), the macros' own colours, and Geist,
+    self-hosted (Fontsource).
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the charts' page (a chunk of its own), not with
     the app; health-api's validated palette, the charts on its dark cards,

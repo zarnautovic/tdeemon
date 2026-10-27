@@ -62,7 +62,7 @@ export function RepeatStatus({
         </Link>
       )}
       {log.data.warnings.length > 0 && (
-        <ul className="text-amber-700 dark:text-amber-400">
+        <ul className="text-warning">
           {log.data.warnings.map((w, i) => (
             <li key={`${w.code} ${String(i)}`}>{t.meal.warnings[w.code]}</li>
           ))}

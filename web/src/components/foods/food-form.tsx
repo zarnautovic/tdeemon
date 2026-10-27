@@ -461,7 +461,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
             </div>
             <Button
               variant="ghost"
-              size="icon-lg"
+              size="icon"
               aria-label={t.foods.removeServing(value.name)}
               onClick={() => {
                 set({ servings: draft.servings.filter((r) => r.key !== key) })
@@ -499,7 +499,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
             </div>
             <Button
               variant="ghost"
-              size="icon-lg"
+              size="icon"
               aria-label={t.foods.removeAlias(value)}
               onClick={() => {
                 set({ aliases: draft.aliases.filter((r) => r.key !== key) })
@@ -564,7 +564,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       ) : (
         <SaveStatus change={create} onRetry={send} />
       )}
-      <Button type="submit" size="lg" className="w-full" disabled={save.isPending}>
+      <Button type="submit" className="w-full" disabled={save.isPending}>
         {t.foods.save}
       </Button>
     </form>

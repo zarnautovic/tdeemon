@@ -81,7 +81,7 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
       {revisions.length === 0 && <p className="text-sm text-muted-foreground">{r.none}</p>}
       <ol className="space-y-3">
         {revisions.map((rev) => (
-          <li key={rev.id} className="space-y-2 rounded-xl border p-4">
+          <li key={rev.id} className="space-y-2 rounded-lg border bg-card p-4">
             <p className="text-sm text-muted-foreground">
               {r.applied(
                 rev.decided_at === undefined ? '' : f.day(rev.decided_at, timeZone),

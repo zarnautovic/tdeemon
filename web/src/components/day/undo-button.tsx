@@ -72,7 +72,6 @@ export function UndoButton({ date, today }: { date: string; today: string | unde
     <div className="space-y-1">
       <Button
         variant="outline"
-        size="lg"
         className="w-full"
         disabled={undo.isPending}
         onClick={() => {

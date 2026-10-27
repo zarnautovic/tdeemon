@@ -24,7 +24,7 @@ export function Loosen({
   }, [])
 
   return (
-    <div className="space-y-2 rounded-lg border border-amber-500/50 p-3 text-sm">
+    <div className="space-y-2 rounded-lg border border-warning/50 p-3 text-sm">
       <p id={id}>{t.plan.loosen(names)}</p>
       <div className="flex gap-2">
         <Button variant="destructive" aria-describedby={id} disabled={pending} onClick={onYes}>

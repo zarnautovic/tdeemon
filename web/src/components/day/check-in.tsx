@@ -15,7 +15,7 @@ export function CheckIn({ day, future = false }: { day: Day; future?: boolean })
   const t = useMessages()
 
   return (
-    <section aria-labelledby="day-check-in" className="space-y-4 rounded-xl border p-4">
+    <section aria-labelledby="day-check-in" className="space-y-4 rounded-lg border bg-card p-4">
       <h2 id="day-check-in" className="font-medium">
         {t.day.checkIn}
       </h2>

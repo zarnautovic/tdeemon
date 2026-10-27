@@ -87,7 +87,7 @@ export function MetricForm({
             </span>
           )}
         </div>
-        <Button type="submit" size="lg" className="h-10" disabled={log.isPending}>
+        <Button type="submit" disabled={log.isPending}>
           {t.day.save}
         </Button>
         {children}

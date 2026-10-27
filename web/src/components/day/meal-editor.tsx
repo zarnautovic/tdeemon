@@ -491,8 +491,7 @@ export function MealEditor({
       ) : (
         <Button
           variant="link"
-          size="xs"
-          className="h-auto p-0"
+          className="h-auto p-0 text-small"
           onClick={() => {
             setNoting(true)
           }}
@@ -550,9 +549,7 @@ export function MealEditor({
                   {item.name}
                   {gone && <span className="sr-only"> ({t.meal.removed})</span>}
                   {moved && !gone && (
-                    <span className="block text-xs text-amber-700 dark:text-amber-400">
-                      {t.meal.changedElsewhere}
-                    </span>
+                    <span className="block text-xs text-warning">{t.meal.changedElsewhere}</span>
                   )}
                 </span>
                 {was && (

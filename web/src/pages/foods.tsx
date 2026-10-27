@@ -204,7 +204,6 @@ function Listed({
       {list.hasNextPage && (
         <Button
           variant="outline"
-          size="lg"
           className="w-full"
           disabled={list.isFetchingNextPage}
           onClick={() => void list.fetchNextPage()}

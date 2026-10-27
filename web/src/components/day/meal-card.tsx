@@ -66,7 +66,7 @@ export function MealCard({
   }
 
   return (
-    <article className="space-y-2 rounded-xl border p-4">
+    <article className="space-y-2 rounded-lg border bg-card p-4">
       <header className="flex items-baseline justify-between gap-2">
         <h3 className="min-w-0 font-medium break-words">
           <time dateTime={meal.eaten_at} className="text-muted-foreground tabular-nums">
@@ -143,7 +143,7 @@ export function MealCard({
       )}
       <RepeatStatus log={repeat} isToday={date === today} />
       {warnings.length > 0 && (
-        <output className="block text-sm text-amber-700 dark:text-amber-400">
+        <output className="block text-sm text-warning">
           <ul className="space-y-1">
             {warnings.map((w, i) => (
               // Two items may bring a warning of one code.

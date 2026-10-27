@@ -47,7 +47,7 @@ export function EntryRow({
     return n === undefined || (v === 'kcal' && n > limits.meal.maxEstimateKcal)
   }
   const remove = (
-    <Button variant="ghost" size="icon-lg" aria-label={t.log.remove(name)} onClick={onRemove}>
+    <Button variant="ghost" size="icon" aria-label={t.log.remove(name)} onClick={onRemove}>
       <X aria-hidden />
     </Button>
   )

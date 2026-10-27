@@ -96,6 +96,8 @@ export function ChartsPage() {
           <Button
             key={n}
             variant={span === n ? 'default' : 'outline'}
+            // Four share a phone's width.
+            className="flex-1 px-2"
             aria-pressed={span === n}
             onClick={() => {
               void navigate({ search: { days: n === 90 ? undefined : n }, replace: true })
@@ -209,7 +211,7 @@ function Cards({
           className="space-y-2 rounded-[14px] border p-4"
           style={{ background: palette.surface, borderColor: palette.border, color: palette.text }}
         >
-          <h2 className="text-xs tracking-widest uppercase" style={{ color: palette.muted }}>
+          <h2 className="text-small" style={{ color: palette.muted }}>
             {c.title}
           </h2>
           <p className="text-sm">{c.said}</p>
