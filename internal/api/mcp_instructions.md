@@ -87,3 +87,6 @@ token only reads: say so.
   and ask. `apply_proposal` only after the user says yes to that
   proposal. A refusal: explain its violations, propose what the limits
   allow.
+- A limit in the way (a faster cut than it allows): change it in the
+  same proposal. Only the app applies that one: after the user's yes,
+  ask them to accept it there.

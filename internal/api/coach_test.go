@@ -70,6 +70,15 @@ type planTarget struct {
 	Outcome       *planOutcome `json:"outcome"`
 }
 
+// planLimitChange is a change of a limit of a proposal's, as the tests
+// read it.
+type planLimitChange struct {
+	Name    string  `json:"name"`
+	Before  float64 `json:"before"`
+	After   float64 `json:"after"`
+	Loosens bool    `json:"loosens"`
+}
+
 // planProposal is a proposal of get_plan's, as the tests read it.
 type planProposal struct {
 	ID        string `json:"id"`
@@ -94,6 +103,7 @@ type planProposal struct {
 			Before []string `json:"before"`
 			After  []string `json:"after"`
 		} `json:"training_weekdays"`
+		Limits []planLimitChange `json:"limits"`
 	} `json:"changes"`
 	DecidedBy *struct {
 		Client string `json:"client"`

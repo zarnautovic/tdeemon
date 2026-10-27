@@ -46,6 +46,9 @@ type tool struct {
 	// logging being the instructions'. The operation's description, in
 	// the OpenAPI document, says it all.
 	brief string
+	// webOnly are the properties of the body only the web app sends, a
+	// person's answer in it, which MCP neither shows a model nor takes.
+	webOnly []string
 }
 
 // briefly is t, described to a model as d.
@@ -63,6 +66,13 @@ func (t tool) mayWriteAgain() tool {
 // destroys is t, which replaces or deletes what is there.
 func (t tool) destroys() tool {
 	t.destructive = true
+	return t
+}
+
+// forTheWebOnly is t, whose body's properties names only the web app
+// sends.
+func (t tool) forTheWebOnly(names ...string) tool {
+	t.webOnly = names
 	return t
 }
 
@@ -156,8 +166,9 @@ func (s *sessions) tools() []tool {
 			Path:          Prefix + "/proposals",
 			Summary:       "Propose a change of the plan",
 			DefaultStatus: http.StatusCreated,
-			Description: "Proposes a change of the plan: phases and targets to set or delete, and the training weekdays, with why and the days it was drawn from. " +
-				"Nothing changes until the user consents and apply_proposal applies it. The server holds it to the limits (docs/limits.md): " +
+			Description: "Proposes a change of the plan: phases and targets to set or delete, the training weekdays, and the user's limits, with why and the days it was drawn from. " +
+				"Nothing changes until the user consents and apply_proposal applies it; one that changes the limits applies only in the app, a web session. " +
+				"The server holds it to the limits (docs/limits.md), a limit it changes to the instance's and the rest to the limits it leaves: " +
 				"one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed " +
 				"and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). " +
 				"A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. " +
@@ -166,7 +177,7 @@ func (s *sessions) tools() []tool {
 			Tags:   []string{"plan"},
 			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
 		}, s.proposeChanges).
-			briefly("Proposes a change of the plan (phases, targets from today on, training weekdays), applied only once the user agrees. " +
+			briefly("Proposes a change of the plan (phases, targets from today on, training weekdays, limits), applied only once the user agrees. " +
 				"Past the limits: 422, each violation as data (rule, limit, proposed, level); explain it, propose what they allow. " +
 				"Else it waits, replacing any other, with a preview (weekly kcal, implied rate, warnings): show it, ask the user.").mayWriteAgain(),
 		newTool("apply_proposal", []auth.Scope{auth.ScopeTools}, huma.Operation{
@@ -175,6 +186,8 @@ func (s *sessions) tools() []tool {
 			Path:        Prefix + "/proposals/{id}/apply",
 			Summary:     "Apply a proposal",
 			Description: "Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. " +
+				"One that changes the user's limits applies only in a web session, never with a token (403), and one that loosens a limit only with confirm (409), " +
+				"the user's confirmation in the app. " +
 				"The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). " +
 				"A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; " +
 				"applied again it answers as it is.",
@@ -182,7 +195,7 @@ func (s *sessions) tools() []tool {
 			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusConflict, http.StatusUnprocessableEntity},
 		}, s.applyProposal).
 			briefly("Applies a pending proposal, making its changes the plan. Call it only after the user said yes to that proposal, never on your own. " +
-				"The limits are checked again (422); one that waits no more is a 409.").destroys(),
+				"The limits are checked again (422); one that waits no more is a 409.").destroys().forTheWebOnly("confirm"),
 		newTool("reject_proposal", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "reject-proposal",
 			Method:      http.MethodPost,

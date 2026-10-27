@@ -503,7 +503,7 @@ export interface paths {
         put?: never;
         /**
          * Propose a change of the plan
-         * @description Proposes a change of the plan: phases and targets to set or delete, and the training weekdays, with why and the days it was drawn from. Nothing changes until the user consents and apply_proposal applies it. The server holds it to the limits (docs/limits.md): one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, the weekly average of each target with the rate it implies with the measured TDEE, and warnings.
+         * @description Proposes a change of the plan: phases and targets to set or delete, the training weekdays, and the user's limits, with why and the days it was drawn from. Nothing changes until the user consents and apply_proposal applies it; one that changes the limits applies only in the app, a web session. The server holds it to the limits (docs/limits.md), a limit it changes to the instance's and the rest to the limits it leaves: one past them is refused (422), each violation an error detail whose value says the rule, the type of day, the limit, the value proposed and the level that refuses it (user: the user may loosen it in the app; instance: the admin; code: nothing). A change of the past is refused too: a target takes effect from today on, and a phase that has started keeps its type. Else it waits, in place of any proposal that waited, and the answer holds it with a preview: what the limits checked, the weekly average of each target with the rate it implies with the measured TDEE, and warnings.
          */
         post: operations["propose-changes"];
         delete?: never;
@@ -523,7 +523,7 @@ export interface paths {
         put?: never;
         /**
          * Apply a proposal
-         * @description Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; applied again it answers as it is.
+         * @description Applies a pending proposal: its changes become the plan, a revision of it. Only once the user agreed to that proposal in so many words. One that changes the user's limits applies only in a web session, never with a token (403), and one that loosens a limit only with confirm (409), the user's confirmation in the app. The server holds it to the limits again, as the data or the limits may have changed (422, as propose_changes). A proposal that waits no more (applied, rejected, expired, or superseded: the plan changed under it, or a newer one replaced it) is a 409; applied again it answers as it is.
          */
         post: operations["apply-proposal"];
         delete?: never;
@@ -670,7 +670,13 @@ export interface components {
             /** @description The AI model that acted for the user. */
             model?: string;
         };
+        ApplyBody: {
+            /** @description Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused. */
+            confirm?: boolean;
+        };
         ChangesBody: {
+            /** @description The user's limits it changes, by name: a proposal with one applies only in the app. */
+            limits: components["schemas"]["LimitChangeBody"][];
             /** @description The phases it changes, by their start. */
             phases: components["schemas"]["PhaseChangeBody"][];
             /** @description The targets it changes, by their first day. */
@@ -681,7 +687,7 @@ export interface components {
         CheckBody: {
             /**
              * Format: date
-             * @description The phase's start, or the target's day.
+             * @description The phase's start, the target's day, or today for the training weekdays alone and the limits.
              */
             day: string;
             /**
@@ -695,7 +701,7 @@ export interface components {
              */
             expected_pct_week?: number;
             /** @enum {string} */
-            of: "phase" | "target" | "training_weekdays";
+            of: "phase" | "target" | "training_weekdays" | "limits";
             /** @description What the limits refuse now: for a pending proposal, what would refuse it if applied. */
             violations: components["schemas"]["ViolationValue"][];
             /** @description What is past a threshold without refusing it: below_bmr, low_energy_availability, low_carbs. */
@@ -1213,6 +1219,16 @@ export interface components {
             /** @enum {string} */
             unit: "g" | "ml" | "portion";
         };
+        LimitChangeBody: {
+            /** Format: double */
+            after: number;
+            /** Format: double */
+            before: number;
+            /** @description Whether after is looser than before: applying it takes the user's confirmation. */
+            loosens: boolean;
+            /** @description The limit's name (docs/limits.md). */
+            name: string;
+        };
         LimitWarningBody: {
             /**
              * @description Absent for an unsplit target.
@@ -1473,7 +1489,7 @@ export interface components {
             measured: boolean;
             /**
              * Format: date
-             * @description The first day measured: a phase's first 14 days are left out, as water and glycogen move the weight then; the day after to when no day is left.
+             * @description The first day measured: the first 14 days after a change of intake (a phase's start that changes it by more than a tenth) are left out, as water and glycogen move the weight then; the day after to when no day is left.
              */
             measured_from: string;
             /**
@@ -1581,7 +1597,7 @@ export interface components {
             type?: "cut" | "maintain" | "bulk" | "recomp";
         };
         PlanBody: {
-            /** @description The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; the user may loosen theirs in the app, up to the instance's. */
+            /** @description The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; a proposal may change the user's, up to the instance's, which the user accepts in the app. */
             limits: {
                 [key: string]: number;
             };
@@ -1604,7 +1620,7 @@ export interface components {
             training_weekdays: ("sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday")[];
         };
         PreviewBody: {
-            /** @description What the limits checked: each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays. */
+            /** @description What the limits checked: the user's limits it changes, against the instance's; each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays, against the limits it leaves. */
             checks: components["schemas"]["CheckBody"][];
             /**
              * Format: double
@@ -1697,6 +1713,10 @@ export interface components {
             proposal: components["schemas"]["ProposalBody"];
         };
         ProposeInputBody: {
+            /** @description Limits to change: get_plan's names, new values. Only the app applies these. */
+            limits?: {
+                [key: string]: number;
+            };
             /** @description The AI model you are. */
             model?: string;
             phases?: components["schemas"]["PhaseChangeIn"][] | null;
@@ -5047,7 +5067,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApplyBody"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -5056,6 +5080,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProposalOutputBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
             /** @description Unauthorized */
@@ -5085,8 +5118,35 @@ export interface operations {
                     "application/problem+json": components["schemas"]["ErrorModel"];
                 };
             };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

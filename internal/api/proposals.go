@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -27,12 +29,13 @@ type proposeInput struct {
 
 // proposeInputBody is a proposal as a client makes it.
 type proposeInputBody struct {
-	Rationale        string           `json:"rationale" minLength:"1" maxLength:"4000" doc:"Why: what the data show, what you agreed."`
-	Model            string           `json:"model,omitempty" maxLength:"100" doc:"The AI model you are."`
-	Window           *windowBody      `json:"window,omitempty" doc:"The days you drew it from."`
-	Phases           []phaseChangeIn  `json:"phases,omitempty"`
-	Targets          []targetChangeIn `json:"targets,omitempty"`
-	TrainingWeekdays []string         `json:"training_weekdays,omitempty" enum:"sunday,monday,tuesday,wednesday,thursday,friday,saturday" doc:"From now on; [] for none; left out, as they are."`
+	Rationale        string             `json:"rationale" minLength:"1" maxLength:"4000" doc:"Why: what the data show, what you agreed."`
+	Model            string             `json:"model,omitempty" maxLength:"100" doc:"The AI model you are."`
+	Window           *windowBody        `json:"window,omitempty" doc:"The days you drew it from."`
+	Phases           []phaseChangeIn    `json:"phases,omitempty"`
+	Targets          []targetChangeIn   `json:"targets,omitempty"`
+	TrainingWeekdays []string           `json:"training_weekdays,omitempty" enum:"sunday,monday,tuesday,wednesday,thursday,friday,saturday" doc:"From now on; [] for none; left out, as they are."`
+	Limits           map[string]float64 `json:"limits,omitempty" doc:"Limits to change: get_plan's names, new values. Only the app applies these."`
 }
 
 // phaseChangeIn is a phase a proposal sets, or deletes.
@@ -65,6 +68,22 @@ type proposalIDInput struct {
 	ID string `path:"id" format:"uuid" doc:"The proposal's id, as get_plan or propose_changes gave it."`
 }
 
+type applyInput struct {
+	ID   string     `path:"id" format:"uuid" doc:"The proposal's id, as get_plan or propose_changes gave it."`
+	Body *applyBody `doc:"The web app's alone."`
+}
+
+// applyBody is the user's confirmation of the limits a proposal loosens,
+// which the web app asks for, as it does for a change of the limits.
+type applyBody struct {
+	Confirm bool `json:"confirm,omitempty" doc:"Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused."`
+}
+
+// errLimitsInTheApp refuses a proposal of the limits from anything but a
+// web session: no tool or token changes the limits (DESIGN.md §8).
+var errLimitsInTheApp = huma.Error403Forbidden("a proposal that changes the limits applies only in the app: " +
+	"the user accepts it there, under Settings, Plan")
+
 type revertInput struct {
 	ID   string `path:"id" format:"uuid" doc:"The applied proposal to take back."`
 	Body struct {
@@ -94,12 +113,12 @@ type proposalOutput struct {
 type previewBody struct {
 	TrendKg *float64    `json:"trend_kg,omitempty" doc:"The trend weight the limits and the rates take."`
 	TDEE    *float64    `json:"tdee,omitempty" doc:"The measured TDEE the expected rates take; absent while calibration trusts none."`
-	Checks  []checkBody `json:"checks" nullable:"false" doc:"What the limits checked: each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays."`
+	Checks  []checkBody `json:"checks" nullable:"false" doc:"What the limits checked: the user's limits it changes, against the instance's; each phase it sets, the target in force from each day it changes one from, and today's with new training weekdays, against the limits it leaves."`
 }
 
 type checkBody struct {
-	Of              string             `json:"of" enum:"phase,target,training_weekdays"`
-	Day             string             `json:"day" format:"date" doc:"The phase's start, or the target's day."`
+	Of              string             `json:"of" enum:"phase,target,training_weekdays,limits"`
+	Day             string             `json:"day" format:"date" doc:"The phase's start, the target's day, or today for the training weekdays alone and the limits."`
 	WeeklyKcal      *float64           `json:"weekly_kcal,omitempty" doc:"The target's average day of a week, over the training weekdays."`
 	ExpectedPctWeek *float64           `json:"expected_pct_week,omitempty" doc:"The rate it implies with the measured TDEE, in % of the trend weight a week."`
 	ExpectedKgWeek  *float64           `json:"expected_kg_week,omitempty" doc:"The same in kg a week."`
@@ -239,7 +258,7 @@ func (s *sessions) proposeChanges(ctx context.Context, in *proposeInput) (*propo
 	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(made, cal.Location), Preview: cs.preview(checks)}}, nil
 }
 
-func (s *sessions) applyProposal(ctx context.Context, in *proposalIDInput) (*proposalOutput, error) {
+func (s *sessions) applyProposal(ctx context.Context, in *applyInput) (*proposalOutput, error) {
 	p, err := requireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -255,7 +274,17 @@ func (s *sessions) applyProposal(ctx context.Context, in *proposalIDInput) (*pro
 	}
 	var cs coachState
 	var checks []proposal.Checked
-	applied, err := s.db.ApplyProposal(ctx, p.User.ID, actorOf(p), id, today, now, s.check(ctx, p, now, &cs, &checks))
+	confirm := in.Body != nil && in.Body.Confirm
+	check := s.check(ctx, p, now, &cs, &checks)
+	applied, err := s.db.ApplyProposal(ctx, p.User.ID, actorOf(p), id, today, now, func(c proposal.Changes) error {
+		if len(c.Limits) > 0 && p.Via != auth.ViaSession {
+			return errLimitsInTheApp
+		}
+		if loosened := c.Loosened(); loosened != nil && !confirm {
+			return huma.Error409Conflict("loosening " + strings.Join(loosened, ", ") + " needs confirm: true")
+		}
+		return check(c)
+	})
 	if err != nil {
 		return nil, proposalProblem("applying the proposal failed", err)
 	}
@@ -326,15 +355,18 @@ func coachActor(p auth.Principal, model string) (event.Actor, error) {
 }
 
 // proposalProblem is the answer to err of a proposal's store method: a
-// refusal of the limits, with each violation as data; a change that
-// breaks its own rules; a proposal that waits no more; none; or doing's
-// failure.
+// refusal of the limits, with each violation as data; a check's own
+// answer; a change that breaks its own rules; a proposal that waits no
+// more; none; or doing's failure.
 func proposalProblem(doing string, err error) error {
 	var refused *refusedError
 	var closed *store.ProposalClosedError
+	var answer huma.StatusError
 	switch {
 	case errors.As(err, &refused):
 		return limitsRefusal(refused.checks)
+	case errors.As(err, &answer):
+		return answer
 	case errors.Is(err, store.ErrInvalidProposal):
 		return huma.Error422UnprocessableEntity(err.Error())
 	case errors.As(err, &closed):
@@ -353,7 +385,7 @@ func limitsRefusal(checks []proposal.Checked) error {
 	var rules []string
 	for _, ck := range checks {
 		at := string(ck.Of) + " " + ck.Day.String()
-		if ck.Of == proposal.OfTrainingWeekdays {
+		if ck.Of == proposal.OfTrainingWeekdays || ck.Of == proposal.OfLimits {
 			at = string(ck.Of)
 		}
 		for _, v := range ck.Violations {
@@ -454,6 +486,9 @@ func (b proposeInputBody) draft() (proposal.Draft, error) {
 			return d, huma.Error422UnprocessableEntity("training_weekdays: " + err.Error())
 		}
 		d.Changes.TrainingWeekdays = &proposal.WeekdaysChange{After: w}
+	}
+	for _, name := range slices.Sorted(maps.Keys(b.Limits)) {
+		d.Changes.Limits = append(d.Changes.Limits, proposal.LimitChange{Name: name, After: b.Limits[name]})
 	}
 	return d, nil
 }

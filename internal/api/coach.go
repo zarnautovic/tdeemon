@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -34,7 +35,7 @@ type planBody struct {
 	Phases           []phaseBody        `json:"phases" nullable:"false" doc:"The goal timeline, in order: the phases in force within the last 365 days, and those to come."`
 	TrainingWeekdays []string           `json:"training_weekdays" nullable:"false" enum:"sunday,monday,tuesday,wednesday,thursday,friday,saturday" doc:"The days of the week the plan makes training days."`
 	Targets          []targetPeriodBody `json:"targets" nullable:"false" doc:"The targets, in order: those in force within the last 365 days, and those to come, each with what its days came to."`
-	Limits           map[string]float64 `json:"limits" doc:"The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; the user may loosen theirs in the app, up to the instance's."`
+	Limits           map[string]float64 `json:"limits" doc:"The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; a proposal may change the user's, up to the instance's, which the user accepts in the app."`
 	Pending          *proposalBody      `json:"pending,omitempty" doc:"The proposal that waits for the user's consent; absent when none does."`
 	PendingPreview   *previewBody       `json:"pending_preview,omitempty" doc:"What the pending proposal would come to, by the data and the limits now, as propose_changes previews it; with what the limits would refuse, if they changed since."`
 	Revisions        []proposalBody     `json:"revisions" nullable:"false" doc:"The plan's latest revisions, the proposals applied (reverted ones too), newest first, up to 10."`
@@ -64,7 +65,7 @@ type outcomeBody struct {
 	TargetProtein   *float64 `json:"target_protein,omitempty" doc:"The average target of protein of the logged days."`
 	Phase           string   `json:"phase,omitempty" enum:"cut,maintain,bulk,recomp" doc:"The phase of the last day counted; absent without one."`
 	PlannedPctWeek  *float64 `json:"planned_pct_week,omitempty" doc:"That phase's target rate, in % of the trend weight a week, a minus being a loss."`
-	MeasuredFrom    string   `json:"measured_from" format:"date" doc:"The first day measured: a phase's first 14 days are left out, as water and glycogen move the weight then; the day after to when no day is left."`
+	MeasuredFrom    string   `json:"measured_from" format:"date" doc:"The first day measured: the first 14 days after a change of intake (a phase's start that changes it by more than a tenth) are left out, as water and glycogen move the weight then; the day after to when no day is left."`
 	Measured        bool     `json:"measured" doc:"Whether the days measured held enough for an estimate; doubts say what is missing."`
 	TDEE            *float64 `json:"tdee,omitempty" doc:"The TDEE measured over them, in kcal a day."`
 	HalfWidth       *float64 `json:"half_width,omitempty" doc:"Half its 80 % interval."`
@@ -109,6 +110,14 @@ type changesBody struct {
 	Phases           []phaseChangeBody   `json:"phases" nullable:"false" doc:"The phases it changes, by their start."`
 	Targets          []targetChangeBody  `json:"targets" nullable:"false" doc:"The targets it changes, by their first day."`
 	TrainingWeekdays *weekdaysChangeBody `json:"training_weekdays,omitempty" doc:"The training weekdays, when it changes them."`
+	Limits           []limitChangeBody   `json:"limits" nullable:"false" doc:"The user's limits it changes, by name: a proposal with one applies only in the app."`
+}
+
+type limitChangeBody struct {
+	Name    string  `json:"name" doc:"The limit's name (docs/limits.md)."`
+	Before  float64 `json:"before"`
+	After   float64 `json:"after"`
+	Loosens bool    `json:"loosens" doc:"Whether after is looser than before: applying it takes the user's confirmation."`
 }
 
 type phaseChangeBody struct {
@@ -307,7 +316,7 @@ func newProposalBody(p proposal.Proposal, loc *time.Location) proposalBody {
 func newActorBody(a event.Actor) actorBody { return actorBody{Client: a.Client, Model: a.Model} }
 
 func newChangesBody(c proposal.Changes) changesBody {
-	b := changesBody{Phases: []phaseChangeBody{}, Targets: []targetChangeBody{}}
+	b := changesBody{Phases: []phaseChangeBody{}, Targets: []targetChangeBody{}, Limits: []limitChangeBody{}}
 	phase := func(p *plan.Phase) *phaseBody {
 		if p == nil {
 			return nil
@@ -328,6 +337,10 @@ func newChangesBody(c proposal.Changes) changesBody {
 	}
 	if w := c.TrainingWeekdays; w != nil {
 		b.TrainingWeekdays = &weekdaysChangeBody{Before: weekdayNames(w.Before), After: weekdayNames(w.After)}
+	}
+	loosened := c.Loosened()
+	for _, ch := range c.Limits {
+		b.Limits = append(b.Limits, limitChangeBody{Name: ch.Name, Before: ch.Before, After: ch.After, Loosens: slices.Contains(loosened, ch.Name)})
 	}
 	return b
 }
