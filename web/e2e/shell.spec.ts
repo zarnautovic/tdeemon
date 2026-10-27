@@ -27,7 +27,7 @@ test('a phone has the bar at the bottom, a desktop the sidebar, and the keys wor
   await expect(sections.getByRole('link', { name: 'Settings' })).toBeVisible()
   await expect(sections.getByRole('button', { name: 'Dark theme' })).toBeVisible()
 
-  await page.getByRole('heading', { name: 'Today' }).click()
+  await page.getByRole('heading', { name: 'Today', exact: true }).click()
   await page.keyboard.press('/')
   await expect(page.getByRole('searchbox', { name: 'Search the foods' })).toBeFocused()
   await page.keyboard.press('Escape')

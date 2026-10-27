@@ -146,10 +146,42 @@ test('today shows what was eaten against the target, the meals and the measureme
   expect(items[0]?.textContent).toBe('Oats 80 g300 kcal · P 11 · C 54 · F 6')
   expect(items[1]?.textContent).toContain('Banana bread 1.5 portions')
 
-  const measurements = screen.getByRole('region', { name: 'Measurements' })
-  expect(within(measurements).getByText('72.5 kg')).toBeDefined()
-  expect(within(measurements).getByText('8,042')).toBeDefined()
+  // The body at a glance, and all its measurements a sheet away.
+  const body = screen.getByRole('region', { name: 'Body today' })
+  expect(within(body).getByText('72.5 kg')).toBeDefined()
+  expect(within(body).getByText('8,042')).toBeDefined()
+  fireEvent.click(within(body).getByRole('button', { name: 'All measurements' }))
+  const measurements = await screen.findByRole('dialog', { name: 'Measurements' })
   expect(within(measurements).getByText('18.2%')).toBeDefined()
+})
+
+test("the body's tiles: the weight with its trend, the night's sleep, a dash for what is missing", async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          metrics: [
+            { kind: 'weight', value: 86.42, unit: 'kg', source: 'manual' },
+            { kind: 'sleep_h', value: 7.999, unit: 'h', source: 'import' },
+          ],
+        }),
+      ),
+    'GET /api/v1/summary': () =>
+      Response.json({ ...summaryOf(), trend: { date: '2026-10-22', kg: 86.14 } }),
+  })
+
+  renderAt('/')
+
+  const body = await screen.findByRole('region', { name: 'Body today' })
+  const tile = (label: string) => within(body).getByText(label).closest('div')?.textContent ?? null
+  await waitFor(() => {
+    expect(tile('Weight')).toBe('Weight86.4 kgtrend 86.1 kg')
+  })
+  // 7.999 hours are 8 h, not 7 h 60.
+  expect(tile('Sleep')).toBe('Sleep8 h 0 min')
+  expect(tile('Steps')).toBe('Steps—')
+  expect(tile('Resting heart rate')).toBe('Resting heart rate—')
 })
 
 test("a model's long list goes under the meal of its hour, which names the row", async () => {

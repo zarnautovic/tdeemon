@@ -17,9 +17,12 @@ export function CheckIn({ day, future = false }: { day: Day; future?: boolean })
 
   return (
     <section aria-labelledby="day-check-in" className="space-y-4 rounded-lg border bg-card p-4">
-      <h2 id="day-check-in" className="font-medium">
-        {t.day.checkIn}
-      </h2>
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 id="day-check-in" className="text-h3">
+          {t.day.checkIn}
+        </h2>
+        <span className="text-caption text-muted-foreground">{t.day.savedAsYouGo}</span>
+      </div>
       {!future && (
         <>
           <ScaleField day={day} field="mood" label={t.day.mood} words={t.day.moods} tone="good" />

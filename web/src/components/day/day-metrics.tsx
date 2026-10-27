@@ -8,7 +8,7 @@ import { useMessages } from '@/i18n/messages'
 // DayMetrics are the measurements of day date, each in its unit, to
 // correct or delete; a field for the weight while the day has none, the
 // one given most, and the others to add. A day to come takes none
-// (canLog).
+// (canLog). The sheet it is in gives its title.
 export function DayMetrics({
   date,
   metrics,
@@ -23,10 +23,7 @@ export function DayMetrics({
   const others = metricKinds.filter((k) => k !== 'weight' && !has.has(k))
 
   return (
-    <section aria-labelledby="day-measurements" className="space-y-2">
-      <h2 id="day-measurements" className="font-medium">
-        {t.day.measurements}
-      </h2>
+    <div className="space-y-2">
       {canLog && !has.has('weight') && (
         <div className="rounded-lg border p-3">
           <MetricForm date={date} kind="weight" label={t.day.metric.weight} />
@@ -42,6 +39,6 @@ export function DayMetrics({
         </ul>
       )}
       {canLog && <AddMetric date={date} kinds={others} />}
-    </section>
+    </div>
   )
 }

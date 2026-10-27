@@ -9,7 +9,7 @@ export async function signIn(page: Page) {
   await page.getByLabel('Email').fill(user.email)
   await page.getByLabel('Password').fill(user.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 }
 
 // toSettings goes to the settings as a phone does: they are the plan's.

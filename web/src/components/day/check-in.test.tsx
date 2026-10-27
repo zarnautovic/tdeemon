@@ -19,6 +19,16 @@ function checkIn() {
   return screen.getByRole('region', { name: 'Check-in' })
 }
 
+// noteField is the day's note, its field asked for when the day has none.
+async function noteField() {
+  await screen.findByRole('region', { name: 'Check-in' })
+  const add = screen.queryByRole('button', { name: '+ Add a note' })
+  if (add) {
+    fireEvent.click(add)
+  }
+  return screen.getByLabelText('Note')
+}
+
 test('a step of the mood is saved in a tap, and a tap on it again clears it', async () => {
   const server = dayServer()
   fakeServer({ ...signedIn(), ...server.routes })
@@ -141,12 +151,23 @@ test('the changes of a day go one at a time, each after the one before answered'
   })
 })
 
+test('a day without a note has a link for one, whose field takes the focus', async () => {
+  fakeServer({ ...signedIn(), ...dayServer().routes })
+  renderAt('/')
+
+  fireEvent.click(await screen.findByRole('button', { name: '+ Add a note' }))
+
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByLabelText('Note'))
+  })
+})
+
 test('the note is saved when the field is left, and only when it changed', async () => {
   const server = dayServer(day({ note: 'slept badly' }))
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
 
-  const note = await screen.findByLabelText('Note')
+  const note = await noteField()
   expect(note).toHaveProperty('value', 'slept badly')
   fireEvent.blur(note)
   expect(server.sent).toEqual([])
@@ -240,8 +261,9 @@ test('a day is left out of calibration with a reason, and counted again', async 
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
 
-  expect(await screen.findByText('Counted in calibration.')).toBeDefined()
-  fireEvent.click(screen.getByRole('button', { name: 'Leave out of calibration' }))
+  const counted = await screen.findByRole('switch', { name: 'Counted in calibration' })
+  expect(counted.getAttribute('aria-checked')).toBe('true')
+  fireEvent.click(counted)
   const leaveOut = screen.getByRole('button', { name: 'Leave out of calibration' })
   // A reason is needed: the server refuses a day left out without one.
   expect(leaveOut.hasAttribute('disabled')).toBe(true)
@@ -253,9 +275,12 @@ test('a day is left out of calibration with a reason, and counted again', async 
   expect(await screen.findByText('Out of calibration: restaurant, wine')).toBeDefined()
   expect(server.sent.at(-1)?.body).toEqual({ excluded_reason: 'restaurant, wine' })
 
-  fireEvent.click(screen.getByRole('button', { name: 'Count it again' }))
+  expect(counted.getAttribute('aria-checked')).toBe('false')
+  fireEvent.click(counted)
 
-  expect(await screen.findByText('Counted in calibration.')).toBeDefined()
+  await waitFor(() => {
+    expect(counted.getAttribute('aria-checked')).toBe('true')
+  })
   expect(server.sent.at(-1)?.body).toEqual({ excluded_reason: '' })
 })
 
@@ -264,7 +289,7 @@ test('a reason a tap gives is stored under its code, and said in the language', 
   fakeServer({ ...signedIn('hr'), ...server.routes })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Izostavi iz kalibracije' }))
+  fireEvent.click(await screen.findByRole('switch', { name: 'Ulazi u kalibraciju' }))
   fireEvent.click(screen.getByRole('button', { name: 'bolest' }))
   fireEvent.click(screen.getByRole('button', { name: 'Izostavi iz kalibracije' }))
 
@@ -293,10 +318,12 @@ test('leaving a day out can be given up', async () => {
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Leave out of calibration' }))
+  fireEvent.click(await screen.findByRole('switch', { name: 'Counted in calibration' }))
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
-  expect(screen.getByText('Counted in calibration.')).toBeDefined()
+  expect(
+    screen.getByRole('switch', { name: 'Counted in calibration' }).getAttribute('aria-checked'),
+  ).toBe('true')
   expect(server.sent).toEqual([])
 })
 
@@ -339,7 +366,7 @@ test('the note is saved without the spaces at its ends, which the server refuses
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
 
-  const note = await screen.findByLabelText('Note')
+  const note = await noteField()
   fireEvent.change(note, { target: { value: ' long walk \n' } })
   fireEvent.blur(note)
 
@@ -372,7 +399,7 @@ test('a day to come takes its type and exclusion only', async () => {
   renderAt('/?date=2026-10-25')
 
   expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
-  expect(screen.getByRole('button', { name: 'Leave out of calibration' })).toBeDefined()
+  expect(screen.getByRole('switch', { name: 'Counted in calibration' })).toBeDefined()
   expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
   expect(screen.queryByRole('group', { name: 'Hunger' })).toBeNull()
   expect(screen.queryByLabelText('Note')).toBeNull()
@@ -394,13 +421,16 @@ test('until the app knows which day today is, a day an address names takes no mo
 
   expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
   expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'All measurements' }))
   expect(screen.queryByLabelText('Weight')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
 
   answer?.(Response.json(me()))
 
   // A day before today takes it all.
   expect(await screen.findByRole('group', { name: 'Mood' })).toBeDefined()
-  expect(screen.getByLabelText('Weight')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'All measurements' }))
+  expect(await screen.findByLabelText('Weight')).toBeDefined()
 })
 
 test('what is typed in the note while an earlier note is saved stays', async () => {
@@ -419,7 +449,7 @@ test('what is typed in the note while an earlier note is saved stays', async () 
   })
   renderAt('/')
 
-  const note = await screen.findByLabelText('Note')
+  const note = await noteField()
   fireEvent.change(note, { target: { value: 'long walk' } })
   fireEvent.blur(note)
   await waitFor(() => {
@@ -456,7 +486,7 @@ test('a note sent again after it failed leaves the field to follow the day', asy
   })
   renderAt('/')
 
-  const note = await screen.findByLabelText('Note')
+  const note = await noteField()
   fireEvent.change(note, { target: { value: 'long walk' } })
   fireEvent.blur(note)
   const alert = await within(checkIn()).findByRole('alert')

@@ -13,7 +13,8 @@ const tones = {
 }
 
 // Stepper picks a value of a check-in's scale, 1 to 5, in one tap, each
-// step with its word; tapping the chosen step again clears it (0).
+// step shown as its word (its number said to a screen reader); tapping
+// the chosen step again clears it (0).
 export function Stepper({
   label,
   words,
@@ -46,12 +47,12 @@ export function Stepper({
                 onPick(value === step ? 0 : step)
               }}
               className={cn(
-                'min-h-11 flex-1 rounded-md border bg-muted/40 px-0.5 py-1.5 text-muted-foreground transition-colors outline-none hover:border-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card',
+                'min-h-11 min-w-0 flex-1 rounded-md border bg-card px-0.5 text-caption text-muted-foreground transition-colors outline-none hover:border-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card aria-pressed:font-semibold',
                 tones[tone],
               )}
             >
-              <b className="block text-base leading-tight font-bold tabular-nums">{step}</b>{' '}
-              <span className="block text-[0.625rem] leading-tight">{word}</span>
+              {/* Read out as "4 good", the space outside. */}
+              <span className="sr-only">{step}</span> {word}
             </button>
           )
         })}

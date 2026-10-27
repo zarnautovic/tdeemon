@@ -1,9 +1,10 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 
 import { useCheckIn } from '@/api/day'
 import type { Day } from '@/api/types'
 import { Field } from '@/components/day/field'
 import { SaveStatus } from '@/components/day/save-status'
+import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 import { inputClass } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
@@ -15,7 +16,8 @@ const maxNote = 2000
 
 // DayNote is what the user says of the day in words, saved when the field
 // is left. What is typed stays in the field until it is saved, though the
-// day comes back (with an earlier change) in between.
+// day comes back (with an earlier change) in between. A day without a
+// note has a link for one, as most days need none.
 export function DayNote({ day }: { day: Day }) {
   const t = useMessages()
   const id = useId()
@@ -28,6 +30,14 @@ export function DayNote({ day }: { day: Day }) {
   const note = day.note ?? ''
   // What is typed and not saved yet; undefined, the day's note.
   const [draft, setDraft] = useState<string | undefined>(undefined)
+  // The field, once asked for, takes the focus.
+  const [asked, setAsked] = useState(false)
+  const field = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (asked) {
+      field.current?.focus()
+    }
+  }, [asked])
 
   // save sends what is typed, typed, and once it is saved the field shows
   // the day's note again, unless more was typed meanwhile.
@@ -49,6 +59,20 @@ export function DayNote({ day }: { day: Day }) {
     )
   }
 
+  if (!asked && note === '' && draft === undefined) {
+    return (
+      <Button
+        variant="link"
+        className="h-auto p-0 text-small font-semibold"
+        onClick={() => {
+          setAsked(true)
+        }}
+      >
+        + {t.day.addNote}
+      </Button>
+    )
+  }
+
   return (
     <Field
       label={t.day.note}
@@ -66,6 +90,7 @@ export function DayNote({ day }: { day: Day }) {
       }
     >
       <textarea
+        ref={field}
         id={id}
         value={draft ?? note}
         maxLength={maxNote}
