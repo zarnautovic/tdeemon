@@ -257,3 +257,36 @@ func TestUndoLastTakesBackTheCoachsNotes(t *testing.T) {
 		t.Errorf("the notes after the undo: %s", text)
 	}
 }
+
+// An undo that names its change (last, the web app's) takes it back only
+// while it is the latest: after another, of any client, it takes back
+// nothing and says so (412). MCP neither shows nor takes last.
+func TestUndoOfTheLatest(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	first, second := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	for _, id := range []string{first, second} {
+		e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id))
+	}
+	of := func(id string) string {
+		return fmt.Sprintf(`{"id": %q, "last": {"action": "meal.create", "entity": %q}}`, clientid.NewAt(e.now), id)
+	}
+	rec := e.in.do(t, http.MethodPost, "/api/v1/undo", of(first), e.session, nil)
+	if rec.Code != http.StatusPreconditionFailed || !strings.Contains(rec.Body.String(), "meal.create of "+second) {
+		t.Errorf("undo of the first meal: %d %s, want 412 naming the second", rec.Code, rec.Body.String())
+	}
+	if rec := e.in.do(t, http.MethodGet, "/api/v1/days/today", "", e.session, nil); !strings.Contains(rec.Body.String(), first) || !strings.Contains(rec.Body.String(), second) {
+		t.Errorf("the day after the undo of another: %s, want both meals", rec.Body.String())
+	}
+	rec = e.in.do(t, http.MethodPost, "/api/v1/undo", of(second), e.session, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), second) {
+		t.Errorf("undo of the second meal, the latest: %d %s", rec.Code, rec.Body.String())
+	}
+
+	cs := mcpSession(t, e.in, mcpToken(t, e.in, e.session[0], `"tools"`))
+	last := map[string]any{"action": "meal.create", "entity": first}
+	if text, isErr := callTool(t, cs, "undo_last", map[string]any{"last": last}); !isErr || !strings.Contains(text, `no argument "last"`) {
+		t.Errorf("undo through MCP, naming its change: %s", text)
+	}
+}

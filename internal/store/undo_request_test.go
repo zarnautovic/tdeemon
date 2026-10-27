@@ -10,6 +10,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -188,5 +189,42 @@ func TestUndoOfNothingNotRecorded(t *testing.T) {
 	// asks for.
 	if e, again, err := db.Undo(t.Context(), ana, testActor, request, t0); err != nil || again || e.Entity != m.ID.String() {
 		t.Errorf("the undo again = %+v, %v, %v", e, again, err)
+	}
+}
+
+// An undo that names the change it means takes it back only while it is
+// the latest: after another change, of any client, it takes back
+// nothing, and the change stays for an undo that names it once it is
+// the latest again.
+func TestUndoOfTheLatest(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	first := createMeal(t, db, ana, breakfast(t, b, t0))
+	second := createMeal(t, db, ana, breakfast(t, b, t0))
+	ofFirst := store.Change{Action: event.MealCreate, Entity: first.ID.String()}
+	request := clientid.NewAt(t0)
+	var other *store.NotLatestError
+	if _, _, err := db.UndoOf(t.Context(), ana, testActor, request, ofFirst, t0); !errors.As(err, &other) ||
+		other.Latest.Action != event.MealCreate || other.Latest.Entity != second.ID.String() {
+		t.Fatalf("undo of the first meal = %v, want the second meal named as the latest", err)
+	}
+	for _, m := range []meal.Meal{first, second} {
+		if _, err := db.MealByID(t.Context(), ana, m.ID); err != nil {
+			t.Errorf("meal %s after the undo of another: %v, want it kept", m.ID, err)
+		}
+	}
+	// The second taken back, the first is the latest, and the same
+	// request takes it back.
+	if _, _, err := db.Undo(t.Context(), ana, testActor, clientid.NewAt(t0), t0); err != nil {
+		t.Fatal(err)
+	}
+	if e, again, err := db.UndoOf(t.Context(), ana, testActor, request, ofFirst, t0); err != nil || again || e.Entity != first.ID.String() {
+		t.Errorf("undo of the first meal, the latest = %+v, %v, %v; want it taken back", e, again, err)
+	}
+	// Taken back, it is no longer the latest: the food is.
+	if _, _, err := db.UndoOf(t.Context(), ana, testActor, clientid.NewAt(t0), ofFirst, t0); !errors.As(err, &other) || other.Latest.Action != event.FoodSave {
+		t.Errorf("undo of the first meal again = %v, want the food named as the latest", err)
 	}
 }

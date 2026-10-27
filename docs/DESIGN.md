@@ -307,7 +307,11 @@ date or `today`, and answers the day as `get_day` does. `undo_last` is
 one) with the days it was of (a meal's before and after it, a day's or
 a measurement's; none for a food or the notes), so a client showing
 another day can say where it went; a 409 that says why for one it
-passed over, or a 404 with nothing left.
+passed over, or a 404 with nothing left. The web app's undo of a change
+it just made (a toast's) names that change by its action and entity
+(`last`, which MCP neither shows nor takes): it takes it back only
+while it is the latest, and after another, made since through any
+client, it takes back nothing (412).
 
 ## 6. AI layer
 

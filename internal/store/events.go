@@ -40,6 +40,24 @@ var ErrNothingToUndo = errors.New("nothing to undo")
 // ErrUndoID reports the id of a new undo out of form (clientid.Check).
 var ErrUndoID = errors.New("invalid undo id")
 
+// Change names a change by what it did and what it changed, as its event
+// does: a client's undo of a change it made names it (UndoOf).
+type Change struct {
+	Action event.Action
+	Entity string
+}
+
+// NotLatestError reports that the change an undo named is not the latest
+// to take back: Latest is, made since through any client, or the named
+// one is taken back already.
+type NotLatestError struct {
+	Latest event.Event
+}
+
+func (e *NotLatestError) Error() string {
+	return fmt.Sprintf("the latest change is another: %s of %s", e.Latest.Action, e.Latest.Entity)
+}
+
 // UndoReason says why a change cannot be undone, in words for the user
 // or the model; a client that translates them tells them apart by the
 // constants.
@@ -220,7 +238,7 @@ func (db *DB) Events(ctx context.Context, userID uuid.UUID, limit int) ([]event.
 // tries the same change again. With nothing left it returns
 // ErrNothingToUndo.
 func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, error) {
-	e, _, err := db.undo(ctx, userID, a, nil, now)
+	e, _, err := db.undo(ctx, userID, a, nil, nil, now)
 	return e, err
 }
 
@@ -231,11 +249,22 @@ func (db *DB) UndoLast(ctx context.Context, userID uuid.UUID, a event.Actor, now
 // rather than taking back the change before. A request no undo had must
 // be a new id near now (clientid.Check), or ErrUndoID.
 func (db *DB) Undo(ctx context.Context, userID uuid.UUID, a event.Actor, request uuid.UUID, now time.Time) (event.Event, bool, error) {
-	return db.undo(ctx, userID, a, &request, now)
+	return db.undo(ctx, userID, a, &request, nil, now)
 }
 
-// undo is Undo under request, or UndoLast when request is nil.
-func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request *uuid.UUID, now time.Time) (event.Event, bool, error) {
+// UndoOf is Undo of the change of, which the client means to take back
+// (the web app's undo of a change it just made): it takes it back only
+// while it is the latest to take back. When another is, made since
+// through any client, it takes back nothing and records nothing, and
+// returns a *NotLatestError that names the latest; the same request may
+// be sent again.
+func (db *DB) UndoOf(ctx context.Context, userID uuid.UUID, a event.Actor, request uuid.UUID, of Change, now time.Time) (event.Event, bool, error) {
+	return db.undo(ctx, userID, a, &request, &of, now)
+}
+
+// undo is Undo under request, or UndoLast when request is nil; of the
+// change of only, when of is not nil.
+func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request *uuid.UUID, of *Change, now time.Time) (event.Event, bool, error) {
 	if err := a.Validate(); err != nil {
 		return event.Event{}, false, fmt.Errorf("invalid actor: %w", err)
 	}
@@ -249,7 +278,7 @@ func (db *DB) undo(ctx context.Context, userID uuid.UUID, a event.Actor, request
 			again = settled && conflict == nil
 			return err
 		}
-		undone, conflict, err = undoInTx(ctx, tx, userID, a, now)
+		undone, conflict, err = undoInTx(ctx, tx, userID, a, of, now)
 		if errors.Is(err, ErrNothingToUndo) && request != nil {
 			// The same undo sent again finds nothing again, rather than a
 			// change made since.
@@ -352,11 +381,15 @@ func recordNothing(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Ac
 }
 
 // undoInTx takes back userID's latest change in tx, as UndoLast does, and
-// returns it; or the conflict of one it passed over.
-func undoInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, now time.Time) (event.Event, *UndoConflictError, error) {
+// returns it; or the conflict of one it passed over. When of is not nil,
+// the latest must be that change, or it is a *NotLatestError.
+func undoInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, of *Change, now time.Time) (event.Event, *UndoConflictError, error) {
 	e, err := lastToUndo(ctx, tx, userID)
 	if err != nil {
 		return event.Event{}, nil, err
+	}
+	if of != nil && (e.Action != of.Action || e.Entity != of.Entity) {
+		return event.Event{}, nil, &NotLatestError{Latest: e}
 	}
 	after, conflict, err := takeBackChecked(ctx, tx, userID, e, now)
 	if err != nil || conflict != nil {

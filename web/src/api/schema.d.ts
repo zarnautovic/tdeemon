@@ -651,7 +651,7 @@ export interface paths {
         put?: never;
         /**
          * Undo the latest change
-         * @description Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in, the notes for a coach. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back and the days it was of; get_day shows each after it.
+         * @description Takes back the user's latest change not undone yet, made through any client: a meal, a food, a measurement, a check-in, the notes for a coach. Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, and is passed over, so the next undo takes back the change before it. The answer says what was taken back and the days it was of; get_day shows each after it. The web app's undo of a change it just made names that change (last), and takes it back only while it is the latest: after another, nothing (412).
          */
         post: operations["undo-last"];
         delete?: never;
@@ -1198,6 +1198,12 @@ export interface components {
              * @enum {string}
              */
             unit?: "g" | "ml";
+        };
+        LastChange: {
+            /** @description What the change did, as undone's action: meal.create, meal.delete, metric.set… */
+            action: string;
+            /** @description What it changed, as undone's entity: a meal's id, a day, a day and a metric (2026-10-21/weight). */
+            entity: string;
         };
         LastUseBody: {
             /**
@@ -2035,6 +2041,8 @@ export interface components {
              * @description A UUIDv7 made now (a day back to five minutes ahead): the undo sent again under it takes back nothing more. Left out (not empty), the server makes one, and an undo sent again takes back another change.
              */
             id?: string;
+            /** @description The change to take back, which the web app's undo of a change it just made names: taken back only while it is the latest. After another, made since through any client, nothing is taken back (412), and the same id may be sent again. */
+            last?: components["schemas"]["LastChange"];
         };
         UndoOutputBody: {
             /** @description The undo was sent before under its id, and this is its answer again: no other change was taken back. To go further back, undo under a new id. */
@@ -5835,6 +5843,15 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
