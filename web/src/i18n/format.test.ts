@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { parseNumber } from '@/i18n/format'
+import { daysBetween, formatGrams, parseNumber } from '@/i18n/format'
 
 test.each([
   ['72.5', 'en', 72.5],
@@ -36,4 +36,33 @@ test.each([
   ['1,834.5', 'hr'],
 ])('%j in %s is no number', (typed, locale) => {
   expect(parseNumber(typed, locale)).toBeUndefined()
+})
+
+// Grams below 10 keep a decimal, which a whole number would bend (1.5 g
+// of fat is not 2); from 10 they are whole.
+test.each([
+  [1.5, 'en', '1.5'],
+  [1.5, 'hr', '1,5'],
+  [0.34, 'en', '0.3'],
+  [0, 'en', '0'],
+  [2, 'en', '2'],
+  [9.96, 'en', '10'],
+  [12.4, 'en', '12'],
+  [160, 'hr', '160'],
+  [1234.5, 'hr', '1.235'],
+  [-1.25, 'en', '-1.3'],
+  [-48.2, 'en', '-48'],
+])('%d g in %s is %s', (n, locale, shown) => {
+  expect(formatGrams(n, locale)).toBe(shown)
+})
+
+test.each([
+  ['2026-10-01', '2026-10-01', 0],
+  ['2026-10-01', '2026-10-27', 26],
+  ['2026-10-27', '2026-10-01', -26],
+  // Across the end of summer time, a day is a day.
+  ['2026-10-24', '2026-10-26', 2],
+  ['2026-12-31', '2027-01-01', 1],
+])('from %s to %s is %d days', (from, to, n) => {
+  expect(daysBetween(from, to)).toBe(n)
 })

@@ -6,9 +6,11 @@ import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
 import { CheckIn } from '@/components/day/check-in'
 import { DayMetrics } from '@/components/day/day-metrics'
-import { DayTotals } from '@/components/day/day-totals'
+import { DaySummary } from '@/components/day/day-summary'
+import { DayTypeChip } from '@/components/day/day-type-chip'
 import { MealCard } from '@/components/day/meal-card'
 import { MealLog } from '@/components/day/meal-log'
+import { WeekStrip } from '@/components/day/week-strip'
 import { LoadError } from '@/components/load-error'
 import { buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
@@ -34,9 +36,10 @@ function DayKeys({ before, after }: { before: DaySearch; after: DaySearch | unde
 }
 
 // DayPage is a day of the user's: today at /, another at /?date=YYYY-MM-DD.
-// It shows what was eaten against the target, the check-in, the meals and
-// the measurements, takes the check-in and the measurements, and moves a
-// day back or ahead, up to today. /?log=true opens the form to log a meal
+// It shows the week's days, what was eaten against the target, the
+// meals, the check-in and the measurements, takes the day's type, the
+// check-in and the measurements, and moves a day back or ahead, up to
+// today. /?log=true opens the form to log a meal
 // on today (the app's Log a meal).
 export function DayPage() {
   const t = useMessages()
@@ -86,48 +89,56 @@ export function DayPage() {
     <div className="max-w-3xl space-y-4">
       <DayKeys before={searchOf(before)} after={hasNext ? searchOf(after) : undefined} />
       <header className="flex items-center gap-2">
-        <Link
-          to="/"
-          search={searchOf(before)}
-          // Another day is never the current page: its date must match
-          // too, not be left out.
-          activeOptions={{ exact: true }}
-          aria-label={t.day.previous}
-          className={buttonVariants({ variant: 'ghost', size: 'icon' })}
-        >
-          <ChevronLeft aria-hidden />
-        </Link>
-        <div className="flex-1 text-center">
-          <h1 className="text-xl font-semibold">
-            {isToday ? t.day.today : f.date(shown, todayDate)}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isToday && `${f.date(shown, todayDate)} · `}
-            {day.data.type === 'training' ? t.day.training : t.day.rest}
-          </p>
-        </div>
-        {hasNext ? (
+        <div className="flex shrink-0 items-center">
           <Link
             to="/"
-            search={searchOf(after)}
+            search={searchOf(before)}
+            // Another day is never the current page: its date must match
+            // too, not be left out.
             activeOptions={{ exact: true }}
-            aria-label={t.day.next}
-            className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+            aria-label={t.day.previous}
+            className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
           >
-            <ChevronRight aria-hidden />
+            <ChevronLeft aria-hidden />
           </Link>
-        ) : (
-          // Keeps the title centred.
-          <span className="size-9" />
-        )}
+          {hasNext ? (
+            <Link
+              to="/"
+              search={searchOf(after)}
+              activeOptions={{ exact: true }}
+              aria-label={t.day.next}
+              className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+            >
+              <ChevronRight aria-hidden />
+            </Link>
+          ) : (
+            // Keeps the title where it is.
+            <span className="size-11 lg:size-9" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          {isToday ? (
+            <>
+              <h1 className="text-title">{t.day.today}</h1>
+              <p className="text-small text-muted-foreground">{f.date(shown, todayDate)}</p>
+            </>
+          ) : (
+            <h1 className="text-h2">{f.date(shown, todayDate)}</h1>
+          )}
+        </div>
+        {/* Of the day shown, not of the one before while it comes. */}
+        <div inert={waiting}>
+          <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
+        </div>
       </header>
+      {todayDate !== undefined && <WeekStrip date={shown} today={todayDate} />}
       <div
         aria-busy={waiting}
         // What is changed while it waits would be the day before's.
         inert={waiting}
         className={`space-y-4 ${waiting ? 'opacity-60' : ''}`}
       >
-        <DayTotals day={day.data} />
+        <DaySummary day={day.data} />
         {/* Its fields start again with each day. */}
         <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
         <section aria-labelledby="day-meals" className="space-y-2">

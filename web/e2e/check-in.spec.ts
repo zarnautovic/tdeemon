@@ -18,8 +18,10 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
     .click()
   await checkIn.getByLabel('Note').fill('long walk')
   await checkIn.getByLabel('Note').blur()
-  await checkIn.getByRole('button', { name: 'Training' }).click()
-  await expect(page.getByText('Training day')).toBeVisible()
+  // The day's type is the header's chip, a menu.
+  await page.getByRole('button', { name: 'Type of day: Rest day' }).click()
+  await page.getByRole('menuitemradio', { name: 'Training' }).click()
+  await expect(page.getByRole('button', { name: 'Type of day: Training day' })).toBeVisible()
   await checkIn.getByRole('button', { name: 'Leave out of calibration' }).click()
   await checkIn.getByRole('button', { name: 'sick' }).click()
   await checkIn.getByRole('button', { name: 'Leave out of calibration' }).click()
@@ -56,10 +58,7 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
     'true',
   )
   await expect(checkIn.getByLabel('Note')).toHaveValue('long walk')
-  await expect(checkIn.getByRole('button', { name: 'Training' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(page.getByRole('button', { name: 'Type of day: Training day' })).toBeVisible()
   await expect(checkIn.getByText('Out of calibration: sick')).toBeVisible()
   await expect(measurements).toContainText('72.8 kg')
   await expect(measurements).not.toContainText('Sleep')
