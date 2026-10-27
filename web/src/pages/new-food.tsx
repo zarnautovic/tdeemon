@@ -10,7 +10,7 @@ export function NewFoodPage() {
   const navigate = useNavigate()
 
   return (
-    <section className="space-y-4">
+    <section className="max-w-3xl space-y-4">
       <BackToFoods />
       <h1 className="text-2xl font-semibold">{t.foods.newTitle}</h1>
       <FoodForm

@@ -23,10 +23,21 @@ export function scale(...words: Scale): Scale {
 export const en = {
   nav: {
     label: 'Sections',
-    day: 'Day',
+    today: 'Today',
     foods: 'Foods',
-    charts: 'Charts',
+    progress: 'Progress',
+    plan: 'Plan',
     settings: 'Settings',
+    logMeal: 'Log a meal',
+    darkTheme: 'Dark theme',
+  },
+  shortcuts: {
+    title: 'Keyboard shortcuts',
+    logMeal: 'Log a meal',
+    find: 'Find a food',
+    days: 'The day before or after',
+    list: 'These shortcuts',
+    close: 'Close',
   },
   soon: 'This part is on its way.',
   unreachable: 'The server cannot be reached.',
@@ -298,7 +309,7 @@ export const en = {
     refused: (detail: string) => `The server did not take this food: ${detail}`,
   },
   charts: {
-    title: 'Charts',
+    title: 'Progress',
     span: 'Days shown',
     days: (n: number) => `${String(n)} days`,
     none: 'Nothing logged in these days yet.',
@@ -348,6 +359,7 @@ export const en = {
   },
   settings: {
     title: 'Settings',
+    back: 'Plan',
     account: 'Account',
     signedInAs: (name: string, email: string) => `Signed in as ${name} (${email}).`,
     signOut: 'Sign out',
@@ -402,10 +414,6 @@ export const en = {
   },
   plan: {
     title: 'Plan',
-    open: 'Plan',
-    openHint:
-      'Proposed changes and their history, what a plan needs of you, and how far it may go.',
-    back: 'Settings',
     profile: 'Profile',
     profileHint: 'A plan needs all of it, logging none of it. A field left empty is cleared.',
     sex: 'Sex',

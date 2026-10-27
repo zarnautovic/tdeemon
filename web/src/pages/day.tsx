@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { Link, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import { $api } from '@/api/client'
@@ -14,15 +14,36 @@ import { LoadError } from '@/components/load-error'
 import { buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { useShortcuts } from '@/lib/shortcuts'
+import type { DaySearch } from '@/router'
+
+// DayKeys moves a day back or ahead by the keyboard's arrows, as the
+// page's arrows do: to the day before, and to the day after up to today.
+function DayKeys({ before, after }: { before: DaySearch; after: DaySearch | undefined }) {
+  const navigate = useNavigate()
+  useShortcuts({
+    ArrowLeft: () => {
+      void navigate({ to: '/', search: before })
+    },
+    ...(after && {
+      ArrowRight: () => {
+        void navigate({ to: '/', search: after })
+      },
+    }),
+  })
+  return null
+}
 
 // DayPage is a day of the user's: today at /, another at /?date=YYYY-MM-DD.
 // It shows what was eaten against the target, the check-in, the meals and
 // the measurements, takes the check-in and the measurements, and moves a
-// day back or ahead, up to today.
+// day back or ahead, up to today. /?log=true opens the form to log a meal
+// on today (the app's Log a meal).
 export function DayPage() {
   const t = useMessages()
   const f = useFormat()
-  const { date } = useSearch({ from: '/app/' })
+  const { date, log } = useSearch({ from: '/app/' })
+  const navigate = useNavigate()
   const day = $api.useQuery(
     'get',
     '/api/v1/days/{date}',
@@ -60,9 +81,11 @@ export function DayPage() {
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.
   const searchOf = (d: string) => (d === todayDate ? {} : { date: d })
+  const hasNext = todayDate !== undefined && shown < todayDate
 
   return (
-    <div className="space-y-4">
+    <div className="max-w-3xl space-y-4">
+      <DayKeys before={searchOf(before)} after={hasNext ? searchOf(after) : undefined} />
       <header className="flex items-center gap-2">
         <Link
           to="/"
@@ -84,7 +107,7 @@ export function DayPage() {
             {day.data.type === 'training' ? t.day.training : t.day.rest}
           </p>
         </div>
-        {todayDate !== undefined && shown < todayDate ? (
+        {hasNext ? (
           <Link
             to="/"
             search={searchOf(after)}
@@ -129,6 +152,10 @@ export function DayPage() {
           {!future && (
             <MealLog
               key={`log ${day.data.date}`}
+              opening={log === true}
+              onOpened={() => {
+                void navigate({ to: '/', search: {}, replace: true })
+              }}
               date={day.data.date}
               today={isToday}
               timeZone={session.data?.user.timezone ?? 'UTC'}

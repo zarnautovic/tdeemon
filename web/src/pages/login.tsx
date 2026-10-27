@@ -9,7 +9,8 @@ import { signIn } from '@/api/sign-in'
 import { Button, buttonVariants } from '@/components/ui/button'
 import type { Messages } from '@/i18n/en'
 import { useMessages } from '@/i18n/messages'
-import { inputClass } from '@/lib/styles'
+import { inputClass, narrowPage } from '@/lib/styles'
+import { cn } from '@/lib/utils'
 
 // text is a text field's value in a form.
 function text(form: FormData, name: string): string {
@@ -62,7 +63,7 @@ export function LoginPage() {
 
   const oidc = methods.data?.oidc
   return (
-    <main className="mx-auto max-w-sm space-y-6 pt-10">
+    <main className={cn(narrowPage, 'max-w-sm space-y-6 pt-10')}>
       <h1 className="text-2xl font-semibold">{t.signIn.title}</h1>
       {methods.isPending && <p className="text-muted-foreground">{t.connecting}</p>}
       {methods.isError && (

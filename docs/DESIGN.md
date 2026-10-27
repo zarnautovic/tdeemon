@@ -904,7 +904,10 @@ the first spec.
     look is design tokens in `web/src/index.css`: a light and a dark
     theme, the system's or one chosen in the browser
     (`web/src/lib/theme.ts`), the macros' own colours, and Geist,
-    self-hosted (Fontsource).
+    self-hosted (Fontsource). The sections (today, the foods, the
+    progress, the plan) are a bar at the bottom on a phone, with Log a
+    meal in its middle, and a sidebar from 1024 px, with the settings at
+    its foot; the keyboard has shortcuts (`?` lists them).
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the charts' page (a chunk of its own), not with
     the app; health-api's validated palette, the charts on its dark cards,

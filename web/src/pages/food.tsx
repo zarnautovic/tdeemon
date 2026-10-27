@@ -53,7 +53,7 @@ export function FoodPage() {
   }
 
   return (
-    <section className="space-y-4">
+    <section className="max-w-3xl space-y-4">
       <BackToFoods />
       {body}
     </section>

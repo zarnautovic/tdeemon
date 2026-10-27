@@ -56,7 +56,7 @@ function historyServer(over: Partial<Record<string, (r: Request) => Response>> =
 
 test('the charts say in words what they show, over 90 days by default', async () => {
   const fetch = historyServer()
-  renderAt('/charts')
+  renderAt('/progress')
 
   // The charts' module, ECharts with it, loads when they are first shown.
   const weight = await screen.findByRole(
@@ -89,7 +89,7 @@ test('the charts say in words what they show, over 90 days by default', async ()
 
 test('a span of days is chosen, and kept in the address', async () => {
   const fetch = historyServer()
-  const router = renderAt('/charts')
+  const router = renderAt('/progress')
 
   fireEvent.click(await screen.findByRole('button', { name: '30 days' }))
 
@@ -113,7 +113,7 @@ test('days with nothing logged say so', async () => {
         weeks: [],
       }),
   })
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect(await screen.findByText('Nothing logged in these days yet.')).toBeDefined()
 })
@@ -129,7 +129,7 @@ test('a history that did not come says why, and asks again', async () => {
       return Response.json({ from, to: today, days: historyOf(from), weeks: [] })
     },
   })
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect((await screen.findByRole('alert')).textContent).toBe('The server failed to answer.')
   up = true
@@ -146,7 +146,7 @@ test('the charts speak Croatian', async () => {
       return Response.json({ from, to: today, days: historyOf(from), weeks: [] })
     },
   })
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect(
     await screen.findByText('Prosječno 2.000 kcal na dan, kroz 90 upisanih dana.'),
@@ -178,7 +178,7 @@ test("today's open day and a day left out count in no average, as calibration co
       return Response.json({ from, to: today, days, weeks: [] })
     },
   })
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect(
     await screen.findByText(
@@ -210,7 +210,7 @@ test('a card says what it has, and an estimate not trusted yet says so', async (
         weeks: [],
       }),
   })
-  renderAt('/charts')
+  renderAt('/progress')
 
   const body = await screen.findByRole('region', { name: 'Body' }, { timeout: 10_000 })
   expect(within(body).getByText('Trend weight from 80 to 80 kg.')).toBeDefined()
@@ -245,7 +245,7 @@ test('a TDEE of the days before the phase says so, and still is one', async () =
         weeks: [],
       }),
   })
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect(
     await screen.findByText(

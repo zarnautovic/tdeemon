@@ -13,10 +13,21 @@ function wait(seconds: number): string {
 export const hr: Messages = {
   nav: {
     label: 'Odjeljci',
-    day: 'Dan',
+    today: 'Danas',
     foods: 'Hrana',
-    charts: 'Grafovi',
+    progress: 'Napredak',
+    plan: 'Plan',
     settings: 'Postavke',
+    logMeal: 'Upiši obrok',
+    darkTheme: 'Tamna tema',
+  },
+  shortcuts: {
+    title: 'Prečaci tipkovnice',
+    logMeal: 'Upiši obrok',
+    find: 'Pronađi namirnicu',
+    days: 'Dan prije ili poslije',
+    list: 'Ovi prečaci',
+    close: 'Zatvori',
   },
   soon: 'Ovaj dio stiže uskoro.',
   unreachable: 'Server nije dostupan.',
@@ -283,7 +294,7 @@ export const hr: Messages = {
     refused: (detail: string) => `Server nije prihvatio ovu namirnicu: ${detail}`,
   },
   charts: {
-    title: 'Grafovi',
+    title: 'Napredak',
     span: 'Prikazani dani',
     days: (n: number) =>
       `${String(n)} ${plural('hr', n, { one: 'dan', few: 'dana', other: 'dana' })}`,
@@ -331,6 +342,7 @@ export const hr: Messages = {
   },
   settings: {
     title: 'Postavke',
+    back: 'Plan',
     account: 'Račun',
     signedInAs: (name: string, email: string) => `Prijavljeni račun: ${name} (${email}).`,
     signOut: 'Odjavi se',
@@ -383,10 +395,6 @@ export const hr: Messages = {
   },
   plan: {
     title: 'Plan',
-    open: 'Plan',
-    openHint:
-      'Predložene promjene i njihova povijest, što plan treba znati o tebi i dokle smije ići.',
-    back: 'Postavke',
     profile: 'Profil',
     profileHint: 'Plan treba sve, upisivanje ništa od toga. Prazno polje se briše.',
     sex: 'Spol',

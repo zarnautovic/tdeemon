@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronLeft } from 'lucide-react'
+import { Settings } from 'lucide-react'
 import { useState } from 'react'
 
 import { $api } from '@/api/client'
@@ -14,10 +14,10 @@ import { useMessages } from '@/i18n/messages'
 
 // PlanPage is the user's plan in the app: the plan as it holds today, a
 // proposed change that waits for their answer, the history of the plan's
-// changes, what a plan needs
-// of the user, their profile, and how far it may go, their limits. The
-// profile and the limits change only in a web session, as a plan rests on
-// them (docs/limits.md).
+// changes, what a plan needs of the user, their profile, and how far it
+// may go, their limits. The profile and the limits change only in a web
+// session, as a plan rests on them (docs/limits.md). On a phone the
+// settings are the plan's, a tap away; a desktop's sidebar has them.
 export function PlanPage() {
   const t = useMessages()
   const profile = $api.useQuery('get', '/api/v1/profile')
@@ -28,12 +28,17 @@ export function PlanPage() {
   const plan = $api.useQuery('get', '/api/v1/plan')
 
   return (
-    <section className="space-y-6">
-      <Link to="/settings" className={buttonVariants({ variant: 'ghost', className: '-ml-2' })}>
-        <ChevronLeft aria-hidden />
-        {t.plan.back}
-      </Link>
-      <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
+    <section className="max-w-3xl space-y-6">
+      <header className="flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
+        <Link
+          to="/settings"
+          aria-label={t.nav.settings}
+          className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'lg:hidden' })}
+        >
+          <Settings aria-hidden />
+        </Link>
+      </header>
       {plan.isError && <LoadError error={plan.error} onRetry={() => void plan.refetch()} />}
       {plan.data !== undefined && <CurrentPlan plan={plan.data} />}
       {plan.data?.pending !== undefined && (

@@ -39,23 +39,6 @@ test('the settings say so when the server cannot be reached', async () => {
   expect(await screen.findByText('The server cannot be reached.')).toBeDefined()
 })
 
-test('every section links the others, and marks itself as the current one', async () => {
-  fakeServer(signedIn())
-
-  renderAt('/foods')
-
-  const nav = await screen.findByRole('navigation', { name: 'Sections' })
-  const links = within(nav).getAllByRole('link')
-  expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
-    ['Day', '/'],
-    ['Foods', '/foods'],
-    ['Charts', '/charts'],
-    ['Settings', '/settings'],
-  ])
-  expect(links.filter((a) => a.getAttribute('aria-current') === 'page')).toEqual([links[1]])
-  expect(screen.getByRole('heading', { name: 'Foods' })).toBeDefined()
-})
-
 test("the day is the start page, and only it is current there, not every path under '/'", async () => {
   fakeServer(signedIn())
 
@@ -65,7 +48,7 @@ test("the day is the start page, and only it is current there, not every path un
   const current = within(nav)
     .getAllByRole('link')
     .filter((a) => a.getAttribute('aria-current') === 'page')
-  expect(current.map((a) => a.textContent)).toEqual(['Day'])
+  expect(current.map((a) => a.textContent)).toEqual(['Today'])
   expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
 })
 

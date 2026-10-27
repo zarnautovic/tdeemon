@@ -53,8 +53,8 @@ function averageOf(values: (number | undefined)[]): number | undefined {
 export function ChartsPage() {
   const t = useMessages()
   const f = useFormat()
-  const { days: span = 90 } = useSearch({ from: '/app/charts' })
-  const navigate = useNavigate({ from: '/charts' })
+  const { days: span = 90 } = useSearch({ from: '/app/progress' })
+  const navigate = useNavigate({ from: '/progress' })
   const me = $api.useQuery('get', '/api/v1/me')
   const today = me.data?.today
   const history = $api.useQuery(

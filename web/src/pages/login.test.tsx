@@ -59,10 +59,10 @@ test('a section without a session sends the browser to sign in, and back after i
 test("the provider's sign-in is a link that brings the browser back", async () => {
   server(() => problem(401))
 
-  renderAt('/charts')
+  renderAt('/progress')
 
   const link = await screen.findByRole('link', { name: 'Sign in with Authentik' })
-  expect(link.getAttribute('href')).toBe('/api/v1/auth/oidc/login?return_to=%2Fcharts')
+  expect(link.getAttribute('href')).toBe('/api/v1/auth/oidc/login?return_to=%2Fprogress')
 })
 
 test('a target off the app is the start page after signing in', async () => {
@@ -225,7 +225,7 @@ test('a section says when the server cannot say who is signed in, and tries agai
 test('a section says when the server failed to say who is signed in', async () => {
   fakeServer({ 'GET /api/v1/auth/session': () => problem(500) })
 
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect((await screen.findByRole('alert')).textContent).toBe('The server failed to answer.')
   await waitFor(() => {
@@ -285,7 +285,7 @@ test('a failure of the app itself is not blamed on the server', async () => {
     'GET /api/v1/auth/session': () => Response.json({ expires_at: '2026-11-22T10:00:00Z' }),
   })
 
-  renderAt('/charts')
+  renderAt('/progress')
 
   expect((await screen.findByRole('alert')).textContent).toBe('Something went wrong.')
   // Within the app's frame, with the way to try again.

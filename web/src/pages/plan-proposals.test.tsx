@@ -156,7 +156,7 @@ function coachServer(
 
 test('a proposal that waits says why, what it changes and what it comes to, and is accepted', async () => {
   const { sent } = coachServer({ pending: step, pending_preview: preview })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   card.getByText('Proposed by claude-opus-5-5')
   card.getByText("The loss is under the cut's rate.")
@@ -178,7 +178,7 @@ test('a proposal that waits says why, what it changes and what it comes to, and 
 
 test('a proposal that waits is rejected', async () => {
   const { sent } = coachServer({ pending: step })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Reject' }))
   await waitFor(() => {
@@ -190,7 +190,7 @@ test('a proposal that waits is rejected', async () => {
 
 test('a proposal the limits refuse now says why, in words', async () => {
   coachServer({ pending: step }, { apply: refusal })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   const alert = await card.findByRole('alert')
@@ -201,7 +201,7 @@ test('a proposal the limits refuse now says why, in words', async () => {
 
 test('a proposal that waits no more says so', async () => {
   coachServer({ pending: step }, { apply: () => closed(409) })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   await card.findByText('The proposal waits no more: the plan changed, or it expired.')
@@ -210,7 +210,7 @@ test('a proposal that waits no more says so', async () => {
 
 test('the history shows a revision, which is taken back in a step', async () => {
   const { sent } = coachServer({ revisions: [sundays] })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
   history.getByText('Train on Sundays too.')
   history.getByText('Training days')
@@ -233,7 +233,7 @@ test('a change that took effect cannot be taken back, and says so', async () => 
     { revisions: [sundays] },
     { revert: () => Response.json({ status: 422, detail: 'invalid proposal' }, { status: 422 }) },
   )
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
@@ -261,7 +261,7 @@ test('a new proposal, in place of one that waits no more, can be answered', asyn
       return closed(409)
     },
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   await card.findByText('The proposal waits no more: the plan changed, or it expired.')
@@ -292,7 +292,7 @@ test('a saved profile reads the plan again, for the preview', async () => {
       return Response.json(planBody({ pending: step, pending_preview: preview }))
     },
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const form = await screen.findByRole('form', { name: 'Profile' })
   await waitFor(() => {
     expect(reads).toBe(1)
@@ -311,7 +311,7 @@ test('a proposal that cannot be applied any more says so, and may be rejected', 
     { pending: step },
     { apply: () => Response.json({ status: 422, detail: 'invalid proposal' }, { status: 422 }) },
   )
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   expect((await card.findByRole('alert')).textContent).toBe(
@@ -332,7 +332,7 @@ test("an action's answer is its own, not the one before's", async () => {
     [`POST /api/v1/proposals/${step.id}/apply`]: refusal,
     [`POST /api/v1/proposals/${step.id}/reject`]: () => closed(409),
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   await card.findByText('The limits refuse it now:')
@@ -360,7 +360,7 @@ test("a change's date of another year says its year", async () => {
     },
   }
   coachServer({ pending: longer })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   card.getByText('Cut, -0.5% a week, until Dec 31, 2027')
   expect(card.getByText('was Cut, -0.5% a week, until Dec 31')).toBeTruthy()
@@ -386,7 +386,7 @@ test('the current plan shows its numbers, and what is to come', async () => {
     ],
     training_weekdays: ['monday', 'wednesday'],
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const now = within(await screen.findByRole('region', { name: 'Current plan' }))
   now.getByText('Cut, -0.5% a week, goal 80 kg, since Sep 7')
   now.getByText(
@@ -408,7 +408,7 @@ test('a plan that starts tomorrow is one to come', async () => {
       },
     ],
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const now = within(await screen.findByRole('region', { name: 'Current plan' }))
   expect(now.getAllByText('none')).toHaveLength(3)
   now.getByText('From Oct 24: Cut, -0.4% a week')
@@ -417,7 +417,7 @@ test('a plan that starts tomorrow is one to come', async () => {
 
 test('no plan yet says how to get one', async () => {
   coachServer({})
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const now = within(await screen.findByRole('region', { name: 'Current plan' }))
   expect(
     now.getByText(
@@ -429,7 +429,7 @@ test('no plan yet says how to get one', async () => {
 // Training days alone are a plan too: they give each day its type.
 test('a plan of training days alone shows them', async () => {
   coachServer({ training_weekdays: ['monday', 'wednesday'] })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const now = within(await screen.findByRole('region', { name: 'Current plan' }))
   now.getByText('Mon, Wed')
   expect(now.queryByText(/^No plan yet/)).toBeNull()
@@ -469,7 +469,7 @@ function limitsServer(pending: Proposal) {
 
 test('a proposal of the limits shows each, loosened or tightened, and asks before it loosens one', async () => {
   const { applied } = limitsServer(faster)
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   card.getByText('Limit: Cut, fastest loss, BMI below 30')
   card.getByText('1 % a week, loosened')
@@ -501,7 +501,7 @@ test('a proposal of the limits shows each, loosened or tightened, and asks befor
 // question goes, so no apply follows the reject.
 test('a proposal rejected while the loosening is asked closes the question', async () => {
   const { applied } = limitsServer(faster)
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   card.getByRole('button', { name: 'Loosen' })
@@ -516,7 +516,7 @@ test('a proposal that only tightens the limits is accepted without a question', 
     changes: { ...faster.changes, limits: faster.changes.limits.slice(1) },
   }
   const { applied } = limitsServer(tighter)
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   await waitFor(() => {
@@ -550,7 +550,7 @@ test("a limit past the instance's is said in words", async () => {
         }),
       ),
   })
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   expect(
     card.getByText(
@@ -601,7 +601,7 @@ test('taking back a tightened limit says it loosens it, and confirms it', async 
     },
   }
   const { applied } = takeBackServer(tightened, back)
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
   history.getByText('1.8 g/kg, tightened')
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
@@ -628,7 +628,7 @@ test('a take-back that loosens what the question did not say is not confirmed', 
     },
   }
   const { applied } = takeBackServer(tightened, back)
-  renderAt('/settings/plan')
+  renderAt('/plan')
   const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))

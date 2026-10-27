@@ -186,7 +186,7 @@ test('only the settings changed are sent, and the days and the user asked again'
   })
   // The day, asked when it is shown again: its bounds may have moved.
   const days = asked(server.fetch, 'GET /api/v1/days/today')
-  fireEvent.click(screen.getByRole('link', { name: 'Day' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Today' }))
   await waitFor(() => {
     expect(asked(server.fetch, 'GET /api/v1/days/today')).toBeGreaterThan(days)
   })
@@ -251,7 +251,7 @@ test("the notes are the server's, not those a cache kept from before", async () 
     'value',
     'Knees: no running.',
   )
-  fireEvent.click(screen.getByRole('link', { name: 'Day' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Today' }))
   await screen.findByRole('heading', { name: 'Today' })
   // An undo through a model took them back meanwhile.
   server.setNotes('')
@@ -331,7 +331,7 @@ test("notes the server failed to give again are not the cache's", async () => {
   renderAt('/settings')
 
   await screen.findByLabelText('Notes for a coach')
-  fireEvent.click(screen.getByRole('link', { name: 'Day' }))
+  fireEvent.click(screen.getByRole('link', { name: 'Today' }))
   await screen.findByRole('heading', { name: 'Today' })
   server.failMe()
   fireEvent.click(screen.getByRole('link', { name: 'Settings' }))

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { user } from './user.ts'
+import { toSettings, user } from './user.ts'
 
 test('a user signs in, moves between the sections and signs out', async ({ page }) => {
   await page.goto('/settings')
@@ -16,7 +16,7 @@ test('a user signs in, moves between the sections and signs out', async ({ page 
   await sections.getByRole('link', { name: 'Foods' }).click()
   await expect(page.getByRole('heading', { name: 'Foods' })).toBeVisible()
   await expect(page).toHaveURL('/foods')
-  await sections.getByRole('link', { name: 'Settings' }).click()
+  await toSettings(page)
 
   await page.getByRole('button', { name: 'Sign out' }).click()
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()

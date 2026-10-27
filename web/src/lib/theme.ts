@@ -78,3 +78,31 @@ function subscribe(listener: () => void) {
 export function useTheme(): Theme {
   return useSyncExternalStore(subscribe, getTheme)
 }
+
+const darkQuery = '(prefers-color-scheme: dark)'
+
+// The system's scheme, where the browser has a way to ask (jsdom has
+// none).
+function darkMedia(): MediaQueryList | undefined {
+  return typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia(darkQuery) : undefined
+}
+
+function systemDark(): boolean {
+  return darkMedia()?.matches ?? false
+}
+
+function subscribeSystem(listener: () => void) {
+  const media = darkMedia()
+  media?.addEventListener('change', listener)
+  return () => {
+    media?.removeEventListener('change', listener)
+  }
+}
+
+// useDark is whether the page is dark: the theme chosen, or the system's
+// as it changes.
+export function useDark(): boolean {
+  const theme = useTheme()
+  const system = useSyncExternalStore(subscribeSystem, systemDark)
+  return theme === 'dark' || (theme === 'system' && system)
+}

@@ -23,16 +23,18 @@ the list of foods, a new food, the history and the plan, calibration
 `update_profile_notes`, `propose_changes`, `apply_proposal`,
 `reject_proposal`, `revert_proposal` and `undo_last`, the MCP server
 that serves them at `/mcp`, the API contract and the web app's frame
-(signing in and out, its sections, in English and Croatian) with the day
-(what was eaten against the target, the meals, the measurements, and the
-check-in, the measurements, a meal's corrections, a meal logged by hand
-and a meal repeated taken there) and the foods (their list and search, a
-food made, corrected or archived), the charts (ECharts, loaded with
-them) and the settings (the name, language, time zone and day's start,
-the notes for a coach, the API tokens, and the plan: the plan as it
-holds, a proposal that waits, the history of its revisions with a
-revert, a proposal of the limits accepted there alone, the profile and
-the limits) exist.
+(signing in and out, its sections in a bar at the bottom on a phone and
+a sidebar on a desktop, keyboard shortcuts, a light and a dark theme, in
+English and Croatian) with the day (what was eaten against the target,
+the meals, the measurements, and the check-in, the measurements, a
+meal's corrections, a meal logged by hand and a meal repeated taken
+there), the foods (their list and search, a food made, corrected or
+archived), the progress (its charts, ECharts loaded with them), the plan
+(the plan as it holds, a proposal that waits, the history of its
+revisions with a revert, a proposal of the limits accepted there alone,
+the profile and the limits) and the settings (the name, language, time
+zone and day's start, the theme, the notes for a coach, the API tokens)
+exist.
 
 | Path | What |
 | --- | --- |

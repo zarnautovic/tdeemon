@@ -1,13 +1,10 @@
 import { expect, test } from '@playwright/test'
 
-import { signIn } from './user.ts'
+import { signIn, toSettings } from './user.ts'
 
 test("a user's name and notes are set, and a token made and all revoked", async ({ page }) => {
   await signIn(page)
-  await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Settings' })
-    .click()
+  await toSettings(page)
 
   const you = page.getByRole('form', { name: 'You' })
   await you.getByLabel('Name', { exact: true }).fill('Ana M.')
@@ -61,10 +58,7 @@ test("the theme is the system's until one is chosen, and kept in the browser", a
   const body = page.locator('body')
   await expect(body).toHaveCSS('background-color', 'rgb(10, 14, 21)')
 
-  await page
-    .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Settings' })
-    .click()
+  await toSettings(page)
   const theme = page.getByRole('group', { name: 'Appearance' })
   await theme.getByText('Light', { exact: true }).click()
   await expect(body).toHaveCSS('background-color', 'rgb(245, 246, 248)')
