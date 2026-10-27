@@ -134,9 +134,14 @@ test('today shows what was eaten against the target, the meals and the measureme
   expect(within(summary).getByText('Eaten 1,460 of 2,500 kcal, 1,040 left')).toBeDefined()
   expect(macroOf(summary, 'Protein')).toBe('Protein88 / 160 g · 72 to go')
 
-  const meal = within(screen.getByRole('region', { name: 'Meals' })).getByRole('article')
-  expect(within(meal).getByRole('heading').textContent).toBe('8:45 AM Oats with a banana')
-  expect(within(meal).getByText('520 kcal')).toBeDefined()
+  const meals = screen.getByRole('region', { name: 'Meals' })
+  expect(within(meals).getByText('1 · 1,460 kcal')).toBeDefined()
+  const meal = within(meals).getByRole('article', { name: 'Oats with a banana' })
+  // Its row: when, what, its kcal and macros, that a model logged it,
+  // and how many items; a tap shows them.
+  const row = within(meal).getByRole('button', { expanded: false })
+  expect(row.textContent).toBe('8:45 AMOats with a banana520 kcalP 18 · C 92 · F 9AI2 items')
+  fireEvent.click(row)
   const items = within(meal).getAllByRole('listitem')
   expect(items[0]?.textContent).toBe('Oats 80 g300 kcal · P 11 · C 54 · F 6')
   expect(items[1]?.textContent).toContain('Banana bread 1.5 portions')
@@ -145,6 +150,86 @@ test('today shows what was eaten against the target, the meals and the measureme
   expect(within(measurements).getByText('72.5 kg')).toBeDefined()
   expect(within(measurements).getByText('8,042')).toBeDefined()
   expect(within(measurements).getByText('18.2%')).toBeDefined()
+})
+
+test("a model's long list goes under the meal of its hour, which names the row", async () => {
+  const list = 'Rye bread 60 g, two eggs, a tomato and a slice of cheese from the fridge'
+  const [oats] = breakfast.items
+  if (!oats) {
+    throw new Error('the fixture has no items')
+  }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          meals: [{ ...breakfast, description: list, items: [{ ...oats, source: 'estimate' }] }],
+        }),
+      ),
+  })
+
+  renderAt('/')
+
+  // 08:45 on the user's clock: breakfast.
+  const meal = await screen.findByRole('article', { name: 'Breakfast' })
+  const row = within(meal).getByRole('button', { expanded: false })
+  expect(within(row).getByText(list)).toBeDefined()
+  expect(within(row).getByText('AI')).toBeDefined()
+  expect(within(row).getByText('estimate')).toBeDefined()
+  expect(within(row).getByText('1 item')).toBeDefined()
+})
+
+test('a meal is deleted from its row at once, and its toast takes it back', async () => {
+  let meals = [breakfast]
+  const undos: unknown[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () => Response.json(day({ meals })),
+    [`DELETE /api/v1/meals/${breakfast.id}`]: () => {
+      meals = []
+      return Response.json({
+        day: { date: today, status: 'open', type: 'rest', total: day().total },
+      })
+    },
+    'POST /api/v1/undo': async (request) => {
+      undos.push(await request.json())
+      meals = [breakfast]
+      return Response.json({
+        undone: {
+          action: 'meal.delete',
+          entity: breakfast.id,
+          at: breakfast.eaten_at,
+          client: 'web',
+          days: [today],
+        },
+      })
+    },
+  })
+
+  renderAt('/')
+
+  const meal = await screen.findByRole('article', { name: 'Oats with a banana' })
+  fireEvent.click(within(meal).getByRole('button', { expanded: false }))
+  fireEvent.click(within(meal).getByRole('button', { name: 'Delete: Oats with a banana' }))
+
+  expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
+  expect(await screen.findByRole('article', { name: 'Oats with a banana' })).toBeDefined()
+  expect(undos).toEqual([
+    { id: expect.any(String) as unknown, last: { action: 'meal.delete', entity: breakfast.id } },
+  ])
+})
+
+test("today's way to log a meal names the meal of the hour and what is left", async () => {
+  fakeServer(signedIn())
+
+  renderAt('/')
+
+  expect(
+    await screen.findByRole('button', {
+      name: /^Add (breakfast|lunch|a snack|dinner) · 2,500 kcal left$/,
+    }),
+  ).toBeDefined()
 })
 
 test('an item of a named serving says it as it was given, with its weight', async () => {
@@ -166,6 +251,9 @@ test('an item of a named serving says it as it was given, with its weight', asyn
 
   renderAt('/')
 
+  fireEvent.click(
+    within(await screen.findByRole('article')).getByRole('button', { expanded: false }),
+  )
   expect(await screen.findByText('2 šaka (60 g)')).toBeDefined()
   cleanup()
 
@@ -178,6 +266,9 @@ test('an item of a named serving says it as it was given, with its weight', asyn
   })
   renderAt('/')
 
+  fireEvent.click(
+    within(await screen.findByRole('article')).getByRole('button', { expanded: false }),
+  )
   expect(await screen.findByText('0.002 bag (1 g)')).toBeDefined()
 })
 
@@ -196,6 +287,9 @@ test("an amount of portions takes the word's form of the number shown", async ()
 
   renderAt('/')
 
+  fireEvent.click(
+    within(await screen.findByRole('article')).getByRole('button', { expanded: false }),
+  )
   expect(await screen.findByText('1 portion')).toBeDefined()
 })
 

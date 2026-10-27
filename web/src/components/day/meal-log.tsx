@@ -29,12 +29,13 @@ interface Day {
 // amounts, and estimates of whole plates, at a time of the day. Logging
 // through a model stays the main way; this is for when there is none.
 // opening opens it from outside (the app's Log a meal), which onOpened
-// hears of.
+// hears of; label names its button (today's, the meal of the hour).
 export function MealLog({
   opening = false,
   onOpened,
+  label,
   ...day
-}: Day & { opening?: boolean; onOpened?: () => void }) {
+}: Day & { opening?: boolean; onOpened?: () => void; label?: string | undefined }) {
   const t = useMessages()
   const [open, setOpen] = useState(opening)
   // The button takes the focus back when the form closes.
@@ -75,14 +76,14 @@ export function MealLog({
     <Button
       ref={button}
       variant="outline"
-      className="w-full"
+      className="h-13 w-full border-2 border-dashed bg-transparent font-semibold text-primary"
       onClick={() => {
         setOpen(true)
         setClosed(false)
       }}
     >
       <Plus aria-hidden />
-      {t.log.open}
+      {label ?? t.log.open}
     </Button>
   )
 }

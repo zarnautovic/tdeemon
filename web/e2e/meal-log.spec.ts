@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { signIn } from './user.ts'
+import { openMeal, signIn } from './user.ts'
 
 // A day long past, which the other tests leave alone.
 const date = '2025-06-03'
@@ -45,5 +45,6 @@ test('a meal is logged by hand, of a food and an estimate', async ({ page }) => 
   // Two cups of rice, 120 g: 420 kcal, and the curry's 400.
   await expect(dinner).toContainText('820 kcal')
   await expect(dinner).toContainText('7:30 PM')
+  await openMeal(dinner)
   await expect(dinner).toContainText('Curry')
 })

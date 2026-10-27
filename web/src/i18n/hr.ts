@@ -125,6 +125,7 @@ export const hr: Messages = {
     fat: 'Masti',
     short: { protein: 'P', carbs: 'UH', fat: 'M' },
     meals: 'Obroci',
+    mealsTotal: (n: number, kcal: string) => `${String(n)} · ${kcal} kcal`,
     noMeals: 'Još ništa nije upisano.',
     portions: (n: string, count: number) =>
       `${n} ${plural('hr', count, { one: 'porcija', few: 'porcije', other: 'porcija' })}`,
@@ -172,7 +173,16 @@ export const hr: Messages = {
   },
   meal: {
     edit: (what: string) => `Promijeni obrok: ${what}`,
+    change: 'Promijeni',
+    repeatToday: 'Ponovi danas',
+    deleteShort: 'Obriši',
+    deleteOf: (what: string) => `Obriši: ${what}`,
     repeat: (what: string) => `Ponovi danas: ${what}`,
+    slots: { breakfast: 'Doručak', lunch: 'Ručak', snack: 'Užina', dinner: 'Večera' },
+    items: (n: number) =>
+      `${String(n)} ${plural('hr', n, { one: 'stavka', few: 'stavke', other: 'stavki' })}`,
+    ai: 'AI',
+    estimate: 'procjena',
     repeated: 'Upisano ponovo, danas u ovo vrijeme.',
     seeToday: 'Pogledaj danas',
     amount: (name: string) => `Količina: ${name}`,
@@ -213,6 +223,13 @@ export const hr: Messages = {
   },
   log: {
     open: 'Upiši obrok',
+    add: {
+      breakfast: 'Dodaj doručak',
+      lunch: 'Dodaj ručak',
+      snack: 'Dodaj užinu',
+      dinner: 'Dodaj večeru',
+    },
+    left: (kcal: string) => `ostaje ${kcal} kcal`,
     title: 'Novi obrok',
     description: 'Što je bilo',
     descriptionHint: 'Doručak, međuobrok…',

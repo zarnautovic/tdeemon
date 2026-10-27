@@ -149,11 +149,21 @@ function mealServer(answer: Partial<Record<string, Handler>> = {}) {
   return { routes, sent, elsewhere }
 }
 
+// logMeal names the button that logs a meal: today's names the meal of
+// the hour.
+const logMeal =
+  /^(Log a meal|Upiši obrok|Add (breakfast|lunch|a snack|dinner)|Dodaj (doručak|ručak|užinu|večeru))/
+
 function meal() {
   return within(screen.getByRole('article'))
 }
 
+// edit opens the meal's row, unless it is open, and its editor.
 async function edit() {
+  const row = within(await screen.findByRole('article')).queryByRole('button', { expanded: false })
+  if (row) {
+    fireEvent.click(row)
+  }
   fireEvent.click(await screen.findByRole('button', { name: 'Change the meal: Breakfast' }))
 }
 
@@ -553,7 +563,7 @@ test('a meal already gone when its delete is sent again is taken for deleted', a
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-test('the focus goes into the meal when it opens, and back to the pencil', async () => {
+test('the focus goes into the meal when it opens, and back to its row', async () => {
   fakeServer(mealServer().routes)
   renderAt('/')
 
@@ -563,9 +573,7 @@ test('the focus goes into the meal when it opens, and back to the pencil', async
   })
   fireEvent.click(meal().getByRole('button', { name: 'Cancel' }))
   await waitFor(() => {
-    expect(document.activeElement).toBe(
-      meal().getByRole('button', { name: 'Change the meal: Breakfast' }),
-    )
+    expect(document.activeElement).toBe(meal().getByRole('button', { expanded: true }))
   })
 })
 
@@ -995,9 +1003,9 @@ test("a meal's note is shown on its card", async () => {
   fakeServer(server.routes)
   renderAt('/')
 
-  expect(
-    await within(await screen.findByRole('article')).findByText('before the run'),
-  ).toBeDefined()
+  const article = await screen.findByRole('article')
+  fireEvent.click(within(article).getByRole('button', { expanded: false }))
+  expect(await within(article).findByText('before the run')).toBeDefined()
 })
 
 const rye: Food = {
@@ -1839,7 +1847,7 @@ test('an estimate saved as a food is found by a search that was open', async () 
   renderAt('/')
 
   // A meal being logged, its search finding nothing yet.
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   const log = within(screen.getByRole('form', { name: 'A new meal' }))
   fireEvent.change(log.getByLabelText('Find a food of yours'), { target: { value: 'canteen' } })
   expect(await log.findByText('No food of yours matches: give it as an estimate.')).toBeDefined()

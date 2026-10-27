@@ -71,11 +71,16 @@ function composer() {
   return within(screen.getByRole('form', { name: 'A new meal' }))
 }
 
+// logMeal names the button that logs a meal: today's names the meal of
+// the hour, a day before's does not.
+const logMeal =
+  /^(Log a meal|Upiši obrok|Add (breakfast|lunch|a snack|dinner)|Dodaj (doručak|ručak|užinu|večeru))/
+
 test("a meal is logged of a food of the user's and an estimate, at a time of the day", async () => {
   const server = logServer()
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('What it was'), { target: { value: 'Breakfast' } })
   fireEvent.change(composer().getByLabelText('Time'), { target: { value: '08:30' } })
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
@@ -122,7 +127,7 @@ test("another day's meal is at noon, and one past midnight is of the night after
   const server = logServer('2026-10-21')
   renderAt('/?date=2026-10-21')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   expect(composer().getByLabelText('Time')).toHaveProperty('value', '12:00')
   fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
   fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Snack' } })
@@ -143,7 +148,7 @@ test('a meal without items, or with an amount that is no number, is not sent', a
   const server = logServer()
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
   expect(composer().getByRole('alert').textContent).toBe('Add a food or an estimate first.')
 
@@ -163,7 +168,7 @@ test('an amount past what the server takes is said with its bounds, in Croatian,
   const server = logServer('2026-10-23', { ...signedIn('hr') })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Upiši obrok' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   const form = within(screen.getByRole('form', { name: 'Novi obrok' }))
   fireEvent.change(form.getByLabelText('Pronađi svoju namirnicu'), { target: { value: 'rye' } })
   fireEvent.click(await form.findByRole('button', { name: /Rye bread/ }))
@@ -181,7 +186,7 @@ test('a search that finds nothing says to give an estimate, and an item is remov
   logServer()
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'kale' } })
   expect(
     await composer().findByText('No food of yours matches: give it as an estimate.'),
@@ -207,7 +212,7 @@ test('a meal that got no answer is sent again under its id', async () => {
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
@@ -224,7 +229,7 @@ test("a meal the server refuses says why, in the server's words", async () => {
   logServer('2026-10-23', { 'POST /api/v1/meals': () => problem(422) })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
@@ -260,7 +265,7 @@ test("the server's warnings of a logged meal are said", async () => {
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
@@ -277,14 +282,14 @@ test('a day to come has no meal to log', async () => {
   renderAt('/?date=2026-10-25')
 
   expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
-  expect(screen.queryByRole('button', { name: 'Log a meal' })).toBeNull()
+  expect(screen.queryByRole('button', { name: logMeal })).toBeNull()
 })
 
 test('Enter in the search picks the first food, and sends nothing', async () => {
   const server = logServer()
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   const search = composer().getByLabelText('Find a food of yours')
   fireEvent.change(search, { target: { value: 'rye' } })
   await composer().findByRole('button', { name: /Rye bread/ })
@@ -302,7 +307,7 @@ test("today's meal is logged now when its time is left as it was", async () => {
     const server = logServer()
     renderAt('/')
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+    fireEvent.click(await screen.findByRole('button', { name: logMeal }))
     expect(composer().getByLabelText('Time')).toHaveProperty('value', '08:20')
     fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
     fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Tea' } })
@@ -330,7 +335,7 @@ test('a time still to come is not sent, and one of the night after says so', asy
     const server = logServer()
     renderAt('/')
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+    fireEvent.click(await screen.findByRole('button', { name: logMeal }))
     fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
     fireEvent.change(composer().getByLabelText('What it is'), { target: { value: 'Tea' } })
     for (const label of ['Energy (kcal)', 'Protein (g)', 'Carbs (g)', 'Fat (g)']) {
@@ -376,7 +381,7 @@ test('a meal sent without an answer holds still, and goes again as it was', asyn
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
@@ -403,7 +408,7 @@ test('the focus goes into the form, to a food picked, and back to the button', a
   logServer()
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   await waitFor(() => {
     expect(document.activeElement).toBe(composer().getByLabelText('What it was'))
   })
@@ -414,7 +419,7 @@ test('the focus goes into the form, to a food picked, and back to the button', a
   })
   fireEvent.click(composer().getByRole('button', { name: 'Cancel' }))
   await waitFor(() => {
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Log a meal' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: logMeal }))
   })
 })
 
@@ -424,7 +429,7 @@ test("a food's brand tells it apart in the meal", async () => {
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
 
@@ -435,7 +440,7 @@ test('what is wrong with an entry is no longer said once it is removed', async (
   logServer()
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.click(composer().getByRole('button', { name: 'Add an estimate' }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
   expect(composer().getByRole('alert').textContent).toContain('an estimate has a name')
@@ -453,7 +458,7 @@ test('a meal being sent cannot be given up', async () => {
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await composer().findByRole('button', { name: /Rye bread/ }))
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
@@ -477,7 +482,7 @@ test('the word for portions agrees with the amount typed', async () => {
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'stew' } })
   fireEvent.click(await composer().findByRole('button', { name: /Stew/ }))
   const unit = () => composer().getByRole('option', { name: /^portion/ }).textContent
@@ -502,7 +507,7 @@ test('a unit chosen in a new meal works the amount out anew, both ways', async (
   })
   renderAt('/')
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Log a meal' }))
+  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
   fireEvent.change(composer().getByLabelText('Find a food of yours'), { target: { value: 'wal' } })
   fireEvent.click(await composer().findByRole('button', { name: /Walnuts/ }))
   const amount = () => composer().getByLabelText('Amount: Walnuts')

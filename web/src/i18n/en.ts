@@ -134,6 +134,7 @@ export const en = {
     // The macros in a line, short: P 88 · C 146 · F 41.
     short: { protein: 'P', carbs: 'C', fat: 'F' },
     meals: 'Meals',
+    mealsTotal: (n: number, kcal: string) => `${String(n)} · ${kcal} kcal`,
     noMeals: 'Nothing logged yet.',
     portions: (n: string, count: number) =>
       `${n} ${plural('en', count, { one: 'portion', other: 'portions' })}`,
@@ -184,7 +185,16 @@ export const en = {
   },
   meal: {
     edit: (what: string) => `Change the meal: ${what}`,
+    // The visible words of the buttons named above and below.
+    change: 'Change',
+    repeatToday: 'Repeat today',
+    deleteShort: 'Delete',
+    deleteOf: (what: string) => `Delete: ${what}`,
     repeat: (what: string) => `Repeat today: ${what}`,
+    slots: { breakfast: 'Breakfast', lunch: 'Lunch', snack: 'Snack', dinner: 'Dinner' },
+    items: (n: number) => `${String(n)} ${plural('en', n, { one: 'item', other: 'items' })}`,
+    ai: 'AI',
+    estimate: 'estimate',
     repeated: 'Logged again, today at this time.',
     seeToday: 'See it today',
     amount: (name: string) => `Amount: ${name}`,
@@ -226,6 +236,13 @@ export const en = {
   },
   log: {
     open: 'Log a meal',
+    add: {
+      breakfast: 'Add breakfast',
+      lunch: 'Add lunch',
+      snack: 'Add a snack',
+      dinner: 'Add dinner',
+    },
+    left: (kcal: string) => `${kcal} kcal left`,
     title: 'A new meal',
     description: 'What it was',
     descriptionHint: 'Breakfast, a snack…',
