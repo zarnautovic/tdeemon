@@ -911,7 +911,10 @@ the first spec.
     self-hosted (Fontsource). The sections (today, the foods, the
     progress, the plan) are a bar at the bottom on a phone, with Log a
     meal in its middle, and a sidebar from 1024 px, with the settings at
-    its foot; the keyboard has shortcuts (`?` lists them).
+    its foot; the keyboard has shortcuts (`?` lists them). A change says
+    it is done in a toast (Base UI), one at a time, with what the server
+    warned of it and Undo, which takes back that change only (`last`,
+    §5); a delete asks nothing first.
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the charts' page (a chunk of its own), not with
     the app; health-api's validated palette, the charts on its dark cards,

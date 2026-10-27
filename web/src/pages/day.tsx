@@ -9,7 +9,6 @@ import { DayMetrics } from '@/components/day/day-metrics'
 import { DayTotals } from '@/components/day/day-totals'
 import { MealCard } from '@/components/day/meal-card'
 import { MealLog } from '@/components/day/meal-log'
-import { UndoButton } from '@/components/day/undo-button'
 import { LoadError } from '@/components/load-error'
 import { buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
@@ -169,7 +168,6 @@ export function DayPage() {
           metrics={day.data.metrics}
           canLog={!future}
         />
-        <UndoButton key={`undo ${day.data.date}`} date={day.data.date} today={todayDate} />
       </div>
       {!isToday && (
         <Link

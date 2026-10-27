@@ -28,7 +28,7 @@ test('a food is made, found, corrected, archived and brought back', async ({ pag
     .click()
   await page.getByLabel('Energy (kcal)').fill('346')
   await page.getByRole('button', { name: 'Save the food' }).click()
-  await expect(page.getByText('Saved')).toBeVisible()
+  await expect(page.getByText('Saved: Buckwheat')).toBeVisible()
 
   await page.getByRole('button', { name: 'Archive' }).click()
   await expect(

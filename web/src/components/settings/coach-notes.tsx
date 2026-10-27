@@ -7,6 +7,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 import { inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 // maxNotes is the server's bound on the notes (profile.MaxNotesLen).
@@ -20,7 +21,14 @@ export function CoachNotes({ notes }: { notes: string }) {
   const queryClient = useQueryClient()
   const [text, setText] = useState(notes)
   const save = $api.useMutation('put', '/api/v1/me/notes', {
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/me'] }),
+    onSuccess: () => {
+      sayChange(
+        { title: t.toast.notes },
+        // Of no day: after the changes of today's, still on their way.
+        { last: { action: 'notes.set', entity: 'notes' }, date: 'today' },
+      )
+      return queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/me'] })
+    },
   })
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
@@ -47,6 +55,9 @@ export function CoachNotes({ notes }: { notes: string }) {
           setText(e.currentTarget.value)
         }}
       />
+      <Button type="submit" disabled={save.isPending}>
+        {t.settings.save}
+      </Button>
       {save.isError && statusOf(save.error) === 422 ? (
         <p role="alert" className="text-sm text-destructive">
           {t.settings.refused(detailOf(save.error))}
@@ -54,9 +65,6 @@ export function CoachNotes({ notes }: { notes: string }) {
       ) : (
         <SaveStatus change={save} />
       )}
-      <Button type="submit" disabled={save.isPending}>
-        {t.settings.save}
-      </Button>
     </form>
   )
 }

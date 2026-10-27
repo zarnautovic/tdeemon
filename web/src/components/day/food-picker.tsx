@@ -9,8 +9,16 @@ import { cn } from '@/lib/utils'
 
 // FoodPicker finds a food of the user's to add to a meal: what a search
 // finds, each a button that picks it. label names its search, when it is
-// not to add a food.
-export function FoodPicker({ onPick, label }: { onPick: (food: Food) => void; label?: string }) {
+// not to add a food; onSearch hears of what is typed in it.
+export function FoodPicker({
+  onPick,
+  onSearch,
+  label,
+}: {
+  onPick: (food: Food) => void
+  onSearch?: () => void
+  label?: string
+}) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
@@ -32,6 +40,7 @@ export function FoodPicker({ onPick, label }: { onPick: (food: Food) => void; la
         className={inputClass}
         onChange={(event) => {
           setQuery(event.currentTarget.value)
+          onSearch?.()
         }}
         onKeyDown={(event) => {
           // Enter picks the first food found; it does not send the meal.

@@ -156,28 +156,17 @@ test("today's meal repeated needs no way to today", async () => {
   })
 })
 
-test("an undo tapped while another day's repeat is on its way waits for it", async () => {
+test("a repeat's toast takes the repeat back, and no other change", async () => {
   const server = repeatServer()
-  const post = server.routes['POST /api/v1/meals']
-  const answers: (() => void)[] = []
-  // For each undo, whether the repeat had answered when it came.
-  let answered = false
-  const undos: boolean[] = []
+  const undos: unknown[] = []
   fakeServer({
     ...server.routes,
-    'POST /api/v1/meals': async (request) => {
-      await new Promise<void>((resolve) => {
-        answers.push(resolve)
-      })
-      answered = true
-      return post ? post(request) : Response.error()
-    },
-    'POST /api/v1/undo': () => {
-      undos.push(answered)
+    'POST /api/v1/undo': async (request) => {
+      undos.push(await request.json())
       return Response.json({
         undone: {
           action: 'meal.create',
-          entity: breakfast.id,
+          entity: '0193c3a5-0000-7000-8000-0000000000a2',
           at: '2026-10-23T16:00:00Z',
           client: 'web',
           days: [today],
@@ -188,15 +177,15 @@ test("an undo tapped while another day's repeat is on its way waits for it", asy
   renderAt(`/?date=${yesterday}`)
 
   fireEvent.click(await repeat())
-  await waitFor(() => {
-    expect(answers).toHaveLength(1)
-  })
-  fireEvent.click(screen.getByRole('button', { name: 'Undo the latest change' }))
-  answers[0]?.()
+  fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
 
-  // Held behind the repeat: sent once it answered.
-  await waitFor(() => {
-    expect(undos).toEqual([true])
-  })
-  expect(await screen.findByText('Logged again, today at this time.')).toBeDefined()
+  // Taken back on today, which yesterday's page does not show.
+  expect(await screen.findByText('Taken back: a meal logged.')).toBeDefined()
+  expect(screen.getByRole('link', { name: 'See it today' })).toBeDefined()
+  expect(undos).toEqual([
+    {
+      id: expect.any(String) as unknown,
+      last: { action: 'meal.create', entity: '0193c3a5-0000-7000-8000-0000000000a2' },
+    },
+  ])
 })

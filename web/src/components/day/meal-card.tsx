@@ -2,18 +2,19 @@ import { Pencil } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useLogMeal } from '@/api/meals'
-import type { Item, Meal, Warning } from '@/api/types'
+import type { Item, Meal } from '@/api/types'
 import { MealEditor } from '@/components/day/meal-editor'
 import { repeatOf, shownAmount } from '@/components/day/meal-entries'
 import { RepeatButton, RepeatStatus } from '@/components/day/repeat-meal'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { sayChange } from '@/lib/toast'
 
 // MealCard is a meal: when it was eaten and what, its kcal, and each item
 // with how much of it and what it brought. It can be changed (MealEditor),
-// and says what the server warned of the last change; or be repeated,
-// today at this time.
+// or be repeated, today at this time; a toast says what the server warned
+// of either, with Undo.
 export function MealCard({
   meal,
   date,
@@ -34,9 +35,18 @@ export function MealCard({
   // A repeat is today's, but goes in turn with the changes of the day
   // shown, the undo of its page among them: an undo tapped meanwhile
   // takes back the repeat, not the change before it.
-  const repeat = useLogMeal(date)
+  const repeat = useLogMeal(date, (answer) => {
+    sayChange(
+      {
+        title: t.meal.repeated,
+        lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
+        // Today's, which another day's page does not show.
+        to: date === today ? undefined : today,
+      },
+      { last: { action: 'meal.create', entity: answer.meal.id }, date },
+    )
+  })
   const [editing, setEditing] = useState(false)
-  const [warnings, setWarnings] = useState<Warning[]>([])
   // The pencil, which takes the focus back when the editor closes.
   const pencil = useRef<HTMLButtonElement>(null)
   const [closed, setClosed] = useState(false)
@@ -98,7 +108,6 @@ export function MealCard({
               onClick={() => {
                 setEditing(true)
                 setClosed(false)
-                setWarnings([])
               }}
             >
               <Pencil aria-hidden />
@@ -113,10 +122,9 @@ export function MealCard({
           today={today}
           timeZone={timeZone}
           startHour={startHour}
-          onDone={(w) => {
+          onDone={() => {
             setEditing(false)
             setClosed(true)
-            setWarnings(w)
           }}
         />
       ) : (
@@ -141,17 +149,7 @@ export function MealCard({
           </ul>
         </>
       )}
-      <RepeatStatus log={repeat} isToday={date === today} />
-      {warnings.length > 0 && (
-        <output className="block text-sm text-warning">
-          <ul className="space-y-1">
-            {warnings.map((w, i) => (
-              // Two items may bring a warning of one code.
-              <li key={`${w.code} ${String(i)}`}>{t.meal.warnings[w.code]}</li>
-            ))}
-          </ul>
-        </output>
-      )}
+      <RepeatStatus log={repeat} />
     </article>
   )
 }

@@ -7,6 +7,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { reasonOf, useMessages } from '@/i18n/messages'
 import { inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 
 // maxReason is the server's bound on why a day is left out, in
 // characters (day.MaxReasonLen).
@@ -19,7 +20,12 @@ const maxReason = 200
 export function Exclusion({ day }: { day: Day }) {
   const t = useMessages()
   const id = useId()
-  const change = useCheckIn(day.date)
+  const change = useCheckIn(day.date, (answer) => {
+    sayChange(
+      { title: answer.status === 'excluded' ? t.toast.excluded : t.toast.included },
+      { last: { action: 'day.checkin', entity: day.date }, date: day.date },
+    )
+  })
   // The form to give a reason, and the reason typed so far.
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')

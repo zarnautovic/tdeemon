@@ -29,27 +29,42 @@ export function dayScope(date: string) {
   return { id: `day ${date}` }
 }
 
+// Each change below runs done once the server took it, whether the page
+// that made it is still shown or not: what the app says of it (a toast).
+
 // useCheckIn says what the user says of day date (PATCH, the fields given
 // only).
-export function useCheckIn(date: string) {
+export function useCheckIn(date: string, done?: (answer: Day) => void) {
+  const keep = useKeepDay()
   return $api.useMutation('patch', '/api/v1/days/{date}', {
     scope: dayScope(date),
-    onSuccess: useKeepDay(),
+    onSuccess: (answer) => {
+      keep(answer)
+      done?.(answer)
+    },
   })
 }
 
 // useLogMetric stores a measurement of day date of the user's.
-export function useLogMetric(date: string) {
+export function useLogMetric(date: string, done?: (answer: Day) => void) {
+  const keep = useKeepDay()
   return $api.useMutation('put', '/api/v1/days/{date}/metrics/{kind}', {
     scope: dayScope(date),
-    onSuccess: useKeepDay(),
+    onSuccess: (answer) => {
+      keep(answer)
+      done?.(answer)
+    },
   })
 }
 
 // useDeleteMetric deletes a measurement of day date.
-export function useDeleteMetric(date: string) {
+export function useDeleteMetric(date: string, done?: (answer: Day) => void) {
+  const keep = useKeepDay()
   return $api.useMutation('delete', '/api/v1/days/{date}/metrics/{kind}', {
     scope: dayScope(date),
-    onSuccess: useKeepDay(),
+    onSuccess: (answer) => {
+      keep(answer)
+      done?.(answer)
+    },
   })
 }

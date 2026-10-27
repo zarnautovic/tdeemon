@@ -3,6 +3,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import { $api } from './client'
 import { dayScope } from './day'
 import { statusOf } from './errors'
+import type { components } from './schema'
+
+// A meal's change answers with the meal and its day; a delete, the day.
+type MealAnswer = components['schemas']['MealAnswerBody']
+type DeleteAnswer = components['schemas']['DeleteMealOutputBody']
 
 // The days' queries, by the prefix of their keys.
 const days = ['get', '/api/v1/days/{date}']
@@ -10,11 +15,16 @@ const days = ['get', '/api/v1/days/{date}']
 // useLogMeal logs a meal of day date. Its answer has the day's totals but
 // not its meals, so the days are asked again; the meal stands logged once
 // they came. They are when it failed too: without an answer it may have
-// been logged all the same, and the day shows whether it was.
-export function useLogMeal(date: string) {
+// been logged all the same, and the day shows whether it was. Each
+// change here runs done once the server took it, whether the page that
+// made it is still shown or not: what the app says of it (a toast).
+export function useLogMeal(date: string, done?: (answer: MealAnswer) => void) {
   const queryClient = useQueryClient()
   return $api.useMutation('post', '/api/v1/meals', {
     scope: dayScope(date),
+    onSuccess: (answer) => {
+      done?.(answer)
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: days }),
   })
 }
@@ -24,12 +34,13 @@ export function useLogMeal(date: string) {
 // again; the change stands done once they came. So they are for a meal no
 // longer there (404), deleted elsewhere. A change that saved a food asks
 // the foods' searches and lists again too.
-export function useUpdateMeal(date: string) {
+export function useUpdateMeal(date: string, done?: (answer: MealAnswer) => void) {
   const queryClient = useQueryClient()
   return $api.useMutation('patch', '/api/v1/meals/{id}', {
     scope: dayScope(date),
-    onSuccess: (_answer, { body }) =>
-      Promise.all([
+    onSuccess: (answer, { body }) => {
+      done?.(answer)
+      return Promise.all([
         queryClient.invalidateQueries({ queryKey: days }),
         ...(body.ops?.some((op) => op.item?.food !== undefined)
           ? [
@@ -37,7 +48,8 @@ export function useUpdateMeal(date: string) {
               queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods/list'] }),
             ]
           : []),
-      ]),
+      ])
+    },
     onError: (error) =>
       statusOf(error) === 404 ? queryClient.invalidateQueries({ queryKey: days }) : undefined,
   })
@@ -46,20 +58,23 @@ export function useUpdateMeal(date: string) {
 // useDeleteMeal deletes a meal of day date. A meal no longer there (404)
 // was deleted already, by a delete whose answer was lost or elsewhere:
 // the days are asked again all the same.
-export function useDeleteMeal(date: string) {
+export function useDeleteMeal(date: string, done?: (answer: DeleteAnswer) => void) {
   const queryClient = useQueryClient()
   return $api.useMutation('delete', '/api/v1/meals/{id}', {
     scope: dayScope(date),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: days }),
+    onSuccess: (answer) => {
+      done?.(answer)
+      return queryClient.invalidateQueries({ queryKey: days })
+    },
     onError: (error) =>
       statusOf(error) === 404 ? queryClient.invalidateQueries({ queryKey: days }) : undefined,
   })
 }
 
-// useUndo takes back the user's latest change, made anywhere: after the
-// changes of day date made before it. What it took back may be of any
-// day, a food or the notes, so everything is asked again, whatever the
-// answer.
+// useUndo takes back the user's latest change, made anywhere, or the one
+// it names (last) while it is the latest: after the changes of day date
+// made before it. What it took back may be of any day, a food or the
+// notes, so everything is asked again, whatever the answer.
 export function useUndo(date: string) {
   const queryClient = useQueryClient()
   return $api.useMutation('post', '/api/v1/undo', {

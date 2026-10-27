@@ -378,8 +378,8 @@ test('the notes for a coach are shown and saved', async () => {
       { notes: 'Knees: no running.\nNo lactose.' },
     ])
   })
-  // Saved stays said, and the field as typed.
-  expect(await screen.findByText('Saved')).toBeDefined()
+  // A toast says it is saved, and the field stays as typed.
+  expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
   expect(screen.getByLabelText('Notes for a coach')).toHaveProperty(
     'value',
     'Knees: no running.\nNo lactose. ',

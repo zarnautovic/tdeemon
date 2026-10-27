@@ -10,6 +10,7 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 type Profile = components['schemas']['ProfileBody']
@@ -51,6 +52,7 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   const save = $api.useMutation('put', '/api/v1/profile', {
     onSuccess: (answer) => {
       queryClient.setQueryData($api.queryOptions('get', '/api/v1/profile').queryKey, answer)
+      sayChange({ title: t.toast.saved })
       // The limits hold a proposal to the profile: its preview changes.
       void queryClient.invalidateQueries({
         queryKey: $api.queryOptions('get', '/api/v1/plan').queryKey,
@@ -175,6 +177,9 @@ export function ProfileForm({ profile }: { profile: Profile }) {
           ? t.plan.complete
           : t.plan.missing(profile.missing.map((m) => t.plan.missingField[m]).join(', '))}
       </p>
+      <Button type="submit" disabled={save.isPending}>
+        {t.plan.save}
+      </Button>
       {save.isError && statusOf(save.error) === 422 ? (
         <p role="alert" className="text-sm text-destructive">
           {t.plan.refused(detailOf(save.error))}
@@ -182,9 +187,6 @@ export function ProfileForm({ profile }: { profile: Profile }) {
       ) : (
         <SaveStatus change={save} />
       )}
-      <Button type="submit" disabled={save.isPending}>
-        {t.plan.save}
-      </Button>
     </form>
   )
 }
