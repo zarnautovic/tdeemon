@@ -209,8 +209,8 @@ duplicate food would stay in the list.
 | `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`: its window, the one before a phase it may fall back to, and the intake of the 14 days before a boundary that may begin one, 133 days) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
 | `get_history(from?, to?, granularity?)` | coaching: a day or week table of intake against target, the measurements, the trend weight and the TDEE measured up to each day, at most 366 days up to today (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits that hold, the pending proposal and the latest revisions, of the last 365 days and those to come (§8) |
-| `propose_changes(rationale, model?, window?, phases?, targets?, training_weekdays?)` | a change of the plan, held to its rules (no change of the past) and to the limits in the transaction that stores it: one past them is refused (422), each violation an error detail with the rule, the day type, the limit, the value proposed and the level as its value; else it waits, replacing any other, and answers with a preview (each check, the target's weekly kcal and the rate it implies with a trusted TDEE, warnings); applies nothing |
-| `apply_proposal(id)` / `reject_proposal(id)` / `revert_proposal(id, rationale)` | **apply only after explicit user consent**: held to the limits again (422), a proposal that waits no more is a 409, and applied again it answers as it is; recorded with actor and rationale. `revert_proposal` proposes the inverse of an applied one, as `propose_changes` does, while the plan is as it left it and its changes are still to come |
+| `propose_changes(rationale, model?, window?, phases?, targets?, training_weekdays?, limits?)` | a change of the plan, the user's limits among it (by name, applied only in the app), held to its rules (no change of the past) and to the limits in the transaction that stores it: one past them is refused (422), each violation an error detail with the rule, the day type, the limit, the value proposed and the level as its value; else it waits, replacing any other, and answers with a preview (each check, the target's weekly kcal and the rate it implies with a trusted TDEE, warnings); applies nothing |
+| `apply_proposal(id)` / `reject_proposal(id)` / `revert_proposal(id, rationale)` | **apply only after explicit user consent**: held to the limits again (422), a proposal that waits no more is a 409, one that changes the limits applies only in a web session (403 through MCP or a token), with `confirm` for a limit it loosens (409 without; the web app's alone, which MCP neither shows nor takes), and applied again it answers as it is; recorded with actor and rationale. `revert_proposal` proposes the inverse of an applied one, as `propose_changes` does, while the plan is as it left it and its changes are still to come |
 | `update_profile_notes(notes)` | preferences and life context the coach should remember, replaced whole (empty deletes them); undo takes it back |
 | `shopping_list(op, items?)` | |
 
@@ -604,15 +604,15 @@ Claude/ChatGPT subscription.
 
 | layer | who | how often | may change |
 | --- | --- | --- | --- |
-| **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot) | on request, e.g. monthly | phase timeline, target rate, goal/milestone weight, protein g/kg, day-type split, profile notes, later the training program; a change of the user's limits or profile only as a proposal a web session applies |
+| **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot) | on request, e.g. monthly | phase timeline, target rate, goal/milestone weight, protein g/kg, day-type split, profile notes, later the training program; a change of the user's limits only as a proposal a web session applies (the profile the user sets) |
 | **Autopilot** | server, deterministic | weekly check-in | kcal within the user's limits of step and drift, from the calibration verdict (§7) |
 | **Logging** | any client, `fast` model | many times a day | meals, metrics, check-ins — never the plan |
 
 ### Proposals, not direct writes
 
 1. **Propose.** `propose_changes` submits a diff (phases, targets, the
-   training weekdays; later the profile and the limits, which a web
-   session applies) with a rationale and the analysed window. The
+   training weekdays, and the user's limits, which only a web session
+   applies) with a rationale and the analysed window. The
    server validates it and returns a preview: daily targets per day
    type, the expected rate, any guardrail violations. Each change
    carries the plan as it is before it, and keeps the past as it was: a
@@ -625,7 +625,10 @@ Claude/ChatGPT subscription.
    undecided waits, shows in the web app's plan (Settings → Plan) with
    what it changes, its preview by the data now, Accept and Reject, so a
    proposal made in Claude can be accepted in the app, and the morning
-   summary says it waits.
+   summary says it waits. One that changes the user's limits is
+   accepted there alone, after the user's yes in the chat too, and one
+   that loosens a limit asks first, as the limits' form does; taking
+   back a limit a revision tightened says that it loosens it.
 3. **History.** Applied proposals are the revision history: who (user,
    model name, client), when, why, before → after. `revert` creates the
    inverse proposal, each change put back as it was before; applied, it
@@ -639,8 +642,9 @@ Claude/ChatGPT subscription.
    at once (a revert the limits refuse waits, as any proposal).
 4. **Lifetime.** A proposal waits a week for consent, then expires. It
    is superseded when the plan changes under it (any write of a phase,
-   a target or the training weekdays, an applied proposal included), or
-   when a newer proposal replaces it, so one proposal waits at a time
+   a target or the training weekdays, an applied proposal included, and
+   for one that changes the limits, a write of them), or when a newer
+   proposal replaces it, so one proposal waits at a time
    and what it showed is what applies. Undo leaves proposals, as it
    leaves the plan.
 
@@ -669,7 +673,11 @@ it read while researching. So limits are enforced by the server.
   `apply_proposal` (the data or the limits may have changed since the
   proposal), on every autopilot step, and on manual target edits in the
   UI. A proposal of several changes is held as `proposal.Changes.Check`
-  splits it: each phase it sets as a change of the current one, and the
+  splits it: a change of the user's limits against the instance's (one
+  past them a violation of the instance's level, named by the limit),
+  and the rest against the limits as it leaves them, so a faster cut
+  comes with the limit that allows it: each phase it sets as a change of
+  the current one, and the
   target in force from each day it changes one from, against the one in
   force then before, in the phase in force then as it leaves it (a new
   phase starts at the trend weight now, which takes today's weigh-in
@@ -699,9 +707,11 @@ it read while researching. So limits are enforced by the server.
     agreed to.
 - **Out of the AI's reach by construction, not by instruction.** No
   tool changes the limits or the profile they depend on. A coach may
-  propose a change of either (`propose_changes`), but the proposal
-  applies only from an interactive web session (cookie + CSRF), never
-  through `apply_proposal` from a tool or a Bearer token. The settings
+  propose a change of the limits (`propose_changes`), never of the
+  profile, but the proposal applies only from an interactive web session
+  (cookie + CSRF), with the confirmation a loosening takes, as the
+  limits' form asks it, never through `apply_proposal` from a tool or a
+  Bearer token; MCP does not even take the confirmation. The settings
   endpoint takes only a web session too, so not even a leaked MCP token
   can relax them. The API refuses tokens on every operation in its
   OpenAPI document that does not open itself to a scope, so a new
@@ -754,8 +764,8 @@ The coach gets enough to reason with, without raw dumps:
 - `get_plan`: the phase timeline and the target history *with
   outcomes*, i.e. planned vs measured rate and adherence for every
   target period: the intake against the target, and the TDEE and the
-  rate calibration measures of the period's days, leaving out a phase's
-  first 14 as `get_summary` does; the limits that hold; the pending
+  rate calibration measures of the period's days, leaving out the first
+  14 after a change of intake as `get_summary` does; the limits that hold; the pending
   proposal and the latest revisions, each with its changes before and
   after.
 - `get_summary`: the deterministic calibration. The server computes, the

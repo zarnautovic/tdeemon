@@ -5,15 +5,22 @@ import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
 import { sessionQuery } from '@/api/session'
 import { ProposalChanges, type Proposal } from '@/components/plan/proposal-changes'
-import { useViolationText, violationsOf } from '@/components/plan/proposal-text'
+import { useLimitWords, useViolationText, violationsOf } from '@/components/plan/proposal-text'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
+// tightened are the limits a revision tightened, which taking it back
+// loosens.
+function tightened(rev: Proposal): string[] {
+  return rev.changes.limits.filter((ch) => !ch.loosens).map((ch) => ch.name)
+}
+
 // Revisions is the history of the plan: the proposals applied, newest
 // first, each with when, who, why and what it changed. One applied may be
 // taken back in a step: the user, here, consents to the inverse the
-// server makes, which applies at once.
+// server makes, which applies at once. Taking back a limit it tightened
+// loosens it: the question says so, and the answer confirms it.
 export function Revisions({ revisions }: { revisions: Proposal[] }) {
   const t = useMessages()
   const f = useFormat()
@@ -22,6 +29,7 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
   const timeZone = session.data?.user.timezone ?? 'UTC'
   const queryClient = useQueryClient()
   const violation = useViolationText()
+  const limit = useLimitWords()
   // The revision the user is asked about, and the one being taken back.
   const [asking, setAsking] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState<{ id: string; error: unknown } | undefined>(undefined)
@@ -30,16 +38,24 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
   const busy = revert.isPending || apply.isPending
   const r = t.plan.revisions
 
-  async function takeBack(revision: string) {
+  async function takeBack(rev: Proposal) {
     setFailed(undefined)
     try {
       const made = await revert.mutateAsync({
-        params: { path: { id: revision } },
+        params: { path: { id: rev.id } },
         body: { rationale: r.reason },
       })
-      await apply.mutateAsync({ params: { path: { id: made.proposal.id } } })
+      // The user confirmed what the question said it loosens, and no more:
+      // anything else is asked when the revert, waiting, is accepted.
+      const loosens = made.proposal.changes.limits.filter((ch) => ch.loosens)
+      const told = tightened(rev)
+      const confirm = loosens.length > 0 && loosens.every((ch) => told.includes(ch.name))
+      await apply.mutateAsync({
+        params: { path: { id: made.proposal.id } },
+        ...(confirm ? { body: { confirm: true } } : {}),
+      })
     } catch (error) {
-      setFailed({ id: revision, error })
+      setFailed({ id: rev.id, error })
     } finally {
       setAsking(undefined)
       // A revert made but refused when applied waits, as any proposal.
@@ -84,8 +100,13 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
               (asking === rev.id ? (
                 <div className="space-y-2">
                   <p className="text-sm">{r.confirm}</p>
+                  {tightened(rev).length > 0 && (
+                    <p className="text-sm">
+                      {r.loosens(tightened(rev).map(limit.label).join(', '))}
+                    </p>
+                  )}
                   <div className="flex gap-2">
-                    <Button disabled={busy} onClick={() => void takeBack(rev.id)}>
+                    <Button disabled={busy} onClick={() => void takeBack(rev)}>
                       {busy ? t.plan.pending.sending : r.yes}
                     </Button>
                     <Button

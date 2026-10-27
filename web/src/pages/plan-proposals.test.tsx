@@ -40,6 +40,7 @@ const step: Proposal = {
         },
       },
     ],
+    limits: [],
   },
   created_at: '2026-10-23T08:00:00Z',
   expires_at: '2026-10-30T08:00:00Z',
@@ -71,6 +72,7 @@ const sundays: Proposal = {
     phases: [],
     targets: [],
     training_weekdays: { before: ['monday'], after: ['sunday', 'monday'] },
+    limits: [],
   },
   created_at: '2026-10-20T08:00:00Z',
   expires_at: '2026-10-27T08:00:00Z',
@@ -354,6 +356,7 @@ test("a change's date of another year says its year", async () => {
         },
       ],
       targets: [],
+      limits: [],
     },
   }
   coachServer({ pending: longer })
@@ -430,4 +433,193 @@ test('a plan of training days alone shows them', async () => {
   const now = within(await screen.findByRole('region', { name: 'Current plan' }))
   now.getByText('Mon, Wed')
   expect(now.queryByText(/^No plan yet/)).toBeNull()
+})
+
+// faster is a proposal of a faster cut's limit, loosened, and of more
+// protein, tightened.
+const faster: Proposal = {
+  ...step,
+  rationale: 'A faster cut, with more protein.',
+  changes: {
+    phases: [],
+    targets: [],
+    limits: [
+      { name: 'cut_rate', before: -0.7, after: -1, loosens: true },
+      { name: 'protein_floor', before: 1.6, after: 1.8, loosens: false },
+    ],
+  },
+}
+
+// limitsServer serves a plan with pending, and keeps the body of each
+// apply sent.
+function limitsServer(pending: Proposal) {
+  const applied: string[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/profile': () => Response.json({ missing: [] }),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () => Response.json(planBody({ pending })),
+    [`POST /api/v1/proposals/${pending.id}/apply`]: async (r) => {
+      applied.push(await r.text())
+      return Response.json({ proposal: { ...pending, status: 'applied' } })
+    },
+  })
+  return { applied }
+}
+
+test('a proposal of the limits shows each, loosened or tightened, and asks before it loosens one', async () => {
+  const { applied } = limitsServer(faster)
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  card.getByText('Limit: Cut, fastest loss, BMI below 30')
+  card.getByText('1 % a week, loosened')
+  card.getByText('was 0.7 % a week')
+  card.getByText('Limit: Protein, least')
+  card.getByText('1.8 g/kg, tightened')
+  card.getByText('was 1.6 g/kg')
+  card.getByText(
+    'A change of your limits is accepted only here, in the app, never by your AI coach.',
+  )
+
+  // Asked first, the user may go back: nothing is sent.
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  card.getByText(
+    'Loosening Cut, fastest loss, BMI below 30 allows a plan the limit refused. Loosen it?',
+  )
+  fireEvent.click(card.getByRole('button', { name: 'Back' }))
+  expect(card.queryByText(/^Loosening/)).toBeNull()
+  expect(applied).toEqual([])
+
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  fireEvent.click(card.getByRole('button', { name: 'Loosen' }))
+  await waitFor(() => {
+    expect(applied).toEqual(['{"confirm":true}'])
+  })
+})
+
+test('a proposal that only tightens the limits is accepted without a question', async () => {
+  const tighter: Proposal = {
+    ...faster,
+    changes: { ...faster.changes, limits: faster.changes.limits.slice(1) },
+  }
+  const { applied } = limitsServer(tighter)
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  fireEvent.click(card.getByRole('button', { name: 'Accept' }))
+  await waitFor(() => {
+    expect(applied).toEqual([''])
+  })
+  expect(card.queryByText(/^Loosening/)).toBeNull()
+})
+
+// A limit the limits check refuses is named as the page names it.
+test("a limit past the instance's is said in words", async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/profile': () => Response.json({ missing: [] }),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () =>
+      Response.json(
+        planBody({
+          pending: faster,
+          pending_preview: {
+            checks: [
+              {
+                of: 'limits',
+                day: '2026-10-23',
+                warnings: [],
+                violations: [
+                  { rule: 'kcal_floor_male', limit: 1200, proposed: 1100, level: 'instance' },
+                ],
+              },
+            ],
+          },
+        }),
+      ),
+  })
+  renderAt('/settings/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  expect(
+    card.getByText(
+      "Kcal of a day, least, male: 1,100 proposed, the limit 1,200: the instance's limit",
+    ),
+  ).toBeTruthy()
+})
+
+// takeBackServer serves the revision tightened, whose take-back is back,
+// and keeps the body of each apply sent.
+function takeBackServer(tightened: Proposal, back: Proposal) {
+  const applied: string[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/profile': () => Response.json({ missing: [] }),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () => Response.json(planBody({ revisions: [tightened] })),
+    [`POST /api/v1/proposals/${tightened.id}/revert`]: () =>
+      Response.json({ proposal: back, preview: { checks: [] } }, { status: 201 }),
+    [`POST /api/v1/proposals/${back.id}/apply`]: async (r) => {
+      applied.push(await r.text())
+      return Response.json({ proposal: { ...back, status: 'applied' } })
+    },
+  })
+  return { applied }
+}
+
+const tightened: Proposal = {
+  ...sundays,
+  rationale: 'More protein.',
+  changes: {
+    phases: [],
+    targets: [],
+    limits: [{ name: 'protein_floor', before: 1.6, after: 1.8, loosens: false }],
+  },
+}
+
+// Taking back a revision that tightened a limit loosens it: the question
+// says so, and the confirmation goes with it.
+test('taking back a tightened limit says it loosens it, and confirms it', async () => {
+  const back: Proposal = {
+    ...step,
+    reverts: tightened.id,
+    changes: {
+      phases: [],
+      targets: [],
+      limits: [{ name: 'protein_floor', before: 1.8, after: 1.6, loosens: true }],
+    },
+  }
+  const { applied } = takeBackServer(tightened, back)
+  renderAt('/settings/plan')
+  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  history.getByText('1.8 g/kg, tightened')
+  fireEvent.click(history.getByRole('button', { name: 'Take back' }))
+  history.getByText('Taking it back loosens Protein, least, which allows a plan the limit refused.')
+  fireEvent.click(history.getByRole('button', { name: 'Take back' }))
+  await waitFor(() => {
+    expect(applied).toEqual(['{"confirm":true}'])
+  })
+})
+
+// A take-back that loosens more than the question said is not confirmed:
+// it waits, to be asked about as any proposal.
+test('a take-back that loosens what the question did not say is not confirmed', async () => {
+  const back: Proposal = {
+    ...step,
+    reverts: tightened.id,
+    changes: {
+      phases: [],
+      targets: [],
+      limits: [
+        { name: 'cut_rate', before: -0.7, after: -1, loosens: true },
+        { name: 'protein_floor', before: 1.8, after: 1.6, loosens: true },
+      ],
+    },
+  }
+  const { applied } = takeBackServer(tightened, back)
+  renderAt('/settings/plan')
+  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  fireEvent.click(history.getByRole('button', { name: 'Take back' }))
+  fireEvent.click(history.getByRole('button', { name: 'Take back' }))
+  await waitFor(() => {
+    expect(applied).toEqual([''])
+  })
 })

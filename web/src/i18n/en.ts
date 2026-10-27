@@ -495,6 +495,8 @@ export const en = {
       failed: 'It did not go through. Try again.',
       stale:
         'It cannot be applied any more: a change of it would now start before today. Ask for a new one.',
+      limitsHere:
+        'A change of your limits is accepted only here, in the app, never by your AI coach.',
       average: (from: string, kcal: string) => `From ${from}: ${kcal} kcal a day on average`,
       rate: (pct: string, kg: string) => `, ${pct} a week (${kg} kg)`,
     },
@@ -517,6 +519,9 @@ export const en = {
       day: (kcal: string, protein: string, carbs: string, fat: string) =>
         `${kcal} kcal · P ${protein} g · C ${carbs} g · F ${fat} g`,
       was: (what: string) => `was ${what}`,
+      limit: (name: string) => `Limit: ${name}`,
+      loosened: 'loosened',
+      tightened: 'tightened',
     },
     revisions: {
       title: 'History of the plan',
@@ -525,6 +530,8 @@ export const en = {
       reverted: 'Taken back',
       revert: 'Take back',
       confirm: 'Take this change back, from now on?',
+      loosens: (names: string) =>
+        `Taking it back loosens ${names}, which allows a plan the limit refused.`,
       yes: 'Take back',
       no: 'Keep it',
       reason: 'Taken back in the app.',

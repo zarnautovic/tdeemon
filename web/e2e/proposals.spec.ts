@@ -71,3 +71,38 @@ test('a proposed change is accepted in the app, and taken back from its history'
   expect((await page.request.put('/api/v1/profile', { data: {} })).ok()).toBe(true)
   expect((await page.request.delete('/api/v1/days/today/metrics/weight')).ok()).toBe(true)
 })
+
+test('a proposed change of the limits is accepted in the app, once the user loosens it', async ({
+  page,
+}) => {
+  await signIn(page)
+  const made = await page.request.post('/api/v1/proposals', {
+    data: {
+      rationale: 'A faster cut, made up for the end-to-end tests.',
+      model: 'claude-opus-5-5',
+      limits: { cut_rate: -1 },
+    },
+  })
+  expect(made.status()).toBe(201)
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('link', { name: 'Settings' })
+    .click()
+  await page.getByRole('link', { name: /^Plan/ }).click()
+
+  const card = page.getByRole('region', { name: 'A proposed change' })
+  await expect(card.getByText('Limit: Cut, fastest loss, BMI below 30')).toBeVisible()
+  await expect(card.getByText('1 % a week, loosened')).toBeVisible()
+  await card.getByRole('button', { name: 'Accept' }).click()
+  await card.getByRole('button', { name: 'Loosen' }).click()
+  await expect(card).toBeHidden()
+  const limits = page.getByRole('form', { name: 'Limits of the plan' })
+  await expect(
+    limits.getByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ }),
+  ).toHaveValue('1')
+
+  // The limit as it was, for the other tests.
+  expect(
+    (await page.request.put('/api/v1/limits', { data: { limits: { cut_rate: -0.7 } } })).ok(),
+  ).toBe(true)
+})
