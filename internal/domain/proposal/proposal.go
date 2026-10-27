@@ -1,10 +1,11 @@
 // Package proposal defines a proposed change of the plan: the phases, the
-// targets and the training weekdays as a coach or the user would leave
-// them, each with its state before, why, and the days it was drawn from;
-// and its life, from pending to applied, rejected, expired or superseded,
-// and an applied one's revert. A change of the plan is a proposal the
-// user consents to; applied ones are the plan's revisions (DESIGN.md §8).
-// The limits a change must keep are another package's (limits.Validate).
+// targets, the training weekdays and the user's limits as a coach or the
+// user would leave them, each with its state before, why, and the days it
+// was drawn from; and its life, from pending to applied, rejected, expired
+// or superseded, and an applied one's revert. A change of the plan is a
+// proposal the user consents to; applied ones are the plan's revisions
+// (DESIGN.md §8). The limits a change must keep are another package's
+// (limits.Validate).
 package proposal
 
 import (
@@ -16,6 +17,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/text"
 )
@@ -68,6 +70,15 @@ type WeekdaysChange struct {
 	Before, After plan.Weekdays
 }
 
+// LimitChange is a change of the user's limit Name (limits.Fields):
+// Before is the limit as it is, and After as the change leaves it. Only
+// a web session applies it, as only a web session changes the limits
+// (DESIGN.md §8).
+type LimitChange struct {
+	Name          string
+	Before, After float64
+}
+
 // Changes are what a proposal changes of the plan. The proposer names
 // what it leaves (After); the store fills in each Before from the plan
 // as it is.
@@ -75,19 +86,23 @@ type Changes struct {
 	Phases           []PhaseChange
 	Targets          []TargetChange
 	TrainingWeekdays *WeekdaysChange
+	Limits           []LimitChange
 }
 
 // Validate reports every rule the changes break, joined into one error,
-// today being the user's day and phases the timeline before them, in the
-// order the phases start: each change is of the shape of what it
-// changes, changes something, and keeps the past as it was. A target
-// takes effect from today on; a phase starts from today on, unless it
-// is an edit of the phase that has started, which keeps its type and
-// every day it has had up to yesterday, and a phase that ended, on its
-// planned end or as the next one started, stays as it is. The timeline
-// the changes leave is the store's to check (Timeline).
-func (c Changes) Validate(today day.Date, phases []plan.Phase) error {
-	if len(c.Phases) == 0 && len(c.Targets) == 0 && c.TrainingWeekdays == nil {
+// today being the user's day, phases the timeline before them, in the
+// order the phases start, and user the user's limits before them: each
+// change is of the shape of what it changes, changes something, and
+// keeps the past as it was. A target takes effect from today on; a
+// phase starts from today on, unless it is an edit of the phase that has
+// started, which keeps its type and every day it has had up to
+// yesterday, and a phase that ended, on its planned end or as the next
+// one started, stays as it is. A limit is one of limits.Fields, and the
+// limits the changes leave keep their rules (limits.Limits.Validate).
+// The timeline the changes leave is the store's to check (Timeline), and
+// how the limits they leave stand to the instance's is Check's.
+func (c Changes) Validate(today day.Date, phases []plan.Phase, user limits.Limits) error {
+	if len(c.Phases) == 0 && len(c.Targets) == 0 && c.TrainingWeekdays == nil && len(c.Limits) == 0 {
 		return errors.New("the proposal changes nothing")
 	}
 	var errs []error
@@ -116,7 +131,60 @@ func (c Changes) Validate(today day.Date, phases []plan.Phase) error {
 			errs = append(errs, errors.New("the training weekdays are already so"))
 		}
 	}
-	return errors.Join(errs...)
+	return errors.Join(append(errs, c.validateLimits(user))...)
+}
+
+// validateLimits reports the rules the changes of the limits break: a
+// limit of no name, one changed twice or to what it is, and limits left
+// that break theirs, user being the limits before them.
+func (c Changes) validateLimits(user limits.Limits) error {
+	if len(c.Limits) == 0 {
+		return nil
+	}
+	var errs []error
+	seen := map[string]bool{}
+	for _, ch := range c.Limits {
+		switch _, ok := limits.FieldNamed(ch.Name); {
+		case !ok:
+			errs = append(errs, fmt.Errorf("no limit %q", ch.Name))
+		case seen[ch.Name]:
+			errs = append(errs, fmt.Errorf("the limit %s twice", ch.Name))
+		case ch.After == ch.Before:
+			errs = append(errs, fmt.Errorf("the limit %s is already so", ch.Name))
+		}
+		seen[ch.Name] = true
+	}
+	if errs != nil {
+		return errors.Join(errs...)
+	}
+	if err := c.LimitsOf(user).Validate(); err != nil {
+		return fmt.Errorf("the limits it leaves: %w", err)
+	}
+	return nil
+}
+
+// LimitsOf returns the user's limits user as the changes leave them: each
+// limit they change as it leaves it. A name of no limit changes nothing.
+func (c Changes) LimitsOf(user limits.Limits) limits.Limits {
+	for _, ch := range c.Limits {
+		if f, ok := limits.FieldNamed(ch.Name); ok {
+			f.Set(&user, ch.After)
+		}
+	}
+	return user
+}
+
+// Loosened lists the limits the changes loosen, in their order: those
+// whose value they leave looser than it was. Applying them takes the
+// user's confirmation, as a change of the limits in a web session does.
+func (c Changes) Loosened() []string {
+	var out []string
+	for _, ch := range c.Limits {
+		if f, ok := limits.FieldNamed(ch.Name); ok && f.Looser(ch.After, ch.Before) {
+			out = append(out, ch.Name)
+		}
+	}
+	return out
 }
 
 func (ch PhaseChange) validate(today day.Date, phases []plan.Phase) error {
@@ -209,6 +277,9 @@ func (c Changes) Inverse() Changes {
 	}
 	if w := c.TrainingWeekdays; w != nil {
 		out.TrainingWeekdays = &WeekdaysChange{Before: w.After, After: w.Before}
+	}
+	for _, ch := range c.Limits {
+		out.Limits = append(out.Limits, LimitChange{Name: ch.Name, Before: ch.After, After: ch.Before})
 	}
 	return out
 }

@@ -828,17 +828,27 @@ func (db *DB) UpdateUserLimits(ctx context.Context, userID uuid.UUID, a event.Ac
 		if names := limits.Beyond(next, instance); names != nil {
 			return fmt.Errorf("%w: %s", ErrLimitsBeyond, strings.Join(names, ", "))
 		}
-		after := limitsStateOf(next)
-		if err := putLimits(ctx, tx, userID, after, now); err != nil {
-			return err
-		}
-		_, err = record(ctx, tx, userID, a, event.LimitsSet, limitsEntity, before, after, now)
-		return err
+		return setLimitsIn(ctx, tx, userID, a, before, next, now)
 	})
 	if err != nil {
 		return limits.Limits{}, fmt.Errorf("set user limits: %w", err)
 	}
 	return next, nil
+}
+
+// setLimitsIn stores next, which keeps its rules, as userID's limits in
+// tx, those before being before, as a's event, and when they changed,
+// supersedes the user's pending proposals that change the limits.
+func setLimitsIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, before limitsState, next limits.Limits, now time.Time) error {
+	after := limitsStateOf(next)
+	if err := putLimits(ctx, tx, userID, after, now); err != nil {
+		return err
+	}
+	id, err := record(ctx, tx, userID, a, event.LimitsSet, limitsEntity, before, after, now)
+	if err != nil || id == uuid.Nil() {
+		return err
+	}
+	return supersedeLimitsProposals(ctx, tx, userID, a, now)
 }
 
 // notesState is the state of the notes for a coach, nil for none.

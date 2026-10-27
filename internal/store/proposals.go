@@ -14,6 +14,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 )
@@ -70,11 +71,20 @@ type weekdaysChangeState struct {
 	After  int `json:"after"`
 }
 
-// changesState is what a proposal changes.
+// limitChangeState is a change of the user's limit Name.
+type limitChangeState struct {
+	Name   string  `json:"name"`
+	Before float64 `json:"before"`
+	After  float64 `json:"after"`
+}
+
+// changesState is what a proposal changes. A proposal made before the
+// limits could be proposed has no "limits".
 type changesState struct {
 	Phases           []phaseChangeState   `json:"phases"`
 	Targets          []targetChangeState  `json:"targets"`
 	TrainingWeekdays *weekdaysChangeState `json:"training_weekdays"`
+	Limits           []limitChangeState   `json:"limits"`
 }
 
 func changesStateOf(c proposal.Changes) changesState {
@@ -90,7 +100,7 @@ func changesStateOf(c proposal.Changes) changesState {
 		}
 		return &targetValues{Training: dayTargetStateOf(t.Training), Rest: dayTargetStateOf(t.Rest)}
 	}
-	s := changesState{Phases: []phaseChangeState{}, Targets: []targetChangeState{}}
+	s := changesState{Phases: []phaseChangeState{}, Targets: []targetChangeState{}, Limits: []limitChangeState{}}
 	for _, ch := range c.Phases {
 		s.Phases = append(s.Phases, phaseChangeState{Start: ch.Start.String(), Before: phase(ch.Before), After: phase(ch.After)})
 	}
@@ -99,6 +109,9 @@ func changesStateOf(c proposal.Changes) changesState {
 	}
 	if w := c.TrainingWeekdays; w != nil {
 		s.TrainingWeekdays = &weekdaysChangeState{Before: int(w.Before), After: int(w.After)}
+	}
+	for _, ch := range c.Limits {
+		s.Limits = append(s.Limits, limitChangeState{Name: ch.Name, Before: ch.Before, After: ch.After})
 	}
 	return s
 }
@@ -144,6 +157,9 @@ func (s changesState) changes() (proposal.Changes, error) {
 			Before: plan.Weekdays(w.Before), //nolint:gosec // G115: a check of the shape refuses what is no set of weekdays
 			After:  plan.Weekdays(w.After),  //nolint:gosec // G115: as above
 		}
+	}
+	for _, ch := range s.Limits {
+		c.Limits = append(c.Limits, proposal.LimitChange{Name: ch.Name, Before: ch.Before, After: ch.After})
 	}
 	return c, nil
 }
@@ -463,6 +479,11 @@ func changedSince(c, back proposal.Changes) error {
 	if w := c.TrainingWeekdays; w != nil && w.Before != back.TrainingWeekdays.Before {
 		return errors.New("the training weekdays changed since the proposal")
 	}
+	for i, ch := range c.Limits {
+		if ch.Before != back.Limits[i].Before {
+			return fmt.Errorf("the limit %s changed since the proposal", ch.Name)
+		}
+	}
 	return nil
 }
 
@@ -478,7 +499,11 @@ func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event
 	if err != nil {
 		return proposal.Proposal{}, err
 	}
-	if err := c.Validate(today, phases); err != nil {
+	user, err := limitsOf(ctx, tx, userID)
+	if err != nil {
+		return proposal.Proposal{}, err
+	}
+	if err := c.Validate(today, phases, user.limits()); err != nil {
 		return proposal.Proposal{}, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
 	}
 	if err := plan.ValidateTimeline(c.Timeline(phases)); err != nil {
@@ -520,9 +545,9 @@ func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event
 	return after.proposal(id.String(), now)
 }
 
-// planBefore returns c, in the order of each change's day, with the plan
-// as it is before each change: userID's phase, target and training
-// weekdays in tx.
+// planBefore returns c, in the order of each change's day and of the
+// limits (limits.Fields), with the plan as it is before each change:
+// userID's phase, target, training weekdays and limits in tx.
 func planBefore(ctx context.Context, tx *sql.Tx, userID uuid.UUID, c proposal.Changes) (proposal.Changes, error) {
 	var out proposal.Changes
 	for _, ch := range c.Phases {
@@ -569,7 +594,40 @@ func planBefore(ctx context.Context, tx *sql.Tx, userID uuid.UUID, c proposal.Ch
 			After:  w.After,
 		}
 	}
+	if len(c.Limits) > 0 {
+		s, err := limitsOf(ctx, tx, userID)
+		if err != nil {
+			return proposal.Changes{}, err
+		}
+		out.Limits = limitsBefore(c.Limits, s.limits())
+	}
 	return out, nil
+}
+
+// limitsBefore returns changes, in the order of the limits, each with the
+// limit as it is in user before it; a name of no limit, which Validate
+// refuses, comes last, before 0.
+func limitsBefore(changes []proposal.LimitChange, user limits.Limits) []proposal.LimitChange {
+	order := map[string]int{}
+	for i, f := range limits.Fields() {
+		order[f.Name] = i + 1
+	}
+	rank := func(name string) int {
+		if i, ok := order[name]; ok {
+			return i
+		}
+		return len(order) + 1
+	}
+	out := make([]proposal.LimitChange, 0, len(changes))
+	for _, ch := range changes {
+		lc := proposal.LimitChange{Name: ch.Name, After: ch.After}
+		if f, ok := limits.FieldNamed(ch.Name); ok {
+			lc.Before = f.Get(user)
+		}
+		out = append(out, lc)
+	}
+	slices.SortStableFunc(out, func(a, b proposal.LimitChange) int { return rank(a.Name) - rank(b.Name) })
+	return out
 }
 
 // RejectProposal rejects userID's pending proposal id, as a's decision,
@@ -694,7 +752,11 @@ func changedUnder(ctx context.Context, tx *sql.Tx, userID uuid.UUID, p proposal.
 	if err != nil {
 		return false, err
 	}
-	if err := p.Changes.Validate(today, phases); err != nil {
+	user, err := limitsOf(ctx, tx, userID)
+	if err != nil {
+		return false, err
+	}
+	if err := p.Changes.Validate(today, phases, user.limits()); err != nil {
 		return false, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
 	}
 	return false, nil
@@ -727,6 +789,15 @@ func applyChanges(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 	}
 	if w := c.TrainingWeekdays; w != nil {
 		if err := setWeekdaysIn(ctx, tx, userID, a, w.After, now); err != nil {
+			return err
+		}
+	}
+	if len(c.Limits) > 0 {
+		before, err := limitsOf(ctx, tx, userID)
+		if err != nil {
+			return err
+		}
+		if err := setLimitsIn(ctx, tx, userID, a, before, c.LimitsOf(before.limits()), now); err != nil {
 			return err
 		}
 	}
@@ -795,6 +866,32 @@ func supersedeProposals(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a eve
 		return err
 	}
 	for _, id := range ids {
+		if err := closeProposal(ctx, tx, userID, a, id, proposal.Superseded, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// supersedeLimitsProposals marks userID's pending proposals that change
+// the limits superseded by a at now: the limits before them hold no more.
+func supersedeLimitsProposals(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, now time.Time) error {
+	ids, err := pendingProposals(ctx, tx, userID, now)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		s, err := proposalOf(ctx, tx, userID, id)
+		if err != nil {
+			return err
+		}
+		var cs changesState
+		if err := json.Unmarshal(s.Changes, &cs); err != nil {
+			return fmt.Errorf("the changes of proposal %s: %w", id, err)
+		}
+		if len(cs.Limits) == 0 {
+			continue
+		}
 		if err := closeProposal(ctx, tx, userID, a, id, proposal.Superseded, now); err != nil {
 			return err
 		}

@@ -108,13 +108,13 @@ func wantStatus(t *testing.T, db *store.DB, userID, id uuid.UUID, now time.Time,
 	}
 }
 
-// wantDecided fails t unless userID's proposal id is in status, decided
-// by a at at.
-func wantDecided(t *testing.T, db *store.DB, userID, id uuid.UUID, status proposal.Status, a event.Actor, at time.Time) {
+// wantSuperseded fails t unless userID's proposal id is superseded, by a
+// at at.
+func wantSuperseded(t *testing.T, db *store.DB, userID, id uuid.UUID, a event.Actor, at time.Time) {
 	t.Helper()
 	p := getProposal(t, db, userID, id, at)
-	if p.Status != status || p.DecidedBy != a || !p.DecidedAt.Equal(at) {
-		t.Errorf("the proposal is %s, decided by %+v at %s; want it %s, by %+v at %s", p.Status, p.DecidedBy, p.DecidedAt, status, a, at)
+	if p.Status != proposal.Superseded || p.DecidedBy != a || !p.DecidedAt.Equal(at) {
+		t.Errorf("the proposal is %s, decided by %+v at %s; want it superseded, by %+v at %s", p.Status, p.DecidedBy, p.DecidedAt, a, at)
 	}
 }
 
@@ -280,7 +280,7 @@ func TestANewProposalSupersedesThePending(t *testing.T) {
 	later := t0.Add(time.Hour)
 	second := propose(t, db, ana, coachDraft(t), later)
 
-	wantDecided(t, db, ana, first.ID, proposal.Superseded, coachActor, later)
+	wantSuperseded(t, db, ana, first.ID, coachActor, later)
 	wantStatus(t, db, ana, second.ID, later, proposal.Pending)
 	if got := eventActions(t, db, ana, 2); !reflect.DeepEqual(got, []event.Action{event.ProposalCreate, event.ProposalStatus}) {
 		t.Errorf("the events = %v", got)
@@ -419,7 +419,7 @@ func TestAChangeOfThePlanSupersedesThePending(t *testing.T) {
 			if tc.stays {
 				wantStatus(t, db, ana, p.ID, t0, proposal.Pending)
 			} else {
-				wantDecided(t, db, ana, p.ID, proposal.Superseded, testActor, t0)
+				wantSuperseded(t, db, ana, p.ID, testActor, t0)
 			}
 			wantStatus(t, db, ivo, ivos.ID, t0, proposal.Pending)
 		})
@@ -599,7 +599,7 @@ func TestApplyProposalUnderAChangedPlan(t *testing.T) {
 	exec(t, db, "UPDATE plan_settings SET training_weekdays = 1 WHERE user_id = ?", ana.String())
 	_, err := db.ApplyProposal(t.Context(), ana, testActor, p.ID, day.DateOf(t0), t0, nil)
 	wantClosed(t, err, proposal.Superseded)
-	wantDecided(t, db, ana, p.ID, proposal.Superseded, testActor, t0)
+	wantSuperseded(t, db, ana, p.ID, testActor, t0)
 	if got, _ := db.Phases(t.Context(), ana); len(got) != 1 || got[0].RatePctWeek != -0.5 {
 		t.Errorf("Phases = %+v, want them as they were", got)
 	}

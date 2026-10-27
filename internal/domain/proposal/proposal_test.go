@@ -1,12 +1,15 @@
 package proposal
 
 import (
+	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 )
 
@@ -68,10 +71,15 @@ func TestChangesValidate(t *testing.T) {
 		{"a target ahead deleted", Changes{Targets: []TargetChange{{From: date(t, "2026-11-02"), Before: target(t, "2026-11-02", 2100)}}}},
 		{"the training weekdays", Changes{TrainingWeekdays: &WeekdaysChange{Before: 0b0101010, After: 0b0010101}}},
 		{"none", Changes{TrainingWeekdays: &WeekdaysChange{Before: 0b0101010, After: 0}}},
+		{"a limit loosened", Changes{Limits: []LimitChange{{Name: "cut_rate", Before: -0.7, After: -1.0}}}},
+		{"a limit tightened, another loosened", Changes{Limits: []LimitChange{
+			{Name: "protein_floor", Before: 1.6, After: 1.8},
+			{Name: "kcal_floor_male", Before: 1500, After: 1400},
+		}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if err := tc.c.Validate(today, timeline); err != nil {
+			if err := tc.c.Validate(today, timeline, limits.UserDefaults()); err != nil {
 				t.Errorf("Validate = %v", err)
 			}
 		})
@@ -169,10 +177,31 @@ func TestChangesValidateRefuses(t *testing.T) {
 		},
 		{"weekdays of no week", Changes{TrainingWeekdays: &WeekdaysChange{After: 0b10000000}}, "want only the bits"},
 		{"the weekdays as they are", Changes{TrainingWeekdays: &WeekdaysChange{Before: 0b0101010, After: 0b0101010}}, "the training weekdays are already so"},
+		{"a limit of no name", Changes{Limits: []LimitChange{{Name: "speed", After: 1}}}, `no limit "speed"`},
+		{"a limit twice", Changes{Limits: []LimitChange{
+			{Name: "cut_rate", Before: -0.7, After: -1.0},
+			{Name: "cut_rate", Before: -0.7, After: -0.9},
+		}}, "the limit cut_rate twice"},
+		{"a limit as it is", Changes{Limits: []LimitChange{{Name: "cut_rate", Before: -0.7, After: -0.7}}}, "the limit cut_rate is already so"},
+		{
+			"a limit that is no number",
+			Changes{Limits: []LimitChange{{Name: "drift_pct", Before: 15, After: math.NaN()}}},
+			"the limits it leaves: drift_pct NaN: want a number",
+		},
+		{
+			"a minimum past its maximum",
+			Changes{Limits: []LimitChange{{Name: "recomp_min", Before: -0.5, After: 0.5}}},
+			"the limits it leaves: recomp_min 0.5: want at most recomp_max 0.25",
+		},
+		{
+			"a limit past the code's",
+			Changes{Limits: []LimitChange{{Name: "cut_rate", Before: -0.7, After: -2}}},
+			"cut_rate -2: want at least -1.5, the floor in the code",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := tc.c.Validate(today, timeline)
+			err := tc.c.Validate(today, timeline, limits.UserDefaults())
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("Validate = %v, want %q", err, tc.want)
 			}
@@ -188,10 +217,10 @@ func TestChangesValidateAsTheNextPhaseStarts(t *testing.T) {
 	next := &plan.Phase{Type: plan.Maintain, Start: date(t, "2026-10-27")}
 	c := Changes{Phases: []PhaseChange{{Start: current.Start, Before: current, After: cut(t, "2026-09-07", "", -0.7)}}}
 	timeline := []plan.Phase{*current, *next}
-	if err := c.Validate(date(t, "2026-10-26"), timeline); err != nil {
+	if err := c.Validate(date(t, "2026-10-26"), timeline, limits.UserDefaults()); err != nil {
 		t.Errorf("Validate the day before = %v", err)
 	}
-	if err := c.Validate(date(t, "2026-10-27"), timeline); err == nil || !strings.Contains(err.Error(), "ended on 2026-10-26") {
+	if err := c.Validate(date(t, "2026-10-27"), timeline, limits.UserDefaults()); err == nil || !strings.Contains(err.Error(), "ended on 2026-10-26") {
 		t.Errorf("Validate as the next starts = %v", err)
 	}
 }
@@ -206,17 +235,45 @@ func TestChangesInverse(t *testing.T) {
 		Phases:           []PhaseChange{{Start: current.Start, Before: current, After: faster}, {Start: bulk.Start, After: bulk}},
 		Targets:          []TargetChange{{From: from, Before: target(t, "2026-11-02", 2100)}},
 		TrainingWeekdays: &WeekdaysChange{Before: 0b0101010, After: 0b0010101},
+		Limits:           []LimitChange{{Name: "cut_rate", Before: -0.7, After: -1.0}},
 	}
 	want := Changes{
 		Phases:           []PhaseChange{{Start: current.Start, Before: faster, After: current}, {Start: bulk.Start, Before: bulk}},
 		Targets:          []TargetChange{{From: from, After: target(t, "2026-11-02", 2100)}},
 		TrainingWeekdays: &WeekdaysChange{Before: 0b0010101, After: 0b0101010},
+		Limits:           []LimitChange{{Name: "cut_rate", Before: -1.0, After: -0.7}},
 	}
 	if got := c.Inverse(); !reflect.DeepEqual(got, want) {
 		t.Errorf("Inverse = %+v, want %+v", got, want)
 	}
 	if got := (Changes{}).Inverse(); !reflect.DeepEqual(got, Changes{}) {
 		t.Errorf("the inverse of nothing = %+v", got)
+	}
+}
+
+// The limits a proposal leaves are the user's with each it changes as it
+// leaves it, and it loosens those whose value it leaves looser.
+func TestChangesLimits(t *testing.T) {
+	t.Parallel()
+
+	c := Changes{Limits: []LimitChange{
+		{Name: "cut_rate", Before: -0.7, After: -1.0},
+		{Name: "protein_floor", Before: 1.6, After: 1.8},
+		{Name: "speed", Before: 1, After: 2},
+	}}
+	want := limits.UserDefaults()
+	want.CutRate, want.ProteinFloor = -1.0, 1.8
+	if got := c.LimitsOf(limits.UserDefaults()); got != want {
+		t.Errorf("LimitsOf = %+v, want %+v", got, want)
+	}
+	if got := c.Loosened(); !slices.Equal(got, []string{"cut_rate"}) {
+		t.Errorf("Loosened = %v, want cut_rate", got)
+	}
+	if got := (Changes{}).LimitsOf(limits.UserDefaults()); got != limits.UserDefaults() {
+		t.Errorf("the limits nothing leaves = %+v", got)
+	}
+	if got := (Changes{}).Loosened(); got != nil {
+		t.Errorf("nothing loosens %v", got)
 	}
 }
 

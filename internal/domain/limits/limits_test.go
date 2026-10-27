@@ -190,6 +190,28 @@ func TestFields(t *testing.T) {
 	}
 }
 
+// A limit is found by its name, and says which of two values is looser.
+func TestFieldNamed(t *testing.T) {
+	t.Parallel()
+
+	for _, f := range Fields() {
+		if got, ok := FieldNamed(f.Name); !ok || got.Name != f.Name {
+			t.Errorf("FieldNamed(%s) = %+v, %v", f.Name, got, ok)
+		}
+	}
+	if _, ok := FieldNamed("speed"); ok {
+		t.Error("FieldNamed(speed) found a limit")
+	}
+	cut, _ := FieldNamed("cut_rate")
+	bulk, _ := FieldNamed("bulk_rate")
+	switch {
+	case !cut.Looser(-1.0, -0.7), cut.Looser(-0.5, -0.7), cut.Looser(-0.7, -0.7):
+		t.Error("cut_rate: a faster loss is the looser")
+	case !bulk.Looser(0.5, 0.25), bulk.Looser(0.2, 0.25):
+		t.Error("bulk_rate: a faster gain is the looser")
+	}
+}
+
 func TestStep(t *testing.T) {
 	t.Parallel()
 

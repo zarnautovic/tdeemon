@@ -17,12 +17,14 @@ const (
 	OfPhase            Of = "phase"
 	OfTarget           Of = "target"
 	OfTrainingWeekdays Of = "training_weekdays"
+	OfLimits           Of = "limits"
 )
 
 // Checked is one check of a proposal's changes against the limits: of the
 // phase it sets from Day, of the target in force from Day as it leaves
-// it, or of the training weekdays alone, on today; with what
-// limits.Validate found.
+// it, of the training weekdays alone, on today, or of the user's limits
+// it changes, on today; with what limits.Validate found, or, for the
+// limits, each one past the instance's.
 type Checked struct {
 	Of  Of
 	Day day.Date
@@ -44,16 +46,24 @@ type Checked struct {
 // they change the training weekdays, which move a split target's weekly
 // average, the target in force today and each to come with them (a
 // derived value the change sets, docs/limits.md). A delete of a phase
-// sets nothing to check.
+// sets nothing to check. A change of the user's limits goes no further
+// than the instance's: each past it is a violation of the instance's
+// level, its limit the instance's and the value proposed its own; and
+// the rest of the changes are held to the user's limits as they leave
+// them, so a faster cut comes with the limit that allows it.
 // The data and the limits are those of now for a change ahead too: what
 // the server knows when the user consents.
 func (c Changes) Check(s limits.State, lv limits.Levels, phases []plan.Phase, targets []plan.Target) []Checked {
+	var out []Checked
+	if len(c.Limits) > 0 {
+		out = append(out, c.checkLimits(s.Today, lv.Instance))
+		lv.User = c.LimitsOf(lv.User)
+	}
 	training := s.TrainingDays
 	var days *plan.Weekdays
 	if w := c.TrainingWeekdays; w != nil {
 		days, training = &w.After, w.After
 	}
-	var out []Checked
 	// A phase is checked without the target in force: that target's
 	// checks are its own, of the target the changes leave.
 	noTarget := s
@@ -86,6 +96,21 @@ func (c Changes) Check(s limits.State, lv limits.Levels, phases []plan.Phase, ta
 		}
 	}
 	return out
+}
+
+// checkLimits checks each limit the changes set against the instance's,
+// on today.
+func (c Changes) checkLimits(today day.Date, instance limits.Limits) Checked {
+	ck := Checked{Of: OfLimits, Day: today}
+	for _, ch := range c.Limits {
+		f, ok := limits.FieldNamed(ch.Name)
+		if ok && f.Looser(ch.After, f.Get(instance)) {
+			ck.Violations = append(ck.Violations, limits.Violation{
+				Rule: ch.Name, Limit: f.Get(instance), Proposed: ch.After, Level: limits.LevelInstance,
+			})
+		}
+	}
+	return ck
 }
 
 // inPhase returns s in the phase of the timeline phases in force on d:
