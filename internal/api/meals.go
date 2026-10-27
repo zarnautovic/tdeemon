@@ -789,3 +789,45 @@ func (s *sessions) deleteMeal(ctx context.Context, in *deleteMealInput) (*delete
 	out.Body.Day = d.DaySummary
 	return out, nil
 }
+
+// recentMealsInput's limit's maximum is store.MaxRecentMeals.
+type recentMealsInput struct {
+	Limit int `query:"limit" default:"20" minimum:"1" maximum:"50" doc:"The most meals."`
+}
+
+type recentMealsOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         struct {
+		Meals []mealBody `json:"meals" nullable:"false" doc:"The latest first."`
+	}
+}
+
+func (s *sessions) recentMeals(ctx context.Context, in *recentMealsInput) (*recentMealsOutput, error) {
+	p, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ms, err := s.db.RecentMeals(ctx, p.User.ID, in.Limit)
+	if err != nil {
+		return nil, internalError("listing the recent meals failed", err)
+	}
+	out := &recentMealsOutput{CacheControl: "no-store"}
+	out.Body.Meals = make([]mealBody, 0, len(ms))
+	for i := range ms {
+		out.Body.Meals = append(out.Body.Meals, newMealBody(&ms[i]))
+	}
+	return out, nil
+}
+
+func (s *sessions) registerMeals(a huma.API) {
+	huma.Register(a, huma.Operation{
+		OperationID: "list-recent-meals",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/meals/recent",
+		Summary:     "List your recent meals",
+		Description: "Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), " +
+			"of your latest 200: what a meal logged anew may repeat.",
+		Tags:   []string{"meals"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden},
+	}, s.recentMeals)
+}

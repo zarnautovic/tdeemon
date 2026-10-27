@@ -267,11 +267,16 @@ names the food in the way of a name or an alias (409), archived or not,
 which a search would not find but `get_food` gives. Beside the tools,
 the web app lists the foods with `GET /api/v1/foods/list`, a web
 session's only: a page (`limit`, `offset`) of the archived foods or the
-others (`archived`), by name or by their last use (`order=name|use`),
-each with its last use, and how many there are (`total`); and makes a
-new food with `POST /api/v1/foods/new`, also a web session's only, which
-refuses a name and brand the user has (409, naming the food, archived
-too) where `upsert_food` would correct that food. The charts read
+others (`archived`), by name, by their last use or by how many of the
+user's latest 100 meals had them (`order=name|use|frequent`), each with
+its last use, and how many there are (`total`); makes a new food with
+`POST /api/v1/foods/new`, also a web session's only, which refuses a
+name and brand the user has (409, naming the food, archived too) where
+`upsert_food` would correct that food; and offers meals to log again
+with `GET /api/v1/meals/recent`, a web session's only too: the latest
+meals of the latest 200, each meal eaten again once (the latest, of the
+same items in amounts within 1 %, as the duplicate warning tells them).
+The charts read
 `GET /api/v1/history?from=&to=&granularity=day|week`, the tool
 `get_history`: every day of a span of at most 366 days up to today (the
 90 up to it by default), or its weeks, with what was eaten against the

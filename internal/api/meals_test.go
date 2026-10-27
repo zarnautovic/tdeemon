@@ -1184,3 +1184,78 @@ func TestNewFoodServingsWithItsUnit(t *testing.T) {
 		t.Errorf("a bar of a new food, and 55 g: %d %s, want a 422 of two quantities", rec.Code, rec.Body.String())
 	}
 }
+
+// list-recent-meals is the user's latest meals, the latest first, a meal
+// eaten again once (the latest), for a web session only.
+func TestRecentMeals(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := sessionOf(t, in)
+	cookies := []*http.Cookie{session}
+	now := in.clock.Now()
+	bread := saveIsolationFoods(t, in.db, in.user, now)
+	// The lunch now and a dinner two days before; the day before, the
+	// same lunch, which the latest stands for.
+	saveIsolationMeals(t, in.db, in.user, bread, now)
+	toast, err := meal.FromFood(bread, meal.Quantity{Servings: 2, Serving: "slice"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	soup, err := meal.Estimate(in.user.Name+"'s canteen soup", food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := now.AddDate(0, 0, -1)
+	before := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: day.DateOf(at), Description: "The lunch before", Client: meal.ClientWeb, Items: []meal.Item{soup, toast}}
+	if _, _, err := in.db.CreateMeal(t.Context(), in.user.ID, isolationActor, before, now); err != nil {
+		t.Fatal(err)
+	}
+
+	recent := func(query string) []string {
+		t.Helper()
+		rec := in.do(t, http.MethodGet, "/api/v1/meals/recent"+query, "", cookies, nil)
+		if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("GET /api/v1/meals/recent%s: %d %s", query, rec.Code, rec.Body.String())
+		}
+		var body struct {
+			Meals []struct {
+				Description string `json:"description"`
+				Items       []struct {
+					Name string `json:"name"`
+				} `json:"items"`
+			} `json:"meals"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, m := range body.Meals {
+			out = append(out, fmt.Sprintf("%s (%d)", m.Description, len(m.Items)))
+		}
+		return out
+	}
+	name := in.user.Name
+	if got, want := recent(""), []string{name + "'s lunch (2)", name + "'s dinner (1)"}; !slices.Equal(got, want) {
+		t.Errorf("recent meals = %v, want %v", got, want)
+	}
+	if got, want := recent("?limit=1"), []string{name + "'s lunch (2)"}; !slices.Equal(got, want) {
+		t.Errorf("recent meals, one = %v, want %v", got, want)
+	}
+	for _, q := range []string{"?limit=0", "?limit=51"} {
+		if rec := in.do(t, http.MethodGet, "/api/v1/meals/recent"+q, "", cookies, nil); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("GET /api/v1/meals/recent%s: %d, want 422", q, rec.Code)
+		}
+	}
+	// Not with an API token, nor without anyone.
+	tok, created := in.createToken(t, session, `{"name":"phone","scopes":["read","tools"]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("a token: %d %s", created.Code, created.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/meals/recent", "", nil, bearer(tok.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("with a token: %d, want 403", rec.Code)
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/meals/recent", "", nil, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("without anyone: %d, want 401", rec.Code)
+	}
+}

@@ -435,6 +435,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 	s.registerTokens(a)
 	s.registerPlan(a)
 	s.registerFoods(a)
+	s.registerMeals(a)
 	s.registerSettings(a)
 	s.registerIngest(a)
 	registerTools(a, s.tools())

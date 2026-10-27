@@ -149,3 +149,27 @@ func TestCheckNutrientsMessage(t *testing.T) {
 		t.Errorf("CheckNutrients = %v", ws)
 	}
 }
+
+// Distinct keeps each meal once, the first of those with the same items,
+// whatever their times, descriptions and order.
+func TestDistinct(t *testing.T) {
+	t.Parallel()
+
+	at := time.Date(2026, 10, 21, 8, 30, 0, 0, time.UTC)
+	e, m := egg(), milk()
+	breakfast := meal(t, at, item(t, e, Quantity{Amount: 120, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"}))
+	breakfast.Description = "Eggs and milk"
+	again := meal(t, at.Add(-24*time.Hour), item(t, m, Quantity{Amount: 201, Unit: "ml"}), item(t, e, Quantity{Amount: 120, Unit: "g"}))
+	more := meal(t, at.Add(-48*time.Hour), item(t, e, Quantity{Amount: 180, Unit: "g"}), item(t, m, Quantity{Amount: 200, Unit: "ml"}))
+	burger, _ := Estimate("Burger", food.Nutrients{Kcal: 900}, "")
+	lunch := meal(t, at.Add(-72*time.Hour), burger)
+	lunchAgain := meal(t, at.Add(-96*time.Hour), burger)
+
+	got := Distinct([]Meal{breakfast, again, more, lunch, lunchAgain})
+	if len(got) != 3 || got[0].ID != breakfast.ID || got[1].ID != more.ID || got[2].ID != lunch.ID {
+		t.Errorf("Distinct = %v, want the breakfast, the one with more egg and the first burger", got)
+	}
+	if got := Distinct(nil); len(got) != 0 {
+		t.Errorf("Distinct(nil) = %v", got)
+	}
+}

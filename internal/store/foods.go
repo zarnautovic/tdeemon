@@ -750,7 +750,13 @@ const (
 	// ByUse puts the food a meal had last first, and the foods no meal
 	// has had after the others, by name.
 	ByUse FoodOrder = "use"
+	// ByFrequency puts the food the most of the user's latest 100 meals
+	// had first, and then the others as ByUse.
+	ByFrequency FoodOrder = "frequent"
 )
+
+// frequentMeals is how many of a user's latest meals ByFrequency counts.
+const frequentMeals = 100
 
 // MaxFoodList bounds a page of ListFoods.
 const MaxFoodList = 200
@@ -761,13 +767,19 @@ const MaxFoodList = 200
 // are.
 func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, order FoodOrder, limit, offset int) ([]food.Food, int, error) {
 	by := "f.name_key, f.brand_key, f.id"
+	lastUse := `(SELECT max(m.eaten_at) FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
+				WHERE i.user_id = f.user_id AND i.food_id = f.id) DESC NULLS LAST, `
 	switch order {
 	case ByName:
 	case ByUse:
-		by = `(SELECT max(m.eaten_at) FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
-				WHERE i.user_id = f.user_id AND i.food_id = f.id) DESC NULLS LAST, ` + by
+		by = lastUse + by
+	case ByFrequency:
+		by = `(SELECT count(DISTINCT i.meal_id) FROM meal_items AS i
+				WHERE i.user_id = f.user_id AND i.food_id = f.id AND i.meal_id IN (
+					SELECT m.id FROM meals AS m WHERE m.user_id = f.user_id ORDER BY m.eaten_at DESC, m.id DESC LIMIT ` +
+			fmt.Sprint(frequentMeals) + `)) DESC, ` + lastUse + by
 	default:
-		return nil, 0, fmt.Errorf("list foods: order %q: want name or use", order)
+		return nil, 0, fmt.Errorf("list foods: order %q: want name, use or frequent", order)
 	}
 	limit = min(max(limit, 0), MaxFoodList)
 	offset = max(offset, 0)

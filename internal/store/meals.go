@@ -40,6 +40,7 @@ const (
 	mealByID     = mealsSelect + "m.id = ?" + mealsOrder
 	mealsOfDay   = mealsSelect + "m.day = ?" + mealsOrder
 	mealsBetween = mealsSelect + "m.eaten_at BETWEEN ? AND ?" + mealsOrder
+	latestMeals  = mealsSelect + "1 ORDER BY m.eaten_at DESC, m.id DESC LIMIT ?"
 )
 
 const itemColumns = `i.id, i.food_id, i.name, i.quantity_amount, i.quantity_unit, i.quantity_servings,
@@ -566,6 +567,25 @@ func (db *DB) MealsBetween(ctx context.Context, userID uuid.UUID, from, to time.
 	return ms, nil
 }
 
+// MaxRecentMeals bounds RecentMeals, and recentMealsRead the latest
+// meals it looks through for them.
+const (
+	MaxRecentMeals  = 50
+	recentMealsRead = 200
+)
+
+// RecentMeals returns userID's latest meals, the latest first, each meal
+// eaten again once (meal.Distinct), the latest: at most limit of them, of
+// the latest 200 meals. They are what a meal logged anew may repeat.
+func (db *DB) RecentMeals(ctx context.Context, userID uuid.UUID, limit int) ([]meal.Meal, error) {
+	ms, err := db.queryMeals(ctx, userID, latestMeals, recentMealsRead)
+	if err != nil {
+		return nil, fmt.Errorf("recent meals: %w", err)
+	}
+	ms = meal.Distinct(ms)
+	return ms[:min(len(ms), max(limit, 0), MaxRecentMeals)], nil
+}
+
 // Intake is a day's meals and the kcal and macronutrients of their items.
 type Intake struct {
 	Meals                     int
@@ -621,9 +641,9 @@ func (db *DB) FirstMealDay(ctx context.Context, userID uuid.UUID) (day.Date, boo
 	return date, true, nil
 }
 
-// queryMeals returns userID's meals that q (mealByID, mealsOfDay or
-// mealsBetween) selects with args, with their items, read in one
-// snapshot.
+// queryMeals returns userID's meals that q (mealByID, mealsOfDay,
+// mealsBetween or latestMeals) selects with args, with their items, read
+// in one snapshot.
 func (db *DB) queryMeals(ctx context.Context, userID uuid.UUID, q string, args ...any) ([]meal.Meal, error) {
 	var out []meal.Meal
 	err := db.readTx(ctx, func(tx *sql.Tx) error {

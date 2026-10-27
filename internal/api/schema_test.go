@@ -242,6 +242,13 @@ func answerCases() map[string]answerCase {
 			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
 			in.do(t, http.MethodGet, "/api/v1/foods/list?order=use", "", []*http.Cookie{session}, nil)
 			in.do(t, http.MethodGet, "/api/v1/foods/list?archived=true", "", []*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/foods/list?order=frequent", "", []*http.Cookie{session}, nil)
+		},
+		"list-recent-meals": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			now := in.clock.Now()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
+			in.do(t, http.MethodGet, "/api/v1/meals/recent", "", []*http.Cookie{session}, nil)
 		},
 		"log-meal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

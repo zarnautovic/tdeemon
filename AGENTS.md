@@ -15,7 +15,8 @@ meals, metrics and the plan (profile, phases, targets, limits) in the
 domain and the database with an event log and undo, the proposals of
 changes of the plan and their life in the domain and the database, the
 API for the profile, the limits, the settings, the notes for a coach,
-the list of foods, a new food, the history and the plan, calibration
+the list of foods, a new food, the recent meals, the history and the
+plan, calibration
 (the measured TDEE and the verdict on a phase), the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
 `find_foods`, `get_food`, `upsert_food`, `log_meal`, `update_meal`,
@@ -54,7 +55,7 @@ exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods and a new food (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods, a new food and the recent meals (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |
