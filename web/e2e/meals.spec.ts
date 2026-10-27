@@ -42,17 +42,18 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
   await expect(porridge).toContainText('370 kcal')
   await expect(porridge).not.toContainText('Blueberries')
 
+  // Deleted at once, and brought back by its toast's Undo.
   await porridge.getByRole('button', { name: 'Change the meal: Porridge' }).click()
   await porridge.getByRole('button', { name: 'Delete the meal' }).click()
-  await porridge.getByRole('button', { name: 'Delete', exact: true }).click()
   await expect(porridge).toHaveCount(0)
+  await expect(page.getByText('Deleted: Porridge')).toBeVisible()
 
-  await page.getByRole('button', { name: 'Undo the latest change' }).click()
+  await page.getByRole('button', { name: 'Undo' }).click()
   await expect(page.getByText('Taken back: a meal deleted.')).toBeVisible()
   await expect(porridge).toContainText('100 g')
 })
 
-test('an undo on another day says the day of what it took back', async ({ page }) => {
+test('a meal moved to the day before says so, and its toast brings it back', async ({ page }) => {
   await signIn(page)
   const logged = await page.request.post('/api/v1/meals', {
     data: {
@@ -61,16 +62,22 @@ test('an undo on another day says the day of what it took back', async ({ page }
     },
   })
   expect(logged.ok()).toBe(true)
+  const snack = page.getByRole('article').filter({ hasText: 'Late snack' })
 
   await page.goto('/')
-  await page.getByRole('link', { name: 'The day before' }).click()
-  await page.getByRole('button', { name: 'Undo the latest change' }).click()
-  const said = page.getByText(/^Taken back: a meal logged, on another day:/)
-  await expect(said).toBeVisible()
+  await snack.getByRole('button', { name: 'Change the meal: Late snack' }).click()
+  const day = snack.getByLabel('Day')
+  const today = await day.inputValue()
+  const before = new Date(Date.parse(today) - 86_400_000).toISOString().slice(0, 10)
+  await day.fill(before)
+  await snack.getByRole('button', { name: 'Save the meal' }).click()
+  await expect(snack).toHaveCount(0)
+  await expect(page.getByText(/^Moved to /)).toBeVisible()
 
-  await said.getByRole('link').click()
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
-  await expect(page.getByRole('article').filter({ hasText: 'Late snack' })).toHaveCount(0)
+  // Taken back only while it is the latest change: it is.
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByText('Taken back: a meal changed.')).toBeVisible()
+  await expect(snack).toHaveCount(1)
 })
 
 test('a meal is repeated today in a tap', async ({ page }) => {

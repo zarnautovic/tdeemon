@@ -319,8 +319,10 @@ test("the server's warnings of a change are said in the app's words", async () =
   fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
+  // In the toast of the change, the meal's editor closed.
+  expect(await screen.findByText('Changed: Breakfast')).toBeDefined()
   expect(
-    await meal().findByText(
+    screen.getByText(
       'A meal with the same items was logged just before: if this one was sent twice, delete it.',
     ),
   ).toBeDefined()
@@ -340,22 +342,40 @@ test('a change the server refuses says so, with nothing to try again', async () 
   expect(meal().queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
-test('a meal is deleted after it asks', async () => {
+test('a meal is deleted at once, and its toast takes the delete back', async () => {
   const server = mealServer()
-  fakeServer(server.routes)
+  const undos: unknown[] = []
+  fakeServer({
+    ...server.routes,
+    'POST /api/v1/undo': async (request) => {
+      undos.push(await request.json())
+      return Response.json({
+        undone: {
+          action: 'meal.delete',
+          entity: mealId,
+          at: `${today}T08:00:00Z`,
+          client: 'web',
+          days: [today],
+        },
+      })
+    },
+  })
   renderAt('/')
 
   await edit()
   fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
-  expect(meal().getByText('Delete this meal?')).toBeDefined()
-  fireEvent.click(meal().getByRole('button', { name: 'Keep it' }))
-  expect(server.sent).toEqual([])
-  fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
-  fireEvent.click(meal().getByRole('button', { name: 'Delete' }))
 
   expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
   expect(server.sent).toEqual([
     { method: 'DELETE', path: `/api/v1/meals/${mealId}`, body: undefined },
+  ])
+  expect(await screen.findByText('Deleted: Breakfast')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  // Only the delete, while it is the latest change, under the toast's id.
+  expect(undos).toEqual([
+    { id: expect.any(String) as unknown, last: { action: 'meal.delete', entity: mealId } },
   ])
 })
 
@@ -372,7 +392,6 @@ test('a delete that failed says so, and is sent again', async () => {
 
   await edit()
   fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
-  fireEvent.click(meal().getByRole('button', { name: 'Delete' }))
   expect((await meal().findByRole('alert')).textContent).toContain(
     'Not saved. The server failed to answer.',
   )
@@ -528,24 +547,19 @@ test('a meal already gone when its delete is sent again is taken for deleted', a
 
   await edit()
   fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
-  fireEvent.click(meal().getByRole('button', { name: 'Delete' }))
   fireEvent.click(await meal().findByRole('button', { name: 'Try again' }))
 
   expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-test('the focus goes into the meal when it opens, to keeping it when asked, and back to the pencil', async () => {
+test('the focus goes into the meal when it opens, and back to the pencil', async () => {
   fakeServer(mealServer().routes)
   renderAt('/')
 
   await edit()
   await waitFor(() => {
     expect(document.activeElement).toBe(meal().getByLabelText('What it was'))
-  })
-  fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
-  await waitFor(() => {
-    expect(document.activeElement).toBe(meal().getByRole('button', { name: 'Keep it' }))
   })
   fireEvent.click(meal().getByRole('button', { name: 'Cancel' }))
   await waitFor(() => {
@@ -1372,6 +1386,33 @@ test('a meal is moved to a day before, at its time or another', async () => {
   })
 })
 
+test('a meal moved to another day says where, with the way to it', async () => {
+  const server = mealServer({
+    [`PATCH /api/v1/meals/${mealId}`]: () =>
+      Response.json({
+        meal: { ...breakfast, eaten_at: '2026-10-22T15:45:00Z' },
+        day: { date: '2026-10-22', status: 'complete', type: 'rest', total: breakfast.total },
+        warnings: [],
+      }),
+  })
+  fakeServer({
+    ...server.routes,
+    'GET /api/v1/days/2026-10-22': () =>
+      Response.json(day({ date: '2026-10-22', meals: [breakfast] })),
+  })
+  const router = renderAt('/')
+
+  await edit()
+  fireEvent.change(meal().getByLabelText('Day'), { target: { value: '2026-10-22' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(await screen.findByText('Moved to Thursday, October 22')).toBeDefined()
+  fireEvent.click(screen.getByRole('link', { name: 'See Thursday, October 22' }))
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ date: '2026-10-22' })
+  })
+})
+
 test('a meal moved to a day and a time is sent as both', async () => {
   const server = mealServer()
   fakeServer(server.routes)
@@ -1692,7 +1733,7 @@ test('a food of the same name the user has already is said to be kept', async ()
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect(
-    await meal().findByText('A food of yours was logged with its own values, not those sent.'),
+    await screen.findByText('A food of yours was logged with its own values, not those sent.'),
   ).toBeDefined()
 })
 

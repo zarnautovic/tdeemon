@@ -5,7 +5,7 @@ import { statusOf } from '@/api/errors'
 import { useFoods } from '@/api/foods'
 import { useDeleteMeal, useUpdateMeal } from '@/api/meals'
 import type { components } from '@/api/schema'
-import type { Item, Meal, Warning } from '@/api/types'
+import type { Item, Meal } from '@/api/types'
 import { EntryRow } from '@/components/day/entry-row'
 import { FoodPicker } from '@/components/day/food-picker'
 import {
@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { clockAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
 
@@ -67,12 +68,13 @@ const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'unit') => `$
 // time and note, and its items: the amount and unit of each of a food,
 // the name and values of each estimate, an estimate saved as a food of
 // the user's, another food in the place of any (each keeps its note),
-// which stay, and
-// new ones (a food of the user's or an estimate, as a meal logged by hand
-// has them); in one change saved at once, or deletes the meal after
-// asking. It sends only what was changed since it opened, so a change
-// made elsewhere meanwhile stays. onDone gives the server's warnings of
-// the change.
+// which stay, and new ones (a food of the user's or an estimate, as a
+// meal logged by hand has them); in one change saved at once, or deletes
+// the meal. It sends only what was changed since it opened, so a change
+// made elsewhere meanwhile stays. A toast says what was done, with what
+// the server warned of it, the day a meal moved to, and Undo: no
+// question before a delete, as Undo takes it back.
+// onDone closes it.
 export function MealEditor({
   meal,
   date,
@@ -88,13 +90,29 @@ export function MealEditor({
   // The user's clock: its time zone and the hour a day starts at.
   timeZone: string
   startHour: number
-  onDone: (warnings: Warning[]) => void
+  onDone: () => void
 }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const update = useUpdateMeal(date)
-  const remove = useDeleteMeal(date)
+  const what = meal.description || t.toast.aMeal
+  const update = useUpdateMeal(date, (answer) => {
+    const moved = answer.day.date !== date
+    sayChange(
+      {
+        title: moved ? t.toast.moved(f.date(answer.day.date, today)) : t.toast.changed(what),
+        lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
+        to: moved ? answer.day.date : undefined,
+      },
+      { last: { action: 'meal.replace', entity: meal.id }, date },
+    )
+  })
+  const remove = useDeleteMeal(date, () => {
+    sayChange(
+      { title: t.toast.deleted(what) },
+      { last: { action: 'meal.delete', entity: meal.id }, date },
+    )
+  })
   // The items' foods, for the units each can be given in.
   const foodIds = [...new Set(meal.items.flatMap((i) => (i.food_id ? [i.food_id] : [])))]
   const foods = useFoods(foodIds)
@@ -220,7 +238,6 @@ export function MealEditor({
   // The items whose amount is 0, or more than an item may hold (tooMuch).
   const [over, setOver] = useState<ReadonlySet<string>>(new Set())
   const [added, setAdded] = useState<string | undefined>(undefined)
-  const [confirming, setConfirming] = useState(false)
   // Of the items there now: one removed elsewhere is not counted.
   const none = entries.length === 0 && meal.items.every((item) => removed.has(item.id))
   // A change the server refuses (422, or 409 for an item changed since)
@@ -233,7 +250,6 @@ export function MealEditor({
   // would refuse other content, and one removed here would stay.
   const held = update.isPending || (update.isError && !refused)
   const form = useRef<HTMLFormElement>(null)
-  const keep = useRef<HTMLButtonElement>(null)
   // The meal's note, seldom given, has its field only once it is asked
   // for, which then takes the focus.
   const [noting, setNoting] = useState(false)
@@ -248,22 +264,9 @@ export function MealEditor({
   useEffect(() => {
     form.current?.querySelector<HTMLElement>('input, button')?.focus()
   }, [])
-  // Asked whether to delete, the focus is on keeping the meal.
-  useEffect(() => {
-    if (confirming) {
-      keep.current?.focus()
-    }
-  }, [confirming])
 
   function send(body: Change) {
-    update.mutate(
-      { params: { path: { id: meal.id } }, body },
-      {
-        onSuccess: (answer) => {
-          onDone(answer.warnings)
-        },
-      },
-    )
+    update.mutate({ params: { path: { id: meal.id } }, body }, { onSuccess: onDone })
   }
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
@@ -417,7 +420,7 @@ export function MealEditor({
       return
     }
     if (ops.length === 0 && Object.keys(fields).length === 0) {
-      onDone([])
+      onDone()
       return
     }
     send({ ...fields, ...(ops.length > 0 ? { ops } : {}) })
@@ -827,6 +830,24 @@ export function MealEditor({
         </p>
       )}
       {none && <p className="text-xs text-muted-foreground">{t.meal.oneItem}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" disabled={none || update.isPending}>
+          {t.meal.save}
+        </Button>
+        <Button variant="ghost" onClick={onDone}>
+          {t.meal.cancel}
+        </Button>
+        <Button
+          variant="destructive"
+          className="ml-auto"
+          disabled={remove.isPending}
+          onClick={() => {
+            remove.mutate({ params: { path: { id: meal.id } } })
+          }}
+        >
+          {t.meal.delete}
+        </Button>
+      </div>
       {refused ? (
         <p role="alert" className="text-xs text-destructive">
           {t.meal.refused}
@@ -841,56 +862,9 @@ export function MealEditor({
           }}
         />
       )}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={none || update.isPending}>
-          {t.meal.save}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            onDone([])
-          }}
-        >
-          {t.meal.cancel}
-        </Button>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 border-t pt-3">
-        {confirming ? (
-          <>
-            <span className="text-sm">{t.meal.confirmDelete}</span>
-            <Button
-              variant="destructive"
-              disabled={remove.isPending}
-              onClick={() => {
-                remove.mutate({ params: { path: { id: meal.id } } })
-              }}
-            >
-              {t.meal.yesDelete}
-            </Button>
-            <Button
-              ref={keep}
-              variant="ghost"
-              onClick={() => {
-                setConfirming(false)
-              }}
-            >
-              {t.meal.keepMeal}
-            </Button>
-          </>
-        ) : (
-          <Button
-            variant="destructive"
-            onClick={() => {
-              setConfirming(true)
-            }}
-          >
-            {t.meal.delete}
-          </Button>
-        )}
-        {/* A meal no longer there (404) was deleted: by this delete, its
-            answer lost, or elsewhere. */}
-        {remove.isError && statusOf(remove.error) !== 404 && <SaveStatus change={remove} />}
-      </div>
+      {/* A meal no longer there (404) was deleted: by this delete, its
+          answer lost, or elsewhere. */}
+      {remove.isError && statusOf(remove.error) !== 404 && <SaveStatus change={remove} />}
     </form>
   )
 }

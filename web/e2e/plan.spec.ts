@@ -20,7 +20,7 @@ test('the profile is set, and a limit tightened and loosened again', async ({ pa
   const cut = limits.getByRole('textbox', { name: /^Cut, fastest loss, BMI below 30/ })
   await cut.fill('0.5')
   await limits.getByRole('button', { name: 'Save' }).click()
-  await expect(limits.getByText('Saved')).toBeVisible()
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
   await page.reload()
   await expect(cut).toHaveValue('0.5')
 
@@ -28,7 +28,7 @@ test('the profile is set, and a limit tightened and loosened again', async ({ pa
   await cut.fill('0.7')
   await limits.getByRole('button', { name: 'Save' }).click()
   await limits.getByRole('button', { name: 'Loosen' }).click()
-  await expect(limits.getByText('Saved')).toBeVisible()
+  await expect(page.getByText('Saved', { exact: true })).toBeVisible()
   await page.reload()
   await expect(cut).toHaveValue('0.7')
 

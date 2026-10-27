@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 const groups: readonly Group[] = ['rates', 'food', 'autopilot']
@@ -43,6 +44,7 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
   const save = $api.useMutation('put', '/api/v1/limits', {
     onSuccess: (answer) => {
       queryClient.setQueryData(limitsKey, answer)
+      sayChange({ title: t.toast.saved })
       // A proposal's preview says what the limits refuse of it.
       void queryClient.invalidateQueries({
         queryKey: $api.queryOptions('get', '/api/v1/plan').queryKey,
@@ -212,10 +214,10 @@ export function LimitsForm({ body }: { body: LimitsBody }) {
           {t.plan.refused(named(detailOf(save.error), label))}
         </p>
       )}
-      {!refused && <SaveStatus change={save} />}
       <Button type="submit" disabled={save.isPending}>
         {t.plan.save}
       </Button>
+      {!refused && <SaveStatus change={save} />}
     </form>
   )
 }

@@ -40,7 +40,7 @@ test('a meal is logged by hand, of a food and an estimate', async ({ page }) => 
   await form.getByLabel('Fat (g)', { exact: true }).fill('28')
   await form.getByRole('button', { name: 'Log the meal' }).click()
 
-  await expect(page.getByText('The meal is logged.')).toBeVisible()
+  await expect(page.getByText(/^Logged: /)).toBeVisible()
   const dinner = page.getByRole('article').filter({ hasText: 'Dinner' })
   // Two cups of rice, 120 g: 420 kcal, and the curry's 400.
   await expect(dinner).toContainText('820 kcal')

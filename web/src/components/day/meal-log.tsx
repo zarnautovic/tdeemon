@@ -3,7 +3,6 @@ import { useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
 
 import { detailOf, statusOf } from '@/api/errors'
 import { useLogMeal } from '@/api/meals'
-import type { Warning } from '@/api/types'
 import { EntryRow } from '@/components/day/entry-row'
 import { FoodPicker } from '@/components/day/food-picker'
 import { estimateEntry, foodEntry, itemOf, most, type Entry } from '@/components/day/meal-entries'
@@ -12,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
 import { clockAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
@@ -37,8 +37,6 @@ export function MealLog({
 }: Day & { opening?: boolean; onOpened?: () => void }) {
   const t = useMessages()
   const [open, setOpen] = useState(opening)
-  // What the server warned of the meal logged last.
-  const [logged, setLogged] = useState<Warning[] | undefined>(undefined)
   // The button takes the focus back when the form closes.
   const button = useRef<HTMLButtonElement>(null)
   const [closed, setClosed] = useState(false)
@@ -54,7 +52,6 @@ export function MealLog({
     if (opening) {
       setOpen(true)
       setClosed(false)
-      setLogged(undefined)
     }
   }
   useEffect(() => {
@@ -67,12 +64,7 @@ export function MealLog({
     return (
       <Composer
         {...day}
-        onDone={(warnings) => {
-          setOpen(false)
-          setClosed(true)
-          setLogged(warnings)
-        }}
-        onCancel={() => {
+        onDone={() => {
           setOpen(false)
           setClosed(true)
         }}
@@ -80,52 +72,42 @@ export function MealLog({
     )
   }
   return (
-    <div className="space-y-1">
-      <Button
-        ref={button}
-        variant="outline"
-        className="w-full"
-        onClick={() => {
-          setOpen(true)
-          setClosed(false)
-          setLogged(undefined)
-        }}
-      >
-        <Plus aria-hidden />
-        {t.log.open}
-      </Button>
-      {logged && (
-        <output className="block text-sm">
-          {t.log.logged}
-          {logged.length > 0 && (
-            <ul className="text-warning">
-              {logged.map((w, i) => (
-                <li key={`${w.code} ${String(i)}`}>{t.meal.warnings[w.code]}</li>
-              ))}
-            </ul>
-          )}
-        </output>
-      )}
-    </div>
+    <Button
+      ref={button}
+      variant="outline"
+      className="w-full"
+      onClick={() => {
+        setOpen(true)
+        setClosed(false)
+      }}
+    >
+      <Plus aria-hidden />
+      {t.log.open}
+    </Button>
   )
 }
 
 // Composer is a meal being logged. Its id is made when it opens, so the
 // meal sent again (no answer came) is the same meal, not another: the
 // form holds still until it is sent again, or given up, as other content
-// under the id is a conflict.
-function Composer({
-  date,
-  today,
-  timeZone,
-  startHour,
-  onDone,
-  onCancel,
-}: Day & { onDone: (warnings: Warning[]) => void; onCancel: () => void }) {
+// under the id is a conflict. Logged, it closes (onDone), and a toast
+// says so, with what the server warned of it and Undo.
+function Composer({ date, today, timeZone, startHour, onDone }: Day & { onDone: () => void }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const log = useLogMeal(date)
+  const log = useLogMeal(date, (answer) => {
+    sayChange(
+      {
+        title: t.toast.logged(
+          answer.meal.description || t.toast.aMeal,
+          t.unit.kcal(f.number(answer.meal.total.kcal)),
+        ),
+        lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
+      },
+      { last: { action: 'meal.create', entity: answer.meal.id }, date },
+    )
+  })
   const [mealId] = useState(uuidv7)
   const [description, setDescription] = useState('')
   // Now on today's, noon on another day's. Today's time left as it is
@@ -153,14 +135,7 @@ function Composer({
   const held = log.isPending || (log.isError && !refused)
 
   function send(body: Parameters<typeof log.mutate>[0]['body']) {
-    log.mutate(
-      { body },
-      {
-        onSuccess: (answer) => {
-          onDone(answer.warnings)
-        },
-      },
-    )
+    log.mutate({ body }, { onSuccess: onDone })
   }
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
@@ -273,6 +248,10 @@ function Composer({
               setAdded(entry.key)
               setEmpty(false)
             }}
+            // A food being found is one being added: no longer none.
+            onSearch={() => {
+              setEmpty(false)
+            }}
           />
           <Button
             variant="outline"
@@ -302,6 +281,14 @@ function Composer({
           {t.log.wrong(most(f.number))}
         </p>
       )}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={held}>
+          {t.log.save}
+        </Button>
+        <Button variant="ghost" disabled={log.isPending} onClick={onDone}>
+          {t.log.cancel}
+        </Button>
+      </div>
       {refused ? (
         <p role="alert" className="text-sm text-destructive">
           {t.log.refused(detailOf(log.error))}
@@ -318,14 +305,6 @@ function Composer({
           }}
         />
       )}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={held}>
-          {t.log.save}
-        </Button>
-        <Button variant="ghost" disabled={log.isPending} onClick={onCancel}>
-          {t.log.cancel}
-        </Button>
-      </div>
     </form>
   )
 }

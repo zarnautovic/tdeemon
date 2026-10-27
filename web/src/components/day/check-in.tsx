@@ -7,6 +7,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Stepper } from '@/components/day/stepper'
 import type { Scale } from '@/i18n/en'
 import { useMessages } from '@/i18n/messages'
+import { sayChange } from '@/lib/toast'
 
 // CheckIn is what the user says of a day: their mood and hunger, a note,
 // the day's type, and whether calibration counts it. Each is saved as it
@@ -52,7 +53,13 @@ function ScaleField({
   words: Scale
   tone: 'good' | 'signal'
 }) {
-  const change = useCheckIn(day.date)
+  const t = useMessages()
+  const change = useCheckIn(day.date, () => {
+    sayChange(
+      { title: t.toast.checkIn },
+      { last: { action: 'day.checkin', entity: day.date }, date: day.date },
+    )
+  })
   const sent = change.variables?.body[field]
   // The step picked last shows while it is saved, and after it failed,
   // until it is sent again; then the day's.

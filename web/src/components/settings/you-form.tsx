@@ -8,10 +8,11 @@ import type { Session } from '@/api/sign-in'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { locales, setLocale, type Locale } from '@/i18n/locale'
-import { useMessages } from '@/i18n/messages'
+import { messagesOf, useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { nameNow } from '@/lib/time-zones'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 type User = Session['user']
@@ -74,6 +75,7 @@ export function YouForm({ user }: { user: User }) {
         s ? { ...s, user: answer.user } : s,
       )
       setLocale(answer.user.locale)
+      sayChange({ title: messagesOf(answer.user.locale).toast.saved })
       await queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/me'] })
     },
   })
@@ -200,6 +202,9 @@ export function YouForm({ user }: { user: User }) {
           {t.settings.dayStartHint}
         </p>
       </div>
+      <Button type="submit" disabled={save.isPending}>
+        {t.settings.save}
+      </Button>
       {refused ? (
         <p role="alert" className="text-sm text-destructive">
           {t.settings.refused(detailOf(save.error))}
@@ -207,9 +212,6 @@ export function YouForm({ user }: { user: User }) {
       ) : (
         <SaveStatus change={save} />
       )}
-      <Button type="submit" disabled={save.isPending}>
-        {t.settings.save}
-      </Button>
     </form>
   )
 }

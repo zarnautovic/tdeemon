@@ -9,12 +9,14 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 // MetricForm takes a measurement of a kind, typed in the language and the
 // kind's unit, and stores it for the day; what is not a number, or not a
 // value of the kind (limits.json, the server's bounds), it says so of,
-// and sends nothing. children are more buttons, after Save.
+// and sends nothing, until the field changes. Saved, a toast says so,
+// with Undo. children are more buttons, after Save.
 export function MetricForm({
   date,
   kind,
@@ -33,7 +35,12 @@ export function MetricForm({
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const log = useLogMetric(date)
+  const log = useLogMetric(date, () => {
+    sayChange(
+      { title: t.toast.savedOf(label) },
+      { last: { action: 'metric.set', entity: `${date}/${kind}` }, date },
+    )
+  })
   const [notNumber, setNotNumber] = useState(false)
   const [outside, setOutside] = useState(false)
   const unit = units[kind]
@@ -77,6 +84,13 @@ export function MetricForm({
             aria-invalid={notNumber || outside || log.isError}
             aria-describedby={unit ? `${id}-unit` : undefined}
             className={cn(inputClass, 'tabular-nums', unit && 'pr-20')}
+            onChange={() => {
+              setNotNumber(false)
+              setOutside(false)
+              if (log.isError) {
+                log.reset()
+              }
+            }}
           />
           {unit && (
             <span

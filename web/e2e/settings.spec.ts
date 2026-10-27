@@ -17,9 +17,7 @@ test("a user's name and notes are set, and a token made and all revoked", async 
     .locator('xpath=ancestor::form')
     .getByRole('button', { name: 'Save' })
     .click()
-  await expect(
-    page.getByLabel('Notes for a coach').locator('xpath=ancestor::form').getByText('Saved'),
-  ).toBeVisible()
+  await expect(page.getByText('The notes for a coach are saved')).toBeVisible()
   await page.reload()
   await expect(page.getByLabel('Notes for a coach')).toHaveValue('Knees: no running.')
 

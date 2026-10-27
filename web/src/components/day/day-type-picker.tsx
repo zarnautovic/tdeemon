@@ -5,6 +5,7 @@ import type { Day } from '@/api/types'
 import { Field } from '@/components/day/field'
 import { SaveStatus } from '@/components/day/save-status'
 import { useMessages } from '@/i18n/messages'
+import { sayChange } from '@/lib/toast'
 
 const choices = ['training', 'rest', 'plan'] as const
 
@@ -25,7 +26,12 @@ function choiceOf(day: Day): Choice {
 export function DayTypePicker({ day }: { day: Day }) {
   const t = useMessages()
   const id = useId()
-  const change = useCheckIn(day.date)
+  const change = useCheckIn(day.date, () => {
+    sayChange(
+      { title: t.toast.dayType },
+      { last: { action: 'day.checkin', entity: day.date }, date: day.date },
+    )
+  })
   const sent = change.variables?.body.training_day
   const chosen = (change.isPending || change.isError) && sent !== undefined ? sent : choiceOf(day)
   // The plan's decision is the server's, once the plan is what it has:

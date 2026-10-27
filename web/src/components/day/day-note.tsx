@@ -6,6 +6,7 @@ import { Field } from '@/components/day/field'
 import { SaveStatus } from '@/components/day/save-status'
 import { useMessages } from '@/i18n/messages'
 import { inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 // maxNote is the server's bound on a note, in characters
@@ -18,7 +19,12 @@ const maxNote = 2000
 export function DayNote({ day }: { day: Day }) {
   const t = useMessages()
   const id = useId()
-  const change = useCheckIn(day.date)
+  const change = useCheckIn(day.date, () => {
+    sayChange(
+      { title: t.toast.dayNote },
+      { last: { action: 'day.checkin', entity: day.date }, date: day.date },
+    )
+  })
   const note = day.note ?? ''
   // What is typed and not saved yet; undefined, the day's note.
   const [draft, setDraft] = useState<string | undefined>(undefined)

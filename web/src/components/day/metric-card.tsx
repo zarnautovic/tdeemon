@@ -9,9 +9,11 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { sayChange } from '@/lib/toast'
 
 // MetricCard is a measurement of the day in its unit, which can be
-// corrected or deleted, but on a day to come (canLog false).
+// corrected or deleted, but on a day to come (canLog false); a toast says
+// so, with Undo, and no question before.
 export function MetricCard({
   date,
   metric,
@@ -24,8 +26,13 @@ export function MetricCard({
   const t = useMessages()
   const f = useFormat()
   const [editing, setEditing] = useState(false)
-  const remove = useDeleteMetric(date)
   const label = t.day.metric[metric.kind]
+  const remove = useDeleteMetric(date, () => {
+    sayChange(
+      { title: t.toast.deleted(label) },
+      { last: { action: 'metric.delete', entity: `${date}/${metric.kind}` }, date },
+    )
+  })
 
   if (editing) {
     return (

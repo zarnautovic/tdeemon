@@ -97,7 +97,7 @@ test("a meal is logged of a food of the user's and an estimate, at a time of the
   }
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
 
-  expect(await screen.findByText('The meal is logged.')).toBeDefined()
+  expect(await screen.findByText(/^Logged: Breakfast · \d/)).toBeDefined()
   expect(await screen.findByText('Breakfast')).toBeDefined()
   expect(screen.queryByRole('form', { name: 'A new meal' })).toBeNull()
   expect(server.sent).toEqual([
@@ -515,7 +515,7 @@ test('a unit chosen in a new meal works the amount out anew, both ways', async (
   fireEvent.change(unit, { target: { value: 'serving:handful' } })
   fireEvent.click(composer().getByRole('button', { name: 'Log the meal' }))
 
-  expect(await screen.findByText('The meal is logged.')).toBeDefined()
+  expect(await screen.findByText(/^Logged: /)).toBeDefined()
   expect(server.sent).toEqual([
     {
       id: expect.any(String) as unknown,

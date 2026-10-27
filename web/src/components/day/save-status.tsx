@@ -5,17 +5,16 @@ import { problem } from '@/i18n/problem'
 
 // A change is what SaveStatus reads of a mutation.
 interface Change<V> {
-  isPending: boolean
   isError: boolean
-  isSuccess: boolean
   error: unknown
   variables: V | undefined
   mutate: (variables: V) => void
 }
 
-// SaveStatus says where a change of the day stands: being saved, saved,
-// or not saved and why, with a way to send it again unless the server
-// refused it; nothing is lost without a word.
+// SaveStatus says why a change was not saved, with a way to send it again
+// unless the server refused it; nothing is lost without a word. A change
+// saved says so in a toast, and one on its way in its button.
+// Placed below its button, it moves nothing the user aims at.
 export function SaveStatus<V>({
   change,
   onRetry,
@@ -57,9 +56,5 @@ export function SaveStatus<V>({
       </span>
     )
   }
-  return (
-    <output className="text-xs text-muted-foreground">
-      {change.isPending ? t.saving : change.isSuccess && t.saved}
-    </output>
-  )
+  return null
 }

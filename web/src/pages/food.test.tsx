@@ -89,7 +89,7 @@ test('a food is corrected, the whole of it saved', async () => {
   fireEvent.change(screen.getByLabelText('Amount 2 (g)'), { target: { value: '10' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
 
-  expect(await screen.findByText('Saved')).toBeDefined()
+  expect(await screen.findByText('Saved: Rolled oats')).toBeDefined()
   expect(server.sent).toEqual([
     {
       id,

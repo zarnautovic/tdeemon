@@ -29,8 +29,14 @@ export function reasonOf(reason: string): Reason | undefined {
 }
 
 // useMessages returns the app's text in the current language, e.g.
-// useMessages().nav.day; a component that uses it renders again when the
-// language changes.
+// useMessages().nav.today; a component that uses it renders again when
+// the language changes.
 export function useMessages(): Messages {
   return dictionaries[useLocale()]
+}
+
+// messagesOf is the app's text in a language, before the app speaks it:
+// what is said of a change of the language, in the language chosen.
+export function messagesOf(locale: Locale): Messages {
+  return dictionaries[locale]
 }

@@ -13,6 +13,7 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
+import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
 
@@ -251,7 +252,12 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       return
     }
     setWrong(new Map())
-    const done = { onSuccess: (saved: Food) => onSaved?.(saved) }
+    const done = {
+      onSuccess: (saved: Food) => {
+        sayChange({ title: t.toast.savedOf(saved.name) })
+        onSaved?.(saved)
+      },
+    }
     if (food) {
       upsert.mutate({ body: made.body }, done)
     } else {
@@ -555,6 +561,9 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           }}
         />
       </div>
+      <Button type="submit" className="w-full" disabled={save.isPending}>
+        {t.foods.save}
+      </Button>
       {refused ? (
         <p id={`${id}-refused`} role="alert" className="text-sm text-destructive">
           {refused}
@@ -564,9 +573,6 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       ) : (
         <SaveStatus change={create} onRetry={send} />
       )}
-      <Button type="submit" className="w-full" disabled={save.isPending}>
-        {t.foods.save}
-      </Button>
     </form>
   )
 }

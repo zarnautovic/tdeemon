@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import { Repeat2 } from 'lucide-react'
 
 import { detailOf, statusOf } from '@/api/errors'
@@ -32,15 +31,9 @@ export function RepeatButton({
   )
 }
 
-// RepeatStatus says where a repeat stands: logged today, with what the
-// server warned of it and the way to today from another day; or why not.
-export function RepeatStatus({
-  log,
-  isToday,
-}: {
-  log: ReturnType<typeof useLogMeal>
-  isToday: boolean
-}) {
+// RepeatStatus says why a repeat was not logged: the server refused it,
+// or the way to send it again. One logged says so in a toast.
+export function RepeatStatus({ log }: { log: ReturnType<typeof useLogMeal> }) {
   const t = useMessages()
   const status = statusOf(log.error)
   if (log.isError && (status === 409 || status === 422)) {
@@ -50,24 +43,5 @@ export function RepeatStatus({
       </p>
     )
   }
-  if (!log.isSuccess) {
-    return log.isIdle ? null : <SaveStatus change={log} />
-  }
-  return (
-    <output className="block text-sm">
-      {t.meal.repeated}{' '}
-      {!isToday && (
-        <Link to="/" search={{}} className="underline underline-offset-2">
-          {t.meal.seeToday}
-        </Link>
-      )}
-      {log.data.warnings.length > 0 && (
-        <ul className="text-warning">
-          {log.data.warnings.map((w, i) => (
-            <li key={`${w.code} ${String(i)}`}>{t.meal.warnings[w.code]}</li>
-          ))}
-        </ul>
-      )}
-    </output>
-  )
+  return <SaveStatus change={log} />
 }

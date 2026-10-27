@@ -9,6 +9,7 @@ import { FoodForm } from '@/components/foods/food-form'
 import { LoadError } from '@/components/load-error'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
+import { sayChange } from '@/lib/toast'
 
 // FoodPage is a food of the user's, to correct, archive or bring back.
 export function FoodPage() {
@@ -38,7 +39,18 @@ export function FoodPage() {
             variant="outline"
             disabled={archive.isPending}
             onClick={() => {
-              archive.mutate({ body: { ...fieldsOf(f), archived: !f.archived } })
+              archive.mutate(
+                { body: { ...fieldsOf(f), archived: !f.archived } },
+                {
+                  onSuccess: (saved) => {
+                    sayChange({
+                      title: saved.archived
+                        ? t.toast.archived(saved.name)
+                        : t.toast.inUse(saved.name),
+                    })
+                  },
+                },
+              )
             }}
           >
             {f.archived ? t.foods.unarchive : t.foods.archive}
