@@ -14,8 +14,8 @@ export function DayTotals({ day }: { day: Day }) {
   const share = target && target.kcal > 0 ? Math.min(total.kcal / target.kcal, 1) : 0
 
   return (
-    <section aria-labelledby="day-eaten" className="space-y-3 rounded-xl border p-4">
-      <h2 id="day-eaten" className="text-xs tracking-widest text-muted-foreground uppercase">
+    <section aria-labelledby="day-eaten" className="space-y-3 rounded-lg border bg-card p-4">
+      <h2 id="day-eaten" className="text-small text-muted-foreground">
         {t.day.eaten}
       </h2>
       <p className="text-3xl font-semibold tabular-nums">

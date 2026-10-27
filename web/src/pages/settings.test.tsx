@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
 import { setLocale } from '@/i18n/locale'
+import { setTheme } from '@/lib/theme'
 import { nameNow } from '@/lib/time-zones'
 import { fakeServer, me, problem, renderAt, session, signedIn } from '@/test/app'
 
@@ -10,6 +11,7 @@ afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   setLocale('en')
+  setTheme('system')
   localStorage.clear()
 })
 
@@ -132,6 +134,25 @@ test("the user's name, language, time zone and day's start are changed, and the 
   expect(server.sent['PATCH /api/v1/me']).toEqual([
     { name: 'Ana M.', locale: 'hr', timezone: 'Europe/Zagreb', day_start_hour: 3 },
   ])
+})
+
+test("the theme is the system's until another is chosen, at once and for this browser", async () => {
+  const server = settingsServer()
+  renderAt('/settings')
+
+  const theme = within(await screen.findByRole('group', { name: 'Appearance' }))
+  expect(theme.getByRole('radio', { name: 'System' })).toHaveProperty('checked', true)
+  fireEvent.click(theme.getByRole('radio', { name: 'Dark' }))
+
+  expect(theme.getByRole('radio', { name: 'Dark' })).toHaveProperty('checked', true)
+  expect(document.documentElement.classList.contains('dark')).toBe(true)
+  expect(localStorage.getItem('tdeemon.theme')).toBe('dark')
+  // The browser's, not the user's: nothing goes to the server.
+  expect(server.sent['PATCH /api/v1/me']).toBeUndefined()
+
+  fireEvent.click(theme.getByRole('radio', { name: 'Light' }))
+  expect(document.documentElement.classList.contains('light')).toBe(true)
+  expect(document.documentElement.classList.contains('dark')).toBe(false)
 })
 
 test('a name cleared is said to be needed, and not sent', async () => {

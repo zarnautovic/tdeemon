@@ -25,7 +25,6 @@ export function AddMetric({ date, kinds }: { date: string; kinds: readonly Metri
     return (
       <Button
         variant="outline"
-        size="lg"
         className="w-full"
         onClick={() => {
           setOpen(true)
@@ -71,8 +70,6 @@ export function AddMetric({ date, kinds }: { date: string; kinds: readonly Metri
       >
         <Button
           variant="ghost"
-          size="lg"
-          className="h-10"
           onClick={() => {
             setOpen(false)
           }}

@@ -63,7 +63,6 @@ export function MealLog(day: Day) {
       <Button
         ref={button}
         variant="outline"
-        size="lg"
         className="w-full"
         onClick={() => {
           setOpen(true)
@@ -78,7 +77,7 @@ export function MealLog(day: Day) {
         <output className="block text-sm">
           {t.log.logged}
           {logged.length > 0 && (
-            <ul className="text-amber-700 dark:text-amber-400">
+            <ul className="text-warning">
               {logged.map((w, i) => (
                 <li key={`${w.code} ${String(i)}`}>{t.meal.warnings[w.code]}</li>
               ))}
@@ -176,7 +175,7 @@ function Composer({
       onSubmit={submit}
       noValidate
       aria-labelledby={`${id}-title`}
-      className="space-y-4 rounded-xl border p-4"
+      className="space-y-4 rounded-lg border bg-card p-4"
     >
       <h3 id={`${id}-title`} className="font-medium">
         {t.log.title}
@@ -299,10 +298,10 @@ function Composer({
         />
       )}
       <div className="flex gap-2">
-        <Button type="submit" size="lg" disabled={held}>
+        <Button type="submit" disabled={held}>
           {t.log.save}
         </Button>
-        <Button variant="ghost" size="lg" disabled={log.isPending} onClick={onCancel}>
+        <Button variant="ghost" disabled={log.isPending} onClick={onCancel}>
           {t.log.cancel}
         </Button>
       </div>

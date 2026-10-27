@@ -71,7 +71,7 @@ export function DayPage() {
           // too, not be left out.
           activeOptions={{ exact: true }}
           aria-label={t.day.previous}
-          className={buttonVariants({ variant: 'ghost', size: 'icon-lg' })}
+          className={buttonVariants({ variant: 'ghost', size: 'icon' })}
         >
           <ChevronLeft aria-hidden />
         </Link>
@@ -90,7 +90,7 @@ export function DayPage() {
             search={searchOf(after)}
             activeOptions={{ exact: true }}
             aria-label={t.day.next}
-            className={buttonVariants({ variant: 'ghost', size: 'icon-lg' })}
+            className={buttonVariants({ variant: 'ghost', size: 'icon' })}
           >
             <ChevronRight aria-hidden />
           </Link>

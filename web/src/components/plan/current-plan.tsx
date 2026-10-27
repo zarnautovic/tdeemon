@@ -32,7 +32,7 @@ export function CurrentPlan({ plan }: { plan: Plan }) {
   ].toSorted((a, b) => a.day.localeCompare(b.day))
 
   return (
-    <section aria-labelledby={id} className="space-y-3 rounded-xl border p-4">
+    <section aria-labelledby={id} className="space-y-3 rounded-lg border bg-card p-4">
       <h2 id={id} className="text-lg font-semibold">
         {c.title}
       </h2>

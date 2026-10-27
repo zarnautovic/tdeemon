@@ -101,10 +101,7 @@ export function PreviewLines({ preview }: { preview: Preview }) {
             </span>
           )}
           {ck.warnings.map((w) => (
-            <span
-              key={`${w.rule} ${w.day_type ?? ''}`}
-              className="block text-amber-700 dark:text-amber-400"
-            >
+            <span key={`${w.rule} ${w.day_type ?? ''}`} className="block text-warning">
               {warning(w)}
             </span>
           ))}

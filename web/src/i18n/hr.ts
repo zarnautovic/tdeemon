@@ -343,6 +343,13 @@ export const hr: Messages = {
     timeZone: 'Vremenska zona',
     dayStart: 'Dan počinje u',
     dayStartHint: 'Obrok prije toga pripada danu prije.',
+    appearance: 'Izgled',
+    appearanceHint: 'Samo za ovaj preglednik: mobitel može biti taman, a laptop svijetao.',
+    themes: {
+      system: 'Sustav',
+      light: 'Svijetla',
+      dark: 'Tamna',
+    },
     save: 'Spremi',
     refused: (detail: string) => `Server to nije prihvatio: ${detail}`,
     notes: 'Bilješke za coacha',

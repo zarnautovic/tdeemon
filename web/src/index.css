@@ -1,8 +1,25 @@
 @import 'tailwindcss';
+/* Geist, served from the app itself: no font service sees who reads it. */
+@import '@fontsource-variable/geist';
 
-@custom-variant dark (&:is(.dark *));
+/*
+  dark: the dark theme chosen (.dark on <html>), or the system's left to
+  decide (neither .light nor .dark) and dark. src/lib/theme.ts sets the
+  class.
+*/
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.light), :root:not(.light) *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -20,12 +37,19 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--primary);
+  --color-fat: var(--fat);
+  --color-carbs: var(--carbs);
+  --color-protein: var(--protein);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
   --color-muted: var(--muted);
+  --color-surface-2: var(--surface-2);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
+  --color-primary-soft: var(--primary-soft);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
@@ -34,82 +58,129 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --shadow-card: var(--card-shadow);
+  --shadow-sheet: var(--sheet-shadow);
 }
 
+@theme {
+  /* Radii: a chip's, an input's or a button's, a card's, a sheet's. */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+
+  /*
+    The type scale, size/line height: display 44/48, title 28/34, h2
+    20/26, h3 16/22, body 15/22, small (labels) 13/18, caption 12/16,
+    the smallest text there is.
+  */
+  --text-display: 2.75rem;
+  --text-display--line-height: 3rem;
+  --text-display--letter-spacing: -0.03em;
+  --text-display--font-weight: 600;
+  --text-title: 1.75rem;
+  --text-title--line-height: 2.125rem;
+  --text-title--font-weight: 600;
+  --text-h2: 1.25rem;
+  --text-h2--line-height: 1.625rem;
+  --text-h2--font-weight: 600;
+  --text-h3: 1rem;
+  --text-h3--line-height: 1.375rem;
+  --text-h3--font-weight: 600;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-small: 0.8125rem;
+  --text-small--line-height: 1.125rem;
+  --text-small--font-weight: 500;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-caption--font-weight: 500;
+
+  /*
+    Motion: fast for a press or a hover (the default), base for a row
+    or a toast coming in, slow for a sheet or a dialog, on the sheet's
+    curve, and ring for a ring or a bar filling to its new value.
+  */
+  --default-transition-duration: 120ms;
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+  The colours, light, and dark below. Text keeps 4.5:1 on the page, a
+  card and surface-2 in both (muted-foreground too); the macros' colours
+  go with a label and a number, never alone.
+*/
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
+  color-scheme: light;
+  --background: #f5f6f8;
+  --foreground: #0d1321;
+  --card: #ffffff;
+  --card-foreground: var(--foreground);
+  --popover: var(--card);
+  --popover-foreground: var(--foreground);
+  --surface-2: #eef0f3;
+  --muted: var(--surface-2);
+  --muted-foreground: #4a5363;
+  --secondary: var(--surface-2);
+  --secondary-foreground: var(--foreground);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--foreground);
+  --border: #e2e5ea;
+  --input: var(--border);
+  --primary: #0b7a5e;
+  --primary-foreground: #ffffff;
+  --primary-soft: #ddf3eb;
+  --ring: var(--primary);
+  --protein: #3d63dd;
+  --carbs: #d99a1e;
+  --fat: #d4507a;
+  --warning: #8a5300;
+  --destructive: #c93636;
+  --chart-grid: #6b7385;
+  --chart-1: var(--primary);
+  --chart-2: var(--protein);
+  --chart-3: var(--carbs);
+  --chart-4: var(--fat);
+  --chart-5: var(--chart-grid);
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--primary-soft);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+  --radius: 0.75rem;
+  --card-shadow: 0 1px 2px rgb(13 19 33 / 0.06), 0 1px 1px rgb(13 19 33 / 0.04);
+  --sheet-shadow: 0 12px 32px -8px rgb(13 19 33 / 0.22);
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --duration-ring: 600ms;
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  @variant dark {
+    color-scheme: dark;
+    --background: #0a0e15;
+    --foreground: #e8ecf4;
+    --card: #121722;
+    --surface-2: #1a2130;
+    --muted-foreground: #a9b2c4;
+    --border: #253045;
+    --primary: #4fd1a5;
+    --primary-foreground: #04241a;
+    --primary-soft: #133a30;
+    --protein: #7aa2f7;
+    --carbs: #f0b45c;
+    --fat: #f07fa0;
+    --warning: #f0b45c;
+    --destructive: #f07178;
+    --chart-grid: #8b95ab;
+    /*
+      A shadow is lost on a dark page: an edge and the lighter surface
+      stand out instead.
+    */
+    --card-shadow: 0 0 0 1px var(--border);
+    --sheet-shadow: 0 0 0 1px var(--border);
+  }
 }
 
 @layer base {
@@ -117,9 +188,21 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-body text-foreground tabular-nums;
   }
   html {
     @apply font-sans;
+  }
+}
+
+/*
+  Asked for less motion, nothing slides, grows or fills: a change only
+  fades.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    transition-property: opacity !important;
   }
 }

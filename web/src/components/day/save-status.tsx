@@ -43,8 +43,7 @@ export function SaveStatus<V>({
         {t.notSaved(problem(t, change.error))}
         <Button
           variant="link"
-          size="xs"
-          className="h-auto p-0"
+          className="h-auto p-0 text-xs"
           onClick={() => {
             if (onRetry) {
               onRetry()

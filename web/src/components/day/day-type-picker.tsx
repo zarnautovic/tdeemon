@@ -48,7 +48,7 @@ export function DayTypePicker({ day }: { day: Day }) {
                 })
               }
             }}
-            className="min-h-10 flex-1 rounded-lg border bg-muted/40 px-1 text-sm text-muted-foreground transition-colors outline-none hover:border-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+            className="min-h-11 flex-1 rounded-md border bg-muted/40 px-1 text-sm text-muted-foreground transition-colors outline-none hover:border-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
           >
             <span className="block">{t.day.dayTypes[choice]}</span>
             {choice === 'plan' && decided && (

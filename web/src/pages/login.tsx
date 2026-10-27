@@ -97,7 +97,7 @@ export function LoginPage() {
               {problem(t, login.error)}
             </p>
           )}
-          <Button type="submit" size="lg" className="w-full" disabled={login.isPending}>
+          <Button type="submit" className="w-full" disabled={login.isPending}>
             {login.isPending ? t.signIn.submitting : t.signIn.submit}
           </Button>
         </form>
@@ -110,7 +110,7 @@ export function LoginPage() {
         // which a form-action in the CSP would stop.
         <a
           href={`${oidc.login_url}?return_to=${encodeURIComponent(target)}`}
-          className={buttonVariants({ variant: 'outline', size: 'lg', className: 'w-full' })}
+          className={buttonVariants({ variant: 'outline', className: 'w-full' })}
         >
           {t.signIn.with(oidc.name)}
         </a>

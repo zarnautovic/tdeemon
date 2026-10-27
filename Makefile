@@ -5,10 +5,11 @@
 # otherwise from PATH.
 MISE := $(if $(shell command -v mise 2>/dev/null),mise exec --)
 
-# Licences a dependency may have: permissive ones and MPL-2.0. Copyleft
+# Licences a dependency may have: permissive ones, MPL-2.0, and OFL-1.1
+# for a font (it binds the font, not the software it ships with). Copyleft
 # licences such as GPL would limit any later change of the project's
 # licence to GPL-compatible ones.
-LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,BlueOak-1.0.0,CC0-1.0,Unlicense,Python-2.0,CC-BY-4.0
+LICENSES := MIT,MIT-0,Apache-2.0,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,MPL-2.0,BlueOak-1.0.0,CC0-1.0,Unlicense,Python-2.0,CC-BY-4.0,OFL-1.1
 
 WEB_DEPS := web/node_modules/.package-lock.json
 CODEGEN_DEPS := web/codegen/node_modules/.package-lock.json

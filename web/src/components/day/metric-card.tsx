@@ -41,8 +41,6 @@ export function MetricCard({
         >
           <Button
             variant="destructive"
-            size="lg"
-            className="h-10"
             disabled={remove.isPending}
             onClick={() => {
               remove.mutate({ params: { path: { date, kind: metric.kind } } })
@@ -52,8 +50,6 @@ export function MetricCard({
           </Button>
           <Button
             variant="ghost"
-            size="lg"
-            className="h-10"
             onClick={() => {
               setEditing(false)
             }}

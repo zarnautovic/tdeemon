@@ -49,3 +49,30 @@ test("a user's name and notes are set, and a token made and all revoked", async 
   await you.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByText('Signed in as Ana (')).toBeVisible()
 })
+
+test("the theme is the system's until one is chosen, and kept in the browser", async ({ page }) => {
+  // Geist comes from the app itself, which the content security policy
+  // lets in (its Latin part here; a part loads for the letters shown).
+  const font = page.waitForResponse((r) =>
+    /\/assets\/geist-latin-wght-normal-.*\.woff2$/.test(r.url()),
+  )
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await signIn(page)
+  const body = page.locator('body')
+  await expect(body).toHaveCSS('background-color', 'rgb(10, 14, 21)')
+
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('link', { name: 'Settings' })
+    .click()
+  const theme = page.getByRole('group', { name: 'Appearance' })
+  await theme.getByText('Light', { exact: true }).click()
+  await expect(body).toHaveCSS('background-color', 'rgb(245, 246, 248)')
+  await page.reload()
+  await expect(body).toHaveCSS('background-color', 'rgb(245, 246, 248)')
+  await expect(theme.getByRole('radio', { name: 'Light' })).toBeChecked()
+
+  await theme.getByText('System', { exact: true }).click()
+  await expect(body).toHaveCSS('background-color', 'rgb(10, 14, 21)')
+  expect((await font).ok()).toBe(true)
+})

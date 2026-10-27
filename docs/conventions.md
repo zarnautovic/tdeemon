@@ -324,10 +324,11 @@ A change is done when:
 - **Known vulnerabilities:** `govulncheck` for Go (only code that is
   reached counts) and `npm audit` at high severity (`make audit`).
 - **Licences** (`make licenses`, osv-scanner): every Go and npm
-  dependency must be under a permissive licence or MPL-2.0. Copyleft
-  licences such as the GPL would limit any later change of the project's
-  licence to GPL-compatible ones; the list is `LICENSES` in the
-  `Makefile`.
+  dependency must be under a permissive licence or MPL-2.0, and a font
+  may be under the SIL Open Font License (OFL-1.1), which binds the font
+  and not the software it ships with. Copyleft licences such as the GPL
+  would limit any later change of the project's licence to
+  GPL-compatible ones; the list is `LICENSES` in the `Makefile`.
   osv-scanner checks only licences here (`osv-scanner-licenses.toml`);
   known vulnerabilities are left to `make audit`.
 - **Secrets:** gitleaks scans the staged changes in the pre-commit hook
