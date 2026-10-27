@@ -185,7 +185,7 @@ export interface paths {
         };
         /**
          * List your foods
-         * @description Needs a web session. A page of your foods, the archived ones or the others, by name or by their last use, with how many there are; find_foods searches them.
+         * @description Needs a web session. A page of your foods, the archived ones or the others, by name, by their last use or by how many of your latest meals had them, with how many there are; find_foods searches them.
          */
         get: operations["list-foods"];
         put?: never;
@@ -418,6 +418,26 @@ export interface paths {
          * @description Logs a meal under the client's UUIDv7 (201); the same meal sent again under it is a retry (200), another a conflict (409). Without an id, from a client that cannot make one, the server makes it: that meal sent again is another (or a 409, when its items carry ids of their own), so after a timeout, look at get_day before sending it again. eaten_at left out is the id's time, so a retry has the same; a time still to come is refused (422). An item is a food of the user's by its food_id, or a new food, which is saved, each with an amount in the food's unit (g or ml; a food of the user's takes its own when left out), servings or portions; or an estimate, of a part nobody weighed or of a whole plate. The answer holds the meal with what each item brought, where its day stands (so no get_day around a log), and warnings: values that do not add up, or a meal that looks like one logged minutes before.
          */
         post: operations["log-meal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/meals/recent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your recent meals
+         * @description Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), of your latest 200: what a meal logged anew may repeat.
+         */
+        get: operations["list-recent-meals"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1755,6 +1775,10 @@ export interface components {
              * @enum {string}
              */
             unit?: "g" | "ml";
+        };
+        RecentMealsOutputBody: {
+            /** @description The latest first. */
+            meals: components["schemas"]["MealBody"][];
         };
         RecoveryBody: {
             /** @description What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base). */
@@ -3242,8 +3266,8 @@ export interface operations {
             query?: {
                 /** @description The archived foods instead of the others. */
                 archived?: boolean;
-                /** @description name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name. */
-                order?: "name" | "use";
+                /** @description name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use. */
+                order?: "name" | "use" | "frequent";
                 /** @description The most foods of the page. */
                 limit?: number;
                 /** @description How many foods of the list come before the page. */
@@ -4485,6 +4509,75 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-recent-meals": {
+        parameters: {
+            query?: {
+                /** @description The most meals. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecentMealsOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

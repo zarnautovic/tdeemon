@@ -616,8 +616,8 @@ func TestCorrectFood(t *testing.T) {
 	}
 }
 
-// ListFoods pages a user's foods, the archived ones apart, by name or by
-// the last use, and counts them.
+// ListFoods pages a user's foods, the archived ones apart, by name, by
+// the last use or by the meals that had them, and counts them.
 func TestListFoods(t *testing.T) {
 	t.Parallel()
 
@@ -649,13 +649,14 @@ func TestListFoods(t *testing.T) {
 	if err := db.SetFoodArchived(t.Context(), ana, testActor, old.ID, true, t0); err != nil {
 		t.Fatal(err)
 	}
-	// Cheese eaten last, then the banana; the others never.
-	for i, f := range []food.Food{banana, cheese} {
+	// Cheese eaten last, then the banana, which a meal before had too;
+	// the others never.
+	for i, f := range []food.Food{banana, banana, cheese} {
 		it, err := meal.FromFood(f, meal.Quantity{Amount: 50}, "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		at := t0.Add(time.Duration(i-2) * time.Hour)
+		at := t0.Add(time.Duration(i-3) * time.Hour)
 		createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientMCP, Items: []meal.Item{it}})
 	}
 
@@ -679,6 +680,7 @@ func TestListFoods(t *testing.T) {
 		{"a page", false, store.ByName, 2, 1, []string{"banana", "Cheese"}, 4},
 		{"past the end", false, store.ByName, 2, 9, nil, 4},
 		{"by the last use, then the name", false, store.ByUse, 10, 0, []string{"Cheese", "banana", "Apple", "Dates"}, 4},
+		{"by the meals, then the last use", false, store.ByFrequency, 10, 0, []string{"banana", "Cheese", "Apple", "Dates"}, 4},
 		{"the archived", true, store.ByName, 10, 0, []string{"Old bread"}, 1},
 		{"no more than the bound", false, store.ByName, store.MaxFoodList + 1, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
 	} {
@@ -696,6 +698,36 @@ func TestListFoods(t *testing.T) {
 	}
 	if _, _, err := db.ListFoods(t.Context(), ana, false, "kcal", 10, 0); err == nil {
 		t.Error("ListFoods by kcal: no error")
+	}
+}
+
+// ListFoods by frequency counts the meals of the latest 100 alone: a food
+// of many meals before them comes after one of a few among them.
+func TestListFoodsByFrequency(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	mk := func(name string) food.Food {
+		return saveFood(t, db, ana, food.Food{
+			ID: uuid.NewV7(), Name: name, Basis: food.Per100g, Source: food.Estimate,
+			Nutrients: food.Nutrients{Kcal: 100, Protein: 5, Carbs: 10, Fat: 3},
+		})
+	}
+	oats, apple, cheese := mk("Oats"), mk("Apple"), mk("Cheese")
+	mk("Dates")
+	// Oats in 3 meals, then cheese in 2 and an apple in 98: the 100 latest.
+	at := t0.Add(-200 * time.Hour)
+	for _, f := range append(append(slices.Repeat([]food.Food{oats}, 3), cheese, cheese), slices.Repeat([]food.Food{apple}, 98)...) {
+		it, err := meal.FromFood(f, meal.Quantity{Amount: 50}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		at = at.Add(time.Hour)
+		createMeal(t, db, ana, meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{it}})
+	}
+	got, _, err := db.ListFoods(t.Context(), ana, false, store.ByFrequency, 10, 0)
+	if want := []string{"Apple", "Cheese", "Oats", "Dates"}; err != nil || !slices.Equal(names(got), want) {
+		t.Errorf("ListFoods by frequency = %v, %v; want %v", names(got), err, want)
 	}
 }
 

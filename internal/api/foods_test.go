@@ -13,8 +13,9 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 )
 
-// list-foods pages the user's foods, the archived ones apart, by name or
-// by their last use, with how many there are, for a web session only.
+// list-foods pages the user's foods, the archived ones apart, by name, by
+// their last use or by the meals that had them, with how many there are,
+// for a web session only.
 // find_foods leaves the archived foods out, and finds them alone when
 // asked for them.
 func TestFindArchivedFoods(t *testing.T) {
@@ -77,6 +78,7 @@ func TestListFoods(t *testing.T) {
 		"?order=name&limit=1&offset=1": `"name":"Apple"`,
 		"?archived=true":               `"name":"Ana's canteen stew"`,
 		"?order=use&offset=5":          `{"foods":[],"total":2}`,
+		"?order=frequent&limit=1":      `"name":"Ana's rye bread"`,
 	} {
 		rec := in.do(t, http.MethodGet, "/api/v1/foods/list"+query, "", cookies, nil)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {

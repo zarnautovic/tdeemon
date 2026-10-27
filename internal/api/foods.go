@@ -201,7 +201,7 @@ func newLastUseBody(u store.LastUse) *lastUseBody {
 // values store.FoodOrder's.
 type listFoodsInput struct {
 	Archived bool   `query:"archived" doc:"The archived foods instead of the others."`
-	Order    string `query:"order" enum:"name,use" default:"name" doc:"name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name."`
+	Order    string `query:"order" enum:"name,use,frequent" default:"name" doc:"name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use."`
 	Limit    int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"The most foods of the page."`
 	Offset   int    `query:"offset" default:"0" minimum:"0" maximum:"1000000" doc:"How many foods of the list come before the page."`
 }
@@ -250,7 +250,7 @@ func (s *sessions) registerFoods(a huma.API) {
 		Method:      http.MethodGet,
 		Path:        Prefix + "/foods/list",
 		Summary:     "List your foods",
-		Description: "Needs a web session. A page of your foods, the archived ones or the others, by name or by their last use, " +
+		Description: "Needs a web session. A page of your foods, the archived ones or the others, by name, by their last use or by how many of your latest meals had them, " +
 			"with how many there are; find_foods searches them.",
 		Tags:   []string{"foods"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden},

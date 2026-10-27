@@ -2498,6 +2498,22 @@
         },
         "type": "object"
       },
+      "RecentMealsOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "meals": {
+            "description": "The latest first.",
+            "items": {
+              "$ref": "#/components/schemas/MealBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "meals"
+        ],
+        "type": "object"
+      },
       "RecoveryBody": {
         "additionalProperties": false,
         "properties": {
@@ -4898,7 +4914,7 @@
     },
     "/api/v1/foods/list": {
       "get": {
-        "description": "Needs a web session. A page of your foods, the archived ones or the others, by name or by their last use, with how many there are; find_foods searches them.",
+        "description": "Needs a web session. A page of your foods, the archived ones or the others, by name, by their last use or by how many of your latest meals had them, with how many there are; find_foods searches them.",
         "operationId": "list-foods",
         "parameters": [
           {
@@ -4912,16 +4928,17 @@
             }
           },
           {
-            "description": "name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name.",
+            "description": "name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use.",
             "explode": false,
             "in": "query",
             "name": "order",
             "schema": {
               "default": "name",
-              "description": "name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name.",
+              "description": "name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use.",
               "enum": [
                 "name",
-                "use"
+                "use",
+                "frequent"
               ],
               "type": "string"
             }
@@ -6510,6 +6527,101 @@
         "summary": "Log a meal",
         "tags": [
           "tools"
+        ]
+      }
+    },
+    "/api/v1/meals/recent": {
+      "get": {
+        "description": "Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), of your latest 200: what a meal logged anew may repeat.",
+        "operationId": "list-recent-meals",
+        "parameters": [
+          {
+            "description": "The most meals.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "description": "The most meals.",
+              "format": "int64",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecentMealsOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List your recent meals",
+        "tags": [
+          "meals"
         ]
       }
     },

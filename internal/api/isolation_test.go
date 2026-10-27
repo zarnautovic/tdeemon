@@ -692,6 +692,9 @@ func isolateListFoods(t *testing.T, e isolationEnv) {
 	read("/api/v1/foods/list?archived=true", false, func(e isolationEnv) []string {
 		return []string{e.other.user.Name + "'s canteen stew"}
 	})(t, e)
+	read("/api/v1/foods/list?order=frequent", false, func(e isolationEnv) []string {
+		return []string{e.other.user.Name + "'s rye bread"}
+	})(t, e)
 }
 
 // isolateCreateFood is create-food's case: the other makes a food of
@@ -814,7 +817,10 @@ func isolationCases() map[string]isolationCase {
 		"find-foods": read("/api/v1/foods?query=rye", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s rye bread", e.other.user.Name + "'s loaf"}
 		}),
-		"list-foods":    isolateListFoods,
+		"list-foods": isolateListFoods,
+		"list-recent-meals": read("/api/v1/meals/recent", false, func(e isolationEnv) []string {
+			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s toast"}
+		}),
 		"upsert-food":   isolateUpsertFood,
 		"create-food":   isolateCreateFood,
 		"get-food":      isolateGetFood,

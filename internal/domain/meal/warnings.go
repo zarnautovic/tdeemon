@@ -106,6 +106,23 @@ func DuplicateOf(m Meal, recent []Meal, loc *time.Location) (Warning, bool) {
 	return Warning{}, false
 }
 
+// Distinct returns ms without a meal with the same items as one before
+// it, in any amounts within 1 % (as DuplicateOf tells them): of the
+// latest meals first, each meal a user eats again, once, the latest.
+func Distinct(ms []Meal) []Meal {
+	var out []Meal
+next:
+	for i := range ms {
+		for j := range out {
+			if sameItems(out[j].Items, ms[i].Items) {
+				continue next
+			}
+		}
+		out = append(out, ms[i])
+	}
+	return out
+}
+
 // sameItems reports whether a and b hold the same foods in amounts within
 // 1 % of each other, or estimates of the same name and kcal within 1 %,
 // in any order. A food's item is told by the food, not by the name and

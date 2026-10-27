@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -388,6 +389,57 @@ func TestMealsOfDayAndBetween(t *testing.T) {
 	}
 	if got, _ := db.MealsOfDay(t.Context(), ivo, day.DateOf(t0)); len(got) != 1 {
 		t.Errorf("ivo's day = %d meals, want his one", len(got))
+	}
+}
+
+// RecentMeals are the user's latest meals, the latest first, a meal eaten
+// again once, the latest, of the latest 200 meals.
+func TestRecentMeals(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	bar := saveFood(t, db, ana, bar())
+	old := createMeal(t, db, ana, breakfast(t, bar, t0))
+	snack, err := meal.FromFood(bar, meal.Quantity{Servings: 1, Serving: "bar"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := t0.Add(5 * time.Hour)
+	bite := createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{snack}})
+	again := createMeal(t, db, ana, breakfast(t, bar, t0.Add(24*time.Hour)))
+	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar), t0.Add(48*time.Hour)))
+	ids := func(ms []meal.Meal) []uuid.UUID {
+		out := make([]uuid.UUID, len(ms))
+		for i := range ms {
+			out[i] = ms[i].ID
+		}
+		return out
+	}
+	got, err := db.RecentMeals(t.Context(), ana, 10)
+	if err != nil || !slices.Equal(ids(got), []uuid.UUID{again.ID, bite.ID}) || len(got[0].Items) != 2 {
+		t.Errorf("RecentMeals = %v, %v; want the breakfast eaten again, then the bar, without %v", ids(got), err, old.ID)
+	}
+	if got, _ := db.RecentMeals(t.Context(), ana, 1); !slices.Equal(ids(got), []uuid.UUID{again.ID}) {
+		t.Errorf("RecentMeals of 1 = %v", ids(got))
+	}
+	if got, _ := db.RecentMeals(t.Context(), ana, 0); len(got) != 0 {
+		t.Errorf("RecentMeals of 0 = %v", ids(got))
+	}
+
+	// Of the latest 200: a meal before them is not among them.
+	for i := range 201 {
+		at := t0.Add(time.Duration(i+100) * time.Hour)
+		createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{snack}})
+	}
+	if got, _ := db.RecentMeals(t.Context(), ana, store.MaxRecentMeals+1); len(got) != 1 || got[0].ID == bite.ID {
+		t.Errorf("RecentMeals after 201 bars = %v, want the latest bar alone", ids(got))
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.RecentMeals(context.WithoutCancel(t.Context()), ana, 10); err == nil {
+		t.Error("RecentMeals on a closed database succeeded")
 	}
 }
 
