@@ -29,8 +29,9 @@ each change said in a toast whose Undo takes it back, in English and
 Croatian) with the day (what was eaten against the target in a ring
 and the macros' bars, with the TDEE, the deficit and the phase, the
 week's days, the day's type, the meals as rows that open to their
-items, the measurements, and the check-in, the measurements, a meal's
-corrections, a meal logged by hand, repeated or deleted taken there),
+items, the check-in with calibration as a switch, the body's tiles and
+all the measurements in a sheet, a meal's corrections, a meal logged by
+hand, repeated or deleted taken there),
 the foods (their list and search, a food made, corrected or archived),
 the progress (its charts, ECharts loaded with them), the plan (the
 plan as it holds, a proposal that waits, the history of its

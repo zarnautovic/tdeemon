@@ -25,12 +25,12 @@ test('the day shows what was logged, and the days before it', async ({ page }) =
   await expect(lunch).toContainText('640 kcal')
   await openMeal(lunch)
   await expect(lunch).toContainText('Chicken with rice')
-  await expect(page.getByRole('region', { name: 'Measurements' })).toContainText('72.5 kg')
+  await expect(page.getByRole('region', { name: 'Body today' })).toContainText('72.5 kg')
 
   await page.getByRole('link', { name: 'The day before' }).click()
   await expect(page.getByText('Nothing logged yet.')).toBeVisible()
   await page.getByRole('link', { name: 'Back to today' }).click()
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 })
 
 test("a meal's energy stays on one line beside a long description", async ({ page }) => {

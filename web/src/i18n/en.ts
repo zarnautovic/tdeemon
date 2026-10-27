@@ -65,6 +65,7 @@ export const en = {
   failed: 'Something went wrong.',
   connecting: 'Connecting to the server…',
   retry: 'Try again',
+  close: 'Close',
   signIn: {
     title: 'Sign in',
     email: 'Email',
@@ -154,6 +155,8 @@ export const en = {
       exercise_min: 'Exercise',
     },
     checkIn: 'Check-in',
+    savedAsYouGo: 'saved as you go',
+    addNote: 'Add a note',
     mood: 'Mood',
     moods: scale('bad', 'low', 'okay', 'good', 'great'),
     hunger: 'Hunger',
@@ -163,9 +166,17 @@ export const en = {
     dayTypes: { training: 'Training', rest: 'Rest', plan: 'By plan' },
     planDecided: { training: 'training', rest: 'rest' },
     calibration: 'Calibration',
-    counted: 'Counted in calibration.',
+    inCalibration: 'Counted in calibration',
+    calibrationHint:
+      'Calibration measures your TDEE from the days it counts: leave out one you could not log well.',
     leaveOut: 'Leave out of calibration',
-    countAgain: 'Count it again',
+    body: {
+      title: 'Body today',
+      all: 'All measurements',
+      trend: (kg: string) => `trend ${kg} kg`,
+      sleep: (hours: string, minutes: string) => `${hours} h ${minutes} min`,
+      none: '—',
+    },
     reason: 'Reason',
     // Reasons a tap writes in, the ones a day is left out for most: each
     // stored under its code, the server's words, and said in the

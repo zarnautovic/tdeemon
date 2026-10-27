@@ -23,14 +23,22 @@ function formOf(field: HTMLElement): HTMLElement {
   return form
 }
 
+// openMeasurements opens the sheet of the day's measurements, from the
+// body's tiles.
+async function openMeasurements() {
+  fireEvent.click(await screen.findByRole('button', { name: /^(All measurements|Sva mjerenja)$/ }))
+  await screen.findByRole('dialog')
+}
+
 function measurements() {
-  return within(screen.getByRole('region', { name: 'Measurements' }))
+  return within(screen.getByRole('dialog'))
 }
 
 test('a weighing is typed in and saved, and the field gives way to it', async () => {
   const server = dayServer()
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '72.5' } })
   fireEvent.click(measurements().getByRole('button', { name: 'Save' }))
@@ -46,11 +54,12 @@ test('a weighing typed in Croatian has its decimal comma', async () => {
   const server = dayServer()
   fakeServer({ ...signedIn('hr'), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Kilaža'), { target: { value: '72,5' } })
   fireEvent.click(screen.getByRole('button', { name: 'Spremi' }))
 
-  expect(await screen.findByText('72,5 kg')).toBeDefined()
+  expect(await measurements().findByText('72,5 kg')).toBeDefined()
   expect(server.sent.at(-1)?.body).toEqual({ value: 72.5 })
 })
 
@@ -58,6 +67,7 @@ test('what is no number is not sent, and the field says so', async () => {
   const server = dayServer()
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '72.5 kg' } })
   fireEvent.click(measurements().getByRole('button', { name: 'Save' }))
@@ -71,9 +81,10 @@ test("a value out of the kind's bounds is said with them, in the language, and n
   const server = dayServer()
   fakeServer({ ...signedIn('hr'), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Kilaža'), { target: { value: '7,25' } })
-  const mjerenja = within(screen.getByRole('region', { name: 'Mjerenja' }))
+  const mjerenja = within(screen.getByRole('dialog', { name: 'Mjerenja' }))
   fireEvent.click(mjerenja.getByRole('button', { name: 'Spremi' }))
 
   expect(mjerenja.getByRole('alert').textContent).toBe('Upiši vrijednost od 20 do 400 kg.')
@@ -88,6 +99,7 @@ test('a value the server refuses says so, with nothing to try again', async () =
     [`PUT ${path}/metrics/weight`]: () => problem(422),
   })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '72.5' } })
   fireEvent.click(measurements().getByRole('button', { name: 'Save' }))
@@ -110,6 +122,7 @@ test('a weighing that did not reach the server is sent again', async () => {
         : Promise.reject(new TypeError('Failed to fetch')),
   })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '72.5' } })
   fireEvent.click(measurements().getByRole('button', { name: 'Save' }))
@@ -129,6 +142,7 @@ test('a measurement is corrected, starting from its value', async () => {
   )
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Change: Steps' }))
   const steps = screen.getByLabelText('Steps')
@@ -149,6 +163,7 @@ test('a correction can be given up', async () => {
   )
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Change: Sleep' }))
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -163,6 +178,7 @@ test('a wrong measurement is deleted', async () => {
   )
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Change: Weight' }))
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
@@ -183,6 +199,7 @@ test('a delete that failed says so', async () => {
     [`DELETE ${path}/metrics/hrv`]: () => problem(500),
   })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Change: Heart rate variability' }))
   fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
@@ -198,6 +215,7 @@ test('another kind of measurement is added, of those the day has none of', async
   )
   fakeServer({ ...signedIn(), ...server.routes })
   renderAt('/')
+  await openMeasurements()
 
   fireEvent.click(await screen.findByRole('button', { name: 'Add a measurement' }))
   const kind = screen.getByLabelText('Measurement')
@@ -234,6 +252,7 @@ test('a change refused for want of a session sends the browser to sign in', asyn
     },
   })
   const router = renderAt('/')
+  await openMeasurements()
 
   fireEvent.change(await screen.findByLabelText('Weight'), { target: { value: '72.5' } })
   fireEvent.click(measurements().getByRole('button', { name: 'Save' }))
@@ -255,6 +274,7 @@ test.each([
     )
     fakeServer({ ...signedIn(locale), ...server.routes })
     renderAt('/')
+    await openMeasurements()
 
     fireEvent.click(await screen.findByRole('button', { name: change }))
     const field = screen.getByLabelText(label)
@@ -276,6 +296,7 @@ test.each([
 test("a field's unit is said with it", async () => {
   fakeServer({ ...signedIn(), ...dayServer().routes })
   renderAt('/')
+  await openMeasurements()
 
   const weight = await screen.findByLabelText('Weight')
   const unit = document.getElementById(weight.getAttribute('aria-describedby') ?? '')
@@ -293,7 +314,8 @@ test('a measurement of a day to come is not offered to correct', async () => {
     ).routes,
   })
   renderAt('/?date=2026-10-25')
+  await openMeasurements()
 
-  expect(await screen.findByText('120')).toBeDefined()
+  expect(await measurements().findByText('120')).toBeDefined()
   expect(measurements().queryByRole('button', { name: 'Change: Steps' })).toBeNull()
 })

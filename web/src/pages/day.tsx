@@ -5,8 +5,8 @@ import { useState } from 'react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
+import { BodyToday } from '@/components/day/body-today'
 import { CheckIn } from '@/components/day/check-in'
-import { DayMetrics } from '@/components/day/day-metrics'
 import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
 import { MealCard } from '@/components/day/meal-card'
@@ -205,8 +205,8 @@ export function DayPage() {
         <div className="space-y-4 lg:col-span-4">
           {/* Its fields start again with each day. */}
           <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
-          <DayMetrics
-            key={`metrics ${day.data.date}`}
+          <BodyToday
+            key={`body ${day.data.date}`}
             date={day.data.date}
             metrics={day.data.metrics}
             canLog={!future}
