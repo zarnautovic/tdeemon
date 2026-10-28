@@ -51,4 +51,12 @@ test('the addresses of before lead where their pages are now', async ({ page }) 
   await page.goto('/settings/plan')
   await expect(page).toHaveURL('/plan')
   await expect(page.getByRole('heading', { name: 'Plan', level: 1 })).toBeVisible()
+  // The settings are a list now, each a row to its page, and lead back to
+  // the plan on a phone.
+  await page.goto('/settings')
+  await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
+  await page.getByRole('link', { name: 'Devices and AI clients' }).click()
+  await expect(page).toHaveURL('/settings/devices')
+  await page.getByRole('main').getByRole('link', { name: 'Plan' }).click()
+  await expect(page).toHaveURL('/plan')
 })

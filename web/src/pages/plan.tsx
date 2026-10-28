@@ -1,73 +1,67 @@
-import { Link } from '@tanstack/react-router'
-import { Settings } from 'lucide-react'
-import { useState } from 'react'
-
 import { $api } from '@/api/client'
 import { LoadError } from '@/components/load-error'
-import { CurrentPlan } from '@/components/plan/current-plan'
-import { LimitsForm } from '@/components/plan/limits-form'
+import { NoPlan } from '@/components/plan/no-plan'
 import { PendingProposal } from '@/components/plan/pending-proposal'
-import { ProfileForm } from '@/components/plan/profile-form'
+import { PhaseCard } from '@/components/plan/phase-card'
 import { Revisions } from '@/components/plan/revisions'
-import { buttonVariants } from '@/components/ui/button'
+import { TargetsCard } from '@/components/plan/targets-card'
+import { YouList } from '@/components/plan/you-list'
+import { SettingsList } from '@/components/settings/settings-list'
+import { Skeleton } from '@/components/skeleton'
 import { useMessages } from '@/i18n/messages'
 
-// PlanPage is the user's plan in the app: the plan as it holds today, a
-// proposed change that waits for their answer, the history of the plan's
-// changes, what a plan needs of the user, their profile, and how far it
-// may go, their limits. The profile and the limits change only in a web
-// session, as a plan rests on them (docs/limits.md). On a phone the
-// settings are the plan's, a tap away; a desktop's sidebar has them.
+// PlanPage is the user's plan: its phase, the hero, with the phases on a
+// timeline; a change a coach proposed, which waits for the user's answer;
+// the targets by type of day against the TDEE; and the history of the
+// plan's changes. Before a plan, how one comes. Beside it on a desktop,
+// under it on a phone, what a plan rests on of the user's (the profile,
+// the limits, the notes for a coach), each a row to its page; and on a
+// phone, whose bar has no room for them, the settings.
 export function PlanPage() {
   const t = useMessages()
-  const profile = $api.useQuery('get', '/api/v1/profile')
-  // The profile as the server gave it since the page opened, not before.
-  const [opened] = useState(Date.now)
-  const fresh = profile.data !== undefined && profile.dataUpdatedAt >= opened
-  const limits = $api.useQuery('get', '/api/v1/limits')
   const plan = $api.useQuery('get', '/api/v1/plan')
+  const me = $api.useQuery('get', '/api/v1/me')
+
+  let body
+  if (plan.isPending) {
+    body = <Skeleton blocks={['h-80', 'h-52']} />
+  } else if (plan.isError) {
+    body = <LoadError error={plan.error} onRetry={() => void plan.refetch()} />
+  } else {
+    const { phases, targets, training_weekdays: days, pending, revisions } = plan.data
+    const none = phases.length === 0 && targets.length === 0
+    body = (
+      <>
+        {/* A proposal is the first step to a plan, when one waits. */}
+        {none && pending === undefined && (
+          <NoPlan needsProfile={(me.data?.profile.missing.length ?? 0) > 0} />
+        )}
+        {phases.length > 0 && <PhaseCard plan={plan.data} />}
+        {pending !== undefined && (
+          // A proposal in place of another starts afresh, without the
+          // other's answer.
+          <PendingProposal
+            key={pending.id}
+            proposal={pending}
+            preview={plan.data.pending_preview}
+          />
+        )}
+        {(targets.length > 0 || days.length > 0) && <TargetsCard plan={plan.data} />}
+        {revisions.length > 0 && <Revisions revisions={revisions} />}
+      </>
+    )
+  }
 
   return (
-    <section className="max-w-3xl space-y-6">
-      <header className="flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold">{t.plan.title}</h1>
-        <Link
-          to="/settings"
-          aria-label={t.nav.settings}
-          className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'lg:hidden' })}
-        >
-          <Settings aria-hidden />
-        </Link>
-      </header>
-      {plan.isError && <LoadError error={plan.error} onRetry={() => void plan.refetch()} />}
-      {plan.data !== undefined && <CurrentPlan plan={plan.data} />}
-      {plan.data?.pending !== undefined && (
-        // A proposal in place of another starts afresh, without the
-        // other's answer.
-        <PendingProposal
-          key={plan.data.pending.id}
-          proposal={plan.data.pending}
-          preview={plan.data.pending_preview}
-        />
-      )}
-      {plan.data !== undefined && <Revisions revisions={plan.data.revisions} />}
-      {/* Loading too while a cached profile is asked again. */}
-      {!fresh && !profile.isError && (
-        <output className="block text-muted-foreground">{t.loading}</output>
-      )}
-      {/* The profile as the server has it when the page opens, not as a
-          cache kept it. Once shown, what is typed stays, saved or not,
-          whatever a later ask comes to. */}
-      {fresh ? (
-        <ProfileForm profile={profile.data} />
-      ) : (
-        profile.isError && (
-          <LoadError error={profile.error} onRetry={() => void profile.refetch()} />
-        )
-      )}
-      {limits.isPending && <output className="block text-muted-foreground">{t.loading}</output>}
-      {limits.isError && <LoadError error={limits.error} onRetry={() => void limits.refetch()} />}
-      {limits.data && <LimitsForm body={limits.data} />}
-    </section>
+    <div className="space-y-4">
+      <h1 className="text-title">{t.plan.title}</h1>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+        <div className="space-y-3 lg:col-span-8 lg:space-y-4">{body}</div>
+        <div className="space-y-6 lg:sticky lg:top-8 lg:col-span-4">
+          <YouList />
+          <SettingsList titled className="lg:hidden" />
+        </div>
+      </div>
+    </div>
   )
 }

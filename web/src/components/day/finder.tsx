@@ -218,14 +218,18 @@ export function Finder({
               key={l}
               value={l}
               // 32 px to the eye, 44 to a finger.
-              className="relative h-8 rounded-full bg-surface-2 px-3 text-small outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring data-active:bg-foreground data-active:font-semibold data-active:text-background"
+              className="relative h-8 min-w-11 rounded-full bg-surface-2 px-3 text-small outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring data-active:bg-foreground data-active:font-semibold data-active:text-background"
             >
               {t.log.list[l]}
             </Tabs.Tab>
           ))}
         </Tabs.List>
         {lists.map((l) => (
-          <Tabs.Panel key={l} value={l} className="pt-2 outline-none">
+          <Tabs.Panel
+            key={l}
+            value={l}
+            className="rounded-md pt-2 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <Results
               {...shown[l]}
               searched={q !== ''}

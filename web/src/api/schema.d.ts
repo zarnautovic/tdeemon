@@ -185,7 +185,7 @@ export interface paths {
         };
         /**
          * List your foods
-         * @description Needs a web session. A page of your foods, the archived ones or the others, by name, by their last use or by how many of your latest meals had them, with how many there are; find_foods searches them.
+         * @description Needs a web session. A page of your foods, the archived ones or the others, of a source alone when asked, by name, by their last use or by how many of your latest meals had them, with how many there are; find_foods searches them.
          */
         get: operations["list-foods"];
         put?: never;
@@ -228,6 +228,26 @@ export interface paths {
          * @description A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).
          */
         get: operations["get-food"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/foods/{id}/use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a food's use
+         * @description Needs a web session. How many of your meals had a food of yours, archived too, and the last of them: what a food's page says of it, and the amount it offers to log.
+         */
+        get: operations["get-food-use"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1048,6 +1068,15 @@ export interface components {
             saturated_fat?: number;
             /** Format: double */
             sugars?: number;
+        };
+        FoodUseOutputBody: {
+            /** @description The last time a meal used the food; absent when none has. */
+            last_use?: components["schemas"]["LastUseBody"];
+            /**
+             * Format: int64
+             * @description How many of your meals had the food.
+             */
+            meals: number;
         };
         FoodsOutputBody: {
             foods: components["schemas"]["FoodBody"][];
@@ -3266,6 +3295,8 @@ export interface operations {
             query?: {
                 /** @description The archived foods instead of the others. */
                 archived?: boolean;
+                /** @description The foods whose values come from it alone, such as the estimates to check. */
+                source?: "label" | "estimate" | "user" | "dish";
                 /** @description name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use. */
                 order?: "name" | "use" | "frequent";
                 /** @description The most foods of the page. */
@@ -3469,6 +3500,83 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FoodBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-food-use": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoodUseOutputBody"];
                 };
             };
             /** @description Unauthorized */

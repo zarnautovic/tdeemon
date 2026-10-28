@@ -14,3 +14,9 @@ export const inputClass =
 
 // fieldLabel is a field's label: small, in sentence case, above the field.
 export const fieldLabel = 'text-small text-muted-foreground'
+
+// linkTarget is a link's or a button's that looks like one, on a line of
+// its own: as high as its words to the eye, 44 px or more to a finger (an
+// ::after over it, 14 px above and below).
+export const linkTarget =
+  "relative after:absolute after:inset-x-0 after:-inset-y-3.5 after:content-['']"

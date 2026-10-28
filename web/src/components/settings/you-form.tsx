@@ -6,31 +6,16 @@ import { detailOf, statusOf } from '@/api/errors'
 import { sessionQuery } from '@/api/session'
 import type { Session } from '@/api/sign-in'
 import { SaveStatus } from '@/components/day/save-status'
+import { TimeZoneField } from '@/components/settings/time-zone-field'
 import { Button } from '@/components/ui/button'
 import { locales, setLocale, type Locale } from '@/i18n/locale'
 import { messagesOf, useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
-import { nameNow } from '@/lib/time-zones'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 type User = Session['user']
-
-// zones are the time zones to choose from: the browser's own list under
-// the names IANA gives them now, with UTC, the browser's zone and the
-// user's in it whatever it holds, an old name too (V8's has no UTC);
-// undefined for a browser without a list, where the zone is typed, which
-// the server checks.
-function zones(current: string): string[] | undefined {
-  if (typeof Intl.supportedValuesOf !== 'function') {
-    return undefined
-  }
-  const own = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return [
-    ...new Set([...Intl.supportedValuesOf('timeZone').map(nameNow), 'UTC', nameNow(own), current]),
-  ].toSorted()
-}
 
 const hours = Array.from({ length: 24 }, (_, h) => h)
 
@@ -40,10 +25,11 @@ type Edits = Partial<{ name: string; locale: Locale; timezone: string; day_start
 // YouForm changes the user's name, the app's language, their time zone
 // and the hour their day starts. A field shows the user as the session
 // has them until it is changed, and only the fields changed are sent, so
-// what another tab changed meanwhile stays and shows. Saved, the session holds the user as changed
-// and the user is asked again; a day, whose bounds may have moved, is
-// asked whenever it is shown.
-export function YouForm({ user }: { user: User }) {
+// what another tab changed meanwhile stays and shows. Saved, the session
+// holds the user as changed and the user is asked again; a day, whose
+// bounds may have moved, is asked whenever it is shown. labelledBy is the
+// id of what names the form, the page's title.
+export function YouForm({ user, labelledBy }: { user: User; labelledBy: string }) {
   const t = useMessages()
   const id = useId()
   const queryClient = useQueryClient()
@@ -80,7 +66,6 @@ export function YouForm({ user }: { user: User }) {
     },
   })
   const refused = save.isError && statusOf(save.error) === 422
-  const choices = zones(user.timezone)
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -106,101 +91,83 @@ export function YouForm({ user }: { user: User }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`} className="font-medium">
-        {t.settings.you}
-      </h2>
-      <div className="space-y-1">
-        <label className="block space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.settings.name}</span>
-          <input
-            value={name}
-            maxLength={limits.user.maxNameLen}
-            autoComplete="name"
-            aria-invalid={noName || undefined}
-            aria-describedby={noName ? `${id}-name` : undefined}
-            className={inputClass}
-            onChange={(e) => {
-              edit({ name: e.currentTarget.value })
-              setNoName(false)
-            }}
-          />
-        </label>
-        {noName && (
-          <p id={`${id}-name`} role="alert" className="text-sm text-destructive">
-            {t.settings.nameNeeded}
-          </p>
-        )}
-      </div>
-      <label className="block space-y-1">
-        <span className={cn(fieldLabel, 'block')}>{t.settings.language}</span>
-        <select
-          value={locale}
-          className={inputClass}
-          onChange={(e) => {
-            const chosen = locales.find((l) => l.locale === e.currentTarget.value)
-            if (chosen) {
-              edit({ locale: chosen.locale })
-            }
-          }}
-        >
-          {locales.map((l) => (
-            <option key={l.locale} value={l.locale} lang={l.locale}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block space-y-1">
-        <span className={cn(fieldLabel, 'block')}>{t.settings.timeZone}</span>
-        {choices ? (
-          <select
-            value={timeZone}
-            className={inputClass}
-            onChange={(e) => {
-              edit({ timezone: e.currentTarget.value })
-            }}
-          >
-            {choices.map((z) => (
-              <option key={z} value={z}>
-                {z}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            value={timeZone}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="Europe/Zagreb"
-            className={inputClass}
-            onChange={(e) => {
-              edit({ timezone: e.currentTarget.value.trim() })
-            }}
-          />
-        )}
-      </label>
-      <div className="space-y-1">
-        <label className="block space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.settings.dayStart}</span>
-          <select
-            value={dayStart}
-            aria-describedby={`${id}-start`}
-            className={inputClass}
-            onChange={(e) => {
-              edit({ day_start_hour: Number(e.currentTarget.value) })
-            }}
-          >
-            {hours.map((h) => (
-              <option key={h} value={h}>
-                {`${String(h).padStart(2, '0')}:00`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p id={`${id}-start`} className="text-xs text-muted-foreground">
-          {t.settings.dayStartHint}
+    <form onSubmit={submit} className="space-y-4" aria-labelledby={labelledBy}>
+      <div className="space-y-4 rounded-lg border bg-card p-4 lg:p-5">
+        <div className="space-y-1">
+          <label className="block space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.settings.name}</span>
+            <input
+              value={name}
+              maxLength={limits.user.maxNameLen}
+              autoComplete="name"
+              aria-invalid={noName || undefined}
+              aria-describedby={noName ? `${id}-name` : undefined}
+              className={inputClass}
+              onChange={(e) => {
+                edit({ name: e.currentTarget.value })
+                setNoName(false)
+              }}
+            />
+          </label>
+          {noName && (
+            <p id={`${id}-name`} role="alert" className="text-sm text-destructive">
+              {t.settings.nameNeeded}
+            </p>
+          )}
+        </div>
+        <p className="text-small text-muted-foreground">
+          {t.settings.email}: {user.email}
         </p>
+      </div>
+      <div className="space-y-4 rounded-lg border bg-card p-4 lg:p-5">
+        <label className="block space-y-1">
+          <span className={cn(fieldLabel, 'block')}>{t.settings.language}</span>
+          <select
+            value={locale}
+            className={inputClass}
+            onChange={(e) => {
+              const chosen = locales.find((l) => l.locale === e.currentTarget.value)
+              if (chosen) {
+                edit({ locale: chosen.locale })
+              }
+            }}
+          >
+            {locales.map((l) => (
+              <option key={l.locale} value={l.locale} lang={l.locale}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <TimeZoneField
+          value={timeZone}
+          stored={user.timezone}
+          onChange={(zone) => {
+            edit({ timezone: zone })
+          }}
+        />
+        <div className="space-y-1">
+          <label className="block space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.settings.dayStart}</span>
+            <select
+              value={dayStart}
+              aria-describedby={`${id}-start`}
+              className={cn(inputClass, 'tabular-nums')}
+              onChange={(e) => {
+                edit({ day_start_hour: Number(e.currentTarget.value) })
+              }}
+            >
+              {hours.map((h) => (
+                <option key={h} value={h}>
+                  {`${String(h).padStart(2, '0')}:00`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p id={`${id}-start`} className="text-caption text-muted-foreground">
+            {t.settings.dayStartHint}
+          </p>
+        </div>
       </div>
       <Button type="submit" disabled={save.isPending}>
         {t.settings.save}

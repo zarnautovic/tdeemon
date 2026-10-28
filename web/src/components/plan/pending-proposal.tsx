@@ -70,8 +70,11 @@ export function PendingProposal({
   const p = t.plan.pending
 
   return (
-    <section aria-labelledby={id} className="space-y-3 rounded-lg border bg-card p-4">
-      <h2 id={id} className="text-lg font-semibold">
+    <section
+      aria-labelledby={id}
+      className="space-y-3 rounded-lg border border-primary/40 bg-card p-4 shadow-card lg:p-5"
+    >
+      <h2 id={id} className="text-h3">
         {p.title}
       </h2>
       <p className="text-sm text-muted-foreground">

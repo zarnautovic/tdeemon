@@ -6,7 +6,7 @@ import { Field } from '@/components/day/field'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
-import { inputClass } from '@/lib/styles'
+import { inputClass, linkTarget } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -63,7 +63,7 @@ export function DayNote({ day }: { day: Day }) {
     return (
       <Button
         variant="link"
-        className="h-auto p-0 text-small font-semibold"
+        className={cn(linkTarget, 'h-auto p-0 text-small font-semibold')}
         onClick={() => {
           setAsked(true)
         }}

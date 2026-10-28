@@ -201,6 +201,7 @@ func newLastUseBody(u store.LastUse) *lastUseBody {
 // values store.FoodOrder's.
 type listFoodsInput struct {
 	Archived bool   `query:"archived" doc:"The archived foods instead of the others."`
+	Source   string `query:"source" enum:"label,estimate,user,dish" doc:"The foods whose values come from it alone, such as the estimates to check."`
 	Order    string `query:"order" enum:"name,use,frequent" default:"name" doc:"name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use."`
 	Limit    int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"The most foods of the page."`
 	Offset   int    `query:"offset" default:"0" minimum:"0" maximum:"1000000" doc:"How many foods of the list come before the page."`
@@ -219,7 +220,7 @@ func (s *sessions) listFoods(ctx context.Context, in *listFoodsInput) (*foodList
 	if err != nil {
 		return nil, err
 	}
-	foods, total, err := s.db.ListFoods(ctx, p.User.ID, in.Archived, store.FoodOrder(in.Order), in.Limit, in.Offset)
+	foods, total, err := s.db.ListFoods(ctx, p.User.ID, in.Archived, food.Source(in.Source), store.FoodOrder(in.Order), in.Limit, in.Offset)
 	if err != nil {
 		return nil, internalError("listing the foods failed", err)
 	}
@@ -250,11 +251,21 @@ func (s *sessions) registerFoods(a huma.API) {
 		Method:      http.MethodGet,
 		Path:        Prefix + "/foods/list",
 		Summary:     "List your foods",
-		Description: "Needs a web session. A page of your foods, the archived ones or the others, by name, by their last use or by how many of your latest meals had them, " +
-			"with how many there are; find_foods searches them.",
+		Description: "Needs a web session. A page of your foods, the archived ones or the others, of a source alone when asked, " +
+			"by name, by their last use or by how many of your latest meals had them, with how many there are; find_foods searches them.",
 		Tags:   []string{"foods"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, s.listFoods)
+	huma.Register(a, huma.Operation{
+		OperationID: "get-food-use",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/foods/{id}/use",
+		Summary:     "Get a food's use",
+		Description: "Needs a web session. How many of your meals had a food of yours, archived too, and the last of them: what a food's page says of it, " +
+			"and the amount it offers to log.",
+		Tags:   []string{"foods"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound},
+	}, s.getFoodUse)
 	huma.Register(a, huma.Operation{
 		OperationID: "create-food",
 		Method:      http.MethodPost,
@@ -294,6 +305,44 @@ func (s *sessions) getFood(ctx context.Context, in *getFoodInput) (*foodOutputNo
 		return nil, internalError("reading the food failed", err)
 	}
 	return &foodOutputNoStore{CacheControl: "no-store", Body: newFoodBody(&f)}, nil
+}
+
+type foodUseOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         struct {
+		Meals   int          `json:"meals" doc:"How many of your meals had the food."`
+		LastUse *lastUseBody `json:"last_use,omitempty" doc:"The last time a meal used the food; absent when none has."`
+	}
+}
+
+func (s *sessions) getFoodUse(ctx context.Context, in *getFoodInput) (*foodUseOutput, error) {
+	p, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(in.ID)
+	if err != nil {
+		return nil, huma.Error404NotFound("no such food")
+	}
+	if _, err := s.db.FoodByID(ctx, p.User.ID, id); errors.Is(err, store.ErrNotFound) {
+		return nil, huma.Error404NotFound("no such food")
+	} else if err != nil {
+		return nil, internalError("reading the food's use failed", err)
+	}
+	meals, err := s.db.MealsWithFood(ctx, p.User.ID, id)
+	if err != nil {
+		return nil, internalError("reading the food's use failed", err)
+	}
+	uses, err := s.db.LastUses(ctx, p.User.ID, []uuid.UUID{id})
+	if err != nil {
+		return nil, internalError("reading the food's use failed", err)
+	}
+	out := &foodUseOutput{CacheControl: "no-store"}
+	out.Body.Meals = meals
+	if u, ok := uses[id]; ok {
+		out.Body.LastUse = newLastUseBody(u)
+	}
+	return out, nil
 }
 
 type upsertFoodInput struct {

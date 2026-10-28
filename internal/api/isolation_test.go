@@ -668,6 +668,23 @@ func isolateGetFood(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateGetFoodUse is get-food-use's case: the owner's food answers the
+// other as one that does not exist; their own food's meals are theirs
+// alone.
+func isolateGetFoodUse(t *testing.T, e isolationEnv) {
+	t.Helper()
+	session := []*http.Cookie{e.other.session}
+	theirs := e.in.do(t, http.MethodGet, "/api/v1/foods/"+e.owner.bread.ID.String()+"/use", "", session, nil)
+	none := e.in.do(t, http.MethodGet, "/api/v1/foods/"+uuid.NewV7().String()+"/use", "", session, nil)
+	if theirs.Code != http.StatusNotFound || theirs.Body.String() != none.Body.String() {
+		t.Errorf("the owner's food: %d %s; one that does not exist: %d %s; want the same 404", theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
+	}
+	if own := e.in.do(t, http.MethodGet, "/api/v1/foods/"+e.other.bread.ID.String()+"/use", "", session, nil); own.Code != http.StatusOK ||
+		!strings.Contains(own.Body.String(), `"meals":1,`) {
+		t.Errorf("their own food's use: %d %s, want their one meal", own.Code, own.Body.String())
+	}
+}
+
 // isolateUpsertFood is upsert-food's case: the other saves a food of
 // their own, with a token, and the owner's foods stay as they were.
 // (TestUpsertFoodIDsArePerUser saves the owner's name, brand and alias,
@@ -824,6 +841,7 @@ func isolationCases() map[string]isolationCase {
 		"upsert-food":   isolateUpsertFood,
 		"create-food":   isolateCreateFood,
 		"get-food":      isolateGetFood,
+		"get-food-use":  isolateGetFoodUse,
 		"log-meal":      isolateLogMeal,
 		"update-meal":   isolateMeal(http.MethodPatch, `{"note": "seen"}`),
 		"delete-meal":   isolateMeal(http.MethodDelete, ""),

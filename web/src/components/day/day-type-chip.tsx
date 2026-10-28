@@ -46,7 +46,7 @@ export function DayTypeChip({ day }: { day: Day }) {
         <Menu.Trigger
           aria-label={t.day.dayTypeOf(name)}
           className={cn(
-            'flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-small font-semibold whitespace-nowrap outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            "relative flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-small font-semibold whitespace-nowrap outline-none after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             type === 'training'
               ? 'border-primary bg-primary-soft text-primary'
               : 'border-border bg-card text-foreground',

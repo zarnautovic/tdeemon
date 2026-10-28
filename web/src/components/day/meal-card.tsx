@@ -11,6 +11,7 @@ import { longName, mealName } from '@/components/day/meal-slot'
 import { RepeatStatus } from '@/components/day/repeat-meal'
 import { SaveStatus } from '@/components/day/save-status'
 import { Sheet } from '@/components/sheet'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -137,13 +138,9 @@ export function MealCard({
               {f.grams(meal.total.carbs)} · {t.day.short.fat} {f.grams(meal.total.fat)}
             </span>
             <span className="ml-auto flex items-center gap-1.5">
-              {models.has(meal.client) && (
-                <span className="rounded-full bg-surface-2 px-2 py-0.5">{t.meal.ai}</span>
-              )}
+              {models.has(meal.client) && <Badge>{t.meal.ai}</Badge>}
               {meal.items.some((item) => item.source === 'estimate') && (
-                <span className="rounded-full bg-warning/10 px-2 py-0.5 text-warning">
-                  {t.meal.estimate}
-                </span>
+                <Badge tone="warning">{t.meal.estimate}</Badge>
               )}
               <span>{t.meal.items(meal.items.length)}</span>
             </span>

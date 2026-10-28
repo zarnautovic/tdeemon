@@ -79,6 +79,12 @@ func TestListFoods(t *testing.T) {
 		"?archived=true":               `"name":"Ana's canteen stew"`,
 		"?order=use&offset=5":          `{"foods":[],"total":2}`,
 		"?order=frequent&limit=1":      `"name":"Ana's rye bread"`,
+		// The foods off a label: the apple alone.
+		"?source=label":               `"name":"Apple"`,
+		"?source=label&order=use":     `],"total":1}`,
+		"?source=user&order=use":      `"last_use"`,
+		"?source=estimate":            `{"foods":[],"total":0}`,
+		"?archived=true&source=label": `{"foods":[],"total":0}`,
 	} {
 		rec := in.do(t, http.MethodGet, "/api/v1/foods/list"+query, "", cookies, nil)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
@@ -88,7 +94,7 @@ func TestListFoods(t *testing.T) {
 	if got := in.do(t, http.MethodGet, "/api/v1/foods/list?order=name&limit=1", "", cookies, nil).Body.String(); strings.Count(got, `"id"`) != 1 {
 		t.Errorf("limit 1: %s", got)
 	}
-	for _, q := range []string{"?limit=0", "?limit=201", "?offset=-1", "?order=kcal"} {
+	for _, q := range []string{"?limit=0", "?limit=201", "?offset=-1", "?order=kcal", "?source=guess"} {
 		if rec := in.do(t, http.MethodGet, "/api/v1/foods/list"+q, "", cookies, nil); rec.Code != http.StatusUnprocessableEntity {
 			t.Errorf("GET /api/v1/foods/list%s: %d, want 422", q, rec.Code)
 		}
@@ -141,5 +147,58 @@ func TestCreateFood(t *testing.T) {
 	}
 	if rec := in.do(t, http.MethodPost, "/api/v1/foods/new", body, nil, bearer(tok.Token)); rec.Code != http.StatusForbidden {
 		t.Errorf("with a token: %d, want 403", rec.Code)
+	}
+}
+
+// get-food-use says how many of the user's meals had a food, archived
+// too, and the last of them, for a web session only.
+func TestFoodUse(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := sessionOf(t, in)
+	cookies := []*http.Cookie{session}
+	now := in.clock.Now()
+	bread := saveIsolationFoods(t, in.db, in.user, now) // and an archived stew, never eaten
+	mealID := saveIsolationMeals(t, in.db, in.user, bread, now)
+	// Another meal of it, an hour before: the lunch is the last.
+	half, err := meal.FromFood(bread, meal.Quantity{Amount: 20, Unit: "g"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(-time.Hour)
+	before := meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{half}}
+	if _, _, err := in.db.CreateMeal(t.Context(), in.user.ID, isolationActor, before, now); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := in.do(t, http.MethodGet, "/api/v1/foods/"+bread.ID.String()+"/use", "", cookies, nil)
+	if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("the bread's use: %d %s", rec.Code, rec.Body.String())
+	}
+	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{"meals": 2, "last_use": {"at": %q, "day": %q, "meal_id": %q,
+		"quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}}`,
+		now.Format(time.RFC3339), day.DateOf(now).String(), mealID))
+
+	// The archived stew, which no meal had: none, and no last use.
+	list := in.do(t, http.MethodGet, "/api/v1/foods/list?archived=true", "", cookies, nil)
+	_, after, _ := strings.Cut(list.Body.String(), `"id":"`)
+	stew, _, _ := strings.Cut(after, `"`)
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods/"+stew+"/use", "", cookies, nil); rec.Code != http.StatusOK || rec.Body.String() != `{"meals":0}`+"\n" {
+		t.Errorf("the stew's use: %d %q, want no meals", rec.Code, rec.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods/"+uuid.NewV7().String()+"/use", "", cookies, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("no such food: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+	// Not with an API token, nor without anyone.
+	tok, created := in.createToken(t, session, `{"name":"phone","scopes":["read","tools"]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("a token: %d %s", created.Code, created.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods/"+bread.ID.String()+"/use", "", nil, bearer(tok.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("with a token: %d, want 403", rec.Code)
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/foods/"+bread.ID.String()+"/use", "", nil, nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("without anyone: %d, want 401", rec.Code)
 	}
 }

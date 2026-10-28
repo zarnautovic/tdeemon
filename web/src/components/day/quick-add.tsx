@@ -20,7 +20,7 @@ import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { fieldLabel, inputClass } from '@/lib/styles'
+import { fieldLabel, inputClass, linkTarget } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
@@ -211,7 +211,10 @@ function Composer({
           aria-controls={`${id}-details`}
           aria-label={t.log.changeOf}
           disabled={held}
-          className="font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          className={cn(
+            linkTarget,
+            'font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
+          )}
           onClick={() => {
             setDetails((d) => !d)
           }}

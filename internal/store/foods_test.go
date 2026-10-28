@@ -616,8 +616,9 @@ func TestCorrectFood(t *testing.T) {
 	}
 }
 
-// ListFoods pages a user's foods, the archived ones apart, by name, by
-// the last use or by the meals that had them, and counts them.
+// ListFoods pages a user's foods, the archived ones apart and of a source
+// alone when asked, by name, by the last use or by the meals that had
+// them, and counts them.
 func TestListFoods(t *testing.T) {
 	t.Parallel()
 
@@ -632,7 +633,10 @@ func TestListFoods(t *testing.T) {
 	banana := mk(ana, "banana")
 	apple := mk(ana, "Apple")
 	cheese := mk(ana, "Cheese")
-	mk(ana, "Dates")
+	// Dates off a label; the others estimates.
+	dates := mk(ana, "Dates")
+	dates.Source = food.Label
+	saveFood(t, db, ana, dates)
 	old := mk(ana, "Old bread")
 	mk(ivo, "Avocado")
 	// Ivo's food under the id of Ana's apple, eaten last of all: Ana's list
@@ -660,9 +664,9 @@ func TestListFoods(t *testing.T) {
 		createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientMCP, Items: []meal.Item{it}})
 	}
 
-	list := func(archived bool, order store.FoodOrder, limit, offset int) ([]string, int) {
+	list := func(archived bool, source food.Source, order store.FoodOrder, limit, offset int) ([]string, int) {
 		t.Helper()
-		got, total, err := db.ListFoods(t.Context(), ana, archived, order, limit, offset)
+		got, total, err := db.ListFoods(t.Context(), ana, archived, source, order, limit, offset)
 		if err != nil {
 			t.Fatalf("ListFoods: %v", err)
 		}
@@ -671,32 +675,38 @@ func TestListFoods(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		archived      bool
+		source        food.Source
 		order         store.FoodOrder
 		limit, offset int
 		want          []string
 		total         int
 	}{
-		{"by name, in any case", false, store.ByName, 10, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
-		{"a page", false, store.ByName, 2, 1, []string{"banana", "Cheese"}, 4},
-		{"past the end", false, store.ByName, 2, 9, nil, 4},
-		{"by the last use, then the name", false, store.ByUse, 10, 0, []string{"Cheese", "banana", "Apple", "Dates"}, 4},
-		{"by the meals, then the last use", false, store.ByFrequency, 10, 0, []string{"banana", "Cheese", "Apple", "Dates"}, 4},
-		{"the archived", true, store.ByName, 10, 0, []string{"Old bread"}, 1},
-		{"no more than the bound", false, store.ByName, store.MaxFoodList + 1, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
+		{"by name, in any case", false, "", store.ByName, 10, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
+		{"a page", false, "", store.ByName, 2, 1, []string{"banana", "Cheese"}, 4},
+		{"past the end", false, "", store.ByName, 2, 9, nil, 4},
+		{"by the last use, then the name", false, "", store.ByUse, 10, 0, []string{"Cheese", "banana", "Apple", "Dates"}, 4},
+		{"by the meals, then the last use", false, "", store.ByFrequency, 10, 0, []string{"banana", "Cheese", "Apple", "Dates"}, 4},
+		{"the archived", true, "", store.ByName, 10, 0, []string{"Old bread"}, 1},
+		{"no more than the bound", false, "", store.ByName, store.MaxFoodList + 1, 0, []string{"Apple", "banana", "Cheese", "Dates"}, 4},
+		{"the estimates", false, food.Estimate, store.ByName, 10, 0, []string{"Apple", "banana", "Cheese"}, 3},
+		{"the estimates, a page", false, food.Estimate, store.ByUse, 1, 1, []string{"banana"}, 3},
+		{"off a label", false, food.Label, store.ByName, 10, 0, []string{"Dates"}, 1},
+		{"the archived estimates", true, food.Estimate, store.ByName, 10, 0, []string{"Old bread"}, 1},
+		{"of a source none has", false, food.User, store.ByName, 10, 0, nil, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, total := list(tc.archived, tc.order, tc.limit, tc.offset)
+			got, total := list(tc.archived, tc.source, tc.order, tc.limit, tc.offset)
 			if !slices.Equal(got, tc.want) || total != tc.total {
 				t.Errorf("ListFoods = %v of %d, want %v of %d", got, total, tc.want, tc.total)
 			}
 		})
 	}
-	got, _, err := db.ListFoods(t.Context(), ana, false, store.ByName, 1, 0)
+	got, _, err := db.ListFoods(t.Context(), ana, false, "", store.ByName, 1, 0)
 	if err != nil || len(got) != 1 || len(got[0].Aliases) != 1 {
 		t.Errorf("a listed food without its alias: %+v, %v", got, err)
 	}
-	if _, _, err := db.ListFoods(t.Context(), ana, false, "kcal", 10, 0); err == nil {
+	if _, _, err := db.ListFoods(t.Context(), ana, false, "", "kcal", 10, 0); err == nil {
 		t.Error("ListFoods by kcal: no error")
 	}
 }
@@ -725,7 +735,7 @@ func TestListFoodsByFrequency(t *testing.T) {
 		at = at.Add(time.Hour)
 		createMeal(t, db, ana, meal.Meal{ID: meal.NewIDAt(at), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{it}})
 	}
-	got, _, err := db.ListFoods(t.Context(), ana, false, store.ByFrequency, 10, 0)
+	got, _, err := db.ListFoods(t.Context(), ana, false, "", store.ByFrequency, 10, 0)
 	if want := []string{"Apple", "Cheese", "Oats", "Dates"}; err != nil || !slices.Equal(names(got), want) {
 		t.Errorf("ListFoods by frequency = %v, %v; want %v", names(got), err, want)
 	}

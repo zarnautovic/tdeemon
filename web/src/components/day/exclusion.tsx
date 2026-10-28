@@ -80,7 +80,7 @@ export function Exclusion({ day }: { day: Day }) {
               setOpen(!on)
             }
           }}
-          className="relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full bg-surface-2 p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card data-checked:bg-primary data-disabled:opacity-45"
+          className="relative mt-0.5 inline-flex h-7 w-12 shrink-0 items-center rounded-full bg-surface-2 p-0.5 outline-none after:absolute after:-inset-2 after:content-[''] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card data-checked:bg-primary data-disabled:opacity-45"
         >
           <Switch.Thumb className="size-6 rounded-full bg-card shadow-card transition-transform duration-(--duration-base) data-checked:translate-x-5" />
         </Switch.Root>

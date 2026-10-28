@@ -3,6 +3,7 @@ import {
   createRootRouteWithContext,
   createRoute,
   createRouter,
+  defaultStringifySearch,
   lazyRouteComponent,
   redirect,
   type RouterHistory,
@@ -12,15 +13,22 @@ import { statusOf } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
 import { isDate } from '@/i18n/format'
 import { setLocale } from '@/i18n/locale'
+import { AccountPage } from '@/pages/account'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
+import { AppearancePage } from '@/pages/appearance'
 import { DayPage } from '@/pages/day'
+import { DevicesPage } from '@/pages/devices'
 import { FoodPage } from '@/pages/food'
 import { FoodsPage } from '@/pages/foods'
+import { FoodsIndexPage } from '@/pages/foods-index'
+import { LimitsPage } from '@/pages/limits'
 import { LoginPage } from '@/pages/login'
 import { NewFoodPage } from '@/pages/new-food'
 import { NotFoundPage } from '@/pages/not-found'
+import { NotesPage } from '@/pages/notes'
 import { PlanPage } from '@/pages/plan'
+import { ProfilePage } from '@/pages/profile'
 import { RootLayout } from '@/pages/root-layout'
 import { SettingsPage } from '@/pages/settings'
 
@@ -97,31 +105,67 @@ const dayRoute = createRoute({
   }),
   component: DayPage,
 })
-// The foods: a search (q), or the list in use or archived, by name or by
-// the last use.
+// The foods: a search (q), or a list (in use, archived or the estimates),
+// by how many meals had them lately, by the last use or by name; and
+// within it a food, or a new one, beside the list on a desktop and
+// instead of it on a phone. The list's search goes with the food's
+// address, so the list beside it, and back from it, is as it was left.
+// archived=true, the archive's address before the lists, leads to the
+// archive's address now, so a list chosen from then on is the filter's.
 const foodsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/foods',
+  beforeLoad: ({ location, search }) => {
+    if ('archived' in location.search) {
+      // Its own fields alone: the router keeps what it did not validate.
+      const { q, filter, order } = search
+      // oxlint-disable-next-line typescript/only-throw-error -- the router's redirect is thrown by design
+      throw redirect({
+        href: `${location.pathname}${defaultStringifySearch({ q, filter, order })}`,
+        replace: true,
+      })
+    }
+  },
   validateSearch: (search: Record<string, unknown>): FoodsSearch => ({
     q: typeof search.q === 'string' && search.q !== '' ? search.q : undefined,
-    archived: search.archived === true || search.archived === 'true' ? true : undefined,
-    order: search.order === 'use' ? 'use' : undefined,
+    filter:
+      search.filter === 'archived' || search.filter === 'estimates'
+        ? search.filter
+        : search.archived === true || search.archived === 'true'
+          ? 'archived'
+          : undefined,
+    order: search.order === 'use' || search.order === 'name' ? search.order : undefined,
   }),
   component: FoodsPage,
 })
+const foodsIndexRoute = createRoute({
+  getParentRoute: () => foodsRoute,
+  path: '/',
+  component: FoodsIndexPage,
+})
 const newFoodRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/foods/new',
+  getParentRoute: () => foodsRoute,
+  path: 'new',
   component: NewFoodPage,
 })
+// A food, read; edit=true corrects it.
 const foodRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: '/foods/$id',
+  getParentRoute: () => foodsRoute,
+  path: '$id',
+  validateSearch: (search: Record<string, unknown>): { edit?: true | undefined } => ({
+    edit: search.edit === true || search.edit === 'true' ? true : undefined,
+  }),
   component: FoodPage,
 })
-// The progress, over the span of days the address says (90 by default):
-// its charts load ECharts with them, not with the app.
-function spanOf(search: Record<string, unknown>): { days?: 30 | 180 | 365 | undefined } {
+// The progress, over the span of days the address says (90 by default),
+// or the phase's days: its charts load ECharts with them, not with the
+// app.
+function spanOf(search: Record<string, unknown>): {
+  days?: 30 | 180 | 365 | 'phase' | undefined
+} {
+  if (search.days === 'phase') {
+    return { days: 'phase' }
+  }
   const days = Number(search.days)
   return { days: days === 30 || days === 180 || days === 365 ? days : undefined }
 }
@@ -131,15 +175,49 @@ const progressRoute = createRoute({
   validateSearch: spanOf,
   component: lazyRouteComponent(() => import('@/pages/charts'), 'ChartsPage'),
 })
+// The plan, and what it rests on of the user's, a page each: the
+// profile, the limits and the notes for a coach.
 const planRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/plan',
   component: PlanPage,
 })
+const profileRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/plan/profile',
+  component: ProfilePage,
+})
+const limitsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/plan/limits',
+  component: LimitsPage,
+})
+const notesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/plan/notes',
+  component: NotesPage,
+})
+// The settings, as a list, and a page each: the theme, the account, and
+// the devices and AI clients.
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings',
   component: SettingsPage,
+})
+const appearanceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/appearance',
+  component: AppearancePage,
+})
+const accountRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/account',
+  component: AccountPage,
+})
+const devicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/devices',
+  component: DevicesPage,
 })
 // The addresses of before, the charts' and the plan's under the settings,
 // lead where they are now.
@@ -164,12 +242,16 @@ const oldPlanRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     dayRoute,
-    foodsRoute,
-    newFoodRoute,
-    foodRoute,
+    foodsRoute.addChildren([foodsIndexRoute, newFoodRoute, foodRoute]),
     progressRoute,
     planRoute,
+    profileRoute,
+    limitsRoute,
+    notesRoute,
     settingsRoute,
+    appearanceRoute,
+    accountRoute,
+    devicesRoute,
   ]),
   loginRoute,
   chartsRoute,
@@ -231,19 +313,20 @@ export interface DaySearch {
   log?: true | undefined
 }
 
-// FoodsSearch is what the foods page shows: its search, its list and its
-// order.
+// FoodsSearch is what the foods page shows: its search, its list (in use
+// when left out) and its order (by how many meals had them lately when
+// left out).
 export interface FoodsSearch {
   q?: string | undefined
-  archived?: true | undefined
-  order?: 'use' | undefined
+  filter?: 'archived' | 'estimates' | undefined
+  order?: 'use' | 'name' | undefined
 }
 
 declare module '@tanstack/history' {
   interface HistoryState {
-    // The foods page a food's page was opened from, to go back to.
-    foods?: FoodsSearch
     // The foods' search takes the focus (the shortcut /).
     find?: true
+    // A food's form was opened from the food, which it goes back to.
+    fromFood?: true
   }
 }
