@@ -9,7 +9,8 @@ async function toPlanRow(page: Page, row: string) {
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('link', { name: 'Plan' })
     .click()
-  await page.getByRole('link', { name: row }).click()
+  // Its own row's: a first step may name it too ("Complete your profile").
+  await page.getByRole('link', { name: row, exact: true }).click()
   await expect(page.getByRole('heading', { name: row, level: 1 })).toBeVisible()
 }
 
@@ -27,7 +28,7 @@ test('the profile is set, and the plan says it whole', async ({ page }) => {
   await expect(page.getByText(/^Female · \d+ years · 168 cm$/)).toBeVisible()
 
   // The profile cleared again, for the other tests.
-  await page.getByRole('link', { name: 'Profile' }).click()
+  await page.getByRole('link', { name: 'Profile', exact: true }).click()
   await profile.getByText('Not given', { exact: true }).click()
   await profile.getByLabel('Birth date').fill('')
   await profile.getByRole('textbox', { name: /Height/ }).fill('')

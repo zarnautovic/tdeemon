@@ -25,6 +25,9 @@ export async function toSettings(page: Page) {
 // openMeal opens a meal's row, unless it is open: its items show, and its
 // ways to change it.
 export async function openMeal(meal: Locator) {
+  // The meal first, as the day comes: a row not there yet is not one
+  // closed.
+  await expect(meal).toBeVisible()
   const row = meal.getByRole('button', { expanded: false })
   if ((await row.count()) > 0) {
     await row.click()

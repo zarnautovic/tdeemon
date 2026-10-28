@@ -165,7 +165,12 @@ function asked(fetch: ReturnType<typeof fakeServer>): URLSearchParams[] {
 
 // hero is the verdict on the phase, once it has come.
 async function hero() {
-  const region = await screen.findByRole('region', { name: 'The phase so far' })
+  // The page's module loads with its route, the first time a while.
+  const region = await screen.findByRole(
+    'region',
+    { name: 'The phase so far' },
+    { timeout: 10_000 },
+  )
   await waitFor(() => {
     expect(region.getAttribute('aria-busy')).toBeNull()
   })
