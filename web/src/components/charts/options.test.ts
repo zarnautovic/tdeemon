@@ -1,16 +1,28 @@
-import { expect, test } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, expect, test } from 'vitest'
 
 import {
-  activityOption,
   average7,
-  intervalText,
-  macrosOption,
-  sleepColor,
+  lineOption,
+  nightOf,
+  reachOf,
+  sleepOption,
+  stepsOf,
+  stepsOption,
   tdeeOption,
+  weekly,
   weightOption,
 } from '@/components/charts/options'
 import { palette } from '@/components/charts/palette'
-import { day, svgOf, words } from '@/test/charts'
+import { useChartWords } from '@/components/charts/words'
+import { setLocale } from '@/i18n/locale'
+import { axisLabelOf, day, labelledOn, svgOf, tooltipOf, words } from '@/test/charts'
+
+afterEach(() => {
+  act(() => {
+    setLocale('en')
+  })
+})
 
 const days = [
   day('2026-10-20', {
@@ -43,99 +55,185 @@ function series(option: Record<string, unknown>): Record<string, unknown[]> {
 }
 
 test('the weight is its weigh-ins and its trend, with gaps, and the goal as a line', () => {
-  const option = weightOption(days, words, 75)
+  const option = weightOption(days, words, palette, 75)
   const s = series(option)
   expect(s['Weigh-in']).toEqual([82.4, null, null])
   expect(s.Trend).toEqual([82.6, null, 82.5])
   expect(JSON.stringify(option)).toContain('"yAxis":75')
-  expect(JSON.stringify(weightOption(days, words))).not.toContain('markLine')
-  expect(JSON.stringify(option.xAxis)).toContain('["10-20","10-21","10-22"]')
+  expect(JSON.stringify(weightOption(days, words, palette))).not.toContain('markLine')
+  expect(JSON.stringify(option.xAxis)).toContain('["2026-10-20","2026-10-21","2026-10-22"]')
+  expect(axisLabelOf(option, 'xAxis', '2026-10-20')).toBe('10-20')
 })
 
-test("the macros are each day's kcal of them, and the target", () => {
-  const s = series(macrosOption(days, words))
-  expect(s.Protein).toEqual([600, null, null])
-  expect(s.Carbs).toEqual([800, null, null])
-  expect(s.Fat).toEqual([540, null, null])
-  expect(s.Target).toEqual([2100, null, null])
+test("a day's tooltip says its date and values in a line", () => {
+  const option = weightOption(days, words, palette)
+  expect(tooltipOf(option, 0)).toBe('2026-10-20 · 82.4 kg · trend 82.6')
+  expect(tooltipOf(option, 1)).toBe('2026-10-21')
+  expect(tooltipOf(option, 2)).toBe('2026-10-22 · trend 82.5')
+  expect(tooltipOf(tdeeOption(days, words, palette), 0)).toBe(
+    '2026-10-20 · TDEE 2400 ± 50 · eaten 2000 · target 2100',
+  )
 })
 
-test('the TDEE is a line in a band of its interval, and the intake as dots', () => {
-  const s = series(tdeeOption(days, words))
+test('the TDEE is a line in a band of its interval, what was eaten dots, the target dashed', () => {
+  const option = tdeeOption(days, words, palette)
+  const s = series(option)
   expect(s.low).toEqual([2350, null, null])
-  expect(s.Interval).toEqual([100, null, null])
+  expect(s['80 % interval']).toEqual([100, null, null])
   expect(s.TDEE).toEqual([2400, null, null])
   expect(s.Eaten).toEqual([2000, null, null])
+  expect(s['Target, 7-day average']).toEqual([2100, 2100, 2100])
+  // No legend of ECharts': the card has its own, which wraps.
+  expect(option.legend).toBeUndefined()
 })
 
-test('a night is coloured by its length, and the 7 days are averaged', () => {
-  expect([7, 6.5, 5.9].map(sleepColor)).toEqual([palette.blue, palette.warn, palette.bad])
+test("the target is its 7 days' average, a training day's and a rest day's not a zigzag", () => {
+  const targets = [2400, 2000, 2400, 2000].map((kcal, i) =>
+    day(`2026-10-2${String(i)}`, { target: { kcal, protein: 150, carbs: 200, fat: 60 } }),
+  )
+  const option = tdeeOption(targets, words, palette)
+  expect(series(option)['Target, 7-day average']).toEqual([2400, 2200, 2266.67, 2200])
+  // A tooltip says the day's own.
+  expect(tooltipOf(option, 1)).toBe('2026-10-21 · target 2000')
+})
+
+test("today's open day and a day left out are no dots of what was eaten (#207)", () => {
+  const eaten = { kcal: 360, protein: 20, carbs: 40, fat: 10 }
+  const option = tdeeOption(
+    [
+      day('2026-10-20', { status: 'excluded', intake: { ...eaten, kcal: 5000 } }),
+      day('2026-10-21', { intake: { ...eaten, kcal: 2100 } }),
+      day('2026-10-22', { status: 'open', intake: eaten }),
+    ],
+    words,
+    palette,
+  )
+  expect(series(option).Eaten).toEqual([null, 2100, null])
+  expect(tooltipOf(option, 2)).toBe('2026-10-22')
+})
+
+test('a night is long, middle or short, each a series of its colour, and averaged', () => {
+  expect([7, 6.5, 5.9].map(nightOf)).toEqual(['long', 'middle', 'short'])
+  const option = sleepOption(days, words, palette)
+  const s = series(option)
+  expect(s['7 h or more']).toEqual([7.5, null, null])
+  expect(s['6 to 7 h']).toEqual([null, null, null])
+  expect(s['Under 6 h']).toEqual([null, null, 5.5])
+  expect(s['7-day average']).toEqual([7.5, 7.5, 6.5])
+  const svg = svgOf(option)
+  expect(svg).toContain(palette.blue)
+  expect(svg).toContain(palette.bad)
+  expect(tooltipOf(option, 2)).toBe('2026-10-22 · 5.5 h · 7-day average 6.5 h')
+})
+
+test('the 7 days are averaged over the days that have a value', () => {
   expect(average7([7, null, 5, 8, 8, 8, 8, 8, 2])).toEqual([7, 7, 6, 6.67, 7, 7.2, 7.33, 7.5, 6.71])
   expect(average7([null, null])).toEqual([null, null])
 })
 
-test('the goal is drawn though it is far below the weights', () => {
-  const svg = svgOf(weightOption(days, words, 75))
-
-  expect(svg).toContain('Goal 75.0')
-  expect(svgOf(weightOption(days, words))).not.toContain('Goal')
+test('the weeks are averaged back from the last day, a week without a value a gap', () => {
+  expect(weekly([1, 2, 3, 4, 5, 6, 7, 8, 9])).toEqual([1.5, 6])
+  expect(weekly([null, null, null, null, null, null, null, 7])).toEqual([null, 7])
+  expect(weekly([])).toEqual([])
 })
 
-test("a day without a TDEE says no interval in the tooltip, not a number's half", () => {
-  expect(intervalText(120, words)).toBe('± 60')
-  expect(intervalText(null, words)).toBe('-')
-  expect(intervalText(Number.NaN, words)).toBe('-')
+test('steps count as calibration counts them, on one axis', () => {
+  const stepping = [
+    day('2026-10-20', { steps: 9000 }),
+    day('2026-10-21', { steps: 0 }),
+    day('2026-10-22', { status: 'excluded', steps: 30000 }),
+    day('2026-10-23', { status: 'open', steps: 1000 }),
+  ]
+  expect(stepsOf(stepping)).toEqual([9000, null, null, null])
+  const option = stepsOption(stepping, words, palette)
+  expect(tooltipOf(option, 0)).toBe('2026-10-20 · 9000 steps')
+})
+
+test("the weights' axis ends on its steps, the goal within it", () => {
+  expect(reachOf([84.1, 92.9, 80])).toEqual({ min: 80, max: 95, interval: 5 })
+  expect(reachOf([84.1, 86.3])).toEqual({ min: 84, max: 86.5, interval: 0.5 })
+  expect(reachOf([80])).toEqual({ min: 79, max: 81, interval: 0.5 })
+  expect(reachOf([])).toEqual({ scale: true })
+  const svg = svgOf(weightOption(days, words, palette, 75))
+  expect(svg).toContain('>74.0<')
+  expect(svg).toContain('>84.0<')
+})
+
+test('a measurement is one line on one axis, which writes it as told', () => {
+  const option = lineOption(days, words, palette, {
+    name: 'HRV',
+    color: palette.primary,
+    values: [50, null, 52],
+    axis: (n) => `${String(n)} ms`,
+    tip: (v) => `${String(v)} ms`,
+  })
+  expect(Array.isArray(option.yAxis)).toBe(false)
+  expect(axisLabelOf(option, 'yAxis', 50)).toBe('50 ms')
+  expect(tooltipOf(option, 2)).toBe('2026-10-22 · 52 ms')
+  expect(series(option).HRV).toEqual([50, null, 52])
+})
+
+test('the goal is drawn though it is far below the weights', () => {
+  const svg = svgOf(weightOption(days, words, palette, 75))
+
+  expect(svg).toContain('Goal 75.0')
+  expect(svgOf(weightOption(days, words, palette))).not.toContain('Goal')
 })
 
 test('one weigh-in at the goal keeps the axis around it', () => {
-  const option = weightOption([day('2026-10-20', { weight_kg: 80, trend_kg: 80 })], words, 80)
+  const option = weightOption(
+    [day('2026-10-20', { weight_kg: 80, trend_kg: 80 })],
+    words,
+    palette,
+    80,
+  )
   const svg = svgOf(option)
-  expect(svg).toContain('>81<')
-  expect(svg).toContain('>79<')
-  expect(svg).not.toContain('>40<')
+  expect(svg).toContain('>81.0<')
+  expect(svg).toContain('>79.0<')
+  expect(svg).not.toContain('>40.0<')
 })
 
-test('one weigh-in without a goal keeps the axis around it too', () => {
-  const svg = svgOf(weightOption([day('2026-10-20', { weight_kg: 80, trend_kg: 80 })], words))
-  expect(svg).toContain('>81<')
-  expect(svg).toContain('>79<')
-  expect(svg).not.toContain('>40<')
+test('one weigh-in without a goal keeps the axis around it too, and shows as a dot', () => {
+  const option = weightOption([day('2026-10-20', { weight_kg: 80, trend_kg: 80 })], words, palette)
+  const svg = svgOf(option)
+  expect(svg).toContain('>81.0<')
+  expect(svg).toContain('>79.0<')
+  expect(JSON.stringify(option.series)).toContain('"showSymbol":true')
 })
 
-// labels are an SVG's texts of a colour, each with where it is anchored.
-function labels(svg: string, fill: string): { x: number; anchor: string; text: string }[] {
-  return [
-    ...svg.matchAll(
-      /<text[^>]*text-anchor="(\w+)"[^>]*translate\(([\d.]+) [\d.]+\)" fill="([^"]+)">([^<]*)</g,
-    ),
-  ].flatMap(([, anchor, x, f, text]) =>
-    f === fill && anchor !== undefined && x !== undefined && text !== undefined
-      ? [{ x: Number(x), anchor, text }]
-      : [],
-  )
-}
+test('the axes write numbers and percentages as the language does', () => {
+  const { result } = renderHook(() => useChartWords(false))
+  const en = result.current
+  expect(axisLabelOf(tdeeOption(days, en, palette), 'yAxis', 3034)).toBe('3,034')
+  expect(axisLabelOf(weightOption(days, en, palette), 'yAxis', 85.5)).toBe('85.5')
+  expect(axisLabelOf(weightOption(days, en, palette), 'xAxis', '2026-10-05')).toBe('Oct 5')
+  expect(tooltipOf(weightOption(days, en, palette), 0)).toBe('Tue, Oct 20 · 82.4 kg · trend 82.6')
+  expect(en.percent(32.7)).toBe('32.7%')
 
-test('the labels of both axes fit in the chart, however wide their numbers', () => {
-  const svg = svgOf(
-    activityOption(
-      [
-        day('2026-10-20', { steps: 25000, active_kcal: 1500 }),
-        day('2026-10-21', { steps: 3000, active_kcal: 300 }),
-      ],
-      words,
-    ),
+  act(() => {
+    setLocale('hr')
+  })
+  const hr = result.current
+  expect(axisLabelOf(tdeeOption(days, hr, palette), 'yAxis', 3034)).toBe('3.034')
+  expect(axisLabelOf(weightOption(days, hr, palette), 'yAxis', 85.5)).toBe('85,5')
+  expect(axisLabelOf(weightOption(days, hr, palette), 'xAxis', '2026-10-05')).toBe('5. lis')
+  expect(tooltipOf(weightOption(days, hr, palette), 0)).toBe('uto 20. lis · 82,4 kg · trend 82,6')
+  expect(hr.percent(32.7)).toBe('32,7 %')
+})
+
+test("a year's axis names each month once, with its year", () => {
+  const { result } = renderHook(() => useChartWords(true))
+  const option = weightOption(days, result.current, palette)
+  expect(axisLabelOf(option, 'xAxis', '2026-10-01')).toBe('Oct 2026')
+  expect(labelledOn(option, '2026-10-01')).toBe(true)
+  expect(labelledOn(option, '2026-10-02')).toBe(false)
+  // A shorter span's axis labels any day that fits.
+  expect(labelledOn(weightOption(days, words, palette), '2026-10-02')).toBe(true)
+
+  act(() => {
+    setLocale('hr')
+  })
+  expect(axisLabelOf(weightOption(days, result.current, palette), 'xAxis', '2026-10-01')).toBe(
+    'lis 2026.',
   )
-  // 12px digits are about 7px wide: the steps' labels end far enough in
-  // from the left for theirs, and the active energy's start far enough
-  // in from the right.
-  const steps = labels(svg, palette.muted).filter((l) => l.anchor === 'end')
-  const active = labels(svg, palette.accent)
-  expect(steps.map((l) => l.text)).toContain('25,000')
-  expect(active.map((l) => l.text)).toContain('1,500')
-  for (const l of steps) {
-    expect(l.x - l.text.length * 6).toBeGreaterThanOrEqual(0)
-  }
-  for (const l of active) {
-    expect(l.x + l.text.length * 6).toBeLessThanOrEqual(360)
-  }
 })

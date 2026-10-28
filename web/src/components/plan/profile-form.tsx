@@ -6,6 +6,7 @@ import { detailOf, statusOf } from '@/api/errors'
 import type { components } from '@/api/schema'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
+import { SegmentedControl } from '@/components/ui/segmented'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
@@ -31,8 +32,9 @@ function ageOn(birth: string, today: string): number {
 // ProfileForm sets what a plan needs of the user: the sex the energy
 // equations take, the birth date and the height. A field left empty is
 // cleared, as the server takes a field left out; what a plan still needs
-// is the server's word, from its answer.
-export function ProfileForm({ profile }: { profile: Profile }) {
+// is the server's word, from its answer. labelledBy is the id of what
+// names the form, the page's title.
+export function ProfileForm({ profile, labelledBy }: { profile: Profile; labelledBy: string }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
@@ -88,95 +90,82 @@ export function ProfileForm({ profile }: { profile: Profile }) {
   }
 
   return (
-    <form onSubmit={submit} noValidate className="space-y-3" aria-labelledby={`${id}-title`}>
-      <h2 id={`${id}-title`} className="font-medium">
-        {t.plan.profile}
-      </h2>
-      <p className="text-sm text-muted-foreground">{t.plan.profileHint}</p>
-      <fieldset className="space-y-1" aria-describedby={`${id}-sex`}>
-        <legend className={fieldLabel}>{t.plan.sex}</legend>
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {sexes.map((s) => (
-            <label key={s} className="flex items-center gap-2">
-              <input
-                type="radio"
-                name={`${id}-sex`}
-                checked={sex === s}
-                onChange={() => {
-                  setSex(s)
-                }}
-              />
-              {t.plan.sexes[s]}
-            </label>
-          ))}
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name={`${id}-sex`}
-              checked={sex === ''}
-              onChange={() => {
-                setSex('')
-              }}
-            />
-            {t.plan.noSex}
-          </label>
-        </div>
-        <p id={`${id}-sex`} className="text-xs text-muted-foreground">
-          {t.plan.sexHint}
-        </p>
-      </fieldset>
-      <div className="space-y-1">
-        <label className="block space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.plan.birthDate}</span>
-          <input
-            ref={date}
-            type="date"
-            value={birthDate}
-            aria-invalid={wrongDate !== undefined || undefined}
-            aria-describedby={wrongDate ? `${id}-date` : undefined}
-            className={inputClass}
-            onChange={(e) => {
-              setBirthDate(e.currentTarget.value)
-            }}
-          />
-        </label>
-        {wrongDate && (
-          <p id={`${id}-date`} role="alert" className="text-sm text-destructive">
-            {wrongDate === 'part' && t.plan.wrongDate}
-            {wrongDate === 'toCome' && t.plan.dateToCome}
-            {wrongDate === 'old' && t.plan.tooOld(f.number(maxAge))}
-          </p>
+    <form onSubmit={submit} noValidate className="space-y-4" aria-labelledby={labelledBy}>
+      <p
+        className={cn(
+          'rounded-md px-3 py-2.5 text-small',
+          profile.missing.length === 0
+            ? 'bg-primary-soft text-primary'
+            : 'bg-warning/10 text-warning',
         )}
-      </div>
-      <div className="space-y-1">
-        <label className="block space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.plan.height}</span>
-          <span className="flex items-center gap-2">
-            <input
-              value={height}
-              inputMode="decimal"
-              autoComplete="off"
-              aria-invalid={wrongHeight || undefined}
-              aria-describedby={wrongHeight ? `${id}-height` : undefined}
-              className={cn(inputClass, 'w-28 tabular-nums')}
-              onChange={(e) => {
-                setHeight(e.currentTarget.value)
-              }}
-            />
-            <span className="text-sm text-muted-foreground">cm</span>
-          </span>
-        </label>
-        {wrongHeight && (
-          <p id={`${id}-height`} role="alert" className="text-sm text-destructive">
-            {t.plan.wrongHeight(f.number(minHeight), f.number(maxHeight))}
-          </p>
-        )}
-      </div>
-      <p className="text-sm">
+      >
         {profile.missing.length === 0
           ? t.plan.complete
           : t.plan.missing(profile.missing.map((m) => t.plan.missingField[m]).join(', '))}
       </p>
+      <div className="space-y-4 rounded-lg border bg-card p-4 lg:p-5">
+        <SegmentedControl
+          legend={t.plan.sex}
+          options={[
+            ...sexes.map((s) => ({ value: s, label: t.plan.sexes[s] })),
+            { value: '' as const, label: t.plan.noSex },
+          ]}
+          value={sex}
+          onChange={setSex}
+          describedBy={`${id}-sex`}
+        >
+          <p id={`${id}-sex`} className="text-caption text-muted-foreground">
+            {t.plan.sexHint}
+          </p>
+        </SegmentedControl>
+        <div className="space-y-1">
+          <label className="block space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.plan.birthDate}</span>
+            <input
+              ref={date}
+              type="date"
+              value={birthDate}
+              aria-invalid={wrongDate !== undefined || undefined}
+              aria-describedby={wrongDate ? `${id}-date` : undefined}
+              className={inputClass}
+              onChange={(e) => {
+                setBirthDate(e.currentTarget.value)
+              }}
+            />
+          </label>
+          {wrongDate && (
+            <p id={`${id}-date`} role="alert" className="text-sm text-destructive">
+              {wrongDate === 'part' && t.plan.wrongDate}
+              {wrongDate === 'toCome' && t.plan.dateToCome}
+              {wrongDate === 'old' && t.plan.tooOld(f.number(maxAge))}
+            </p>
+          )}
+        </div>
+        <div className="space-y-1">
+          <label className="block space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.plan.height}</span>
+            <span className="flex items-center gap-2">
+              <input
+                value={height}
+                inputMode="decimal"
+                autoComplete="off"
+                aria-invalid={wrongHeight || undefined}
+                aria-describedby={wrongHeight ? `${id}-height` : undefined}
+                className={cn(inputClass, 'w-28 tabular-nums')}
+                onChange={(e) => {
+                  setHeight(e.currentTarget.value)
+                }}
+              />
+              <span className="text-sm text-muted-foreground">cm</span>
+            </span>
+          </label>
+          {wrongHeight && (
+            <p id={`${id}-height`} role="alert" className="text-sm text-destructive">
+              {t.plan.wrongHeight(f.number(minHeight), f.number(maxHeight))}
+            </p>
+          )}
+        </div>
+      </div>
       <Button type="submit" disabled={save.isPending}>
         {t.plan.save}
       </Button>

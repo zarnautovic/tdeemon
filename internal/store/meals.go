@@ -760,6 +760,18 @@ type LastUse struct {
 	Unit   string
 }
 
+// MealsWithFood returns how many of userID's meals have an item of the
+// food with id: a meal of two such items is one.
+func (db *DB) MealsWithFood(ctx context.Context, userID, id uuid.UUID) (int, error) {
+	var n int
+	err := db.read.QueryRowContext(ctx, "SELECT count(DISTINCT meal_id) FROM meal_items WHERE user_id = ? AND food_id = ?",
+		userID.String(), id.String()).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("meals with food: %w", err)
+	}
+	return n, nil
+}
+
 // LastUses returns, for each of userID's foods in ids that a meal has
 // used, the last item that used it: what search offers as the usual
 // amount. At most the foods of a search of MaxFoodQueries queries,

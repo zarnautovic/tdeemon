@@ -1,10 +1,5 @@
 import { BarChart, LineChart, ScatterChart } from 'echarts/charts'
-import {
-  GridComponent,
-  LegendComponent,
-  MarkLineComponent,
-  TooltipComponent,
-} from 'echarts/components'
+import { GridComponent, MarkLineComponent, TooltipComponent } from 'echarts/components'
 import * as echarts from 'echarts/core'
 import { SVGRenderer } from 'echarts/renderers'
 import { useEffect, useRef } from 'react'
@@ -17,7 +12,6 @@ echarts.use([
   LineChart,
   ScatterChart,
   GridComponent,
-  LegendComponent,
   MarkLineComponent,
   TooltipComponent,
   SVGRenderer,
@@ -28,18 +22,30 @@ function textStyleOf(option: Option): Record<string, unknown> {
   return typeof style === 'object' && style !== null ? { ...style } : {}
 }
 
-// Chart draws an ECharts option, as wide as its card. It is for the eye:
-// its card says in words what it shows.
-export function Chart({ option }: { option: Option }) {
+// Chart draws an ECharts option, as wide as its card and height pixels
+// high (the height it starts with, for its life). To a screen reader it
+// is an image, which label sums up; the page has its values as text too
+// (the weeks' table, the cards' numbers). An option of new colours (the
+// theme changed) draws it again.
+export function Chart({
+  option,
+  label,
+  height = 240,
+}: {
+  option: Option
+  label: string
+  height?: number
+}) {
   const box = useRef<HTMLDivElement>(null)
   const chart = useRef<echarts.ECharts | null>(null)
+  const tall = useRef(height)
 
   useEffect(() => {
     const el = box.current
     if (!el) {
       return undefined
     }
-    const c = echarts.init(el, null, { renderer: 'svg', height: 220 })
+    const c = echarts.init(el, null, { renderer: 'svg', height: tall.current })
     chart.current = c
     // A card that changes width (a phone turned) draws the chart again.
     const observer =
@@ -65,5 +71,14 @@ export function Chart({ option }: { option: Option }) {
     )
   }, [option])
 
-  return <div ref={box} aria-hidden className="h-[220px] w-full" />
+  return (
+    <div
+      ref={box}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- ECharts draws into a box, which an <img> cannot be
+      role="img"
+      aria-label={label}
+      className="w-full"
+      style={{ height: `${String(height)}px` }}
+    />
+  )
 }

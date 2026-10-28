@@ -560,6 +560,50 @@ func TestLastUsesInOneSecond(t *testing.T) {
 	}
 }
 
+// MealsWithFood counts the user's meals that had a food, once a meal of
+// two of its items, and none of another user's.
+func TestMealsWithFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	bar := saveFood(t, db, ana, bar())
+	unused := saveFood(t, db, ana, food.Food{
+		ID: uuid.NewV7(), Name: "Rye bread", Basis: food.Per100g, Source: food.User,
+		Nutrients: food.Nutrients{Kcal: 259, Protein: 8.5, Carbs: 48, Fat: 3.3},
+	})
+	createMeal(t, db, ana, breakfast(t, bar, t0))
+	half, _ := meal.FromFood(bar, meal.Quantity{Servings: 0.5, Serving: "bar"}, "")
+	createMeal(t, db, ana, meal.Meal{
+		ID: uuid.NewV7(), EatenAt: t0.Add(5 * time.Hour), Day: day.DateOf(t0), Client: meal.ClientWeb,
+		Items: []meal.Item{half, half},
+	})
+	// Ivo's meals of his own bar, under the same food id, are his.
+	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar), t0.Add(6*time.Hour)))
+
+	for _, tc := range []struct {
+		name string
+		user uuid.UUID
+		food uuid.UUID
+		want int
+	}{
+		{"two meals, one of two items", ana, bar.ID, 2},
+		{"a food no meal had", ana, unused.ID, 0},
+		{"no such food", ana, uuid.NewV7(), 0},
+		{"another user's meals of the id", ivo, bar.ID, 1},
+	} {
+		if got, err := db.MealsWithFood(t.Context(), tc.user, tc.food); err != nil || got != tc.want {
+			t.Errorf("%s: MealsWithFood = %d, %v; want %d", tc.name, got, err, tc.want)
+		}
+	}
+
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.MealsWithFood(context.WithoutCancel(t.Context()), ana, bar.ID); err == nil {
+		t.Error("MealsWithFood on a closed database succeeded")
+	}
+}
+
 func TestExcludedDays(t *testing.T) {
 	t.Parallel()
 

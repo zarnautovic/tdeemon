@@ -7,6 +7,8 @@ import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { linkTarget } from '@/lib/styles'
+import { cn } from '@/lib/utils'
 
 // BodyToday is what the day measured at a glance, in four tiles: the
 // weight (and the trend calibration smooths it to), the night's sleep,
@@ -63,7 +65,7 @@ export function BodyToday({
         </h2>
         <Button
           variant="link"
-          className="h-auto p-0 text-small font-semibold"
+          className={cn(linkTarget, 'h-auto p-0 text-small font-semibold')}
           onClick={() => {
             setOpen(true)
           }}

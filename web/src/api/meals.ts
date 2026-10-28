@@ -13,12 +13,14 @@ type DeleteAnswer = components['schemas']['DeleteMealOutputBody']
 const days = ['get', '/api/v1/days/{date}']
 
 // meals are asked again after a meal's change: the days, the meals of
-// before and the lists of foods by their use, which a meal changes.
+// before, and the lists of foods by their use and a food's use, which a
+// meal changes.
 function meals(queryClient: QueryClient) {
   return Promise.all([
     queryClient.invalidateQueries({ queryKey: days }),
     queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/meals/recent'] }),
     queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods/list'] }),
+    queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/foods/{id}/use'] }),
   ])
 }
 

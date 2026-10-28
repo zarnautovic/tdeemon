@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { X } from 'lucide-react'
+import { Plus, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
@@ -8,6 +8,7 @@ import { useCreateFood, useSaveFood } from '@/api/foods'
 import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
 import { SaveStatus } from '@/components/day/save-status'
+import { energyOff } from '@/components/foods/energy'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -56,6 +57,31 @@ interface Draft {
 
 function row<T>(value: T): Row<T> {
   return { key: uuidv7(), value }
+}
+
+// energyOfDraft is the energy typed, and what the values typed make, when
+// the two are further apart than a label rounds (energyOff): of the four
+// needed numbers, with the fibre, polyols and alcohol typed counted.
+function energyOfDraft(
+  typed: Record<Nutrient, string>,
+  parse: (s: string) => number | undefined,
+): { typed: number; values: number } | undefined {
+  const kcal = parse(typed.kcal)
+  const protein = parse(typed.protein)
+  const carbs = parse(typed.carbs)
+  const fat = parse(typed.fat)
+  if (kcal === undefined || protein === undefined || carbs === undefined || fat === undefined) {
+    return undefined
+  }
+  const n: Nutrients = { kcal, protein, carbs, fat }
+  for (const k of ['fiber', 'polyols', 'alcohol'] as const) {
+    const v = parse(typed[k])
+    if (v !== undefined) {
+      n[k] = v
+    }
+  }
+  const values = energyOff(n)
+  return values === undefined ? undefined : { typed: kcal, values }
 }
 
 // FoodForm makes a food, or corrects one: its name and brand, what its
@@ -124,6 +150,18 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       save.reset()
     }
   }
+  // The field of a row just added (a serving's name, another name), which
+  // takes the focus.
+  const [added, setAdded] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    if (added !== undefined) {
+      document.getElementById(`${id}-${added}`)?.focus()
+    }
+  }, [added, id])
+  // The energy the values typed make, when the energy typed is further
+  // from it than a label rounds (energyOff): a warning under the macros,
+  // with the way to take it, which does not keep the food from a save.
+  const energy = energyOfDraft(draft.nutrients, f.parse)
 
   // tooMuch sets in errors what of nutrients the server refuses of a food
   // (limits.json, food.ValidatePer100): per 100 g or ml no more energy than
@@ -254,7 +292,11 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     setWrong(new Map())
     const done = {
       onSuccess: (saved: Food) => {
-        sayChange({ title: t.toast.savedOf(saved.name) })
+        sayChange(
+          { title: t.toast.savedOf(saved.name) },
+          // Of no day: after the changes of today's still on their way.
+          { last: { action: 'food.save', entity: saved.id }, date: 'today' },
+        )
         onSaved?.(saved)
       },
     }
@@ -295,6 +337,8 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       error === undefined &&
       wrong.has('mass') &&
       mass.some((k) => k === key && draft.nutrients[k].trim() !== '')
+    // The energy the warning under the macros is of.
+    const warned = error === undefined && key === 'kcal' && energy !== undefined
     return (
       <div className="space-y-1">
         <label htmlFor={`${id}-${key}`} className={cn(fieldLabel, 'block')}>
@@ -315,7 +359,9 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
                 ? `${id}-refused`
                 : tooHeavy
                   ? `${id}-mass-error`
-                  : undefined
+                  : warned
+                    ? `${id}-energy`
+                    : undefined
           }
           className={inputClass}
           onChange={(e) => {
@@ -343,24 +389,26 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
 
   return (
     <form ref={form} onSubmit={submit} noValidate className="space-y-4">
-      {text(
-        'name',
-        t.foods.name,
-        draft.name,
-        (name) => {
-          set({ name })
-        },
-        { maxLength: 200 },
-      )}
-      {text(
-        'brand',
-        t.foods.brand,
-        draft.brand,
-        (brand) => {
-          set({ brand })
-        },
-        { maxLength: 100 },
-      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {text(
+          'name',
+          t.foods.name,
+          draft.name,
+          (name) => {
+            set({ name })
+          },
+          { maxLength: 200 },
+        )}
+        {text(
+          'brand',
+          t.foods.brand,
+          draft.brand,
+          (brand) => {
+            set({ brand })
+          },
+          { maxLength: 100 },
+        )}
+      </div>
       <div className="space-y-1">
         <label htmlFor={`${id}-basis`} className={cn(fieldLabel, 'block')}>
           {t.foods.basis}
@@ -403,6 +451,27 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           {wrong.get('mass')}
         </p>
       )}
+      <div aria-live="polite">
+        {energy !== undefined && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md bg-warning/10 px-3 py-2.5 text-small text-warning">
+            <TriangleAlert aria-hidden className="size-4 shrink-0" />
+            <p id={`${id}-energy`} className="min-w-0 flex-1 basis-48">
+              {t.foods.energyOff(f.number(energy.values), f.number(energy.typed))}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                set({
+                  nutrients: { ...draft.nutrients, kcal: f.field(Math.round(energy.values), 0) },
+                })
+              }}
+            >
+              {t.foods.takeKcal(f.number(energy.values))}
+            </Button>
+          </div>
+        )}
+      </div>
       <details className="rounded-lg border p-3" open={optional.some((k) => wrong.has(k))}>
         <summary className="cursor-pointer text-sm">{t.foods.moreNutrients}</summary>
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -480,9 +549,12 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         <Button
           variant="outline"
           onClick={() => {
-            set({ servings: [...draft.servings, row({ name: '', amount: '' })] })
+            const next = row({ name: '', amount: '' })
+            set({ servings: [...draft.servings, next] })
+            setAdded(`serving name ${next.key}`)
           }}
         >
+          <Plus aria-hidden />
           {t.foods.addServing}
         </Button>
       </fieldset>
@@ -518,9 +590,12 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         <Button
           variant="outline"
           onClick={() => {
-            set({ aliases: [...draft.aliases, row('')] })
+            const next = row('')
+            set({ aliases: [...draft.aliases, next] })
+            setAdded(`alias ${next.key}`)
           }}
         >
+          <Plus aria-hidden />
           {t.foods.addAlias}
         </Button>
       </fieldset>

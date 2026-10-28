@@ -2,7 +2,9 @@ import { expect, test } from '@playwright/test'
 
 import { signIn } from './user.ts'
 
-test('the charts show the days logged, as charts and in words', async ({ page }) => {
+test('the progress says how the phase goes, and shows the days logged and their weeks', async ({
+  page,
+}) => {
   await signIn(page)
   // A weigh-in of today and a meal of three days ago, as a phone and a
   // model would send them: today's day is open, and counts in no average
@@ -26,12 +28,21 @@ test('the charts show the days logged, as charts and in words', async ({ page })
     .getByRole('link', { name: 'Progress' })
     .click()
 
-  const weight = page.getByRole('region', { name: 'Weight and trend' })
-  await expect(weight).toContainText('Trend weight from 80.5 to 80.5 kg.')
+  // The user has no plan: the hero leads to one.
+  const verdict = page.getByRole('region', { name: 'The phase so far' })
+  await expect(verdict).toContainText('No phase yet.')
+  await expect(verdict.getByRole('link', { name: 'Set up a plan' })).toBeVisible()
+
+  const weight = page.getByRole('region', { name: 'Weight' })
+  await expect(
+    weight.getByRole('img', { name: 'Trend weight from 80.5 to 80.5 kg, 1 weigh-in.' }),
+  ).toBeVisible()
   await expect(weight.locator('svg').first()).toBeVisible()
-  await page.getByRole('button', { name: '30 days' }).click()
+  await page.getByText('30 d', { exact: true }).click()
   await expect(page).toHaveURL(/days=30/)
-  await expect(page.getByRole('region', { name: 'What was eaten' })).toContainText(
-    '400 kcal a day on average',
+  await expect(page.getByRole('radio', { name: '30 days' })).toBeChecked()
+  await expect(page.getByRole('region', { name: 'TDEE and intake' })).toContainText(
+    'Eaten 400 kcal a day, over 1 logged day',
   )
+  await expect(page.getByRole('table', { name: 'By week' })).toContainText('400')
 })

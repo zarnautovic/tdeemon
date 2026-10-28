@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 // A button is 44 px high, a finger's target on a phone; sm is denser,
 // 36 px, only on a desktop's width, where a pointer aims. Focus is a ring
 // of 2 px, 2 px off the button.
-const buttonVariants = cva(
+const variants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 motion-safe:active:not-aria-[haspopup]:scale-[.97] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5",
   {
     variants: {
@@ -36,6 +36,13 @@ const buttonVariants = cva(
     },
   },
 )
+
+// buttonVariants are a button's classes, for a link or a dialog's close
+// that looks like one: merged, so a variant's border or colour wins over
+// the base's (cva only joins them, and the stylesheet's order would pick).
+function buttonVariants(props?: Parameters<typeof variants>[0]): string {
+  return cn(variants(props))
+}
 
 function Button({
   className,

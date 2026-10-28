@@ -456,7 +456,7 @@ func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, sp spl
 func splitFoods(ctx context.Context, db *store.DB, userID uuid.UUID, table []FoodRow, dryRun bool) ([]food.Food, error) {
 	var foods []food.Food
 	for offset := 0; ; offset += store.MaxFoodList {
-		page, total, err := db.ListFoods(ctx, userID, false, store.ByName, store.MaxFoodList, offset)
+		page, total, err := db.ListFoods(ctx, userID, false, "", store.ByName, store.MaxFoodList, offset)
 		if err != nil {
 			return nil, fmt.Errorf("the user's foods: %w", err)
 		}

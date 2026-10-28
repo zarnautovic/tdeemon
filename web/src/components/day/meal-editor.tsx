@@ -42,7 +42,7 @@ import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { fieldLabel, inputClass } from '@/lib/styles'
+import { fieldLabel, inputClass, linkTarget } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { clockAt, mealInstant, nightAfter, parseClock, toCome } from '@/lib/zoned'
@@ -942,7 +942,7 @@ export function MealEditor({
         ) : (
           <Button
             variant="link"
-            className="h-auto p-0 text-small"
+            className={cn(linkTarget, 'h-auto p-0 text-small')}
             onClick={() => {
               setNoting(true)
             }}

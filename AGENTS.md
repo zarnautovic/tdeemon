@@ -36,13 +36,28 @@ says its total as it changes, its time on a 24-hour clock, a meal
 repeated or deleted taken there, a meal logged by hand in a sheet of
 the foods found, eaten lately or most and the meals of before, and the
 chips that add yesterday's meal or a food in a tap),
-the foods (their list and search, a food made, corrected or archived),
-the progress (its charts, ECharts loaded with them), the plan (the
-plan as it holds, a proposal that waits, the history of its
+the foods (their list by how often they are eaten, grouped by this
+week and earlier, in use, archived or the estimates, searched within
+the list chosen; a food's page with its energy and its split, its
+nutrition per 100 g or a serving, how often it was logged, logged again
+in its last amount, archived with Undo, and corrected in its own form,
+which warns when the kcal and the macros disagree; beside the list on
+a desktop), the progress (the phase's verdict as its hero, the weight
+and the TDEE against intake as charts, the weeks in a table, sleep,
+the heart, the steps and the body fat in small, each a chart a tap
+away, over 30 days to a year or the phase; ECharts loaded with them,
+in the theme's tokens), the plan (its phase as the hero, with its pace,
+week, progress and the phases on a timeline, a proposal that waits,
+the targets by type of day against the TDEE, the history of its
 revisions with a revert, a proposal of the limits accepted there alone,
-the profile and the limits) and the settings (the name, language, time
-zone and day's start, the theme, the notes for a coach, the API tokens)
-exist.
+and, before a plan, how one comes; what it rests on of the user's, each
+a row to its page: the profile, the limits in groups that open, a wrong
+one focused at its field, the notes for a coach) and the settings as a
+list (the theme, the account with a time zone found by its name, the
+devices and AI clients with a token made in a sheet and shown once,
+signing out), each screen checked for access (axe, a finger's targets,
+the focus, less motion) on a phone and a desktop, in both themes and
+languages, exist.
 
 | Path | What |
 | --- | --- |
@@ -58,7 +73,7 @@ exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods, a new food and the recent meals (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods, a new food, a food's use and the recent meals (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |

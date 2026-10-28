@@ -12,19 +12,22 @@ export async function signIn(page: Page) {
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 }
 
-// toSettings goes to the settings as a phone does: they are the plan's.
+// toSettings goes to the settings as a phone does: they are a list under
+// the plan, each a row to its page.
 export async function toSettings(page: Page) {
   await page
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('link', { name: 'Plan' })
     .click()
-  await page.getByRole('main').getByRole('link', { name: 'Settings' }).click()
   await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
 }
 
 // openMeal opens a meal's row, unless it is open: its items show, and its
 // ways to change it.
 export async function openMeal(meal: Locator) {
+  // The meal first, as the day comes: a row not there yet is not one
+  // closed.
+  await expect(meal).toBeVisible()
   const row = meal.getByRole('button', { expanded: false })
   if ((await row.count()) > 0) {
     await row.click()

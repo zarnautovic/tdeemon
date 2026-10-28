@@ -1,14 +1,13 @@
 import { expect, test, vi } from 'vitest'
 
 import {
-  activityOption,
-  bodyOption,
-  macrosOption,
-  recoveryOption,
+  lineOption,
   sleepOption,
+  stepsOption,
   tdeeOption,
   weightOption,
 } from '@/components/charts/options'
+import { palette } from '@/components/charts/palette'
 import { day, svgOf, words } from '@/test/charts'
 
 // This file is apart from options.test.ts: ECharts says what it no
@@ -19,11 +18,13 @@ const days = [
   day('2026-10-20', {
     meals: 1,
     intake: { kcal: 2000, protein: 150, carbs: 200, fat: 60 },
+    target: { kcal: 2100, protein: 150, carbs: 220, fat: 60 },
     weight_kg: 82,
     trend_kg: 82,
+    tdee: { kcal: 2400, half_width: 50, trusted: true, before_phase: false, to: '2026-10-20' },
     sleep_h: 7,
     steps: 9000,
-    active_kcal: 400,
+    hrv: 50,
   }),
 ]
 
@@ -32,13 +33,17 @@ test('ECharts draws every chart without a word in development', () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
   for (const option of [
-    weightOption(days, words, 75),
-    macrosOption(days, words),
-    tdeeOption(days, words),
-    sleepOption(days, words),
-    recoveryOption(days, words),
-    bodyOption(days, words),
-    activityOption(days, words),
+    weightOption(days, words, palette, 75),
+    tdeeOption(days, words, palette),
+    sleepOption(days, words, palette),
+    stepsOption(days, words, palette),
+    lineOption(days, words, palette, {
+      name: 'HRV',
+      color: palette.primary,
+      values: [50],
+      axis: (n) => String(n),
+      tip: (v) => String(v),
+    }),
   ]) {
     svgOf(option)
   }

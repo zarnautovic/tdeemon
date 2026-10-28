@@ -1,33 +1,51 @@
 import type { components } from '@/api/schema'
 
-import { palette } from './palette'
+import type { ChartColors } from './palette'
 
 export type HistoryDay = components['schemas']['HistoryDayBody']
 
 // Words is what the options take of the app's language: the series'
-// names, and how a date and a number are written.
+// names, what a tooltip says of a value, and how a date, a number and a
+// percentage are written.
 export interface Words {
-  date: (date: string) => string
+  // A day on the axis: its date, short; over a year (months), its month
+  // and year, at the first of each month only.
+  axisDate: (date: string) => string
+  months: boolean
+  // A day in a tooltip: its weekday and date.
+  day: (date: string) => string
   number: (n: number, digits?: number) => string
+  percent: (n: number, digits?: number) => string
   names: {
     weighIn: string
     trend: string
     goal: string
-    protein: string
-    carbs: string
-    fat: string
-    target: string
     tdee: string
     interval: string
     intake: string
-    sleep: string
+    target: string
     average: string
     rhr: string
     hrv: string
-    weight: string
-    bodyFat: string
     steps: string
-    activeKcal: string
+    bodyFat: string
+    // The nights by their length, which colours their bars.
+    long: string
+    middle: string
+    short: string
+  }
+  // A value in a tooltip, its number written already.
+  tips: {
+    kg: (kg: string) => string
+    trend: (kg: string) => string
+    tdee: (kcal: string, half: string) => string
+    eaten: (kcal: string) => string
+    target: (kcal: string) => string
+    hours: (hours: string) => string
+    average: (hours: string) => string
+    bpm: (bpm: string) => string
+    ms: (ms: string) => string
+    steps: (steps: string, count: number) => string
   }
 }
 
@@ -35,162 +53,213 @@ export interface Words {
 export type Option = Record<string, unknown>
 
 // A value of a series: null where the day has none, a gap.
-type Point = number | null
+export type Point = number | null
 
 function value<T>(v: T | undefined): T | null {
   return v ?? null
 }
 
-// base is what every chart shares: the dates along the bottom, the grid's
-// lines and the text in the palette's muted colour, a tooltip by day.
-function base(days: HistoryDay[], w: Words, right = false): Option {
+// some are the values of a series that a day has.
+function some(values: Point[]): number[] {
+  return values.filter((v): v is number => v !== null)
+}
+
+// indexOf is the day a tooltip is of, by its place on the axis.
+function indexOf(params: unknown): number | undefined {
+  const first: unknown = Array.isArray(params) ? params[0] : params
+  return typeof first === 'object' &&
+    first !== null &&
+    'dataIndex' in first &&
+    typeof first.dataIndex === 'number'
+    ? first.dataIndex
+    : undefined
+}
+
+// tipOf is what a tooltip says of a day: its weekday and date, and its
+// values, in a line.
+export function tipOf(day: HistoryDay, w: Words, values: string[]): string {
+  return [w.day(day.date), ...values].join(' · ')
+}
+
+// Base is what makes a chart's base: how its axis of values writes a
+// number, what a tooltip says of a day (the i-th of the days), and the
+// axis's reach.
+interface Base {
+  axis: (n: number) => string
+  tip: (day: HistoryDay, i: number) => string[]
+  reach?: Option
+}
+
+// base is what every chart shares: the days along the bottom, one axis of
+// values whose labels are written as the language writes numbers, the
+// grid's lines and the text in the theme's colours, and a tooltip by
+// day. Its legend is its card's (Legend), which wraps on a phone as
+// ECharts' would not.
+function base(days: HistoryDay[], w: Words, c: ChartColors, of: Base): Option {
   return {
     backgroundColor: 'transparent',
     animation: false,
     // The font is the page's, which the chart is given when it is drawn
     // (Chart): ECharts measures text by a font's name.
-    textStyle: { color: palette.muted },
+    textStyle: { color: c.muted },
     // The axes' labels fit in, however wide their numbers: the margins
     // are the bounds of the grid with its labels.
     grid: {
       left: 4,
-      right: right ? 4 : 12,
-      top: 32,
+      right: 12,
+      top: 12,
       bottom: 4,
       outerBoundsMode: 'same',
       outerBoundsContain: 'axisLabel',
     },
-    legend: legend(),
     tooltip: {
       trigger: 'axis',
-      backgroundColor: palette.surface,
-      borderColor: palette.border,
-      textStyle: { color: palette.text },
+      // Inside the chart, so a phone's page does not scroll sideways.
+      confine: true,
+      backgroundColor: c.surface,
+      borderColor: c.grid,
+      textStyle: { color: c.text, fontSize: 13 },
+      extraCssText: 'white-space: normal; max-width: 280px;',
+      formatter: (params: unknown) => {
+        const i = indexOf(params)
+        const day = i === undefined ? undefined : days[i]
+        return day === undefined || i === undefined ? '' : tipOf(day, w, of.tip(day, i))
+      },
     },
     xAxis: {
       type: 'category',
-      data: days.map((d) => w.date(d.date)),
-      axisLine: { lineStyle: { color: palette.grid } },
+      data: days.map((d) => d.date),
+      axisLine: { lineStyle: { color: c.grid } },
       axisTick: { show: false },
-      axisLabel: { color: palette.muted, hideOverlap: true },
+      axisLabel: {
+        color: c.muted,
+        hideOverlap: true,
+        formatter: (date: string) => w.axisDate(date),
+        // A year's axis names each month once, at its first day.
+        ...(w.months ? { interval: (_: number, date: string) => date.endsWith('-01') } : {}),
+      },
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: c.grid } },
+      axisLabel: { color: c.muted, formatter: of.axis },
+      ...of.reach,
     },
   }
 }
 
-// legend is the series' names over a chart, apart enough not to run
-// into each other on a phone.
-function legend(extra: Option = {}): Option {
+// line is a series of one line, its dots shown when there are too few
+// to draw a line between.
+function line(name: string, color: string, data: Point[], extra: Option = {}): Option {
   return {
-    top: 0,
-    itemGap: 16,
-    itemHeight: 8,
-    textStyle: { color: palette.muted, fontSize: 11 },
+    name,
+    type: 'line',
+    showSymbol: some(data).length < 2,
+    connectNulls: true,
+    lineStyle: { color, width: 2 },
+    itemStyle: { color },
+    data,
     ...extra,
   }
 }
 
-function axis(extra: Option = {}): Option {
-  return {
-    type: 'value',
-    splitLine: { lineStyle: { color: palette.grid } },
-    axisLabel: { color: palette.muted },
-    ...extra,
+// counted reports whether a day counts in calibration's averages: over
+// (today is open, what it has eaten not all yet) and not left out.
+export function counted(day: HistoryDay): boolean {
+  return day.status === 'complete'
+}
+
+// The steps an axis of weights goes by, the least that takes 6 at most.
+const axisSteps = [0.2, 0.5, 1, 2, 5, 10, 20, 50, 100]
+
+// reachOf is an axis that holds values, from a step below them to one
+// above, so its ends are labels as its steps are; a value alone, a kilo
+// each way.
+export function reachOf(values: number[]): Option {
+  if (values.length === 0) {
+    return { scale: true }
   }
+  let lo = Math.min(...values)
+  let hi = Math.max(...values)
+  if (lo === hi) {
+    lo -= 1
+    hi += 1
+  }
+  const step = axisSteps.find((s) => Math.ceil(hi / s) - Math.floor(lo / s) <= 6) ?? 500
+  return { min: Math.floor(lo / step) * step, max: Math.ceil(hi / step) * step, interval: step }
 }
 
 // weightOption is the weigh-ins as dots and the trend weight as a line,
-// with the phase's goal as a dashed line when it has one.
-export function weightOption(days: HistoryDay[], w: Words, goalKg?: number): Option {
-  // The axis reaches the goal too, which is seldom among the weights,
-  // and a kilo off each way when they are all one number, which ECharts
-  // would stretch the axis around (a first weigh-in).
-  const lo = (v: { min: number; max: number }) => Math.min(v.min, goalKg ?? v.min)
-  const hi = (v: { min: number; max: number }) => Math.max(v.max, goalKg ?? v.max)
-  const reach = {
-    min: (v: { min: number; max: number }) => Math.floor(lo(v)) - (lo(v) === hi(v) ? 1 : 0),
-    max: (v: { min: number; max: number }) => Math.ceil(hi(v)) + (lo(v) === hi(v) ? 1 : 0),
-  }
+// with the phase's goal as a dashed line when it has one. The axis reaches
+// the goal too, which is seldom among the weights.
+export function weightOption(
+  days: HistoryDay[],
+  w: Words,
+  c: ChartColors,
+  goalKg?: number,
+): Option {
+  const kg = days.flatMap((d) => [d.weight_kg, d.trend_kg]).filter((v) => v !== undefined)
   return {
-    ...base(days, w),
-    yAxis: axis({ scale: true, ...reach }),
+    ...base(days, w, c, {
+      axis: (n) => w.number(n, 1),
+      tip: (d) => [
+        ...(d.weight_kg === undefined ? [] : [w.tips.kg(w.number(d.weight_kg, 1))]),
+        ...(d.trend_kg === undefined ? [] : [w.tips.trend(w.number(d.trend_kg, 1))]),
+      ],
+      reach: reachOf(goalKg === undefined || kg.length === 0 ? kg : [...kg, goalKg]),
+    }),
     series: [
       {
         name: w.names.weighIn,
         type: 'scatter',
-        symbolSize: 6,
-        itemStyle: { color: palette.dimBlue },
+        symbolSize: 7,
+        itemStyle: { color: c.neutral, opacity: 0.75 },
         data: days.map((d): Point => value(d.weight_kg)),
       },
-      {
-        name: w.names.trend,
-        type: 'line',
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { color: palette.accent, width: 2.4 },
-        itemStyle: { color: palette.accent },
-        data: days.map((d): Point => value(d.trend_kg)),
-        ...(goalKg === undefined
-          ? {}
-          : {
-              markLine: {
-                symbol: 'none',
-                lineStyle: { color: palette.warn, type: 'dashed' },
-                label: {
-                  color: palette.warn,
-                  position: 'insideEndTop',
-                  formatter: `${w.names.goal} ${w.number(goalKg, 1)}`,
+      line(
+        w.names.trend,
+        c.primary,
+        days.map((d): Point => value(d.trend_kg)),
+        {
+          lineStyle: { color: c.primary, width: 2.5 },
+          ...(goalKg === undefined
+            ? {}
+            : {
+                markLine: {
+                  symbol: 'none',
+                  silent: true,
+                  lineStyle: { color: c.warning, type: 'dashed', width: 1.5 },
+                  label: {
+                    color: c.warning,
+                    position: 'insideEndTop',
+                    formatter: `${w.names.goal} ${w.number(goalKg, 1)}`,
+                  },
+                  data: [{ yAxis: goalKg }],
                 },
-                data: [{ yAxis: goalKg }],
-              },
-            }),
-      },
+              }),
+        },
+      ),
     ],
   }
-}
-
-// macrosOption is each day's protein, carbs and fat, in kcal, stacked, and
-// the target of the day's type as a dashed line.
-export function macrosOption(days: HistoryDay[], w: Words): Option {
-  const bar = (name: string, color: string, kcal: (d: HistoryDay) => number | undefined) => ({
-    name,
-    type: 'bar',
-    stack: 'kcal',
-    barMaxWidth: 18,
-    itemStyle: { color },
-    data: days.map((d): Point => value(kcal(d))),
-  })
-  return {
-    ...base(days, w),
-    yAxis: axis(),
-    series: [
-      bar(w.names.protein, palette.blue, (d) => d.intake && Math.round(d.intake.protein * 4)),
-      bar(w.names.carbs, palette.accent, (d) => d.intake && Math.round(d.intake.carbs * 4)),
-      bar(w.names.fat, palette.warn, (d) => d.intake && Math.round(d.intake.fat * 9)),
-      {
-        name: w.names.target,
-        type: 'line',
-        step: 'middle',
-        showSymbol: false,
-        lineStyle: { color: palette.bad, type: 'dashed', width: 1.4 },
-        itemStyle: { color: palette.bad },
-        data: days.map((d): Point => value(d.target?.kcal)),
-      },
-    ],
-  }
-}
-
-// intervalText is the TDEE band's width in a tooltip, said as what it is:
-// ± half of it; ECharts asks it of a day without one too.
-export function intervalText(width: unknown, w: Words): string {
-  return typeof width === 'number' && Number.isFinite(width) ? `± ${w.number(width / 2)}` : '-'
 }
 
 // tdeeOption is the TDEE measured up to each day, with its 80 % interval
-// as a band, and what was eaten as dots.
-export function tdeeOption(days: HistoryDay[], w: Words): Option {
+// as a band, what was eaten as dots, and the target as its 7 days'
+// average, a dashed line: the days' own, a training day's and a rest
+// day's in turn, would zigzag (a tooltip says the day's own). What was
+// eaten is of the days calibration counts: today's, not over yet, would
+// be a dot far below the others.
+export function tdeeOption(days: HistoryDay[], w: Words, c: ChartColors): Option {
   return {
-    ...base(days, w),
-    yAxis: axis({ scale: true }),
+    ...base(days, w, c, {
+      axis: (n) => w.number(n),
+      tip: (d) => [
+        ...(d.tdee ? [w.tips.tdee(w.number(d.tdee.kcal), w.number(d.tdee.half_width))] : []),
+        ...(d.intake && counted(d) ? [w.tips.eaten(w.number(d.intake.kcal))] : []),
+        ...(d.target ? [w.tips.target(w.number(d.target.kcal))] : []),
+      ],
+      reach: { scale: true },
+    }),
     series: [
       {
         // The band's foot, not drawn: the band stacks on it.
@@ -199,7 +268,6 @@ export function tdeeOption(days: HistoryDay[], w: Words): Option {
         stack: 'interval',
         showSymbol: false,
         lineStyle: { opacity: 0 },
-        tooltip: { show: false },
         data: days.map((d): Point => (d.tdee ? d.tdee.kcal - d.tdee.half_width : null)),
       },
       {
@@ -208,172 +276,160 @@ export function tdeeOption(days: HistoryDay[], w: Words): Option {
         stack: 'interval',
         showSymbol: false,
         lineStyle: { opacity: 0 },
-        itemStyle: { color: palette.series2 },
-        areaStyle: { color: palette.series2, opacity: 0.18 },
-        // The band's width, said as what it is: ± half of it.
-        tooltip: { valueFormatter: (v: unknown) => intervalText(v, w) },
+        itemStyle: { color: c.blue },
+        areaStyle: { color: c.blue, opacity: 0.16 },
         data: days.map((d): Point => (d.tdee ? 2 * d.tdee.half_width : null)),
       },
-      {
-        name: w.names.tdee,
-        type: 'line',
-        showSymbol: false,
-        lineStyle: { color: palette.series2, width: 2.4 },
-        itemStyle: { color: palette.series2 },
-        data: days.map((d): Point => value(d.tdee?.kcal)),
-      },
+      line(
+        w.names.tdee,
+        c.blue,
+        days.map((d): Point => value(d.tdee?.kcal)),
+      ),
       {
         name: w.names.intake,
         type: 'scatter',
-        symbolSize: 5,
-        itemStyle: { color: palette.muted },
-        data: days.map((d): Point => value(d.intake?.kcal)),
+        symbolSize: 7,
+        itemStyle: { color: c.neutral, opacity: 0.85 },
+        data: days.map((d): Point => (counted(d) ? value(d.intake?.kcal) : null)),
       },
+      line(w.names.target, c.warning, average7(days.map((d): Point => value(d.target?.kcal))), {
+        showSymbol: false,
+        lineStyle: { color: c.warning, type: 'dashed', width: 1.5 },
+      }),
     ],
-    legend: legend({ data: [w.names.tdee, w.names.interval, w.names.intake] }),
   }
-}
-
-// sleepColor is a night's colour: 7 hours and more blue, 6 amber, less red.
-export function sleepColor(hours: number): string {
-  if (hours >= 7) {
-    return palette.blue
-  }
-  return hours >= 6 ? palette.warn : palette.bad
 }
 
 // average7 is the average of each day's 7 days up to it that have a value.
 export function average7(values: Point[]): Point[] {
   return values.map((_, i) => {
-    const week = values.slice(Math.max(0, i - 6), i + 1).filter((v): v is number => v !== null)
+    const week = some(values.slice(Math.max(0, i - 6), i + 1))
     return week.length === 0
       ? null
       : Math.round((week.reduce((a, b) => a + b, 0) / week.length) * 100) / 100
   })
 }
 
-// sleepOption is each night's sleep as a bar coloured by its length, and
-// the 7 days' average as a dashed line.
-export function sleepOption(days: HistoryDay[], w: Words): Option {
+// weekly are the averages of each 7 days that have a value, the last 7
+// up to the last day, the first maybe fewer.
+export function weekly(values: Point[]): Point[] {
+  const weeks: Point[] = []
+  for (let end = values.length; end > 0; end -= 7) {
+    const week = some(values.slice(Math.max(0, end - 7), end))
+    weeks.unshift(week.length === 0 ? null : week.reduce((a, b) => a + b, 0) / week.length)
+  }
+  return weeks
+}
+
+export type Night = 'long' | 'middle' | 'short'
+
+// nightOf is a night by its length: 7 hours and more long, 6 to 7 middle,
+// less short.
+export function nightOf(hours: number): Night {
+  if (hours >= 7) {
+    return 'long'
+  }
+  return hours >= 6 ? 'middle' : 'short'
+}
+
+// sleepColors are the nights' colours by their length.
+export function sleepColors(c: ChartColors): Record<Night, string> {
+  return { long: c.blue, middle: c.amber, short: c.bad }
+}
+
+// sleepOption is each night's sleep as a bar, coloured by its length (a
+// series for each length, which a tooltip and the legend name), and the
+// 7 days' average as a dashed line.
+export function sleepOption(days: HistoryDay[], w: Words, c: ChartColors): Option {
   const hours = days.map((d): Point => value(d.sleep_h))
+  const average = average7(hours)
+  const colors = sleepColors(c)
+  const nights = (length: Night): Option => ({
+    name: w.names[length],
+    type: 'bar',
+    stack: 'sleep',
+    barMaxWidth: 14,
+    itemStyle: { color: colors[length], borderRadius: [3, 3, 0, 0] },
+    data: hours.map((h) => (h !== null && nightOf(h) === length ? h : null)),
+  })
   return {
-    ...base(days, w),
-    yAxis: axis({ min: 0 }),
+    ...base(days, w, c, {
+      axis: (n) => w.number(n, 1),
+      tip: (d, i) => {
+        const mean = average[i]
+        return [
+          ...(d.sleep_h === undefined ? [] : [w.tips.hours(w.number(d.sleep_h, 1))]),
+          ...(mean === null || mean === undefined ? [] : [w.tips.average(w.number(mean, 1))]),
+        ]
+      },
+      reach: { min: 0 },
+    }),
     series: [
-      {
-        name: w.names.sleep,
-        type: 'bar',
-        barMaxWidth: 18,
-        itemStyle: { color: palette.blue },
-        data: hours.map((h) =>
-          h === null ? null : { value: h, itemStyle: { color: sleepColor(h) } },
-        ),
-      },
-      {
-        name: w.names.average,
-        type: 'line',
+      nights('long'),
+      nights('middle'),
+      nights('short'),
+      line(w.names.average, c.neutral, average, {
         showSymbol: false,
-        connectNulls: true,
-        lineStyle: { color: palette.muted, type: 'dashed', width: 1.6 },
-        itemStyle: { color: palette.muted },
-        data: average7(hours),
-      },
+        lineStyle: { color: c.neutral, type: 'dashed', width: 1.5 },
+      }),
     ],
   }
 }
 
-// twoAxes is a chart of two lines, each on an axis of its own.
-function twoAxes(
+// lineOption is one measurement as a line on one axis: the resting heart
+// rate, the HRV, the body fat. axis writes its axis's numbers, and tip
+// says a day's value.
+export function lineOption(
   days: HistoryDay[],
   w: Words,
-  left: { name: string; color: string; data: Point[]; area?: boolean },
-  right: { name: string; color: string; data: Point[] },
+  c: ChartColors,
+  of: {
+    name: string
+    color: string
+    values: Point[]
+    axis: (n: number) => string
+    tip: (v: number) => string
+  },
 ): Option {
   return {
-    ...base(days, w, true),
-    yAxis: [
-      axis({ scale: true }),
-      axis({ scale: true, splitLine: { show: false }, axisLabel: { color: right.color } }),
-    ],
-    series: [
-      {
-        name: left.name,
-        type: 'line',
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { color: left.color, width: 2.4 },
-        itemStyle: { color: left.color },
-        ...(left.area ? { areaStyle: { color: left.color, opacity: 0.07 } } : {}),
-        data: left.data,
+    ...base(days, w, c, {
+      axis: of.axis,
+      tip: (_, i) => {
+        const v = of.values[i]
+        return v === null || v === undefined ? [] : [of.tip(v)]
       },
-      {
-        name: right.name,
-        type: 'line',
-        yAxisIndex: 1,
-        showSymbol: false,
-        connectNulls: true,
-        lineStyle: { color: right.color, width: 2 },
-        itemStyle: { color: right.color },
-        data: right.data,
-      },
-    ],
+      reach: { scale: true },
+    }),
+    series: [line(of.name, of.color, of.values)],
   }
 }
 
-// recoveryOption is the resting heart rate and the HRV, each on its axis.
-export function recoveryOption(days: HistoryDay[], w: Words): Option {
-  return twoAxes(
-    days,
-    w,
-    { name: w.names.rhr, color: palette.bad, data: days.map((d): Point => value(d.resting_hr)) },
-    { name: w.names.hrv, color: palette.accent, data: days.map((d): Point => value(d.hrv)) },
-  )
+// stepsOf are the days' steps as calibration counts them: an open day's
+// still grow, a day left out counts for nothing, and 0 steps are none (a
+// phone switched off).
+export function stepsOf(days: HistoryDay[]): Point[] {
+  return days.map((d) => (counted(d) && (d.steps ?? 0) > 0 ? value(d.steps) : null))
 }
 
-// bodyOption is the trend weight and the body fat, each on its axis.
-export function bodyOption(days: HistoryDay[], w: Words): Option {
-  return twoAxes(
-    days,
-    w,
-    {
-      name: w.names.weight,
-      color: palette.accent,
-      data: days.map((d): Point => value(d.trend_kg)),
-      area: true,
-    },
-    {
-      name: w.names.bodyFat,
-      color: palette.warn,
-      data: days.map((d): Point => value(d.body_fat_pct)),
-    },
-  )
-}
-
-// activityOption is each day's steps as bars and its active energy as a
-// line on an axis of its own.
-export function activityOption(days: HistoryDay[], w: Words): Option {
+// stepsOption is each day's steps as a bar, on one axis.
+export function stepsOption(days: HistoryDay[], w: Words, c: ChartColors): Option {
+  const steps = stepsOf(days)
   return {
-    ...base(days, w, true),
-    yAxis: [
-      axis({ min: 0 }),
-      axis({ min: 0, splitLine: { show: false }, axisLabel: { color: palette.accent } }),
-    ],
+    ...base(days, w, c, {
+      axis: (n) => w.number(n),
+      tip: (_, i) => {
+        const v = steps[i]
+        return v === null || v === undefined ? [] : [w.tips.steps(w.number(v), v)]
+      },
+      reach: { min: 0 },
+    }),
     series: [
       {
         name: w.names.steps,
         type: 'bar',
-        barMaxWidth: 18,
-        itemStyle: { color: palette.steps },
-        data: days.map((d): Point => value(d.steps)),
-      },
-      {
-        name: w.names.activeKcal,
-        type: 'line',
-        yAxisIndex: 1,
-        symbolSize: 4,
-        lineStyle: { color: palette.accent, width: 2 },
-        itemStyle: { color: palette.accent },
-        data: days.map((d): Point => value(d.active_kcal)),
+        barMaxWidth: 14,
+        itemStyle: { color: c.blue, borderRadius: [3, 3, 0, 0] },
+        data: steps,
       },
     ],
   }

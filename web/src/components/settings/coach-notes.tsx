@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useId, useState, type SubmitEvent } from 'react'
+import { useState, type SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
 import { detailOf, statusOf } from '@/api/errors'
@@ -14,10 +14,10 @@ import { cn } from '@/lib/utils'
 const maxNotes = 4000
 
 // CoachNotes are what a coach, a model, should know of the user, in their
-// words: get_me gives them to it.
-export function CoachNotes({ notes }: { notes: string }) {
+// words: get_profile gives them to it. labelledBy is the id of what names
+// them, the page's title. A toast says they are saved, with Undo.
+export function CoachNotes({ notes, labelledBy }: { notes: string; labelledBy: string }) {
   const t = useMessages()
-  const id = useId()
   const queryClient = useQueryClient()
   const [text, setText] = useState(notes)
   const save = $api.useMutation('put', '/api/v1/me/notes', {
@@ -37,20 +37,14 @@ export function CoachNotes({ notes }: { notes: string }) {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2">
-      <h2 className="font-medium">
-        <label htmlFor={id}>{t.settings.notes}</label>
-      </h2>
-      <p id={`${id}-hint`} className="text-sm text-muted-foreground">
-        {t.settings.notesHint}
-      </p>
+    <form onSubmit={submit} className="space-y-4" aria-labelledby={labelledBy}>
       <textarea
-        id={id}
         value={text}
-        rows={5}
+        rows={8}
         maxLength={maxNotes}
-        aria-describedby={`${id}-hint`}
-        className={cn(inputClass, 'h-auto py-2')}
+        aria-labelledby={labelledBy}
+        placeholder={t.settings.notesPlaceholder}
+        className={cn(inputClass, 'h-auto py-3')}
         onChange={(e) => {
           setText(e.currentTarget.value)
         }}

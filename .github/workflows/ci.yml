@@ -171,6 +171,15 @@ jobs:
             web/playwright-report/
             web/test-results/
           retention-days: 7
+      # The screens the accessibility tests photographed, to set beside
+      # the design (web/e2e/a11y.spec.ts).
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-screens
+          path: web/test-results/**/screen-*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - if: github.event_name == 'push'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

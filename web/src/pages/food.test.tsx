@@ -74,9 +74,9 @@ function foodServer(
 
 test('a food is corrected, the whole of it saved', async () => {
   const server = foodServer()
-  renderAt(`/foods/${id}`)
+  const router = renderAt(`/foods/${id}?edit=true`)
 
-  expect(await screen.findByRole('heading', { name: 'Rolled oats' })).toBeDefined()
+  expect(await screen.findByRole('heading', { name: 'Edit the food' })).toBeDefined()
   expect(screen.getByLabelText('Energy (kcal)')).toHaveProperty('value', '370')
   expect(screen.getByLabelText('Fibre (g)')).toHaveProperty('value', '10')
   expect(screen.getByLabelText('Serving 1')).toHaveProperty('value', 'cup')
@@ -106,11 +106,14 @@ test('a food is corrected, the whole of it saved', async () => {
       note: 'from the label',
     },
   ])
+  // Saved, the food is read again, in the form's place.
+  expect(await screen.findByRole('heading', { name: 'Rolled oats' })).toBeDefined()
+  expect(router.state.location.search).toEqual({})
 })
 
 test('what a food needs, and what is no number, is said and not sent', async () => {
   const server = foodServer()
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('Name'), { target: { value: ' ' } })
   fireEvent.change(screen.getByLabelText('Fat (g)'), { target: { value: 'some' } })
@@ -124,7 +127,7 @@ test('what a food needs, and what is no number, is said and not sent', async () 
 
 test('a value below 0 is said to be one, not no number', async () => {
   const server = foodServer()
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('Carbs (g)'), { target: { value: '-5' } })
   fireEvent.change(screen.getByLabelText('Fat (g)'), { target: { value: '\u22122,5' } })
@@ -154,7 +157,7 @@ const otherOats: Food = { ...oats, id: '0193c3a5-0000-7000-8000-0000000000f7', a
 
 test('a name and brand another food has says which food, under the name, until changed', async () => {
   foodServer(() => conflict('body.name', otherOats.id), 'en', oats, [otherOats])
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
 
@@ -181,7 +184,7 @@ test('a name and brand another food has says which food, under the name, until c
 test('an other name another food has says which food, under it, in Croatian', async () => {
   const archived = { ...otherOats, name: 'Zobene pahuljice', brand: '', archived: true }
   foodServer(() => conflict('body.aliases[0]', archived.id), 'hr', oats, [archived])
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Spremi namirnicu' }))
 
@@ -204,7 +207,7 @@ test('a conflict of an other name removed while the save was on its way marks no
         answer = resolve
       }),
   })
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
   await waitFor(() => {
@@ -227,7 +230,7 @@ test("a conflict that does not say its food is said in the server's words", asyn
       { status: 409, headers: { 'Content-Type': 'application/problem+json' } },
     ),
   )
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
 
@@ -238,7 +241,7 @@ test("a conflict that does not say its food is said in the server's words", asyn
 
 test('a food the server refuses says why', async () => {
   foodServer(() => problem(422))
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
 
@@ -267,7 +270,7 @@ test('a food is archived, and brought back', async () => {
 
 test("values past what 100 g can hold are said with the server's bounds, and not sent", async () => {
   const server = foodServer()
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   // 200 g of protein in 100 g, more energy than fat, more sugars than 100 g.
   fireEvent.change(await screen.findByLabelText('Protein (g)'), { target: { value: '200' } })
@@ -287,7 +290,7 @@ test("values past what 100 g can hold are said with the server's bounds, and not
 
 test('a portion is no feast, and of its grams known holds what 100 g can, in Croatian', async () => {
   const server = foodServer(undefined, 'hr')
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('Vrijednosti su'), { target: { value: 'portion' } })
   fireEvent.change(screen.getByLabelText('Energija (kcal)'), { target: { value: '10500' } })
@@ -304,7 +307,7 @@ test('a portion is no feast, and of its grams known holds what 100 g can, in Cro
 
 test('a food of a portion has its grams, and none else', async () => {
   const server = foodServer()
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('The values are'), { target: { value: 'portion' } })
   fireEvent.change(screen.getByLabelText('Grams of a portion'), { target: { value: '450' } })
@@ -313,7 +316,9 @@ test('a food of a portion has its grams, and none else', async () => {
   await waitFor(() => {
     expect(server.sent[0]).toMatchObject({ basis: 'portion', portion_grams: 450 })
   })
-  fireEvent.change(screen.getByLabelText('The values are'), { target: { value: '100ml' } })
+  // Saved, the food is read; edited again, it is of 100 ml.
+  fireEvent.click(await screen.findByRole('link', { name: 'Edit' }))
+  fireEvent.change(await screen.findByLabelText('The values are'), { target: { value: '100ml' } })
   expect(screen.queryByLabelText('Grams of a portion')).toBeNull()
   expect(screen.getByLabelText('Amount 1 (ml)')).toBeDefined()
   // The grams typed for a portion do not go with a food per 100 ml.
@@ -366,7 +371,7 @@ test('a new food is made, and its page shown', async () => {
 
 test('a food is corrected in Croatian, its numbers too', async () => {
   const server = foodServer(undefined, 'hr')
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('Proteini (g)'), { target: { value: '13,5' } })
   fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
@@ -378,7 +383,7 @@ test('a food is corrected in Croatian, its numbers too', async () => {
 
 test('an archived food corrected stays archived', async () => {
   const server = foodServer(undefined, 'en', { ...oats, archived: true })
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('Note'), { target: { value: 'from the box' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
@@ -421,7 +426,7 @@ test('a new food of a name another food has is refused, not saved over it', asyn
 
 test('a try again with a draft that cannot be sent says what is wrong', async () => {
   foodServer(() => problem(500))
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
   await screen.findByRole('button', { name: 'Try again' })
@@ -446,7 +451,7 @@ test('a value saved untouched keeps its decimals, and words get a keyboard of le
     ...oats,
     nutrients: { ...oats.nutrients, salt: 0.012345 },
   })
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   expect(await screen.findByLabelText('Salt (g)')).toHaveProperty('value', '0.012345')
   expect(screen.getByLabelText('Other name 1').getAttribute('inputmode')).toBeNull()
@@ -461,11 +466,134 @@ test('a value saved untouched keeps its decimals, and words get a keyboard of le
 
 test('a serving of no amount, or of more than the server takes, is not sent', async () => {
   const server = foodServer()
-  renderAt(`/foods/${id}`)
+  renderAt(`/foods/${id}?edit=true`)
 
   fireEvent.change(await screen.findByLabelText('Amount 1 (g)'), { target: { value: '0' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
 
   expect(screen.getByText('More than 0, at most 10000.')).toBeDefined()
   expect(server.sent).toEqual([])
+})
+
+test('energy far from what the macros make is warned of, with theirs to take, and saved all the same', async () => {
+  const server = foodServer()
+  const router = renderAt('/foods/new')
+
+  fireEvent.change(await screen.findByLabelText('Name'), { target: { value: 'Skyr' } })
+  // 300 kcal of P 20 / C 5 / F 1.5, which make about 114.
+  for (const [label, value] of [
+    ['Energy (kcal)', '300'],
+    ['Protein (g)', '20'],
+    ['Carbs (g)', '5'],
+  ] as const) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } })
+  }
+  // Not before the four are there.
+  expect(screen.queryByText(/The macros make about/)).toBeNull()
+  fireEvent.change(screen.getByLabelText('Fat (g)'), { target: { value: '1.5' } })
+
+  const warning = screen.getByText('The macros make about 114 kcal, not 300: check the values.')
+  expect(screen.getByLabelText('Energy (kcal)').getAttribute('aria-describedby')).toBe(warning.id)
+  // A warning, not a refusal: the field is not wrong.
+  expect(screen.getByLabelText('Energy (kcal)').getAttribute('aria-invalid')).toBe('false')
+  fireEvent.click(screen.getByRole('button', { name: 'Use 114 kcal' }))
+
+  expect(screen.getByLabelText('Energy (kcal)')).toHaveProperty('value', '114')
+  expect(screen.queryByText(/The macros make about/)).toBeNull()
+  // Typed again, it is saved as typed.
+  fireEvent.change(screen.getByLabelText('Energy (kcal)'), { target: { value: '300' } })
+  expect(screen.getByText(/The macros make about 114 kcal/)).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/foods/0193c3a5-0000-7000-8000-0000000000f9')
+  })
+  expect(server.sent).toEqual([
+    {
+      name: 'Skyr',
+      basis: '100g',
+      nutrients: { kcal: 300, protein: 20, carbs: 5, fat: 1.5 },
+      source: 'label',
+    },
+  ])
+})
+
+test('the energy of fibre and polyols counts, in Croatian too', async () => {
+  foodServer(undefined, 'hr')
+  renderAt('/foods/new')
+
+  // Sugar-free sweets: 64 g of carbs, 60 of them polyols, of 2.4 kcal.
+  await screen.findByLabelText('Naziv')
+  for (const [label, value] of [
+    ['Energija (kcal)', '160'],
+    ['Proteini (g)', '0'],
+    ['Ugljikohidrati (g)', '64'],
+    ['Masti (g)', '0'],
+  ] as const) {
+    fireEvent.change(screen.getByLabelText(label), { target: { value } })
+  }
+  expect(
+    screen.getByText('Makroi daju oko 256 kcal, a ne 160: provjeri vrijednosti.'),
+  ).toBeDefined()
+  fireEvent.change(screen.getByLabelText('Polioli (g)'), { target: { value: '60' } })
+
+  expect(screen.queryByText(/Makroi daju oko/)).toBeNull()
+  // Fibre's 2 kcal a gram, apart from the carbs.
+  fireEvent.change(screen.getByLabelText('Energija (kcal)'), { target: { value: '1500,5' } })
+  fireEvent.change(screen.getByLabelText('Vlakna (g)'), { target: { value: '10' } })
+  expect(
+    screen.getByText('Makroi daju oko 180 kcal, a ne 1.501: provjeri vrijednosti.'),
+  ).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Postavi 180 kcal' })).toBeDefined()
+})
+
+test('a serving or another name added takes the focus to its first field', async () => {
+  foodServer()
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add a serving' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByLabelText('Serving 2'))
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Add another name' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByLabelText('Other name 2'))
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Add a serving' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByLabelText('Serving 3'))
+  })
+})
+
+test('a save says so in a toast whose Undo takes it back', async () => {
+  const undos: unknown[] = []
+  foodServer()
+  const fetch = vi.mocked(globalThis.fetch)
+  const serve = fetch.getMockImplementation()
+  fetch.mockImplementation(async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init)
+    if (new URL(request.url).pathname === '/api/v1/undo') {
+      undos.push(await request.json())
+      return Response.json({
+        undone: {
+          action: 'food.save',
+          entity: id,
+          at: '2026-10-23T16:00:00Z',
+          client: 'web',
+          days: [],
+        },
+      })
+    }
+    return serve ? serve(input, init) : Response.error()
+  })
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.change(await screen.findByLabelText('Note'), { target: { value: 'from the box' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  expect(await screen.findByText('Saved: Rolled oats')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+  expect(await screen.findByText('Taken back: a food saved.')).toBeDefined()
+  expect(undos).toEqual([
+    { id: expect.any(String) as unknown, last: { action: 'food.save', entity: id } },
+  ])
 })

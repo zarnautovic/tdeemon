@@ -117,11 +117,15 @@ export function WeekStrip({ date, today }: { date: string; today: string }) {
                 // Today's link is / itself.
                 search={d === today ? {} : { date: d }}
                 activeOptions={{ exact: true }}
-                aria-label={t.day.week.day(f.date(d, today), said(day))}
+                // Named as it reads, its weekday and day, so a voice
+                // says what it sees.
+                aria-label={t.day.week.day(`${f.weekday(d)} ${f.dayOfMonth(d)}`, said(day))}
                 className="group flex flex-col items-center gap-1 rounded-md py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-foreground aria-[current=page]:text-background dark:aria-[current=page]:bg-primary-soft dark:aria-[current=page]:text-primary"
               >
+                {/* A space after the weekday, which a phone does not show
+                    in a column, and the text reads "Tue 22", as the name. */}
                 <span aria-hidden className="text-caption">
-                  {f.weekday(d)}
+                  {f.weekday(d)}{' '}
                 </span>
                 <MiniRing day={day} />
                 <Bar day={day} scale={scale} />

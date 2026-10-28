@@ -474,9 +474,11 @@ test('the week up to today, each day what it ate of its target, linked', async (
   const days = within(week).getAllByRole('link')
   expect(days).toHaveLength(7)
   expect(
-    await within(week).findByRole('link', { name: 'Thursday, October 22: 2,300 of 2,500 kcal' }),
+    await within(week).findByRole('link', { name: 'Thu 22: 2,300 of 2,500 kcal' }),
   ).toBeDefined()
-  expect(days[0]?.getAttribute('aria-label')).toBe('Saturday, October 17: nothing logged')
+  // Named as it reads, so a voice that says what it sees reaches it.
+  expect(days[0]?.getAttribute('aria-label')).toBe('Sat 17: nothing logged')
+  expect(days[0]?.textContent).toBe('Sat 17')
   // Today, the day shown, is the current one.
   expect(days[6]?.getAttribute('aria-current')).toBe('page')
   expect(days[6]?.getAttribute('href')).toBe('/')

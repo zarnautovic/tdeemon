@@ -1,28 +1,57 @@
 import { keepPreviousData } from '@tanstack/react-query'
-import { useNavigate, useSearch } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { ChartLine } from 'lucide-react'
 
 import { $api } from '@/api/client'
-import { Chart } from '@/components/charts/chart'
+import type { components } from '@/api/schema'
+import { Legend } from '@/components/charts/legend'
 import {
-  activityOption,
-  bodyOption,
-  macrosOption,
-  recoveryOption,
+  counted,
+  lineOption,
+  nightOf,
   sleepOption,
+  stepsOf,
+  stepsOption,
   tdeeOption,
   weightOption,
   type HistoryDay,
-  type Option,
+  type Night,
+  type Point,
   type Words,
 } from '@/components/charts/options'
-import { palette } from '@/components/charts/palette'
+import { useChartColors, type ChartColors } from '@/components/charts/palette'
+import { useChartWords } from '@/components/charts/words'
 import { LoadError } from '@/components/load-error'
-import { Button } from '@/components/ui/button'
-import { addDays, useFormat } from '@/i18n/format'
+import { ChartCard } from '@/components/progress/chart-card'
+import { MetricTile } from '@/components/progress/metric-tile'
+import { Skeleton } from '@/components/progress/skeleton'
+import { byMonth, firstDay, spans, weeksOf, type Span } from '@/components/progress/span'
+import { card, entry } from '@/components/progress/styles'
+import { VerdictHero } from '@/components/progress/verdict-hero'
+import { WeeklyTable } from '@/components/progress/weekly-table'
+import { buttonVariants } from '@/components/ui/button'
+import { SegmentedControl } from '@/components/ui/segmented'
+import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { cn } from '@/lib/utils'
 
-// The spans the charts show, in days up to today.
-const spans = [30, 90, 180, 365] as const
+type Phase = components['schemas']['PhaseBody']
+
+type Days = 30 | 180 | 365 | 'phase' | undefined
+
+// The address's days of each span: 90 is the default, left out.
+const searchOf: Record<Span, Days> = {
+  '30': 30,
+  '90': undefined,
+  '180': 180,
+  '365': 365,
+  phase: 'phase',
+}
+
+// spanOf is the span the address's days say.
+function spanOf(days: Days): Span {
+  return spans.find((s) => searchOf[s] === days) ?? '90'
+}
 
 // drawn reports whether a day has anything a chart draws.
 function drawn(d: HistoryDay): boolean {
@@ -36,188 +65,412 @@ function drawn(d: HistoryDay): boolean {
     d.hrv,
     d.body_fat_pct,
     d.steps,
-    d.active_kcal,
   ].some((v) => v !== undefined)
 }
 
-// averageOf is the average of the days' values that have one.
-function averageOf(values: (number | undefined)[]): number | undefined {
-  const have = values.filter((v): v is number => v !== undefined)
+// averageOf is the average of the values there are.
+function averageOf(values: Point[]): number | undefined {
+  const have = values.filter((v): v is number => v !== null)
   return have.length === 0 ? undefined : have.reduce((a, b) => a + b, 0) / have.length
 }
 
-// ChartsPage is the user's days as charts, over a span up to today: the
-// weight and its trend, what was eaten against the target, the TDEE with
-// its interval, sleep and recovery, the body and activity. Each says in
-// words what it shows too.
+// ChartsPage is the progress over a period up to today (30 days to a year,
+// or the phase's): first how the phase goes, as calibration judges it;
+// then the weight and its trend, and the TDEE against what was eaten and
+// the target; the weeks in a table, which says the charts in text; and
+// sleep, the heart, the steps and the body fat in small, each a whole
+// chart a tap away.
 export function ChartsPage() {
   const t = useMessages()
-  const f = useFormat()
-  const { days: span = 90 } = useSearch({ from: '/app/progress' })
+  const { days: asked } = useSearch({ from: '/app/progress' })
   const navigate = useNavigate({ from: '/progress' })
   const me = $api.useQuery('get', '/api/v1/me')
   const today = me.data?.today
+  const phase = me.data?.phase
+  // The phase's span is there while the user is in one; without, the
+  // default's.
+  const noPhase = me.data !== undefined && phase === undefined
+  const span = asked === 'phase' && noPhase ? '90' : spanOf(asked)
+  const from = today === undefined ? undefined : firstDay(span, today, phase?.start)
   const history = $api.useQuery(
     'get',
     '/api/v1/history',
-    { params: { query: { from: today === undefined ? '' : addDays(today, 1 - span) } } },
-    { enabled: today !== undefined, placeholderData: keepPreviousData },
+    { params: { query: { from: from ?? '' } } },
+    { enabled: from !== undefined, placeholderData: keepPreviousData },
   )
-
-  const words: Words = {
-    date: f.short,
-    number: f.number,
-    names: t.charts.names,
-  }
+  const words = useChartWords(from !== undefined && today !== undefined && byMonth(from, today))
+  const colors = useChartColors()
 
   let body
   if (me.isError) {
     body = <LoadError error={me.error} onRetry={() => void me.refetch()} />
   } else if (history.isError) {
     body = <LoadError error={history.error} onRetry={() => void history.refetch()} />
-  } else if (!history.data) {
-    body = <output className="block text-muted-foreground">{t.loading}</output>
+  } else if (!history.data || today === undefined || from === undefined) {
+    body = <ProgressSkeleton />
+  } else if (history.data.days.every((d) => !drawn(d))) {
+    body = <Empty />
   } else {
     body = (
-      <Cards
+      <Progress
         days={history.data.days}
         words={words}
-        goalKg={me.data?.phase?.goal_weight}
+        colors={colors}
+        phase={phase}
+        weeks={weeksOf(from, today)}
+        today={today}
         busy={history.isPlaceholderData}
       />
     )
   }
 
   return (
-    <section className="space-y-4">
-      <h1 className="text-2xl font-semibold">{t.charts.title}</h1>
-      <fieldset aria-label={t.charts.span} className="flex gap-1">
-        {spans.map((n) => (
-          <Button
-            key={n}
-            variant={span === n ? 'default' : 'outline'}
-            // Four share a phone's width.
-            className="flex-1 px-2"
-            aria-pressed={span === n}
-            onClick={() => {
-              void navigate({ search: { days: n === 90 ? undefined : n }, replace: true })
-            }}
-          >
-            {t.charts.days(n)}
-          </Button>
-        ))}
-      </fieldset>
+    <section className="space-y-3 lg:space-y-4">
+      <header className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <h1 className="text-title">{t.charts.title}</h1>
+        <SegmentedControl
+          legend={t.charts.span}
+          hideLegend
+          className="lg:w-104"
+          options={spans
+            .filter((s) => s !== 'phase' || !noPhase)
+            .map((s) => ({
+              value: s,
+              label: (
+                <>
+                  <span aria-hidden>{t.charts.spans[s]}</span>
+                  <span className="sr-only">{t.charts.spansSaid[s]}</span>
+                </>
+              ),
+            }))}
+          value={span}
+          onChange={(s) => {
+            void navigate({ search: { days: searchOf[s] }, replace: true })
+          }}
+        />
+      </header>
+      {today === undefined ? (
+        !me.isError && <HeroSkeleton />
+      ) : (
+        <VerdictHero phase={phase} today={today} />
+      )}
       {body}
     </section>
   )
 }
 
-// Cards are the charts of days.
-function Cards({
+// Progress is the charts of the days, the table of the weeks and the
+// measurements in small.
+function Progress({
   days,
   words,
-  goalKg,
+  colors,
+  phase,
+  weeks,
+  today,
   busy,
 }: {
   days: HistoryDay[]
   words: Words
-  goalKg: number | undefined
+  colors: ChartColors
+  phase: Phase | undefined
+  weeks: { from: string; to: string; count: number }
+  today: string
   busy: boolean
 }) {
   const t = useMessages()
   const f = useFormat()
-  const n = (v: number | undefined, digits = 0) =>
-    v === undefined ? undefined : f.number(v, digits)
-  // The days logged, as calibration counts them: complete, with a meal,
-  // not left out. Today is open, its intake not all eaten yet.
-  const logged = days.filter((d) => d.status === 'complete' && d.intake !== undefined)
-  if (days.every((d) => !drawn(d))) {
-    return <p className="text-muted-foreground">{t.charts.none}</p>
-  }
-  const trends = days.flatMap((d) => (d.trend_kg === undefined ? [] : [d.trend_kg]))
-  const lastTDEE = days.findLast((d) => d.tdee !== undefined)?.tdee
-  const lastFat = days.findLast((d) => d.body_fat_pct !== undefined)?.body_fat_pct
-  const kcal = n(averageOf(logged.map((d) => d.intake?.kcal)))
-  const sleep = n(averageOf(days.map((d) => d.sleep_h)), 1)
-  const rhr = n(averageOf(days.map((d) => d.resting_hr)))
-  const hrv = n(averageOf(days.map((d) => d.hrv)))
-  // An open day's steps still grow, a day left out counts for nothing,
-  // and 0 steps are none (a phone switched off), as calibration counts.
-  const steps = n(
-    averageOf(
-      days.filter((d) => d.status === 'complete' && (d.steps ?? 0) > 0).map((d) => d.steps),
-    ),
-  )
-  const none = t.charts.said.none
-  const recovery = [
-    rhr === undefined ? undefined : t.charts.said.rhr(rhr),
-    hrv === undefined ? undefined : t.charts.said.hrv(hrv),
-  ].filter((s) => s !== undefined)
-  const weightSaid =
-    trends.length > 0
-      ? t.charts.said.weight(f.number(trends[0] ?? 0, 1), f.number(trends.at(-1) ?? 0, 1))
-      : none
+  const said = t.charts.said
+  const none = said.none
 
-  const cards: { title: string; said: string; option: Option }[] = [
-    {
-      title: t.charts.weight,
-      said: weightSaid,
-      option: weightOption(days, words, goalKg),
-    },
-    {
-      title: t.charts.macros,
-      said: kcal === undefined ? none : t.charts.said.macros(kcal, logged.length),
-      option: macrosOption(days, words),
-    },
-    {
-      title: t.charts.tdee,
-      said: lastTDEE
-        ? t.charts.said.tdee(
-            f.number(lastTDEE.kcal),
-            f.number(lastTDEE.half_width),
-            lastTDEE.trusted ? (lastTDEE.before_phase ? 'before' : 'trusted') : 'unsure',
-          )
-        : none,
-      option: tdeeOption(days, words),
-    },
-    {
-      title: t.charts.sleep,
-      said: sleep === undefined ? none : t.charts.said.sleep(sleep),
-      option: sleepOption(days, words),
-    },
-    {
-      title: t.charts.recovery,
-      said: recovery.length === 0 ? none : recovery.join(' '),
-      option: recoveryOption(days, words),
-    },
-    {
-      title: t.charts.body,
-      said: lastFat === undefined ? weightSaid : t.charts.said.body(f.number(lastFat, 1)),
-      option: bodyOption(days, words),
-    },
-    {
-      title: t.charts.activity,
-      said: steps === undefined ? none : t.charts.said.activity(steps),
-      option: activityOption(days, words),
-    },
-  ]
+  const trends = days.flatMap((d) => (d.trend_kg === undefined ? [] : [d.trend_kg]))
+  const firstTrend = trends[0]
+  const lastTrend = trends.at(-1)
+  const weighIns = days.filter((d) => d.weight_kg !== undefined).length
+  const lastTDEE = days.findLast((d) => d.tdee !== undefined)?.tdee
+  // The days logged, as calibration counts them: over, with a meal, not
+  // left out. Today is open, its intake not all eaten yet.
+  const logged = days.filter((d) => counted(d) && d.intake !== undefined)
+  const kcal = averageOf(logged.map((d) => d.intake?.kcal ?? null))
+
+  const weightLabel =
+    firstTrend === undefined || lastTrend === undefined
+      ? none
+      : said.weight(f.number(firstTrend, 1), f.number(lastTrend, 1), weighIns)
+  const tdeeSaid = lastTDEE
+    ? said.tdee(
+        f.number(lastTDEE.kcal),
+        f.number(lastTDEE.half_width),
+        lastTDEE.trusted ? (lastTDEE.before_phase ? 'before' : 'trusted') : 'unsure',
+      )
+    : undefined
+  const eatenSaid = kcal === undefined ? undefined : said.eaten(f.number(kcal), logged.length)
+  const names = words.names
+  const goal = phase?.goal_weight
 
   return (
-    <div aria-busy={busy} className={`grid gap-4 md:grid-cols-2 ${busy ? 'opacity-60' : ''}`}>
-      {cards.map((c) => (
-        <section
-          key={c.title}
-          aria-label={c.title}
-          className="space-y-2 rounded-[14px] border p-4"
-          style={{ background: palette.surface, borderColor: palette.border, color: palette.text }}
-        >
-          <h2 className="text-small" style={{ color: palette.muted }}>
-            {c.title}
-          </h2>
-          <p className="text-sm">{c.said}</p>
-          <Chart option={c.option} />
-        </section>
-      ))}
+    <div
+      aria-busy={busy}
+      className={cn('space-y-3 transition-opacity lg:space-y-4', busy && 'opacity-60')}
+    >
+      <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
+        <ChartCard
+          title={t.charts.weight}
+          value={lastTrend === undefined ? undefined : t.charts.tips.kg(f.number(lastTrend, 1))}
+          caption={t.charts.trend}
+          note={
+            firstTrend === undefined || lastTrend === undefined || trends.length < 2
+              ? undefined
+              : t.charts.change(f.signed(lastTrend - firstTrend, 1))
+          }
+          marks={[
+            { name: names.weighIn, mark: 'dot', color: 'bg-chart-5' },
+            { name: names.trend, mark: 'line', color: 'bg-chart-1' },
+            ...(goal === undefined
+              ? []
+              : [{ name: names.goal, mark: 'dashed' as const, color: 'border-warning' }]),
+          ]}
+          option={weightOption(days, words, colors, goal)}
+          label={weightLabel}
+        />
+        <ChartCard
+          title={t.charts.tdee}
+          value={lastTDEE ? t.unit.kcal(f.number(lastTDEE.kcal)) : undefined}
+          caption={lastTDEE ? t.charts.tdeeNow(f.number(lastTDEE.half_width)) : undefined}
+          note={kcal === undefined ? undefined : t.charts.eaten(f.number(kcal), logged.length)}
+          marks={[
+            { name: names.tdee, mark: 'line', color: 'bg-chart-2' },
+            { name: names.interval, mark: 'band', color: 'bg-chart-2' },
+            { name: names.intake, mark: 'dot', color: 'bg-chart-5' },
+            { name: names.target, mark: 'dashed', color: 'border-warning' },
+          ]}
+          option={tdeeOption(days, words, colors)}
+          label={[tdeeSaid, eatenSaid].filter((s) => s !== undefined).join(' ') || none}
+        />
+      </div>
+      {/* A desktop's weeks and measurements side by side, a phone's one
+          after the other. */}
+      <div className="grid gap-3 lg:grid-cols-2 lg:items-start lg:gap-4">
+        {weeks.count > 0 && <WeeklyTable weeks={weeks} today={today} />}
+        <Measurements days={days} words={words} colors={colors} />
+      </div>
+    </div>
+  )
+}
+
+// The nights' classes by their length, as the charts' colours.
+const nights: Record<Night, string> = {
+  long: 'fill-chart-2',
+  middle: 'fill-chart-3',
+  short: 'fill-destructive',
+}
+
+// Measurements are sleep, the resting heart rate, the HRV, the steps and
+// the body fat in small, each that has a value in the days.
+function Measurements({
+  days,
+  words,
+  colors,
+}: {
+  days: HistoryDay[]
+  words: Words
+  colors: ChartColors
+}) {
+  const t = useMessages()
+  const f = useFormat()
+  const said = t.charts.said
+  const tips = t.charts.tips
+
+  const sleep = days.map((d): Point => d.sleep_h ?? null)
+  const rhr = days.map((d): Point => d.resting_hr ?? null)
+  const hrv = days.map((d): Point => d.hrv ?? null)
+  const steps = stepsOf(days)
+  const fat = days.map((d): Point => d.body_fat_pct ?? null)
+  const sleepAverage = averageOf(sleep)
+  const rhrAverage = averageOf(rhr)
+  const hrvAverage = averageOf(hrv)
+  const stepsAverage = averageOf(steps)
+  const lastFat = fat.findLast((v): v is number => v !== null)
+
+  const tiles = [
+    sleepAverage !== undefined && (
+      <MetricTile
+        key="sleep"
+        title={t.charts.sleep}
+        value={tips.hours(f.number(sleepAverage, 1))}
+        caption={t.charts.average}
+        said={said.sleep(f.number(sleepAverage, 1))}
+        values={sleep}
+        bars
+        classOf={(h) => nights[nightOf(h)]}
+        legend={<SleepLegend />}
+        chartLegend={<SleepLegend average />}
+        option={sleepOption(days, words, colors)}
+      />
+    ),
+    rhrAverage !== undefined && (
+      <MetricTile
+        key="rhr"
+        title={t.charts.rhr}
+        value={tips.bpm(f.number(rhrAverage))}
+        caption={t.charts.average}
+        said={said.rhr(f.number(rhrAverage))}
+        values={rhr}
+        className="stroke-chart-4"
+        option={lineOption(days, words, colors, {
+          name: words.names.rhr,
+          color: colors.pink,
+          values: rhr,
+          axis: (n) => words.number(n),
+          tip: (v) => tips.bpm(f.number(v)),
+        })}
+      />
+    ),
+    hrvAverage !== undefined && (
+      <MetricTile
+        key="hrv"
+        title={t.charts.hrv}
+        value={tips.ms(f.number(hrvAverage))}
+        caption={t.charts.average}
+        said={said.hrv(f.number(hrvAverage))}
+        values={hrv}
+        className="stroke-chart-1"
+        option={lineOption(days, words, colors, {
+          name: words.names.hrv,
+          color: colors.primary,
+          values: hrv,
+          axis: (n) => words.number(n),
+          tip: (v) => tips.ms(f.number(v)),
+        })}
+      />
+    ),
+    stepsAverage !== undefined && (
+      <MetricTile
+        key="steps"
+        title={t.charts.steps}
+        value={f.number(stepsAverage)}
+        caption={t.charts.average}
+        said={said.steps(f.number(stepsAverage))}
+        values={steps}
+        bars
+        className="fill-chart-2"
+        option={stepsOption(days, words, colors)}
+      />
+    ),
+    lastFat !== undefined && (
+      <MetricTile
+        key="fat"
+        title={t.charts.bodyFat}
+        value={f.percent(lastFat, 1)}
+        caption={t.charts.latest}
+        said={said.bodyFat(f.percent(lastFat, 1))}
+        values={fat}
+        className="stroke-chart-3"
+        option={lineOption(days, words, colors, {
+          name: words.names.bodyFat,
+          color: colors.amber,
+          values: fat,
+          axis: (n) => words.percent(n),
+          tip: (v) => f.percent(v, 1),
+        })}
+      />
+    ),
+  ].filter((tile) => tile !== false)
+
+  if (tiles.length === 0) {
+    return null
+  }
+  return (
+    <section aria-labelledby="progress-body" className="space-y-2">
+      <h2 id="progress-body" className="text-h3">
+        {t.charts.body}
+      </h2>
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
+        {tiles}
+      </ul>
+    </section>
+  )
+}
+
+// SleepLegend says what the colours of the nights' bars mean, and of the
+// whole chart, its 7 days' average (average).
+function SleepLegend({ average = false }: { average?: boolean }) {
+  const names = useMessages().charts.names
+
+  return (
+    <Legend
+      marks={[
+        { name: names.long, mark: 'bar', color: 'bg-chart-2' },
+        { name: names.middle, mark: 'bar', color: 'bg-chart-3' },
+        { name: names.short, mark: 'bar', color: 'bg-destructive' },
+        ...(average
+          ? [{ name: names.average, mark: 'dashed' as const, color: 'border-chart-5' }]
+          : []),
+      ]}
+    />
+  )
+}
+
+// Empty is the page of days with nothing logged, and the first thing to do.
+function Empty() {
+  const t = useMessages()
+
+  return (
+    <div className={cn(card, 'flex flex-col items-center gap-3 py-10 text-center', entry)}>
+      <ChartLine aria-hidden className="size-8 text-muted-foreground" />
+      <p className="text-h3">{t.charts.none}</p>
+      <p className="max-w-sm text-small text-muted-foreground">{t.charts.noneHint}</p>
+      <Link to="/" search={{ log: true }} className={buttonVariants()}>
+        {t.charts.logMeal}
+      </Link>
+    </div>
+  )
+}
+
+// HeroSkeleton stands in the hero's place until the app knows the day.
+function HeroSkeleton() {
+  return (
+    <div className={cn(card, 'space-y-3 lg:p-6')}>
+      <Skeleton className="h-4 w-40" />
+      <Skeleton className="h-8 w-48" />
+      <Skeleton className="h-5 w-full max-w-md" />
+    </div>
+  )
+}
+
+// ProgressSkeleton stands in the charts' place, in their shape, while
+// their days come.
+function ProgressSkeleton() {
+  const t = useMessages()
+
+  return (
+    <div aria-busy className="space-y-3 lg:space-y-4">
+      <output className="sr-only">{t.loading}</output>
+      <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
+        {[0, 1].map((i) => (
+          <div key={i} className={cn(card, 'space-y-3')}>
+            <div className="space-y-1.5">
+              <Skeleton className="h-5 w-32" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="h-60" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-3 lg:grid-cols-2 lg:items-start lg:gap-4">
+        <div className={cn(card, 'space-y-3')}>
+          <Skeleton className="h-5 w-24" />
+          {[0, 1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-7" />
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-2 lg:gap-4 xl:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-36 rounded-lg" />
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

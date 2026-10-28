@@ -75,13 +75,13 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
 
   return (
     <section aria-labelledby={id} className="space-y-3">
-      <h2 id={id} className="text-lg font-semibold">
+      <h2 id={id} className="text-h3">
         {r.title}
       </h2>
       {revisions.length === 0 && <p className="text-sm text-muted-foreground">{r.none}</p>}
       <ol className="space-y-3">
         {revisions.map((rev) => (
-          <li key={rev.id} className="space-y-2 rounded-lg border bg-card p-4">
+          <li key={rev.id} className="space-y-2 rounded-lg border bg-card p-4 lg:p-5">
             <p className="text-sm text-muted-foreground">
               {r.applied(
                 rev.decided_at === undefined ? '' : f.day(rev.decided_at, timeZone),

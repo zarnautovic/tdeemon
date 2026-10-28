@@ -267,9 +267,13 @@ names the food in the way of a name or an alias (409), archived or not,
 which a search would not find but `get_food` gives. Beside the tools,
 the web app lists the foods with `GET /api/v1/foods/list`, a web
 session's only: a page (`limit`, `offset`) of the archived foods or the
-others (`archived`), by name, by their last use or by how many of the
-user's latest 100 meals had them (`order=name|use|frequent`), each with
-its last use, and how many there are (`total`); makes a new food with
+others (`archived`), of a source alone when asked (`source=estimate`,
+the estimates to check), by name, by their last use or by how many of
+the user's latest 100 meals had them (`order=name|use|frequent`), each
+with its last use, and how many there are (`total`); says on a food's
+page how many of the user's meals had it and the last of them, the
+amount it offers to log, with `GET /api/v1/foods/{id}/use`, a web
+session's only too; makes a new food with
 `POST /api/v1/foods/new`, also a web session's only, which refuses a
 name and brand the user has (409, naming the food, archived too) where
 `upsert_food` would correct that food; and offers meals to log again
@@ -631,7 +635,7 @@ Claude/ChatGPT subscription.
    them back.
 2. **Consent.** The user agrees in plain language ("može", "yes") and the
    AI calls `apply_proposal`. Mostly a chat ends so; a proposal it left
-   undecided waits, shows in the web app's plan (Settings → Plan) with
+   undecided waits, shows in the web app's plan (its section) with
    what it changes, its preview by the data now, Accept and Reject, so a
    proposal made in Claude can be accepted in the app, and the morning
    summary says it waits. One that changes the user's limits is
@@ -916,14 +920,21 @@ the first spec.
     self-hosted (Fontsource). The sections (today, the foods, the
     progress, the plan) are a bar at the bottom on a phone, with Log a
     meal in its middle, and a sidebar from 1024 px, with the settings at
-    its foot; the keyboard has shortcuts (`?` lists them). A change says
+    its foot; on a phone the settings are a list under the plan, beside
+    what a plan rests on of the user's (the profile, the limits, the
+    notes for a coach), each row with its value in short and a page of
+    its own. The keyboard has shortcuts (`?` lists them). A change says
     it is done in a toast (Base UI), one at a time, with what the server
     warned of it and Undo, which takes back that change only (`last`,
     §5); a delete asks nothing first.
   - ECharts: `echarts/core` with only the charts it draws and the SVG
-    renderer, loaded with the charts' page (a chunk of its own), not with
-    the app; health-api's validated palette, the charts on its dark cards,
-    each saying in words what it shows.
+    renderer, loaded with the progress's page (a chunk of its own), not
+    with the app. A chart's colours are the theme's tokens, read from the
+    page (`getComputedStyle`) and again when the theme changes; the dark
+    theme's are health-api's validated palette (`palette.ts`). A chart has
+    one axis of values and a legend of its card's; to a screen reader it
+    is an image with a summary, and the weeks' table says the charts in
+    text.
   - i18n without a library: each language's text is a typed object
     (`web/src/i18n`), so a key missing in one language fails the type
     check. Paraglide JS was the plan, but its compiler loads plugins

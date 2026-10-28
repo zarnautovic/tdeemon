@@ -762,10 +762,10 @@ const frequentMeals = 100
 const MaxFoodList = 200
 
 // ListFoods returns a page of userID's foods, the archived ones or the
-// others as archived says, in order, from offset and at most limit of
-// them, with their servings and aliases; and how many such foods there
-// are.
-func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, order FoodOrder, limit, offset int) ([]food.Food, int, error) {
+// others as archived says, and of source alone unless it is empty, in
+// order, from offset and at most limit of them, with their servings and
+// aliases; and how many such foods there are.
+func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, source food.Source, order FoodOrder, limit, offset int) ([]food.Food, int, error) {
 	by := "f.name_key, f.brand_key, f.id"
 	lastUse := `(SELECT max(m.eaten_at) FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
 				WHERE i.user_id = f.user_id AND i.food_id = f.id) DESC NULLS LAST, `
@@ -787,15 +787,16 @@ func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, or
 	var out []food.Food
 	var total int
 	err := db.readTx(ctx, func(tx *sql.Tx) error {
-		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND archived = ?", uid, archived).Scan(&total); err != nil {
+		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND archived = ? AND (? = '' OR source = ?)",
+			uid, archived, source, source).Scan(&total); err != nil {
 			return err
 		}
 		var err error
 		out, err = queryFoods(ctx, tx, `
 			SELECT `+foodColumns+` FROM foods AS f
-			WHERE f.user_id = ? AND f.archived = ?
+			WHERE f.user_id = ? AND f.archived = ? AND (? = '' OR f.source = ?)
 			ORDER BY `+by+`
-			LIMIT ? OFFSET ?`, uid, archived, limit, offset)
+			LIMIT ? OFFSET ?`, uid, archived, source, source, limit, offset)
 		if err != nil {
 			return err
 		}
