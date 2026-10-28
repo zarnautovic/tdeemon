@@ -17,13 +17,14 @@ import { slotAt } from '@/components/day/meal-slot'
 import { SaveStatus } from '@/components/day/save-status'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
+import { TimeInput } from '@/components/ui/time-input'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
-import { clockAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
+import { clockAt, mealInstant, nightAfter, parseClock, toCome } from '@/lib/zoned'
 
 type LogMealBody = components['schemas']['LogMealBody']
 
@@ -129,6 +130,9 @@ function Composer({
   // open a while.
   const [time, setTime] = useState(() => (today ? clockAt(Date.now(), timeZone) : '12:00'))
   const [timeSet, setTimeSet] = useState(false)
+  // The time as typed, and whether it is none (parseClock).
+  const [timeText, setTimeText] = useState(time)
+  const [badTime, setBadTime] = useState(false)
   // A time still to come, which the server refuses: a meal is logged once
   // eaten.
   const [later, setLater] = useState(false)
@@ -153,6 +157,11 @@ function Composer({
   // the server's when it takes it, from the meal's id, made as it is sent;
   // or undefined when the time is still to come, which is said.
   function eatenAt(): { eaten_at?: string } | undefined {
+    const typed = parseClock(timeText)
+    setBadTime(typed === undefined)
+    if (typed === undefined) {
+      return undefined
+    }
     const ahead = !(today && !timeSet) && toCome(at)
     setLater(ahead)
     if (ahead) {
@@ -229,21 +238,24 @@ function Composer({
               </label>
               <label className="w-28 space-y-1">
                 <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
-                <input
-                  type="time"
-                  value={time}
-                  required
-                  aria-invalid={later}
+                <TimeInput
+                  value={timeText}
+                  aria-invalid={later || badTime}
                   aria-describedby={night ? `${id}-night` : undefined}
-                  className={cn(inputClass, 'tabular-nums')}
                   onChange={(e) => {
-                    // A cleared field keeps the time it had.
                     const typed = e.currentTarget.value
-                    if (/^\d{2}:\d{2}$/.test(typed)) {
-                      setTime(typed)
+                    setTimeText(typed)
+                    setBadTime(false)
+                    setLater(false)
+                    const clock = parseClock(typed)
+                    if (clock !== undefined) {
+                      setTime(clock)
                       setTimeSet(true)
-                      setLater(false)
                     }
+                  }}
+                  onBlur={() => {
+                    // As the time it reads, 19:30 for 1930.
+                    setTimeText((typed) => parseClock(typed) ?? typed)
                   }}
                 />
               </label>
@@ -309,9 +321,9 @@ function Composer({
               : t.log.afterOver(f.number(Math.round(-after)))}
           </p>
         )}
-        {later && (
+        {(later || badTime) && (
           <p role="alert" className="text-sm text-destructive">
-            {t.meal.timeToCome}
+            {badTime ? t.meal.timeFormat : t.meal.timeToCome}
           </p>
         )}
         {empty && entries.length === 0 && (

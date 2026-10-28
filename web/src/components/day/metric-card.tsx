@@ -41,7 +41,8 @@ export function MetricCard({
           date={date}
           kind={metric.kind}
           label={label}
-          initial={f.field(metric.value)}
+          // As the card shows it: steps whole, a weight to 0.1.
+          initial={f.field(metric.value, digits[metric.kind] ?? 0)}
           onSaved={() => {
             setEditing(false)
           }}

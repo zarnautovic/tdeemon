@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { clockAt, instantAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
+import { clockAt, instantAt, mealInstant, nightAfter, parseClock, toCome } from '@/lib/zoned'
 
 test.each([
   ['2026-10-23', '08:45', 'America/Los_Angeles', '2026-10-23T15:45:00.000Z'],
@@ -82,4 +82,22 @@ test("a clock's time at an instant", () => {
 
 test('what is no date or time is refused', () => {
   expect(() => instantAt('2026-10-23', '8:45', 'UTC')).toThrow(RangeError)
+})
+
+test.each([
+  ['19:30', '19:30'],
+  ['19.30', '19:30'],
+  ['19,30', '19:30'],
+  ['1930', '19:30'],
+  ['7:05', '07:05'],
+  ['7', '07:00'],
+  [' 08:15 ', '08:15'],
+  ['0', '00:00'],
+  ['123', '01:23'],
+])('%j is the time %s', (typed, time) => {
+  expect(parseClock(typed)).toBe(time)
+})
+
+test.each(['', '24:00', '19:60', '7:5', 'noon', '19:30:00', '12345'])('%j is no time', (typed) => {
+  expect(parseClock(typed)).toBeUndefined()
 })

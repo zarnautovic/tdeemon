@@ -410,3 +410,13 @@ export function lastAmountOf(food: Food, t: Messages, f: Format): string | undef
     ? t.day.portions(f.number(last.amount, 2), last.amount)
     : t.unit[last.unit](f.number(last.amount))
 }
+
+// splitRest is the name the import of a user's history gives the item of
+// the rest of a meal's total (history.SplitRestName).
+const splitRest = 'Rest of the meal (history split)'
+
+// itemName is an item's name as the app shows it: the one the import of
+// history gives, in the language.
+export function itemName(item: Pick<Item, 'name'>, t: Messages): string {
+  return item.name === splitRest ? t.meal.restOfMeal : item.name
+}

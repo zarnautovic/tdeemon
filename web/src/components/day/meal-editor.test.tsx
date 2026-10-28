@@ -154,8 +154,13 @@ function mealServer(answer: Partial<Record<string, Handler>> = {}) {
 const logMeal =
   /^(Log a meal|Upiši obrok|Add (breakfast|lunch|a snack|dinner)|Dodaj (doručak|ručak|užinu|večeru))/
 
+// meal is the meal's editor while it is open, and its row otherwise: an
+// editor closing is closed.
 function meal() {
-  return within(screen.getByRole('article'))
+  const open = screen
+    .queryAllByRole('dialog', { name: 'Change the meal' })
+    .find((editor) => !editor.hasAttribute('data-closed'))
+  return within(open ?? screen.getByRole('article'))
 }
 
 // edit opens the meal's row, unless it is open, and its editor.
@@ -183,7 +188,10 @@ test("an item's amount is changed as it was given, in one change of the meal", a
   fireEvent.change(meal().getByLabelText('Amount: Egg'), { target: { value: '3' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
-  expect(await meal().findByText('100 g')).toBeDefined()
+  // Its row again, once the editor is gone.
+  await waitFor(() => {
+    expect(meal().getByText('100 g')).toBeDefined()
+  })
   expect(server.sent).toEqual([
     {
       method: 'PATCH',
@@ -275,7 +283,7 @@ test('a meal left as it was sends nothing', async () => {
   expect(await meal().findByText('80 g')).toBeDefined()
   expect(server.sent).toEqual([])
   fireEvent.click(meal().getByRole('button', { name: 'Change the meal: Breakfast' }))
-  fireEvent.click(meal().getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(await meal().findByRole('button', { name: 'Close' }))
   expect(server.sent).toEqual([])
 })
 
@@ -352,6 +360,39 @@ test('a change the server refuses says so, with nothing to try again', async () 
   expect(meal().queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
+test('an estimate changed elsewhere while the meal is open is counted as it is now', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const total = () => meal().getByText(/kcal$/, { selector: '[aria-live] span' }).textContent
+  expect(total()).toBe('910 kcal')
+  // A model corrects the salad to 500 kcal; the window gets the focus back.
+  server.elsewhere((m) => ({
+    ...m,
+    total: { ...m.total, kcal: 1160 },
+    items: m.items.map((i) =>
+      i.id === salad.id ? { ...i, nutrients: { ...i.nutrients, kcal: 500 } } : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+
+  // As a save would keep it: its fields left as they were are not sent.
+  await waitFor(() => {
+    expect(total()).toBe('1,160 kcal')
+  })
+  expect(meal().queryByText(/from the changes/)).toBeNull()
+  expect(meal().queryByText(/ · was /)).toBeNull()
+  // Its protein typed anew: its energy stays as it is now.
+  fireEvent.change(meal().getByLabelText('Protein (g): Salad from the canteen'), {
+    target: { value: '20' },
+  })
+  expect(total()).toBe('1,160 kcal')
+  expect(meal().getByText('500 kcal · P 20')).toBeDefined()
+})
+
 test('a meal is deleted at once, and its toast takes the delete back', async () => {
   const server = mealServer()
   const undos: unknown[] = []
@@ -386,6 +427,45 @@ test('a meal is deleted at once, and its toast takes the delete back', async () 
   // Only the delete, while it is the latest change, under the toast's id.
   expect(undos).toEqual([
     { id: expect.any(String) as unknown, last: { action: 'meal.delete', entity: mealId } },
+  ])
+})
+
+test("an item removed is brought back by its change's toast", async () => {
+  const server = mealServer()
+  const undos: unknown[] = []
+  fakeServer({
+    ...server.routes,
+    'POST /api/v1/undo': async (request) => {
+      undos.push(await request.json())
+      // The meal as it was before the change.
+      server.elsewhere(() => breakfast)
+      return Response.json({
+        undone: {
+          action: 'meal.replace',
+          entity: mealId,
+          at: `${today}T08:00:00Z`,
+          client: 'web',
+          days: [today],
+        },
+      })
+    },
+  })
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+
+  expect(await screen.findByText('Changed: Breakfast')).toBeDefined()
+  await waitFor(() => {
+    expect(meal().queryByText('Egg')).toBeNull()
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+  expect(await screen.findByText('Taken back: a meal changed.')).toBeDefined()
+  expect(await meal().findByText('Egg')).toBeDefined()
+  expect(undos).toEqual([
+    { id: expect.any(String) as unknown, last: { action: 'meal.replace', entity: mealId } },
   ])
 })
 
@@ -495,7 +575,10 @@ test('a change made elsewhere while the meal is open stays, unless it is changed
   fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
-  expect(await meal().findByText('120 g')).toBeDefined()
+  // Its row again, once the editor is gone.
+  await waitFor(() => {
+    expect(meal().getByText('120 g')).toBeDefined()
+  })
   expect(server.sent.map((s) => s.body)).toEqual([{ ops: [{ op: 'remove', item_id: egg.id }] }])
 })
 
@@ -563,7 +646,7 @@ test('a meal already gone when its delete is sent again is taken for deleted', a
   expect(screen.queryByRole('alert')).toBeNull()
 })
 
-test('the focus goes into the meal when it opens, and back to its row', async () => {
+test('the focus goes into the meal when it opens, and back to its Change once it closes', async () => {
   fakeServer(mealServer().routes)
   renderAt('/')
 
@@ -571,9 +654,11 @@ test('the focus goes into the meal when it opens, and back to its row', async ()
   await waitFor(() => {
     expect(document.activeElement).toBe(meal().getByLabelText('What it was'))
   })
-  fireEvent.click(meal().getByRole('button', { name: 'Cancel' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Close' }))
   await waitFor(() => {
-    expect(document.activeElement).toBe(meal().getByRole('button', { expanded: true }))
+    expect(document.activeElement).toBe(
+      meal().getByRole('button', { name: 'Change the meal: Breakfast' }),
+    )
   })
 })
 
@@ -678,7 +763,10 @@ test('a change tried again after it failed sends the meal as it is typed then', 
   up = true
   fireEvent.click(meal().getByRole('button', { name: 'Try again' }))
 
-  expect(await meal().findByText('95 g')).toBeDefined()
+  // Its row again, once the editor is gone.
+  await waitFor(() => {
+    expect(meal().getByText('95 g')).toBeDefined()
+  })
   expect(server.sent.at(-1)?.body).toEqual({
     ops: [
       { op: 'replace', item_id: oats.id, item: { food_id: oatsFood, amount: 95, unit: 'g' } },
@@ -1436,27 +1524,38 @@ test('a meal moved to a day and a time is sent as both', async () => {
   })
 })
 
-test('a day after today is not sent, and says why; a cleared day keeps its own', async () => {
-  const server = mealServer()
-  fakeServer(server.routes)
+test('the day is today or one of the days before, each named in words', async () => {
+  fakeServer(mealServer().routes)
   renderAt('/')
 
   await edit()
-  const dayField = meal().getByLabelText('Day')
-  fireEvent.change(dayField, { target: { value: '2026-10-24' } })
-  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  const days = within(meal().getByLabelText('Day'))
+    .getAllByRole('option')
+    .map((o) => o.textContent)
+  // Today the 23rd, and the 30 days before it: none to come.
+  expect(days.slice(0, 3)).toEqual(['Today', 'Yesterday', 'Wednesday, October 21'])
+  expect(days).toHaveLength(31)
+  expect(days.at(-1)).toBe('Wednesday, September 23')
+  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-23')
+})
 
-  expect(
-    (await meal().findByText('A meal is of today or a day before.')).getAttribute('role'),
-  ).toBe('alert')
-  expect(dayField.getAttribute('aria-invalid')).toBe('true')
-  expect(server.sent).toEqual([])
+test("a meal of a day after the app's today keeps its day, left as it is", async () => {
+  // /me still says the 23rd, though the 24th has begun and has a meal.
+  const server = mealServer()
+  const next: Meal = { ...breakfast, eaten_at: '2026-10-24T15:45:00Z' }
+  fakeServer({
+    ...server.routes,
+    'GET /api/v1/days/2026-10-24': () => Response.json(day({ date: '2026-10-24', meals: [next] })),
+  })
+  renderAt('/?date=2026-10-24')
 
-  fireEvent.change(dayField, { target: { value: '' } })
+  await edit()
+  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-24')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   await waitFor(() => {
     expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
   })
+  // Not moved to the 23rd.
   expect(server.sent).toEqual([])
 })
 
@@ -2213,4 +2312,103 @@ test('a unit chosen for a food added to the meal works its amount out anew', asy
       },
     ])
   })
+})
+
+test('the total is said as the meal changes, and an item changed with what it brought', async () => {
+  fakeServer(mealServer(foodsOf()).routes)
+  renderAt('/')
+
+  await edit()
+  const total = () => meal().getByText(/kcal$/, { selector: '[aria-live] span' }).textContent
+  expect(total()).toBe('910 kcal')
+  // Oats as their food is now, 100 kcal in 100 g: 200 g bring 200, not 300.
+  await meal().findByLabelText('Unit: Oats')
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '200' } })
+  expect(total()).toBe('810 kcal')
+  expect(meal().getByText('-100 kcal from the changes')).toBeDefined()
+  expect(meal().getByText('200 kcal · P 2 · was 300')).toBeDefined()
+  // Another unit, the same mass.
+  fireEvent.change(meal().getByLabelText('Unit: Oats'), { target: { value: 'serving:cup' } })
+  expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '2.22')
+  expect(total()).toBe('810 kcal')
+  // An item removed, and an estimate's energy typed anew.
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  expect(total()).toBe('670 kcal')
+  fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
+    target: { value: '300' },
+  })
+  expect(total()).toBe('720 kcal')
+  expect(meal().getByText('-190 kcal from the changes')).toBeDefined()
+  // Kept again, and the oats as they were: as it was, nothing changed.
+  fireEvent.click(meal().getByRole('button', { name: 'Keep: Egg' }))
+  fireEvent.change(meal().getByLabelText('Unit: Oats'), { target: { value: 'g' } })
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '80' } })
+  fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
+    target: { value: '250' },
+  })
+  expect(total()).toBe('910 kcal')
+  expect(meal().queryByText(/from the changes/)).toBeNull()
+  expect(meal().queryByText(/ · was /)).toBeNull()
+})
+
+test('in Croatian, the day is named in words and the time is on a 24-hour clock', async () => {
+  const { 'GET /api/v1/days/today': _today, ...croatian } = signedIn('hr')
+  const server = mealServer(croatian)
+  fakeServer(server.routes)
+  renderAt('/')
+
+  const row = within(await screen.findByRole('article'))
+  fireEvent.click(row.getByRole('button', { expanded: false }))
+  fireEvent.click(await row.findByRole('button', { name: 'Promijeni obrok: Breakfast' }))
+  const editor = within(await screen.findByRole('dialog', { name: 'Promijeni obrok' }))
+  const days = within(editor.getByLabelText('Dan'))
+    .getAllByRole('option')
+    .map((o) => o.textContent)
+  expect(days.slice(0, 3)).toEqual(['Danas', 'Jučer', 'srijeda, 21. listopada'])
+  // 15:45 UTC is 08:45 in Los Angeles: no AM or PM.
+  expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '08:45')
+
+  fireEvent.change(editor.getByLabelText('Vrijeme'), { target: { value: '25:00' } })
+  fireEvent.click(editor.getByRole('button', { name: 'Spremi obrok' }))
+  expect(editor.getByRole('alert').textContent).toBe('Upiši vrijeme kao 19:30.')
+  expect(editor.getByLabelText('Vrijeme').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+
+  // 0930 is 09:30, so it reads once the field is left, on the day chosen.
+  fireEvent.change(editor.getByLabelText('Vrijeme'), { target: { value: '0930' } })
+  expect(editor.queryByRole('alert')).toBeNull()
+  fireEvent.blur(editor.getByLabelText('Vrijeme'))
+  expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '09:30')
+  fireEvent.change(editor.getByLabelText('Dan'), { target: { value: '2026-10-22' } })
+  fireEvent.click(editor.getByRole('button', { name: 'Spremi obrok' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]?.body).toEqual({ eaten_at: '2026-10-22T16:30:00.000Z' })
+})
+
+test("the item an import of history gives a meal's rest is named in the language", async () => {
+  const rest: Item = { ...salad, name: 'Rest of the meal (history split)' }
+  const server = mealServer()
+  fakeServer({
+    ...server.routes,
+    'GET /api/v1/days/today': () =>
+      Response.json(day({ meals: [{ ...breakfast, items: [rest] }] })),
+  })
+  renderAt('/')
+
+  await edit()
+  expect(meal().getByText('Rest of the meal')).toBeDefined()
+  expect(meal().getByLabelText('Energy (kcal): Rest of the meal')).toBeDefined()
+  // Its name's field too; left so, it keeps the one it has: nothing is sent.
+  expect(meal().getByLabelText('What it is: Rest of the meal')).toHaveProperty(
+    'value',
+    'Rest of the meal',
+  )
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await waitFor(() => {
+    expect(meal().getByText('Rest of the meal')).toBeDefined()
+  })
+  expect(server.sent).toEqual([])
+  expect(screen.queryByText(/history split/)).toBeNull()
 })

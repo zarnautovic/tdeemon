@@ -36,23 +36,34 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
   await expect(porridge).toContainText('80 g')
 
   await porridge.getByRole('button', { name: 'Change the meal: Porridge' }).click()
-  await porridge.getByLabel('Amount: Rolled oats').fill('100')
-  await porridge.getByRole('button', { name: 'Remove: Blueberries' }).click()
-  await porridge.getByRole('button', { name: 'Save the meal' }).click()
+  // The editor is a sheet over the day, its total said as it changes.
+  const editor = page.getByRole('dialog', { name: 'Change the meal' })
+  await editor.getByLabel('Amount: Rolled oats').fill('100')
+  await expect(editor).toContainText('370 kcal · P 13 · was 296')
+  await editor.getByRole('button', { name: 'Remove: Blueberries' }).click()
+  await expect(editor).toContainText('+34 kcal from the changes')
+  await editor.getByRole('button', { name: 'Save the meal' }).click()
+  await expect(editor).toBeHidden()
   await expect(porridge).toContainText('100 g')
   await expect(porridge).toContainText('370 kcal')
   await expect(porridge).not.toContainText('Blueberries')
 
+  // The change taken back by its toast's Undo: the item removed is back.
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByText('Taken back: a meal changed.')).toBeVisible()
+  await expect(porridge).toContainText('Blueberries')
+  await expect(porridge).toContainText('80 g')
+
   // Deleted at once, and brought back by its toast's Undo.
   await porridge.getByRole('button', { name: 'Change the meal: Porridge' }).click()
-  await porridge.getByRole('button', { name: 'Delete the meal' }).click()
+  await editor.getByRole('button', { name: 'Delete the meal' }).click()
   await expect(porridge).toHaveCount(0)
   await expect(page.getByText('Deleted: Porridge')).toBeVisible()
 
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(page.getByText('Taken back: a meal deleted.')).toBeVisible()
   await openMeal(porridge)
-  await expect(porridge).toContainText('100 g')
+  await expect(porridge).toContainText('Blueberries')
 })
 
 test('a meal moved to the day before says so, and its toast brings it back', async ({ page }) => {
@@ -69,11 +80,9 @@ test('a meal moved to the day before says so, and its toast brings it back', asy
   await page.goto('/')
   await openMeal(snack)
   await snack.getByRole('button', { name: 'Change the meal: Late snack' }).click()
-  const day = snack.getByLabel('Day')
-  const today = await day.inputValue()
-  const before = new Date(Date.parse(today) - 86_400_000).toISOString().slice(0, 10)
-  await day.fill(before)
-  await snack.getByRole('button', { name: 'Save the meal' }).click()
+  const editor = page.getByRole('dialog', { name: 'Change the meal' })
+  await editor.getByLabel('Day').selectOption({ label: 'Yesterday' })
+  await editor.getByRole('button', { name: 'Save the meal' }).click()
   await expect(snack).toHaveCount(0)
   await expect(page.getByText(/^Moved to /)).toBeVisible()
 
@@ -136,12 +145,13 @@ test("a meal's item is given in another unit, and an estimate saved as a food", 
   const lunch = page.getByRole('article').filter({ hasText: 'Office lunch' })
   await openMeal(lunch)
   await lunch.getByRole('button', { name: 'Change the meal: Office lunch' }).click()
+  const editor = page.getByRole('dialog', { name: 'Change the meal' })
   // 45 g are half a cup of 90 g.
-  await lunch.getByLabel('Unit: Muesli').selectOption({ label: 'cup' })
-  await expect(lunch.getByLabel('Amount: Muesli')).toHaveValue('0.5')
-  await lunch.getByLabel('Amount: Muesli').fill('1')
-  await lunch.getByRole('button', { name: 'Save as a food of yours: Canteen soup' }).click()
-  await lunch.getByRole('button', { name: 'Save the meal' }).click()
+  await editor.getByLabel('Unit: Muesli').selectOption({ label: 'cup' })
+  await expect(editor.getByLabel('Amount: Muesli')).toHaveValue('0.5')
+  await editor.getByLabel('Amount: Muesli').fill('1')
+  await editor.getByRole('button', { name: 'Save as a food of yours: Canteen soup' }).click()
+  await editor.getByRole('button', { name: 'Save the meal' }).click()
 
   await expect(lunch).toContainText('90 g')
   await expect(lunch).toContainText('Canteen soup')

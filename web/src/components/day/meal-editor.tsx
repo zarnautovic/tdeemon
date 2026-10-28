@@ -1,5 +1,13 @@
-import { ArrowLeftRight, BookmarkPlus, RotateCcw, X } from 'lucide-react'
-import { Fragment, useEffect, useId, useRef, useState, type SubmitEvent } from 'react'
+import { ArrowLeftRight, BookmarkPlus, RotateCcw, Trash2, X } from 'lucide-react'
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type RefObject,
+  type SubmitEvent,
+} from 'react'
 
 import { statusOf } from '@/api/errors'
 import { useFoods } from '@/api/foods'
@@ -11,11 +19,14 @@ import { FoodPicker } from '@/components/day/food-picker'
 import {
   amountOf,
   converted,
+  entryValues,
   estimateEntry,
   foodEntry,
   foodItem,
+  itemName,
   itemOf,
   most,
+  nutrientsIn,
   quantityIn,
   servingOf,
   shownAmount,
@@ -24,15 +35,17 @@ import {
   unitsOf,
   type Amount,
   type Entry,
+  type Values,
 } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
-import { useFormat } from '@/i18n/format'
+import { TimeInput } from '@/components/ui/time-input'
+import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
-import { clockAt, mealInstant, nightAfter, toCome } from '@/lib/zoned'
+import { clockAt, mealInstant, nightAfter, parseClock, toCome } from '@/lib/zoned'
 
 type Op = components['schemas']['MealOp']
 type Change = components['schemas']['UpdateMealBody']
@@ -73,7 +86,9 @@ const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'unit') => `$
 // the meal. It sends only what was changed since it opened, so a change
 // made elsewhere meanwhile stays. A toast says what was done, with what
 // the server warned of it, the day a meal moved to, and Undo: no
-// question before a delete, as Undo takes it back.
+// question before a delete, as Undo takes it back. It lives in a sheet,
+// its total said as it changes, an item a change makes bring other kcal
+// marked with what it brought, the save and the delete at its foot.
 // onDone closes it.
 export function MealEditor({
   meal,
@@ -81,6 +96,7 @@ export function MealEditor({
   today,
   timeZone,
   startHour,
+  first,
   onDone,
 }: {
   meal: Meal
@@ -90,6 +106,8 @@ export function MealEditor({
   // The user's clock: its time zone and the hour a day starts at.
   timeZone: string
   startHour: number
+  // The field the sheet's focus goes to when it opens.
+  first?: RefObject<HTMLInputElement | null>
   onDone: () => void
 }) {
   const t = useMessages()
@@ -150,7 +168,8 @@ export function MealEditor({
   // The time in its field, to say when it is of the night after the day.
   const [clock, setClock] = useState(openedWith.time)
   const night = nightAfter(clock, startHour)
-  // Each estimate's values as the editor opened with them, as the amounts.
+  // Each estimate's values as the editor opened with them, as the amounts;
+  // its name as the app shows it, which left so keeps the one it has.
   const estimateStart = (item: Item): EstimateStart | undefined =>
     item.food_id === undefined
       ? {
@@ -160,7 +179,7 @@ export function MealEditor({
             carbs: f.field(item.nutrients.carbs),
             fat: f.field(item.nutrients.fat),
           },
-          name: item.name,
+          name: itemName(item, t),
           note: item.note,
         }
       : undefined
@@ -203,9 +222,8 @@ export function MealEditor({
   // amount's by its item, an estimate's value's by fieldOf).
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set())
   const [wrong, setWrong] = useState<ReadonlySet<string>>(new Set())
-  // A day typed after today, or a time still to come: a meal is logged
-  // once eaten.
-  const [ahead, setAhead] = useState<'day' | 'time' | undefined>(undefined)
+  // A time still to come: a meal is logged once eaten.
+  const [ahead, setAhead] = useState(false)
   // What is typed in each amount's field, by the item and its food, for
   // a unit that agrees with it.
   const [typing, setTyping] = useState<Readonly<Record<string, string>>>({})
@@ -259,11 +277,73 @@ export function MealEditor({
       noteField.current?.focus()
     }
   }, [noting])
+  // What is typed in each estimate's values, by fieldOf, for the total.
+  const [valueTyping, setValueTyping] = useState<Readonly<Record<string, string>>>({})
+  // A time typed that is no time (parseClock).
+  const [badTime, setBadTime] = useState(false)
 
-  // The editor takes the focus from the pencil that opened it.
-  useEffect(() => {
-    form.current?.querySelector<HTMLElement>('input, button')?.focus()
-  }, [])
+  // nowOf is what an item brings as the editor has it now, for the total:
+  // another food in its place, that food's; an estimate's values typed
+  // anew, and the others as they are now (as submit sends them); a
+  // food's amount typed anew (as submit sends it), worked out
+  // from its food as it is now, as the server works it out; else what it
+  // brings now. Undefined while a number typed is none, or a food has not
+  // come.
+  function nowOf(item: Item): Values | undefined {
+    const swap = swaps[item.id]
+    if (swap !== undefined) {
+      return entryValues(swap, f.parse)
+    }
+    if (item.food_id === undefined) {
+      const opened = estimateOf(item)
+      const typed = values.map((v) => {
+        const was = f.parse(opened?.texts[v] ?? '')
+        const n = f.parse(valueTyping[fieldOf(item, v)] ?? opened?.texts[v] ?? '')
+        return n !== undefined && n === was ? item.nutrients[v] : n
+      })
+      const [kcal, protein, carbs, fat] = typed
+      return kcal === undefined || protein === undefined || carbs === undefined || fat === undefined
+        ? undefined
+        : { kcal, protein, carbs, fat }
+    }
+    const was = startOf(item)
+    const field = `${item.id} ${String(was?.foodId)}`
+    if (was === undefined || (typing[field] === undefined && chosen[field] === undefined)) {
+      return item.nutrients
+    }
+    const worked = exact[field]
+    const n = worked ?? f.parse(typing[field] ?? was.text)
+    const food = foodOf(item.food_id)
+    const unitWas = food ? unitIn(food, was.amount.key) : was.amount.key
+    const unit = chosen[field] ?? unitWas
+    const anew =
+      unit !== unitWas || (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n)
+    if (n !== undefined && !anew) {
+      return item.nutrients
+    }
+    return n === undefined || food === undefined ? undefined : nutrientsIn(food, unit, n)
+  }
+  const kept = meal.items.filter((item) => !removed.has(item.id))
+  const total = [
+    ...kept.map((item) => nowOf(item) ?? item.nutrients),
+    ...entries.map((e) => entryValues(e, f.parse) ?? { kcal: 0, protein: 0, carbs: 0, fat: 0 }),
+  ].reduce(
+    (sum, v) => ({
+      kcal: sum.kcal + v.kcal,
+      protein: sum.protein + v.protein,
+      carbs: sum.carbs + v.carbs,
+      fat: sum.fat + v.fat,
+    }),
+    { kcal: 0, protein: 0, carbs: 0, fat: 0 },
+  )
+  const change = Math.round(total.kcal) - Math.round(meal.total.kcal)
+  // The days a meal is of: today and the 30 before it, and the meal's
+  // own, when it is not among them: older, or after a today the app has
+  // from before the day's start passed. Left as it is, it is not moved.
+  const recent = Array.from({ length: 31 }, (_, i) => addDays(today, -i))
+  const days = recent.includes(date) ? recent : date > today ? [date, ...recent] : [...recent, date]
+  const dayName = (d: string) =>
+    d === today ? t.day.today : d === addDays(today, -1) ? t.meal.yesterday : f.date(d, today)
 
   function send(body: Change) {
     update.mutate({ params: { path: { id: meal.id } }, body }, { onSuccess: onDone })
@@ -283,12 +363,15 @@ export function MealEditor({
     }
     const description = text('description')
     const mealNote = text('note')
-    // A cleared day or time keeps the one it had.
-    const typedDay = text('day')
-    const day = typedDay !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(typedDay) ? typedDay : date
+    const day = text('day') ?? date
+    // A cleared time keeps the one it had; one that is no time is said.
     const typedTime = text('time')
     const time =
-      typedTime !== undefined && /^\d{2}:\d{2}$/.test(typedTime) ? typedTime : openedWith.time
+      typedTime === undefined || typedTime === '' ? openedWith.time : parseClock(typedTime)
+    setBadTime(time === undefined)
+    if (time === undefined) {
+      return
+    }
     const fields: Change = {
       ...(description !== undefined && description !== openedWith.description.trim()
         ? { description }
@@ -409,14 +492,9 @@ export function MealEditor({
     setWrong(notNumbers)
     setWrongEntries(bad)
     setOver(overs)
-    let after: typeof ahead
-    if (day > today) {
-      after = 'day'
-    } else if (fields.eaten_at !== undefined && toCome(fields.eaten_at)) {
-      after = 'time'
-    }
+    const after = fields.eaten_at !== undefined && toCome(fields.eaten_at)
     setAhead(after)
-    if (notNumbers.size > 0 || bad.size > 0 || overs.size > 0 || after !== undefined) {
+    if (notNumbers.size > 0 || bad.size > 0 || overs.size > 0 || after) {
       return
     }
     if (ops.length === 0 && Object.keys(fields).length === 0) {
@@ -427,444 +505,510 @@ export function MealEditor({
   }
 
   return (
-    <form ref={form} onSubmit={submit} noValidate className="space-y-3">
-      <label className="block space-y-1">
-        <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
-        <input
-          name="description"
-          defaultValue={openedWith.description}
-          maxLength={200}
-          autoComplete="off"
-          className={inputClass}
-        />
-      </label>
-      <div className="flex gap-3">
-        <label className="flex-1 space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.meal.day}</span>
-          <input
-            name="day"
-            type="date"
-            defaultValue={date}
-            max={today}
-            aria-invalid={ahead === 'day'}
-            aria-describedby={ahead === 'day' ? `${id}-to-come` : undefined}
-            className={cn(inputClass, 'tabular-nums')}
-          />
-        </label>
-        <label className="w-28 space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
-          <input
-            name="time"
-            type="time"
-            defaultValue={openedWith.time}
-            aria-invalid={ahead === 'time'}
-            aria-describedby={
-              [ahead === 'time' ? `${id}-to-come` : '', night ? `${id}-night` : '']
-                .join(' ')
-                .trim() || undefined
-            }
-            className={cn(inputClass, 'tabular-nums')}
-            onChange={(e) => {
-              // A cleared field keeps the time it had.
-              const typed = e.currentTarget.value
-              if (/^\d{2}:\d{2}$/.test(typed)) {
-                setClock(typed)
-              }
-            }}
-          />
-        </label>
-      </div>
-      {night && (
-        <p id={`${id}-night`} className="text-xs text-muted-foreground">
-          {t.log.nightAfter(clock)}
-        </p>
-      )}
-      {noting ? (
+    <form ref={form} onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
         <label className="block space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.meal.note}</span>
-          <textarea
-            ref={noteField}
-            name="note"
-            defaultValue={openedWith.note}
-            maxLength={2000}
-            rows={2}
-            className={cn(inputClass, 'h-auto py-2')}
+          <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
+          <input
+            ref={first}
+            name="description"
+            defaultValue={openedWith.description}
+            maxLength={200}
+            autoComplete="off"
+            className={inputClass}
           />
         </label>
-      ) : (
-        <Button
-          variant="link"
-          className="h-auto p-0 text-small"
-          onClick={() => {
-            setNoting(true)
-          }}
+        <div className="flex gap-3">
+          <label className="min-w-0 flex-1 space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.meal.day}</span>
+            <select name="day" defaultValue={date} className={inputClass}>
+              {days.map((d) => (
+                <option key={d} value={d}>
+                  {dayName(d)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="w-24 space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
+            <TimeInput
+              name="time"
+              defaultValue={openedWith.time}
+              aria-invalid={ahead || badTime}
+              aria-describedby={
+                [ahead || badTime ? `${id}-time` : '', night ? `${id}-night` : '']
+                  .join(' ')
+                  .trim() || undefined
+              }
+              onChange={(e) => {
+                // A cleared field keeps the time it had.
+                const typed = parseClock(e.currentTarget.value)
+                if (typed !== undefined) {
+                  setClock(typed)
+                }
+                setBadTime(false)
+                setAhead(false)
+              }}
+              onBlur={(e) => {
+                // As the time it reads, 19:30 for 1930.
+                const typed = e.currentTarget.value
+                e.currentTarget.value = parseClock(typed) ?? typed
+              }}
+            />
+          </label>
+        </div>
+        {night && (
+          <p id={`${id}-night`} className="text-xs text-muted-foreground">
+            {t.log.nightAfter(clock)}
+          </p>
+        )}
+        {/* The meal as it would be saved, said as it changes. */}
+        <div
+          aria-live="polite"
+          className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg bg-surface-2 px-4 py-3"
         >
-          {openedWith.note === '' ? t.meal.addNote : t.meal.changeNote}
-        </Button>
-      )}
-      <ul className="divide-y text-sm">
-        {meal.items.map((item) => {
-          const was = startOf(item)
-          const now = start(item)
-          const gone = removed.has(item.id)
-          // Changed elsewhere since the editor opened, or since the item
-          // came: its field keeps what it started with.
-          const opened = initial.get(item.id) ?? later.get(fieldKey(item))
-          const estimate = estimateOf(item)
-          const estimateNow = estimateStart(item)
-          const openedEstimate = initialEstimates.get(item.id) ?? laterEstimates.get(item.id)
-          const moved =
-            (opened !== undefined &&
-              (now?.text !== opened.text ||
-                now.amount.unit !== opened.amount.unit ||
-                now.amount.portions !== opened.amount.portions ||
-                now.foodId !== opened.foodId ||
-                now.note !== opened.note)) ||
-            (openedEstimate !== undefined &&
-              (estimateNow === undefined ||
-                estimateNow.note !== openedEstimate.note ||
-                estimateNow.name !== openedEstimate.name ||
-                values.some((v) => estimateNow.texts[v] !== openedEstimate.texts[v])))
-          const field = `${item.id} ${String(was?.foodId)}`
-          const typedN = f.parse(typing[field] ?? was?.text ?? '') ?? Number.NaN
-          const unit = was?.amount.portions ? t.meal.portions(typedN) : was?.amount.unit
-          // The units its food is given in, the one it has among them, once
-          // the food has come: a choice only of two or more.
-          const itsFood = foodOf(was?.foodId)
-          // As the food names it: a serving given as Piece is its piece.
-          const unitWas = was && itsFood ? unitIn(itsFood, was.amount.key) : was?.amount.key
-          // The one chosen stays among them though its food no longer has
-          // it: the amount is of it, which the server refuses rather than
-          // the amount being taken in another unit.
-          const picked = chosen[field]
-          const units =
-            unitWas !== undefined && itsFood
-              ? [...new Set([unitWas, ...(picked ? [picked] : []), ...unitsOf(itsFood)])]
-              : undefined
-          const choices = units && units.length > 1 ? units : undefined
-          const swap = gone ? undefined : swaps[item.id]
-          return (
-            <Fragment key={item.id}>
-              <li className="flex flex-wrap items-center gap-2 py-2" hidden={swap !== undefined}>
-                <span
-                  className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}
-                >
-                  {item.name}
-                  {gone && <span className="sr-only"> ({t.meal.removed})</span>}
-                  {moved && !gone && (
-                    <span className="block text-xs text-warning">{t.meal.changedElsewhere}</span>
+          <p>
+            <span className="text-h2">{t.unit.kcal(f.number(total.kcal))}</span>
+            {change !== 0 && (
+              <span className="block text-caption font-semibold text-primary">
+                {t.meal.fromChanges(f.signed(change))}
+              </span>
+            )}
+          </p>
+          <p className="ml-auto text-small text-muted-foreground">
+            {t.day.short.protein} {f.grams(total.protein)} · {t.day.short.carbs}{' '}
+            {f.grams(total.carbs)} · {t.day.short.fat} {f.grams(total.fat)}
+          </p>
+        </div>
+        <h3 className="text-h3">{t.meal.itemsTitle}</h3>
+        <ul className="divide-y text-sm">
+          {meal.items.map((item) => {
+            const name = itemName(item, t)
+            const was = startOf(item)
+            const now = start(item)
+            const gone = removed.has(item.id)
+            // What it brings now, and whether a change here makes it bring
+            // another energy than it does.
+            const brings = nowOf(item)
+            const changed =
+              !gone &&
+              brings !== undefined &&
+              Math.round(brings.kcal) !== Math.round(item.nutrients.kcal)
+            // Changed elsewhere since the editor opened, or since the item
+            // came: its field keeps what it started with.
+            const opened = initial.get(item.id) ?? later.get(fieldKey(item))
+            const estimate = estimateOf(item)
+            const estimateNow = estimateStart(item)
+            const openedEstimate = initialEstimates.get(item.id) ?? laterEstimates.get(item.id)
+            const moved =
+              (opened !== undefined &&
+                (now?.text !== opened.text ||
+                  now.amount.unit !== opened.amount.unit ||
+                  now.amount.portions !== opened.amount.portions ||
+                  now.foodId !== opened.foodId ||
+                  now.note !== opened.note)) ||
+              (openedEstimate !== undefined &&
+                (estimateNow === undefined ||
+                  estimateNow.note !== openedEstimate.note ||
+                  estimateNow.name !== openedEstimate.name ||
+                  values.some((v) => estimateNow.texts[v] !== openedEstimate.texts[v])))
+            const field = `${item.id} ${String(was?.foodId)}`
+            const typedN = f.parse(typing[field] ?? was?.text ?? '') ?? Number.NaN
+            const unit = was?.amount.portions ? t.meal.portions(typedN) : was?.amount.unit
+            // The units its food is given in, the one it has among them, once
+            // the food has come: a choice only of two or more.
+            const itsFood = foodOf(was?.foodId)
+            // As the food names it: a serving given as Piece is its piece.
+            const unitWas = was && itsFood ? unitIn(itsFood, was.amount.key) : was?.amount.key
+            // The one chosen stays among them though its food no longer has
+            // it: the amount is of it, which the server refuses rather than
+            // the amount being taken in another unit.
+            const picked = chosen[field]
+            const units =
+              unitWas !== undefined && itsFood
+                ? [...new Set([unitWas, ...(picked ? [picked] : []), ...unitsOf(itsFood)])]
+                : undefined
+            const choices = units && units.length > 1 ? units : undefined
+            const swap = gone ? undefined : swaps[item.id]
+            return (
+              <Fragment key={item.id}>
+                <li
+                  className={cn(
+                    'flex flex-wrap items-center gap-2 py-2',
+                    changed && '-mx-2 rounded-md bg-primary-soft/60 px-2',
                   )}
-                </span>
-                {was && (
-                  // Hidden, not gone, while the item is to be removed: kept
-                  // again, it has what was typed in it.
-                  <span className="flex items-center gap-1" hidden={gone}>
-                    <span className={cn('relative', choices ? 'w-20' : 'w-32')}>
-                      <input
-                        // Of another food now, the field starts again.
-                        key={was.foodId}
-                        name={item.id}
-                        aria-label={t.meal.amount(item.name)}
-                        inputMode="decimal"
-                        autoComplete="off"
-                        defaultValue={was.text}
-                        onChange={(e) => {
-                          const next = e.currentTarget.value
-                          setTyping((ts) => ({ ...ts, [field]: next }))
-                          // Typed: what a unit chosen worked out is no more.
-                          setExact(({ [field]: _typed, ...es }) => es)
-                        }}
-                        aria-invalid={wrong.has(item.id) || over.has(item.id)}
-                        aria-describedby={
-                          wrong.has(item.id)
-                            ? `${id}-wrong`
-                            : over.has(item.id)
-                              ? `${id}-wrong-entry`
-                              : undefined
-                        }
-                        className={cn(inputClass, 'h-9 tabular-nums', !choices && unit && 'pr-14')}
-                      />
-                      {!choices && unit && (
-                        <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
-                          {unit}
-                        </span>
-                      )}
-                    </span>
-                    {choices && itsFood && (
-                      <select
-                        // Of another food now, the choice starts again.
-                        key={was.foodId}
-                        name={fieldOf(item, 'unit')}
-                        aria-label={t.log.unit(item.name)}
-                        // Held by the editor, not the page: a unit renamed or
-                        // gone elsewhere never changes it unseen.
-                        value={picked ?? unitWas}
-                        className={cn(inputClass, 'h-9 w-auto max-w-28')}
-                        onChange={(e) => {
-                          // The amount is worked out anew in the unit chosen,
-                          // when the food says the grams of both.
-                          const unitTo = e.currentTarget.value
-                          const amount = e.currentTarget.form?.elements.namedItem(item.id)
-                          setChosen((cs) => ({ ...cs, [field]: unitTo }))
-                          if (!(amount instanceof HTMLInputElement)) {
-                            return
-                          }
-                          // From what a unit chosen worked out, or the
-                          // amount as it was while it is not typed, or as it
-                          // is typed.
-                          const base =
-                            exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
-                          const worked = Number.isFinite(base)
-                            ? converted(
-                                itsFood,
-                                chosen[field] ?? unitWas ?? was.amount.key,
-                                unitTo,
-                                base,
-                              )
-                            : undefined
-                          if (worked === undefined) {
-                            // Not to be worked out: the amount is typed anew
-                            // in the unit chosen, not taken over in it.
-                            amount.value = ''
-                            setTyping((ts) => ({ ...ts, [field]: '' }))
-                            setExact(({ [field]: _gone, ...es }) => es)
-                          } else {
-                            // Back in its own unit, the amount it was, not
-                            // one a hair off it.
-                            const n =
-                              unitTo === unitWas &&
-                              Math.abs(worked - was.amount.n) <= 1e-9 * Math.max(1, was.amount.n)
-                                ? was.amount.n
-                                : worked
-                            const next = shownAmount(n, f.field)
-                            amount.value = next
-                            setTyping((ts) => ({ ...ts, [field]: next }))
-                            setExact((es) => ({ ...es, [field]: n }))
-                          }
-                        }}
+                  hidden={swap !== undefined}
+                >
+                  <span
+                    className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}
+                  >
+                    {name}
+                    {gone && <span className="sr-only"> ({t.meal.removed})</span>}
+                    {!gone && brings !== undefined && (
+                      <span
+                        className={cn(
+                          'block text-caption',
+                          changed ? 'font-medium text-primary' : 'text-muted-foreground',
+                        )}
                       >
-                        {choices.map((u) => (
-                          <option key={u} value={u}>
-                            {u === 'portion' ? t.meal.portions(typedN) : (servingOf(u) ?? u)}
-                          </option>
-                        ))}
-                      </select>
+                        {t.unit.kcal(f.number(brings.kcal))} · {t.day.short.protein}{' '}
+                        {f.grams(brings.protein)}
+                        {changed && ` · ${t.meal.was(f.number(item.nutrients.kcal))}`}
+                      </span>
+                    )}
+                    {moved && !gone && (
+                      <span className="block text-xs text-warning">{t.meal.changedElsewhere}</span>
                     )}
                   </span>
-                )}
-                {estimate && !gone && (
+                  {was && (
+                    // Hidden, not gone, while the item is to be removed: kept
+                    // again, it has what was typed in it.
+                    <span className="flex items-center gap-1" hidden={gone}>
+                      <span className={cn('relative', choices ? 'w-20' : 'w-32')}>
+                        <input
+                          // Of another food now, the field starts again.
+                          key={was.foodId}
+                          name={item.id}
+                          aria-label={t.meal.amount(name)}
+                          inputMode="decimal"
+                          autoComplete="off"
+                          defaultValue={was.text}
+                          onChange={(e) => {
+                            const next = e.currentTarget.value
+                            setTyping((ts) => ({ ...ts, [field]: next }))
+                            // Typed: what a unit chosen worked out is no more.
+                            setExact(({ [field]: _typed, ...es }) => es)
+                          }}
+                          aria-invalid={wrong.has(item.id) || over.has(item.id)}
+                          aria-describedby={
+                            wrong.has(item.id)
+                              ? `${id}-wrong`
+                              : over.has(item.id)
+                                ? `${id}-wrong-entry`
+                                : undefined
+                          }
+                          className={cn(inputClass, 'tabular-nums', !choices && unit && 'pr-14')}
+                        />
+                        {!choices && unit && (
+                          <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
+                            {unit}
+                          </span>
+                        )}
+                      </span>
+                      {choices && itsFood && (
+                        <select
+                          // Of another food now, the choice starts again.
+                          key={was.foodId}
+                          name={fieldOf(item, 'unit')}
+                          aria-label={t.log.unit(name)}
+                          // Held by the editor, not the page: a unit renamed or
+                          // gone elsewhere never changes it unseen.
+                          value={picked ?? unitWas}
+                          className={cn(inputClass, 'w-auto max-w-28')}
+                          onChange={(e) => {
+                            // The amount is worked out anew in the unit chosen,
+                            // when the food says the grams of both.
+                            const unitTo = e.currentTarget.value
+                            const amount = e.currentTarget.form?.elements.namedItem(item.id)
+                            setChosen((cs) => ({ ...cs, [field]: unitTo }))
+                            if (!(amount instanceof HTMLInputElement)) {
+                              return
+                            }
+                            // From what a unit chosen worked out, or the
+                            // amount as it was while it is not typed, or as it
+                            // is typed.
+                            const base =
+                              exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
+                            const worked = Number.isFinite(base)
+                              ? converted(
+                                  itsFood,
+                                  chosen[field] ?? unitWas ?? was.amount.key,
+                                  unitTo,
+                                  base,
+                                )
+                              : undefined
+                            if (worked === undefined) {
+                              // Not to be worked out: the amount is typed anew
+                              // in the unit chosen, not taken over in it.
+                              amount.value = ''
+                              setTyping((ts) => ({ ...ts, [field]: '' }))
+                              setExact(({ [field]: _gone, ...es }) => es)
+                            } else {
+                              // Back in its own unit, the amount it was, not
+                              // one a hair off it.
+                              const n =
+                                unitTo === unitWas &&
+                                Math.abs(worked - was.amount.n) <= 1e-9 * Math.max(1, was.amount.n)
+                                  ? was.amount.n
+                                  : worked
+                              const next = shownAmount(n, f.field)
+                              amount.value = next
+                              setTyping((ts) => ({ ...ts, [field]: next }))
+                              setExact((es) => ({ ...es, [field]: n }))
+                            }
+                          }}
+                        >
+                          {choices.map((u) => (
+                            <option key={u} value={u}>
+                              {u === 'portion' ? t.meal.portions(typedN) : (servingOf(u) ?? u)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </span>
+                  )}
+                  {estimate && !gone && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-primary aria-pressed:bg-primary-soft"
+                      aria-label={t.meal.saveAsFood(name)}
+                      aria-pressed={asFoods.has(item.id)}
+                      onClick={() => {
+                        const next = new Set(asFoods)
+                        if (next.has(item.id)) {
+                          next.delete(item.id)
+                        } else {
+                          next.add(item.id)
+                        }
+                        setAsFoods(next)
+                      }}
+                    >
+                      <BookmarkPlus aria-hidden />
+                      {t.meal.asFoodShort}
+                    </Button>
+                  )}
+                  {!gone && (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t.meal.anotherFood(name)}
+                      aria-expanded={finding === item.id}
+                      onClick={() => {
+                        setFinding(finding === item.id ? undefined : item.id)
+                      }}
+                    >
+                      <ArrowLeftRight aria-hidden />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={t.meal.saveAsFood(item.name)}
-                    aria-pressed={asFoods.has(item.id)}
+                    aria-label={gone ? t.meal.keep(name) : t.meal.remove(name)}
                     onClick={() => {
-                      const next = new Set(asFoods)
-                      if (next.has(item.id)) {
+                      const next = new Set(removed)
+                      if (gone) {
                         next.delete(item.id)
                       } else {
                         next.add(item.id)
                       }
-                      setAsFoods(next)
+                      setRemoved(next)
                     }}
                   >
-                    <BookmarkPlus aria-hidden />
+                    {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
                   </Button>
-                )}
-                {!gone && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t.meal.anotherFood(item.name)}
-                    aria-expanded={finding === item.id}
-                    onClick={() => {
-                      setFinding(finding === item.id ? undefined : item.id)
-                    }}
-                  >
-                    <ArrowLeftRight aria-hidden />
-                  </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={gone ? t.meal.keep(item.name) : t.meal.remove(item.name)}
-                  onClick={() => {
-                    const next = new Set(removed)
-                    if (gone) {
-                      next.delete(item.id)
-                    } else {
-                      next.add(item.id)
-                    }
-                    setRemoved(next)
-                  }}
-                >
-                  {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
-                </Button>
-                {estimate && asFoods.has(item.id) && !gone && (
-                  <span className="basis-full text-xs text-muted-foreground">{t.meal.asFood}</span>
-                )}
-                {estimate && (
-                  <input
-                    name={fieldOf(item, 'name')}
-                    aria-label={t.meal.value(t.log.estimateName, item.name)}
-                    defaultValue={estimate.name}
-                    maxLength={200}
-                    autoComplete="off"
-                    hidden={gone}
-                    className={cn(inputClass, 'h-9 basis-full')}
-                  />
-                )}
-                {estimate && (
-                  // Hidden, not gone, as an amount's field.
-                  <span className="grid basis-full grid-cols-4 gap-2" hidden={gone}>
-                    {values.map((v) => (
-                      <label key={v} className="space-y-1">
-                        <span className="block text-xs text-muted-foreground">
-                          {t.meal.estimateValue[v]}
-                        </span>
-                        <input
-                          name={fieldOf(item, v)}
-                          aria-label={t.meal.value(t.foods.nutrient[v], item.name)}
-                          inputMode="decimal"
-                          autoComplete="off"
-                          defaultValue={estimate.texts[v]}
-                          aria-invalid={wrong.has(fieldOf(item, v))}
-                          aria-describedby={wrong.has(fieldOf(item, v)) ? `${id}-wrong` : undefined}
-                          className={cn(inputClass, 'h-9 tabular-nums')}
-                        />
-                      </label>
-                    ))}
-                  </span>
-                )}
-                {finding === item.id && !gone && (
-                  <span className="basis-full">
-                    <FoodPicker
-                      label={t.meal.findInPlaceOf(item.name)}
-                      onPick={(food) => {
-                        const entry = foodEntry(food, f.field)
-                        setSwaps((ss) => ({ ...ss, [item.id]: entry }))
-                        setFinding(undefined)
-                        setAdded(entry.key)
+                  {estimate && asFoods.has(item.id) && !gone && (
+                    <span className="basis-full text-xs text-muted-foreground">
+                      {t.meal.asFood}
+                    </span>
+                  )}
+                  {estimate && (
+                    <input
+                      name={fieldOf(item, 'name')}
+                      aria-label={t.meal.value(t.log.estimateName, name)}
+                      defaultValue={estimate.name}
+                      maxLength={200}
+                      autoComplete="off"
+                      hidden={gone}
+                      className={cn(inputClass, 'basis-full')}
+                    />
+                  )}
+                  {estimate && (
+                    // Hidden, not gone, as an amount's field.
+                    <span className="grid basis-full grid-cols-4 gap-2" hidden={gone}>
+                      {values.map((v) => (
+                        <label key={v} className="space-y-1">
+                          <span className="block text-xs text-muted-foreground">
+                            {t.meal.estimateValue[v]}
+                          </span>
+                          <input
+                            name={fieldOf(item, v)}
+                            aria-label={t.meal.value(t.foods.nutrient[v], name)}
+                            inputMode="decimal"
+                            autoComplete="off"
+                            defaultValue={estimate.texts[v]}
+                            onChange={(e) => {
+                              const next = e.currentTarget.value
+                              setValueTyping((ts) => ({ ...ts, [fieldOf(item, v)]: next }))
+                            }}
+                            aria-invalid={wrong.has(fieldOf(item, v))}
+                            aria-describedby={
+                              wrong.has(fieldOf(item, v)) ? `${id}-wrong` : undefined
+                            }
+                            className={cn(inputClass, 'px-2.5 tabular-nums')}
+                          />
+                        </label>
+                      ))}
+                    </span>
+                  )}
+                  {finding === item.id && !gone && (
+                    <span className="basis-full">
+                      <FoodPicker
+                        label={t.meal.findInPlaceOf(name)}
+                        onPick={(food) => {
+                          const entry = foodEntry(food, f.field)
+                          setSwaps((ss) => ({ ...ss, [item.id]: entry }))
+                          setFinding(undefined)
+                          setAdded(entry.key)
+                        }}
+                      />
+                    </span>
+                  )}
+                </li>
+                {swap && (
+                  <>
+                    <li className="pt-2 text-xs text-muted-foreground">{t.meal.inPlaceOf(name)}</li>
+                    <EntryRow
+                      entry={swap}
+                      wrong={wrongEntries.has(swap.key)}
+                      describedBy={wrongEntries.has(swap.key) ? `${id}-wrong-entry` : undefined}
+                      focus={swap.key === added}
+                      onChange={(other) => {
+                        setSwaps((ss) => ({ ...ss, [item.id]: other }))
+                      }}
+                      onRemove={() => {
+                        const { [item.id]: _gone, ...rest } = swaps
+                        setSwaps(rest)
                       }}
                     />
-                  </span>
+                  </>
                 )}
-              </li>
-              {swap && (
-                <>
-                  <li className="pt-2 text-xs text-muted-foreground">
-                    {t.meal.inPlaceOf(item.name)}
-                  </li>
-                  <EntryRow
-                    entry={swap}
-                    wrong={wrongEntries.has(swap.key)}
-                    describedBy={wrongEntries.has(swap.key) ? `${id}-wrong-entry` : undefined}
-                    focus={swap.key === added}
-                    onChange={(changed) => {
-                      setSwaps((ss) => ({ ...ss, [item.id]: changed }))
-                    }}
-                    onRemove={() => {
-                      const { [item.id]: _gone, ...rest } = swaps
-                      setSwaps(rest)
-                    }}
-                  />
-                </>
-              )}
-            </Fragment>
-          )
-        })}
-      </ul>
-      <fieldset aria-label={t.meal.add} disabled={held} className="min-w-0 space-y-2">
-        {entries.length > 0 && (
-          <ul className="divide-y">
-            {entries.map((entry) => (
-              <EntryRow
-                key={entry.key}
-                entry={entry}
-                wrong={wrongEntries.has(entry.key)}
-                describedBy={wrongEntries.has(entry.key) ? `${id}-wrong-entry` : undefined}
-                focus={entry.key === added}
-                onChange={(changed) => {
-                  setDrafts((es) => es.map((e) => (e.key === entry.key ? changed : e)))
-                }}
-                onRemove={() => {
-                  setDrafts((es) => es.filter((e) => e.key !== entry.key))
-                }}
-              />
-            ))}
-          </ul>
+              </Fragment>
+            )
+          })}
+        </ul>
+        <fieldset aria-label={t.meal.add} disabled={held} className="min-w-0 space-y-2">
+          {entries.length > 0 && (
+            <ul className="divide-y">
+              {entries.map((entry) => (
+                <EntryRow
+                  key={entry.key}
+                  entry={entry}
+                  wrong={wrongEntries.has(entry.key)}
+                  describedBy={wrongEntries.has(entry.key) ? `${id}-wrong-entry` : undefined}
+                  focus={entry.key === added}
+                  onChange={(changed) => {
+                    setDrafts((es) => es.map((e) => (e.key === entry.key ? changed : e)))
+                  }}
+                  onRemove={() => {
+                    setDrafts((es) => es.filter((e) => e.key !== entry.key))
+                  }}
+                />
+              ))}
+            </ul>
+          )}
+          <FoodPicker
+            onPick={(food) => {
+              const entry = foodEntry(food, f.field)
+              setDrafts((es) => [...es, entry])
+              setAdded(entry.key)
+            }}
+          />
+          <Button
+            variant="outline"
+            className="border-dashed"
+            onClick={() => {
+              const entry = estimateEntry()
+              setDrafts((es) => [...es, entry])
+              setAdded(entry.key)
+            }}
+          >
+            {t.log.estimate}
+          </Button>
+        </fieldset>
+        <p className="text-xs text-muted-foreground">{t.meal.recomputed}</p>
+        {noting ? (
+          <label className="block space-y-1">
+            <span className={cn(fieldLabel, 'block')}>{t.meal.note}</span>
+            <textarea
+              ref={noteField}
+              name="note"
+              defaultValue={openedWith.note}
+              maxLength={2000}
+              rows={2}
+              className={cn(inputClass, 'h-auto py-2')}
+            />
+          </label>
+        ) : (
+          <Button
+            variant="link"
+            className="h-auto p-0 text-small"
+            onClick={() => {
+              setNoting(true)
+            }}
+          >
+            {openedWith.note === '' ? t.meal.addNote : t.meal.changeNote}
+          </Button>
         )}
-        <FoodPicker
-          onPick={(food) => {
-            const entry = foodEntry(food, f.field)
-            setDrafts((es) => [...es, entry])
-            setAdded(entry.key)
-          }}
-        />
-        <Button
-          variant="outline"
-          onClick={() => {
-            const entry = estimateEntry()
-            setDrafts((es) => [...es, entry])
-            setAdded(entry.key)
-          }}
-        >
-          {t.log.estimate}
-        </Button>
-      </fieldset>
-      <p className="text-xs text-muted-foreground">{t.meal.recomputed}</p>
-      {wrong.size > 0 && (
-        <p id={`${id}-wrong`} role="alert" className="text-xs text-destructive">
-          {t.day.notANumber}
-        </p>
-      )}
-      {(over.size > 0 ||
-        [...entries, ...Object.values(swaps)].some((e) => wrongEntries.has(e.key))) && (
-        <p id={`${id}-wrong-entry`} role="alert" className="text-xs text-destructive">
-          {t.log.wrong(most(f.number))}
-        </p>
-      )}
-      {ahead !== undefined && (
-        <p id={`${id}-to-come`} role="alert" className="text-xs text-destructive">
-          {ahead === 'day' ? t.meal.dayToCome : t.meal.timeToCome}
-        </p>
-      )}
-      {none && <p className="text-xs text-muted-foreground">{t.meal.oneItem}</p>}
-      <div className="flex flex-wrap gap-2">
-        <Button type="submit" disabled={none || update.isPending}>
-          {t.meal.save}
-        </Button>
-        <Button variant="ghost" onClick={onDone}>
-          {t.meal.cancel}
-        </Button>
-        <Button
-          variant="destructive"
-          className="ml-auto"
-          disabled={remove.isPending}
-          onClick={() => {
-            remove.mutate({ params: { path: { id: meal.id } } })
-          }}
-        >
-          {t.meal.delete}
-        </Button>
       </div>
-      {refused ? (
-        <p role="alert" className="text-xs text-destructive">
-          {t.meal.refused}
-        </p>
-      ) : (
-        <SaveStatus
-          change={update}
-          // Again, with the meal as it is typed now: an op done already
-          // the server takes for done.
-          onRetry={() => {
-            form.current?.requestSubmit()
-          }}
-        />
-      )}
-      {/* A meal no longer there (404) was deleted: by this delete, its
-          answer lost, or elsewhere. */}
-      {remove.isError && statusOf(remove.error) !== 404 && <SaveStatus change={remove} />}
+      {/* The foot stays, whatever scrolls: the delete apart from the save. */}
+      <div className="space-y-2 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {wrong.size > 0 && (
+          <p id={`${id}-wrong`} role="alert" className="text-xs text-destructive">
+            {t.day.notANumber}
+          </p>
+        )}
+        {(over.size > 0 ||
+          [...entries, ...Object.values(swaps)].some((e) => wrongEntries.has(e.key))) && (
+          <p id={`${id}-wrong-entry`} role="alert" className="text-xs text-destructive">
+            {t.log.wrong(most(f.number))}
+          </p>
+        )}
+        {(ahead || badTime) && (
+          <p id={`${id}-time`} role="alert" className="text-xs text-destructive">
+            {badTime ? t.meal.timeFormat : t.meal.timeToCome}
+          </p>
+        )}
+        {none && <p className="text-xs text-muted-foreground">{t.meal.oneItem}</p>}
+        {refused ? (
+          <p role="alert" className="text-xs text-destructive">
+            {t.meal.refused}
+          </p>
+        ) : (
+          <SaveStatus
+            change={update}
+            // Again, with the meal as it is typed now: an op done already
+            // the server takes for done.
+            onRetry={() => {
+              form.current?.requestSubmit()
+            }}
+          />
+        )}
+        {/* A meal no longer there (404) was deleted: by this delete, its
+            answer lost, or elsewhere. */}
+        {remove.isError && statusOf(remove.error) !== 404 && <SaveStatus change={remove} />}
+        <div className="flex gap-2">
+          <Button
+            variant="destructive"
+            size="icon"
+            className="h-13 w-13"
+            aria-label={t.meal.delete}
+            disabled={remove.isPending}
+            onClick={() => {
+              remove.mutate({ params: { path: { id: meal.id } } })
+            }}
+          >
+            <Trash2 aria-hidden />
+          </Button>
+          <Button
+            type="submit"
+            className="h-13 flex-1 text-base"
+            disabled={none || update.isPending}
+          >
+            {t.meal.save}
+          </Button>
+        </div>
+      </div>
     </form>
   )
 }

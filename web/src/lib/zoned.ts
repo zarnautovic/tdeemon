@@ -79,6 +79,19 @@ export function clockAt(instant: number, timeZone: string): string {
   return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
 
+// parseClock is a time of day as typed, on a 24-hour clock, as HH:MM:
+// 19:30, 19.30, 19,30 (a phone's keys for decimals), 1930, 7:05, 123
+// (01:23) or 7; undefined for what is none.
+export function parseClock(typed: string): string | undefined {
+  const m = /^(\d{1,2})(?:[:.,h]?(\d{2}))?$/.exec(typed.trim())
+  const hour = Number(m?.[1])
+  const minute = Number(m?.[2] ?? '0')
+  if (m === null || hour > 23 || minute > 59) {
+    return undefined
+  }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
 // nightAfter tells a time (HH:MM) on the user's clock before the day's
 // start hour, of the night after the day.
 export function nightAfter(time: string, startHour: number): boolean {
