@@ -605,6 +605,7 @@ export const hr: Messages = {
     newToken: 'Novi token',
     tokenName: 'Naziv',
     tokenPlaceholder: 'Moj mobitel',
+    coachPlaceholder: 'Moj AI trener',
     scopes: 'Što smije',
     scope: {
       ingest: 'Slati zdravstvene podatke',

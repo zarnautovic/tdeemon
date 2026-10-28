@@ -600,6 +600,39 @@ test('a new token is made in a sheet, shown once and copied', async () => {
   Reflect.deleteProperty(navigator, 'clipboard')
 })
 
+// QA #253: a token made from the plan's Connect an AI coach only sent
+// health data, which MCP refuses.
+test("an AI coach's token, asked for by the plan, may read, log and change", async () => {
+  const server = settingsServer()
+  const router = renderAt('/settings/devices?connect=coach')
+
+  // The sheet opens at once, and the address asks no more.
+  const sheet = within(await screen.findByRole('dialog', { name: 'New token' }))
+  const name = sheet.getByLabelText('Name')
+  expect(name.getAttribute('placeholder')).toBe('My AI coach')
+  expect(sheet.getByLabelText('Read, log and change')).toHaveProperty('checked', true)
+  expect(sheet.getByLabelText('Send health data')).toHaveProperty('checked', false)
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({})
+  })
+  expect(screen.getByRole('dialog', { name: 'New token' })).toBeDefined()
+
+  fireEvent.change(name, { target: { value: 'Claude' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Create the token' }))
+  expect(await sheet.findByText('tdm_made_up')).toBeDefined()
+  expect(server.sent['POST /api/v1/tokens']).toEqual([{ name: 'Claude', scopes: ['tools'] }])
+
+  // A token made from the page's button is a device's again.
+  fireEvent.click(sheet.getByRole('button', { name: 'Done' }))
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+  fireEvent.click(await (await tokensRegion()).findByRole('button', { name: 'New token' }))
+  const again = within(await screen.findByRole('dialog', { name: 'New token' }))
+  expect(again.getByLabelText('Send health data')).toHaveProperty('checked', true)
+  expect(again.getByLabelText('Read, log and change')).toHaveProperty('checked', false)
+})
+
 test('a token the browser cannot copy is selected to copy by hand', async () => {
   settingsServer()
   // Over plain http there is no clipboard.

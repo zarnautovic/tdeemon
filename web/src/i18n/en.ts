@@ -640,6 +640,7 @@ export const en = {
     newToken: 'New token',
     tokenName: 'Name',
     tokenPlaceholder: 'My phone',
+    coachPlaceholder: 'My AI coach',
     scopes: 'What it may do',
     scope: {
       ingest: 'Send health data',

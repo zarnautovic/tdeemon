@@ -565,9 +565,10 @@ test('no plan yet says how one comes, and the first step to it', async () => {
   )
   // A plan needs the profile first.
   const first = await empty.findByRole('link', { name: 'Complete your profile' })
+  // The coach's link asks for a token it can use: MCP takes no other.
   expect(empty.getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
     '/plan/profile',
-    '/settings/devices',
+    '/settings/devices?connect=coach',
   ])
   expect(screen.queryByRole('region', { name: 'Targets by type of day' })).toBeNull()
   fireEvent.click(first)
