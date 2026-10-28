@@ -146,6 +146,9 @@ test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
   const dialog = await screen.findByRole('dialog', { name: 'Keyboard shortcuts' })
   expect(within(dialog).getByText('Log a meal')).toBeDefined()
   expect(within(dialog).getByText('The day before or after')).toBeDefined()
+  // The toasts' key, which reaches them from a sheet too.
+  expect(within(dialog).getByText('The notifications')).toBeDefined()
+  expect(within(dialog).getByText('F6')).toBeDefined()
 })
 
 test('a shortcut is not taken from a field, nor with a modifier', async () => {

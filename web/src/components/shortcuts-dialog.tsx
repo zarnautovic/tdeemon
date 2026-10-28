@@ -20,6 +20,8 @@ export function ShortcutsDialog({
     { keys: ['N'], what: t.shortcuts.logMeal },
     { keys: ['/'], what: t.shortcuts.find },
     { keys: ['←', '→'], what: t.shortcuts.days },
+    // Base UI's key, which reaches them from a sheet too, as Tab does not.
+    { keys: ['F6'], what: t.shortcuts.toasts },
     { keys: ['?'], what: t.shortcuts.list },
   ]
 

@@ -926,7 +926,9 @@ the first spec.
     its own. The keyboard has shortcuts (`?` lists them). A change says
     it is done in a toast (Base UI), one at a time, with what the server
     warned of it and Undo, which takes back that change only (`last`,
-    §5); a delete asks nothing first.
+    §5); a delete asks nothing first. The toasts are over a sheet too,
+    so a change made in one is taken back there, and F6 takes the focus
+    to them from a sheet, which keeps Tab within it.
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the progress's page (a chunk of its own), not
     with the app. A chart's colours are the theme's tokens, read from the

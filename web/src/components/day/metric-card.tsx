@@ -13,15 +13,18 @@ import { sayChange } from '@/lib/toast'
 
 // MetricCard is a measurement of the day in its unit, which can be
 // corrected or deleted, but on a day to come (canLog false); a toast says
-// so, with Undo, and no question before.
+// so, with Undo, and no question before. onDeleted is told once it is
+// deleted, as its card goes with the focus in it.
 export function MetricCard({
   date,
   metric,
   canLog = true,
+  onDeleted,
 }: {
   date: string
   metric: Metric
   canLog?: boolean
+  onDeleted?: () => void
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -32,6 +35,7 @@ export function MetricCard({
       { title: t.toast.deleted(label) },
       { last: { action: 'metric.delete', entity: `${date}/${metric.kind}` }, date },
     )
+    onDeleted?.()
   })
 
   if (editing) {

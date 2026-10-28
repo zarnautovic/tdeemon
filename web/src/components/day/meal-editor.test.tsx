@@ -1509,6 +1509,68 @@ test('a meal moved to another day says where, with the way to it', async () => {
   })
 })
 
+// breakfastOf is breakfast eaten on day d, at 08:45 in Los Angeles.
+function breakfastOf(d: string): Meal {
+  return { ...breakfast, eaten_at: `${d}T15:45:00Z` }
+}
+
+// withBreakfast answers for day d, with breakfast.
+function withBreakfast(d: string): Handler {
+  return () => Response.json(day({ date: d, meals: [breakfastOf(d)] }))
+}
+
+// moveTo moves a meal of date to day to, in Croatian or English, as the
+// server answers, and returns the router.
+async function moveTo(date: string, to: string, locale: 'en' | 'hr') {
+  const words =
+    locale === 'hr'
+      ? { title: 'Promijeni obrok', day: 'Dan', save: 'Spremi obrok' }
+      : { title: 'Change the meal', day: 'Day', save: 'Save the meal' }
+  fakeServer({
+    ...signedIn(locale),
+    'GET /api/v1/days/today': withBreakfast(today),
+    [`GET /api/v1/days/${date}`]: withBreakfast(date),
+    [`GET /api/v1/days/${to}`]: withBreakfast(to),
+    [`PATCH /api/v1/meals/${mealId}`]: () =>
+      Response.json({
+        meal: breakfastOf(to),
+        day: { date: to, status: 'open', type: 'rest', total: breakfast.total },
+        warnings: [],
+      }),
+  })
+  const router = renderAt(date === today ? '/' : `/?date=${date}`)
+
+  const row = within(await screen.findByRole('article')).queryByRole('button', { expanded: false })
+  if (row) {
+    fireEvent.click(row)
+  }
+  fireEvent.click(await screen.findByRole('button', { name: `${words.title}: Breakfast` }))
+  const editor = within(await screen.findByRole('dialog', { name: words.title }))
+  fireEvent.change(editor.getByLabelText(words.day), { target: { value: to } })
+  fireEvent.click(editor.getByRole('button', { name: words.save }))
+  return router
+}
+
+test('a meal moved says the day it went to after a colon in Croatian, as its case would not agree', async () => {
+  await moveTo(today, '2026-10-21', 'hr')
+
+  expect(await screen.findByText('Premješteno: srijeda, 21. listopada')).toBeDefined()
+  expect(screen.getByRole('link', { name: 'Otvori: srijeda, 21. listopada' })).toBeDefined()
+})
+
+test.each([
+  ['en', 'Moved to today', 'See it today'],
+  ['hr', 'Premješteno na danas', 'Pogledaj danas'],
+] as const)('a meal moved to today says today (%s)', async (locale, said, link) => {
+  const router = await moveTo('2026-10-21', today, locale)
+
+  expect(await screen.findByText(said)).toBeDefined()
+  fireEvent.click(screen.getByRole('link', { name: link }))
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({})
+  })
+})
+
 test('a meal moved to a day and a time is sent as both', async () => {
   const server = mealServer()
   fakeServer(server.routes)

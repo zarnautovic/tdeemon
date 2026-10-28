@@ -22,7 +22,8 @@ export function NotesPage() {
       {/* The notes as the server has them when the page opens, not as a
           cache kept them: an undo or another tab may have changed them,
           and a failed answer leaves the cache's. Once shown, what is typed
-          stays, saved or not, whatever a later ask of the user comes to. */}
+          stays until it is saved, whatever a later ask of the user comes
+          to; then the field has the server's, an undo's too. */}
       {fresh ? (
         <CoachNotes notes={me.data.notes} labelledBy={id} />
       ) : me.isError ? (

@@ -189,6 +189,10 @@ test('a wrong measurement is deleted', async () => {
   ])
   // The day has no weighing again: its field is back.
   expect(screen.getByLabelText('Weight')).toBeDefined()
+  // The focus went with the card; the measurements have it, in the sheet.
+  // (The toast is a dialog too.)
+  const sheet = within(screen.getByRole('dialog', { name: 'Measurements' }))
+  expect(document.activeElement).toBe(sheet.getByText('None yet.').parentElement)
 })
 
 test('a delete that failed says so', async () => {
@@ -238,6 +242,21 @@ test('another kind of measurement is added, of those the day has none of', async
     { method: 'PUT', path: `${path}/metrics/sleep_h`, body: { value: 7.5 } },
   ])
   expect(screen.queryByLabelText('Measurement')).toBeNull()
+})
+
+test("a measurement added is said saved by its kind's name, not its field's", async () => {
+  fakeServer({ ...signedIn('hr'), ...dayServer().routes })
+  renderAt('/')
+  await openMeasurements()
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Dodaj mjerenje' }))
+  fireEvent.change(screen.getByLabelText('Mjerenje'), { target: { value: 'body_fat' } })
+  const value = screen.getByLabelText('Vrijednost')
+  fireEvent.change(value, { target: { value: '18' } })
+  fireEvent.click(within(formOf(value)).getByRole('button', { name: 'Spremi' }))
+
+  expect(await screen.findByText('Spremljeno: Masno tkivo')).toBeDefined()
+  expect(screen.queryByText('Spremljeno: Vrijednost')).toBeNull()
 })
 
 test('a change refused for want of a session sends the browser to sign in', async () => {
