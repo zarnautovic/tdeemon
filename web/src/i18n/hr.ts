@@ -274,7 +274,7 @@ export const hr: Messages = {
     results: 'Što se može dodati',
     lastAmount: (amount: string) => `zadnje ${amount}`,
     addOf: (name: string) => `Dodaj: ${name}`,
-    serving: (n: string, name: string, grams: string) => `${n} ${name} (${grams})`,
+    serving: (name: string, grams: string) => `${name} (${grams})`,
     mealLine: (when: string, items: string, kcal: string) => `${when} · ${items} · ${kcal}`,
     repeat: 'Ponovi',
     repeatOf: (name: string) => `Ponovi: ${name}`,
@@ -294,7 +294,6 @@ export const hr: Messages = {
     portions: (n: number) => plural('hr', n, { one: 'porcija', few: 'porcije', other: 'porcija' }),
     remove: (name: string) => `Ukloni: ${name}`,
     anEstimate: 'procjena',
-    noItems: 'Prvo dodaj namirnicu ili procjenu.',
     wrong: (most: { amount: string; servings: string; portions: string; kcal: string }) =>
       `Količina je veća od 0 i najviše ${most.amount} g ili ml, ${most.servings} servinga ili ${most.portions} porcija; procjena ima naziv i vrijednosti, npr. 72,5, i najviše ${most.kcal} kcal.`,
     save: 'Upiši obrok',

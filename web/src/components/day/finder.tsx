@@ -1,6 +1,6 @@
 import { Tabs } from '@base-ui/react/tabs'
 import { ArrowLeft, Check, Plus, Repeat2, Search } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { Fragment, useEffect, useId, useRef, useState, type RefObject } from 'react'
 
 import { $api } from '@/api/client'
 import { useFindFoods } from '@/api/foods'
@@ -20,11 +20,12 @@ import {
   type FoodEntry,
 } from '@/components/day/meal-entries'
 import { longName, mealName } from '@/components/day/meal-slot'
+import { pastMeals } from '@/components/day/past-meals'
 import { FoodForm } from '@/components/foods/food-form'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { matches } from '@/lib/search'
+import { matches, parts } from '@/lib/search'
 import { inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -88,8 +89,12 @@ export function Finder({
       (food) =>
         food.last_use !== undefined && matches(q, [food.name, food.brand, ...(food.aliases ?? [])]),
     )
-  const meals = (recentMeals.data?.meals ?? []).filter((m) =>
-    matches(q, [m.description, ...m.items.map((i) => i.name)]),
+  // The meals the search matches, each once: of the meals of the same
+  // foods, the latest it matches.
+  const meals = pastMeals(
+    (recentMeals.data?.meals ?? []).filter((m) =>
+      matches(q, [m.description, ...m.items.map((i) => i.name)]),
+    ),
   )
   const shown: Record<List, { foods: Food[]; meals: Meal[]; pending: boolean }> = {
     all:
@@ -232,7 +237,7 @@ export function Finder({
           >
             <Results
               {...shown[l]}
-              searched={q !== ''}
+              query={q}
               timeZone={timeZone}
               picked={picked?.food.id}
               pickedRow={pickedRow}
@@ -329,7 +334,7 @@ function Results({
   foods,
   meals,
   pending,
-  searched,
+  query,
   timeZone,
   picked,
   pickedRow,
@@ -340,7 +345,8 @@ function Results({
   foods: Food[]
   meals: Meal[]
   pending: boolean
-  searched: boolean
+  // What was searched for, trimmed.
+  query: string
   timeZone: string
   picked: string | undefined
   pickedRow: (food: Food) => React.ReactNode
@@ -349,6 +355,7 @@ function Results({
   onRepeat: (meal: Meal) => void
 }) {
   const t = useMessages()
+  const searched = query !== ''
   if (foods.length === 0 && meals.length === 0) {
     return (
       <p className="py-2 text-sm text-muted-foreground">
@@ -357,12 +364,13 @@ function Results({
     )
   }
   const mealRows = meals.map((meal) => (
-    <MealResult key={meal.id} meal={meal} timeZone={timeZone} onRepeat={onRepeat} />
+    <MealResult key={meal.id} meal={meal} query={query} timeZone={timeZone} onRepeat={onRepeat} />
   ))
   const foodRows = foods.map((food) => (
     <FoodResult
       key={food.id}
       food={food}
+      query={query}
       open={picked === food.id}
       amount={pickedRow(food)}
       onPick={() => {
@@ -388,6 +396,20 @@ function nameOf(food: Food): string {
   return food.brand ? `${food.name} · ${food.brand}` : food.name
 }
 
+// Marked is a text with what the search for query matched in it marked,
+// as the start of a word.
+function Marked({ text, query }: { text: string; query: string }) {
+  return parts(query, text).map((p) =>
+    p.matched ? (
+      <mark key={p.at} className="rounded-xs bg-highlight text-inherit">
+        {p.text}
+      </mark>
+    ) : (
+      <Fragment key={p.at}>{p.text}</Fragment>
+    ),
+  )
+}
+
 // initials are a name's first letters, of its first two words.
 function initials(name: string): string {
   return name
@@ -398,16 +420,19 @@ function initials(name: string): string {
     .join('')
 }
 
-// FoodResult is a food found: a tap opens it for its amount (amount),
-// its + adds it in the amount it was eaten in last.
+// FoodResult is a food found, what the search matched in its name
+// marked: a tap opens it for its amount (amount), its + adds it in the
+// amount it was eaten in last.
 function FoodResult({
   food,
+  query,
   open,
   amount,
   onPick,
   onAdd,
 }: {
   food: Food
+  query: string
   open: boolean
   amount: React.ReactNode
   onPick: () => void
@@ -436,8 +461,13 @@ function FoodResult({
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium">
-              {food.name}
-              {food.brand && <span className="text-muted-foreground"> · {food.brand}</span>}
+              <Marked text={food.name} query={query} />
+              {food.brand && (
+                <span className="text-muted-foreground">
+                  {' · '}
+                  <Marked text={food.brand} query={query} />
+                </span>
+              )}
             </span>
             <span className="block text-caption text-muted-foreground">
               {t.unit.kcal(f.number(food.nutrients.kcal))} {t.foods.per[food.basis]}
@@ -560,7 +590,7 @@ function Amount({
                 onChange({ ...rest, unit: `serving:${s.name}`, amount: f.field(1) })
               }}
             >
-              {t.log.serving(f.number(1), s.name, unitOfServing(s.amount))}
+              {t.log.serving(s.name, unitOfServing(s.amount))}
             </Button>
           ))}
         </div>
@@ -579,13 +609,16 @@ function Amount({
 }
 
 // MealResult is a meal of before, which a tap logs again: its name, when
-// it was eaten, how many items and its kcal.
+// it was eaten, how many items and its kcal, what the search matched in
+// its name marked.
 function MealResult({
   meal,
+  query,
   timeZone,
   onRepeat,
 }: {
   meal: Meal
+  query: string
   timeZone: string
   onRepeat: (meal: Meal) => void
 }) {
@@ -602,10 +635,13 @@ function MealResult({
         <Repeat2 className="size-4.5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-medium">{name}</span>
+        <span className="block truncate font-medium">
+          {/* The meal of the day it was eaten at is no text searched. */}
+          {name === meal.description ? <Marked text={name} query={query} /> : name}
+        </span>
         {longName(meal.description) && (
           <span className="block truncate text-caption text-muted-foreground">
-            {meal.description}
+            <Marked text={meal.description} query={query} />
           </span>
         )}
         <span className="block text-caption text-muted-foreground">

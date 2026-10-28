@@ -11,6 +11,7 @@ import {
   itemOf,
   nutrientsIn,
   repeatOf,
+  servingsOf,
   tooMuch,
   unitGrams,
   unitIn,
@@ -204,6 +205,15 @@ test('a meal repeated is a new meal of its items, with its words', () => {
   const { note: _note, ...noNote } = meal
   const bare = repeatOf({ ...noNote, description: '' })
   expect('description' in bare || 'note' in bare).toBe(false)
+})
+
+// QA #248: "1 ½ čaše" read as one and a half glasses.
+test('servings are counted, but one of a serving named by a number is its name', () => {
+  expect(servingsOf('2', 2, 'slice')).toBe('2 slice')
+  expect(servingsOf('1', 1, 'slice')).toBe('1 slice')
+  expect(servingsOf('1', 1, '½ čaše')).toBe('½ čaše')
+  expect(servingsOf('1', 1, '2 dl')).toBe('2 dl')
+  expect(servingsOf('2', 2, '½ čaše')).toBe('2 × ½ čaše')
 })
 
 test("a unit's grams are a serving's, a portion's when the food says them, or one", () => {

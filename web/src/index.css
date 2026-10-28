@@ -50,6 +50,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-soft: var(--primary-soft);
+  --color-highlight: var(--highlight);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
@@ -130,6 +131,11 @@
   --primary: #0b7a5e;
   --primary-foreground: #ffffff;
   --primary-soft: #ddf3eb;
+  /*
+    What a search matched, behind its text: the foreground, the muted
+    one and primary keep 4.5:1 on it, in both.
+  */
+  --highlight: #fff3dc;
   --ring: var(--primary);
   --protein: #3d63dd;
   --carbs: #d99a1e;
@@ -168,6 +174,7 @@
     --primary: #4fd1a5;
     --primary-foreground: #04241a;
     --primary-soft: #133a30;
+    --highlight: #4a3a14;
     --protein: #7aa2f7;
     --carbs: #f0b45c;
     --fat: #f07fa0;

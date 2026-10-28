@@ -11,6 +11,7 @@ import {
   itemOf,
   repeatOf,
   servingOf,
+  servingsOf,
   type Entry,
 } from '@/components/day/meal-entries'
 import { slotAt } from '@/components/day/meal-slot'
@@ -136,7 +137,6 @@ function Composer({
   // A time still to come, which the server refuses: a meal is logged once
   // eaten.
   const [later, setLater] = useState(false)
-  const [empty, setEmpty] = useState(false)
   const status = statusOf(log.error)
   const refused = log.isError && (status === 409 || status === 422)
   // Sent, and no answer said whether it was taken: the meal stays as sent.
@@ -171,7 +171,6 @@ function Composer({
   }
 
   function submit() {
-    setEmpty(entries.length === 0)
     const when = eatenAt()
     // Each entry was checked as it came: a food's amount, an estimate's
     // values.
@@ -193,12 +192,16 @@ function Composer({
     }
   }
 
-  // amountOf is how much of a food an entry has, as its field says it.
+  // amountOf is how much of a food an entry has, as its field says it (a
+  // serving's, servingsOf).
   function amountOf(entry: Entry & { kind: 'food' }): string {
     if (entry.unit === 'portion') {
       return `${entry.amount} ${t.log.portions(f.parse(entry.amount) ?? Number.NaN)}`
     }
-    return `${entry.amount} ${servingOf(entry.unit) ?? entry.unit}`
+    const serving = servingOf(entry.unit)
+    return serving === undefined
+      ? `${entry.amount} ${entry.unit}`
+      : servingsOf(entry.amount, f.parse(entry.amount) ?? Number.NaN, serving)
   }
 
   return (
@@ -275,7 +278,6 @@ function Composer({
           timeZone={timeZone}
           onAdd={(entry) => {
             setEntries((es) => [...es, entry])
-            setEmpty(false)
           }}
           onRepeat={repeat}
         />
@@ -315,7 +317,9 @@ function Composer({
             })}
           </ul>
         ) : (
-          <p className="text-small text-muted-foreground">{t.log.empty}</p>
+          <p id={`${id}-empty`} className="text-small text-muted-foreground">
+            {t.log.empty}
+          </p>
         )}
         {after !== undefined && entries.length > 0 && (
           <p className="text-small text-muted-foreground">
@@ -327,11 +331,6 @@ function Composer({
         {(later || badTime) && (
           <p role="alert" className="text-sm text-destructive">
             {badTime ? t.meal.timeFormat : t.meal.timeToCome}
-          </p>
-        )}
-        {empty && entries.length === 0 && (
-          <p role="alert" className="text-sm text-destructive">
-            {t.log.noItems}
           </p>
         )}
         {refused ? (
@@ -350,7 +349,14 @@ function Composer({
             }}
           />
         )}
-        <Button className="h-13 w-full text-base" disabled={held} onClick={submit}>
+        {/* Disabled, it stays in reach of the focus, and says what it waits for. */}
+        <Button
+          className="h-13 w-full text-base"
+          disabled={held || entries.length === 0}
+          focusableWhenDisabled
+          aria-describedby={entries.length === 0 ? `${id}-empty` : undefined}
+          onClick={submit}
+        >
           {entries.length > 0
             ? t.log.logItems(entries.length, f.number(Math.round(kcal)))
             : t.log.save}

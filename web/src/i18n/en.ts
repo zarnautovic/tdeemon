@@ -289,7 +289,9 @@ export const en = {
     results: 'What there is to add',
     lastAmount: (amount: string) => `last ${amount}`,
     addOf: (name: string) => `Add: ${name}`,
-    serving: (n: string, name: string, grams: string) => `${n} ${name} (${grams})`,
+    // A serving's chip, one of it, by its name alone, which may hold a
+    // number: "slice (40 g)", "½ cup (100 g)".
+    serving: (name: string, grams: string) => `${name} (${grams})`,
     mealLine: (when: string, items: string, kcal: string) => `${when} · ${items} · ${kcal}`,
     repeat: 'Repeat',
     repeatOf: (name: string) => `Repeat: ${name}`,
@@ -309,7 +311,6 @@ export const en = {
     portions: (n: number) => plural('en', n, { one: 'portion', other: 'portions' }),
     remove: (name: string) => `Remove: ${name}`,
     anEstimate: 'an estimate',
-    noItems: 'Add a food or an estimate first.',
     wrong: (most: { amount: string; servings: string; portions: string; kcal: string }) =>
       `An amount is more than 0 and at most ${most.amount} g or ml, ${most.servings} servings or ${most.portions} portions; an estimate has a name and its values, such as 72.5, and at most ${most.kcal} kcal.`,
     save: 'Log the meal',

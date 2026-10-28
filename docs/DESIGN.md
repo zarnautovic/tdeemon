@@ -279,7 +279,9 @@ name and brand the user has (409, naming the food, archived too) where
 `upsert_food` would correct that food; and offers meals to log again
 with `GET /api/v1/meals/recent`, a web session's only too: the latest
 meals of the latest 200, each meal eaten again once (the latest, of the
-same items in amounts within 1 %, as the duplicate warning tells them).
+same items in amounts within 1 %, as the duplicate warning tells them),
+of which the app shows the meals of the same foods once, the latest
+that a search matches, in whatever amounts.
 The charts read
 `GET /api/v1/history?from=&to=&granularity=day|week`, the tool
 `get_history`: every day of a span of at most 366 days up to today (the

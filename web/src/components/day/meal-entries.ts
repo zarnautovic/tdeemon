@@ -395,6 +395,17 @@ export function repeatOf(meal: Meal): LogMealBody {
   }
 }
 
+// servingsOf is servings of a food's serving, n as shown: "2 slice", "1
+// slice". A serving whose name holds a number of its own ("½ cup") is
+// counted with ×, and one of it is the name alone, as "1 ½ cup" reads as
+// one and a half.
+export function servingsOf(n: string, servings: number, serving: string): string {
+  if (!/^[\d½⅓⅔¼¾⅕⅙⅛]/u.test(serving)) {
+    return `${n} ${serving}`
+  }
+  return servings === 1 ? serving : `${n} × ${serving}`
+}
+
 // lastAmountOf is how much of a food was eaten last, as it was given: "2
 // slice", "1.5 portions", "200 g"; undefined for a food not eaten yet.
 export function lastAmountOf(food: Food, t: Messages, f: Format): string | undefined {
@@ -404,7 +415,7 @@ export function lastAmountOf(food: Food, t: Messages, f: Format): string | undef
   }
   const { servings, serving } = last.quantity
   if (servings !== undefined && serving !== undefined) {
-    return `${f.number(servings, 2)} ${serving}`
+    return servingsOf(f.number(servings, 2), servings, serving)
   }
   return last.unit === 'portion'
     ? t.day.portions(f.number(last.amount, 2), last.amount)
