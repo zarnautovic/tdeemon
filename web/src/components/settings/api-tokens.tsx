@@ -24,7 +24,8 @@ const tokens = ['get', '/api/v1/tokens']
 // revoked, or all at once, as after a password reset. A revoke cannot be
 // taken back, so it asks first: the focus goes to its safe answer, and
 // comes back to what asked it, or to the heading once the token is gone.
-export function ApiTokens() {
+// coach opens the sheet at once, with a token for an AI coach.
+export function ApiTokens({ coach = false }: { coach?: boolean }) {
   const t = useMessages()
   const f = useFormat()
   const queryClient = useQueryClient()
@@ -41,6 +42,17 @@ export function ApiTokens() {
   const adder = useRef<HTMLButtonElement>(null)
   const first = useRef<HTMLInputElement>(null)
   const [adding, setAdding] = useState(false)
+  // Whether the sheet makes a coach's token; asked for by the page, the
+  // sheet opens with one, and stays open once the page stops asking.
+  const [forCoach, setForCoach] = useState(false)
+  const [coachAsked, setCoachAsked] = useState(false)
+  if (coach !== coachAsked) {
+    setCoachAsked(coach)
+    if (coach) {
+      setAdding(true)
+      setForCoach(true)
+    }
+  }
   // The token asked to be revoked, until it is or is kept; all of them.
   const [asking, setAsking] = useState<string | undefined>(undefined)
   const [askingAll, setAskingAll] = useState(false)
@@ -84,6 +96,7 @@ export function ApiTokens() {
     <Button
       ref={adder}
       onClick={() => {
+        setForCoach(false)
         setAdding(true)
       }}
     >
@@ -229,6 +242,7 @@ export function ApiTokens() {
       >
         <NewToken
           first={first}
+          coach={forCoach}
           onCreated={() => {
             revokeAll.reset()
             void asked()

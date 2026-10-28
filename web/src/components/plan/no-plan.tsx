@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 // NoPlan is the plan's place before there is one: how a plan comes (an
 // AI coach proposes it, and the user accepts it here), and the first
 // step to it: the profile, while a plan still needs some of it, else a
-// token for the coach.
+// token for the coach, which may read, log and change.
 export function NoPlan({ needsProfile }: { needsProfile: boolean }) {
   const t = useMessages()
   const id = useId()
@@ -38,6 +38,7 @@ export function NoPlan({ needsProfile }: { needsProfile: boolean }) {
         )}
         <Link
           to="/settings/devices"
+          search={{ connect: 'coach' }}
           // cva joins classes without merging: cn lets the outline's border
           // win over the button's transparent one.
           className={cn(buttonVariants({ variant: needsProfile ? 'outline' : 'default' }))}

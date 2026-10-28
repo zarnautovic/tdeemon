@@ -15,20 +15,26 @@ type Scope = (typeof scopes)[number]
 // and shows it there, once: closed, the sheet forgets it. The token is
 // copied with a tap; a browser that cannot copy it (no clipboard over
 // plain http, or one refused) selects it for the user to copy. first is
-// the name's field, which the sheet focuses as it opens.
+// the name's field, which the sheet focuses as it opens. A device's token
+// sends health data; a coach's reads, logs and changes, the scope MCP
+// takes.
 export function NewToken({
   first,
+  coach = false,
   onCreated,
   onDone,
 }: {
   first: RefObject<HTMLInputElement | null>
+  coach?: boolean
   onCreated: () => void
   onDone: () => void
 }) {
   const t = useMessages()
   const id = useId()
   const [name, setName] = useState('')
-  const [chosen, setChosen] = useState<ReadonlySet<Scope>>(new Set(['ingest']))
+  const [chosen, setChosen] = useState<ReadonlySet<Scope>>(
+    () => new Set([coach ? 'tools' : 'ingest']),
+  )
   const create = $api.useMutation('post', '/api/v1/tokens', { onSuccess: onCreated })
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
@@ -54,7 +60,7 @@ export function NewToken({
               value={name}
               maxLength={100}
               autoComplete="off"
-              placeholder={t.settings.tokenPlaceholder}
+              placeholder={coach ? t.settings.coachPlaceholder : t.settings.tokenPlaceholder}
               className={inputClass}
               onChange={(e) => {
                 setName(e.currentTarget.value)

@@ -214,9 +214,14 @@ const accountRoute = createRoute({
   path: '/settings/account',
   component: AccountPage,
 })
+// connect=coach opens a new token for an AI coach (the plan's Connect an
+// AI coach), which takes it out of the address once open.
 const devicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings/devices',
+  validateSearch: (search: Record<string, unknown>): { connect?: 'coach' | undefined } => ({
+    connect: search.connect === 'coach' ? 'coach' : undefined,
+  }),
   component: DevicesPage,
 })
 // The addresses of before, the charts' and the plan's under the settings,
