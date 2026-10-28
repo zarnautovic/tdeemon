@@ -10,6 +10,7 @@ import { BodyToday } from '@/components/day/body-today'
 import { CheckIn } from '@/components/day/check-in'
 import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
+import { kcalLeft } from '@/components/day/left'
 import { MealCard } from '@/components/day/meal-card'
 import { slotAt } from '@/components/day/meal-slot'
 import { QuickAdd } from '@/components/day/quick-add'
@@ -110,6 +111,9 @@ export function DayPage() {
   // A day's link: today's is / itself.
   const searchOf = (d: string) => (d === todayDate ? {} : { date: d })
   const hasNext = todayDate !== undefined && shown < todayDate
+  // What the day's target leaves, as its ring says it.
+  const left =
+    day.data.target === undefined ? undefined : kcalLeft(day.data.total.kcal, day.data.target.kcal)
 
   return (
     <div className="max-w-3xl space-y-4 lg:max-w-none">
@@ -222,9 +226,7 @@ export function DayPage() {
                 {isToday
                   ? [
                       t.log.add[slotAt(now, timeZone)],
-                      ...(day.data.remaining && day.data.remaining.kcal > 0
-                        ? [t.log.left(f.number(day.data.remaining.kcal))]
-                        : []),
+                      ...(left !== undefined && left > 0 ? [t.log.left(f.number(left))] : []),
                     ].join(' · ')
                   : t.log.open}
               </Button>
@@ -237,6 +239,7 @@ export function DayPage() {
           <BodyToday
             key={`body ${day.data.date}`}
             date={day.data.date}
+            today={todayDate}
             metrics={day.data.metrics}
             canLog={!future}
           />
@@ -254,7 +257,7 @@ export function DayPage() {
           }}
           initial={adding?.food}
           opener={opener}
-          remaining={day.data.remaining?.kcal}
+          remaining={left}
           date={day.data.date}
           today={isToday}
           timeZone={timeZone}

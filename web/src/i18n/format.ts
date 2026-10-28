@@ -93,11 +93,31 @@ function shortDay(
   }).format(at)
 }
 
-// formatGrams is grams as the app shows them, in a language: a decimal
-// below 10 g, which a whole number would bend (1.5 g of fat is not 2),
-// whole from 10 g. kcal are whole (number).
+// gramDigits is how many decimals grams are shown with: one below 10 g,
+// which a whole number would bend (1.5 g of fat is not 2), none from
+// 10 g.
+const gramDigits = (n: number) => (Math.abs(n) < 10 ? 1 : 0)
+
+// formatGrams is grams as the app shows them, in a language (gramDigits).
+// kcal are whole (number).
 export function formatGrams(n: number, locale: string): string {
-  return numberFormat(locale, { maximumFractionDigits: Math.abs(n) < 10 ? 1 : 0 }).format(n)
+  return numberFormat(locale, { maximumFractionDigits: gramDigits(n) }).format(n)
+}
+
+// rounded is n as a number shows it, rounded to at most digits decimals,
+// by the formatter that shows it: numbers worked out of what is shown
+// then add up as shown (58.7 g eaten, shown 59, of 60 leave 1, not
+// 1.3). Never -0, which would show as "-0".
+export function rounded(n: number, digits = 0): number {
+  const r = Number(
+    numberFormat('en', { maximumFractionDigits: digits, useGrouping: false }).format(n),
+  )
+  return r === 0 ? 0 : r
+}
+
+// roundedGrams is grams as formatGrams shows them.
+export function roundedGrams(n: number): number {
+  return rounded(n, gramDigits(n))
 }
 
 // useFormat formats numbers, dates and times in the app's language.

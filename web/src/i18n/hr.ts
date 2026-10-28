@@ -509,6 +509,8 @@ export const hr: Messages = {
     said: {
       weight: (from: string, to: string, weighIns: number) =>
         `Trend kilaže od ${from} do ${to} kg, ${String(weighIns)} ${plural('hr', weighIns, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })}.`,
+      weighInsToday: (weighIns: number) =>
+        `${String(weighIns)} ${plural('hr', weighIns, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })} danas; trend kilaže ga uzima kad dan završi.`,
       eaten: (kcal: string, days: number) =>
         `Prosječno pojedeno ${kcal} kcal na dan, kroz ${String(days)} ${plural('hr', days, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })}.`,
       tdee: (kcal: string, half: string, trust: 'trusted' | 'before' | 'unsure') =>

@@ -66,7 +66,8 @@ export function violationsOf(error: unknown): Violation[] {
 
 // useLimitWords says a limit of the user's in words, as the limits'
 // form shows it: its name, and a value of it with its unit (a loss as how
-// fast). A name the app does not know is said as it is.
+// fast), a percentage as the language writes one ("0.7% a week", "0,7 %
+// tjedno"). A name the app does not know is said as it is.
 export function useLimitWords() {
   const t = useMessages()
   const f = useFormat()
@@ -80,7 +81,10 @@ export function useLimitWords() {
       }
       const n = shown(field, v)
       const unit = t.plan.unit[field.unit]
-      return `${f.field(n)} ${typeof unit === 'string' ? unit : unit(n)}`
+      const words = typeof unit === 'string' ? unit : unit(n)
+      return words.startsWith('%')
+        ? `${f.percent(n, 3)}${words.slice(1)}`
+        : `${f.field(n)} ${words}`
     },
   }
 }

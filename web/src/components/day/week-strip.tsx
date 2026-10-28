@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
+import { weekOf } from '@/components/day/week'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
@@ -82,8 +83,7 @@ function Bar({ day, scale }: { day: HistoryDay | undefined; scale: number }) {
 export function WeekStrip({ date, today }: { date: string; today: string }) {
   const t = useMessages()
   const f = useFormat()
-  const to = date < addDays(today, -6) ? date : today
-  const from = addDays(to, -6)
+  const { from, to } = weekOf(date, today)
   const history = $api.useQuery('get', '/api/v1/history', { params: { query: { from, to } } })
   const byDate = new Map(history.data?.days.map((d) => [d.date, d]))
   const dates = Array.from({ length: 7 }, (_, i) => addDays(from, i))

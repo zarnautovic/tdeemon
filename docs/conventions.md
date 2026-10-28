@@ -686,7 +686,10 @@ the API's `locale`); English is the base.
 - **A text with values is a function of them**, and the values come
   formatted in the language: numbers, dates and times through
   `useFormat()` (`Intl`), a word's forms by count through `plural()`
-  (CLDR's rules), so each language puts the words in its own order.
+  (CLDR's rules), so each language puts the words in its own order. A
+  percentage is written as `Intl` writes it: the sign right after the
+  number in English (17.3%), after a space in Croatian (17,3 %), which
+  `src/i18n/messages.test.ts` holds the messages to.
 - **Telegram's texts** (the morning summary, the alarms, the bot's
   commands, the hello of `user set-telegram`) are written on the
   server, in a map of each language (`morningWords`, `botWords`, the

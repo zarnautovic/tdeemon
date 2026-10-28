@@ -1123,11 +1123,11 @@ export interface components {
             steps?: number;
             /** @description The target of the day's type; absent before the first target. */
             target?: components["schemas"]["DayTargetBody"];
-            /** @description The TDEE calibration measures over its window up to the day; absent when it measures none. */
+            /** @description The TDEE calibration measures over its window up to the day; of today, which is not over, up to yesterday, the summary's. Absent when it measures none. */
             tdee?: components["schemas"]["DayTDEEBody"];
             /**
              * Format: double
-             * @description The trend weight on the day, from the weigh-ins up to it; absent before the first.
+             * @description The trend weight on the day, from the weigh-ins of the days over up to it: today's is the summary's, and takes today's weigh-in once the day is over; absent before the first.
              */
             trend_kg?: number;
             /** @enum {string} */

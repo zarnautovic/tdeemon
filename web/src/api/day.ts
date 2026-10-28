@@ -11,7 +11,9 @@ export function dayQuery(date: string) {
 
 // useKeepDay returns what keeps the day a change answered with: as its
 // date's query, and as today's when today's holds that day, so the page
-// shows it without asking the server again.
+// shows it without asking the server again. The histories, which have
+// the day as a row (its trend weight, which a weigh-in moves), are asked
+// again.
 function useKeepDay() {
   const queryClient = useQueryClient()
   return (answer: Day) => {
@@ -20,6 +22,7 @@ function useKeepDay() {
     if (queryClient.getQueryData<Day>(today)?.date === answer.date) {
       queryClient.setQueryData(today, answer)
     }
+    void queryClient.invalidateQueries({ queryKey: ['get', '/api/v1/history'] })
   }
 }
 

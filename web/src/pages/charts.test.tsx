@@ -185,9 +185,7 @@ test('the progress says how the phase goes, then the charts and the weeks, over 
   expect(within(verdict).getByText('Cut · week 8 of 12')).toBeDefined()
   expect(within(verdict).getByText('On track.')).toBeDefined()
   expect(
-    within(verdict).getByText(
-      "You're losing 0.68 % a week, within the phase's range (0.65–0.85 %).",
-    ),
+    within(verdict).getByText("You're losing 0.68% a week, within the phase's range (0.65–0.85%)."),
   ).toBeDefined()
   expect(within(verdict).getByText('TDEE 2,400 ± 60 kcal')).toBeDefined()
   expect(within(verdict).getByText('Reliable')).toBeDefined()
@@ -226,19 +224,19 @@ test.each([
     state: 'too fast',
     summary: summaryOf({ ...onTrack, rate: 'below', measured_pct_week: -1.2 }),
     headline: 'Too fast.',
-    said: "You're losing 1.2 % a week, outside the phase's range (0.65–0.85 %).",
+    said: "You're losing 1.2% a week, outside the phase's range (0.65–0.85%).",
   },
   {
     state: 'too slow',
     summary: summaryOf({ ...onTrack, rate: 'above', measured_pct_week: -0.3 }),
     headline: 'Too slow.',
-    said: "You're losing 0.3 % a week, outside the phase's range (0.65–0.85 %).",
+    said: "You're losing 0.3% a week, outside the phase's range (0.65–0.85%).",
   },
   {
     state: 'too slow, the weight going the other way',
     summary: summaryOf({ ...onTrack, rate: 'above', measured_pct_week: 0.2 }),
     headline: 'Too slow.',
-    said: "You're gaining 0.2 % a week, outside the phase's range (-0.85 to -0.65 %).",
+    said: "You're gaining 0.2% a week, outside the phase's range (-0.85 to -0.65%).",
   },
   {
     state: 'gaining too fast on a bulk',
@@ -249,13 +247,13 @@ test.each([
       target_pct_week: 0.25,
     }),
     headline: 'Too fast.',
-    said: "You're gaining 0.6 % a week, outside the phase's range (0.15–0.35 %).",
+    said: "You're gaining 0.6% a week, outside the phase's range (0.15–0.35%).",
   },
   {
     state: 'drifting in maintenance',
     summary: summaryOf({ ...onTrack, rate: 'below', measured_pct_week: -0.3, target_pct_week: 0 }),
     headline: 'Too fast.',
-    said: "You're losing 0.3 % a week, outside the phase's range (± 0.1 %).",
+    said: "You're losing 0.3% a week, outside the phase's range (± 0.1%).",
   },
 ])('the verdict says a phase going $state', async ({ summary, headline, said }) => {
   progressServer({ 'GET /api/v1/summary': () => Response.json(summary) })
@@ -531,6 +529,30 @@ test("today's open day and a day left out count in no average, as calibration co
     await screen.findByText('Eaten 2,000 kcal a day, over 88 logged days', {}, { timeout: 10_000 }),
   ).toBeDefined()
   expect(screen.getByRole('img', { name: '8,000 steps a day on average.' })).toBeDefined()
+})
+
+// A first weigh-in, today's: the trend takes it once the day is over, and
+// the chart says so, not that it has nothing.
+test("today's weigh-in alone is said as one, before the trend has it", async () => {
+  progressServer({
+    'GET /api/v1/history': (r) =>
+      historyAnswer(r, (from) =>
+        historyOf(from).map((d, i, days) =>
+          i === days.length - 1
+            ? { date: d.date, status: 'open', type: 'rest', meals: 0, weight_kg: 80.5 }
+            : { date: d.date, status: 'complete', type: 'rest', meals: 0 },
+        ),
+      ),
+  })
+  renderAt('/progress')
+
+  expect(
+    await screen.findByRole(
+      'img',
+      { name: '1 weigh-in today; the trend weight takes it once the day is over.' },
+      { timeout: 10_000 },
+    ),
+  ).toBeDefined()
 })
 
 test('a measurement without a value in the days has no chart, and 0 steps are none', async () => {

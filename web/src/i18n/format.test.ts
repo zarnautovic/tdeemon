@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import { daysBetween, formatGrams, parseNumber } from '@/i18n/format'
+import { daysBetween, formatGrams, parseNumber, roundedGrams } from '@/i18n/format'
 
 test.each([
   ['72.5', 'en', 72.5],
@@ -54,6 +54,18 @@ test.each([
   [-48.2, 'en', '-48'],
 ])('%d g in %s is %s', (n, locale, shown) => {
   expect(formatGrams(n, locale)).toBe(shown)
+})
+
+// Grams as a number, rounded as they are shown, to work out what is left
+// of what is shown; never -0.
+test.each([
+  [58.7, 59],
+  [1.25, 1.3],
+  [9.96, 10],
+  [160, 160],
+  [-0.04, 0],
+])('%d g are %d as shown', (n, shown) => {
+  expect(roundedGrams(n)).toBe(shown)
 })
 
 test.each([

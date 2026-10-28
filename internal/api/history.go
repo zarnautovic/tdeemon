@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"maps"
 	"math"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -54,7 +55,7 @@ type historyDayBody struct {
 	Intake         *dayTotalBody  `json:"intake,omitempty" doc:"What the meals add up to; absent for a day without a meal, whose intake is unknown, not 0."`
 	Target         *dayTargetBody `json:"target,omitempty" doc:"The target of the day's type; absent before the first target."`
 	WeightKg       *float64       `json:"weight_kg,omitempty"`
-	TrendKg        *float64       `json:"trend_kg,omitempty" doc:"The trend weight on the day, from the weigh-ins up to it; absent before the first."`
+	TrendKg        *float64       `json:"trend_kg,omitempty" doc:"The trend weight on the day, from the weigh-ins of the days over up to it: today's is the summary's, and takes today's weigh-in once the day is over; absent before the first."`
 	BodyFatPct     *float64       `json:"body_fat_pct,omitempty"`
 	LeanMassKg     *float64       `json:"lean_mass_kg,omitempty"`
 	Steps          *float64       `json:"steps,omitempty"`
@@ -62,7 +63,7 @@ type historyDayBody struct {
 	SleepH         *float64       `json:"sleep_h,omitempty" doc:"The night that ended on the day."`
 	RestingHR      *float64       `json:"resting_hr,omitempty"`
 	HRV            *float64       `json:"hrv,omitempty"`
-	TDEE           *dayTDEEBody   `json:"tdee,omitempty" doc:"The TDEE calibration measures over its window up to the day; absent when it measures none."`
+	TDEE           *dayTDEEBody   `json:"tdee,omitempty" doc:"The TDEE calibration measures over its window up to the day; of today, which is not over, up to yesterday, the summary's. Absent when it measures none."`
 }
 
 // dayTotalBody is what a day's meals add up to, rounded as shown.
@@ -102,7 +103,14 @@ func (s *sessions) getHistory(ctx context.Context, in *historyInput) (*historyOu
 		return nil, internalError("reading the history failed", err)
 	}
 	b := historyBody{From: from.String(), To: to.String(), Days: []historyDayBody{}, Weeks: []weekBody{}}
-	trend := calibration.Trend(data.calDays, data.params.TrendAlpha)
+	// Calibration reads the days that are over, as the summary does
+	// (DESIGN.md §7): a window that ended on today would count its
+	// weigh-in and not its intake. So today's trend weight and TDEE are
+	// the summary's, up to yesterday, and its weigh-in joins the trend
+	// once the day is over.
+	over := maps.Clone(data.calDays)
+	delete(over, today)
+	trend := calibration.Trend(over, data.params.TrendAlpha)
 	if in.Granularity == "week" {
 		for end := to; !end.Before(from); end = end.AddDays(-7) {
 			b.Weeks = append(b.Weeks, data.week(end.AddDays(-6), end, trend))
@@ -112,7 +120,7 @@ func (s *sessions) getHistory(ctx context.Context, in *historyInput) (*historyOu
 		}
 	} else {
 		for d := from; !to.Before(d); d = d.AddDays(1) {
-			b.Days = append(b.Days, data.historyDay(d, trend))
+			b.Days = append(b.Days, data.historyDay(d, over, trend, today))
 		}
 	}
 	return &historyOutput{CacheControl: "no-store", Body: b}, nil
@@ -146,8 +154,9 @@ func historySpan(in *historyInput, today day.Date) (from, to day.Date, err error
 }
 
 // historyDay is day d of data, with the trend weight of trend and the TDEE
-// measured up to it.
-func (data summaryData) historyDay(d day.Date, trend []calibration.Point) historyDayBody {
+// calibration measures of the days over up to it: of today, up to
+// yesterday.
+func (data summaryData) historyDay(d day.Date, over map[day.Date]calibration.Day, trend []calibration.Point, today day.Date) historyDayBody {
 	c, sd := data.calDays[d], data.days[d]
 	b := historyDayBody{Date: d.String(), Status: string(c.Status), Type: string(sd.dayType), Meals: c.Meals}
 	if ex, ok := data.exclusions[d]; ok {
@@ -164,7 +173,11 @@ func (data summaryData) historyDay(d day.Date, trend []calibration.Point) histor
 		b.TrendKg = new(round2(kg))
 	}
 	b.measure(data.values[d])
-	if e := calibration.Calibrate(data.calDays, data.phases, d, data.params); e.Measured {
+	last := d
+	if !d.Before(today) {
+		last = today.AddDays(-1)
+	}
+	if e := calibration.Calibrate(over, data.phases, last, data.params); e.Measured {
 		b.TDEE = &dayTDEEBody{
 			Kcal: noNegativeZero(math.Round(e.TDEE)), HalfWidth: math.Round(e.HalfWidth), Trusted: e.Trusted,
 			BeforePhase: e.BeforePhase, To: e.To.String(),

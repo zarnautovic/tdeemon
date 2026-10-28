@@ -14,6 +14,7 @@ import {
   signedOut,
   today,
 } from '@/test/app'
+import { dayServer } from '@/test/day-server'
 
 afterEach(() => {
   cleanup()
@@ -182,6 +183,59 @@ test("the body's tiles: the weight with its trend, the night's sleep, a dash for
   expect(tile('Sleep')).toBe('Sleep8 h 0 min')
   expect(tile('Steps')).toBe('Steps—')
   expect(tile('Resting heart rate')).toBe('Resting heart rate—')
+})
+
+test("a day before's weight has the trend of that day, which a weigh-in changed moves", async () => {
+  const date = '2026-08-25'
+  const server = dayServer(
+    day({
+      date,
+      status: 'complete',
+      metrics: [{ kind: 'weight', value: 85.9, unit: 'kg', source: 'manual' }],
+    }),
+  )
+  // The history of the day's week, its trend weight as the weigh-in makes
+  // it; today's, the summary's, is another.
+  let trend = 86.41
+  const asked: string[] = []
+  fakeServer({
+    ...signedIn(),
+    ...server.routes,
+    'GET /api/v1/summary': () =>
+      Response.json({ ...summaryOf(), trend: { date: '2026-10-22', kg: 82.9 } }),
+    'GET /api/v1/history': (request) => {
+      const query = new URL(request.url).searchParams
+      asked.push(`${query.get('from') ?? ''} to ${query.get('to') ?? ''}`)
+      return Response.json({
+        from: '2026-08-19',
+        to: date,
+        days: [{ date, status: 'complete', type: 'rest', meals: 0, trend_kg: trend }],
+        weeks: [],
+      })
+    },
+  })
+
+  renderAt(`/?date=${date}`)
+
+  const body = await screen.findByRole('region', { name: 'Body today' })
+  const tile = (label: string) => within(body).getByText(label).closest('div')?.textContent ?? null
+  await waitFor(() => {
+    expect(tile('Weight')).toBe('Weight85.9 kgtrend 86.4 kg')
+  })
+  // Asked once, with the week strip.
+  expect(new Set(asked)).toEqual(new Set(['2026-08-19 to 2026-08-25']))
+
+  trend = 86.2
+  fireEvent.click(within(body).getByRole('button', { name: 'All measurements' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Change: Weight' }))
+  const weight = screen.getByLabelText('Weight')
+  fireEvent.change(weight, { target: { value: '84' } })
+  fireEvent.click(
+    within(weight.closest('form') ?? document.body).getByRole('button', { name: 'Save' }),
+  )
+  await waitFor(() => {
+    expect(tile('Weight')).toBe('Weight84 kgtrend 86.2 kg')
+  })
 })
 
 test("a model's long list goes under the meal of its hour, which names the row", async () => {
@@ -366,6 +420,37 @@ test('a day on its target has nothing left, and nothing over', async () => {
   expect(macroOf(summary, 'Fat')).toBe('Fat80 / 80 g · 0 to go')
 })
 
+// The server rounds what remains once, of the values unrounded (2400 less
+// 1079.5 is 1320.5, so 1321), and the total on its own (1080): what is
+// left is the target shown less what was eaten shown, in every place.
+test('what is left is the target less what was eaten, as both are shown, in every place', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          target: { kcal: 2400, protein: 160, carbs: 280, fat: 60 },
+          total: { kcal: 1080, protein: 112.4, carbs: 145.6, fat: 58.7 },
+          remaining: { kcal: 1321, protein: 47.6, carbs: 134.4, fat: 1.3 },
+        }),
+      ),
+  })
+
+  renderAt('/')
+
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(within(summary).getByText('Eaten 1,080 of 2,400 kcal, 1,320 left')).toBeDefined()
+  expect(within(summary).getByText('1,320')).toBeDefined()
+  expect(
+    screen.getByRole('button', {
+      name: /^Add (breakfast|lunch|a snack|dinner) · 1,320 kcal left$/,
+    }),
+  ).toBeDefined()
+  // 59 g eaten of 60 leave 1, not 1.3; 112 of 160 leave 48.
+  expect(macroOf(summary, 'Fat')).toBe('Fat59 / 60 g · 1 to go')
+  expect(macroOf(summary, 'Protein')).toBe('Protein112 / 160 g · 48 to go')
+})
+
 test('a few grams keep their decimal, many are whole', async () => {
   fakeServer({
     ...signedIn(),
@@ -440,7 +525,7 @@ test('the phase of the day, its week, and the rate against the phase', async () 
   renderAt('/')
 
   const phase = await screen.findByRole('link', { name: /^Cut/ })
-  expect(phase.textContent).toBe('Cut · week 8 of 12 · -0.6 %/wk, in range')
+  expect(phase.textContent).toBe('Cut · week 8 of 12 · -0.6%/wk, in range')
   expect(phase.getAttribute('href')).toBe('/progress')
 })
 

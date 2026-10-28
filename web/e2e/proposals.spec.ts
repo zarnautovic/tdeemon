@@ -93,13 +93,13 @@ test('a proposed change of the limits is accepted in the app, once the user loos
 
   const card = page.getByRole('region', { name: 'A proposed change' })
   await expect(card.getByText('Limit: Fastest loss in a cut, BMI under 30')).toBeVisible()
-  await expect(card.getByText('1 % a week, loosened')).toBeVisible()
+  await expect(card.getByText('1% a week, loosened')).toBeVisible()
   await card.getByRole('button', { name: 'Accept' }).click()
   await card.getByRole('button', { name: 'Loosen' }).click()
   await expect(card).toBeHidden()
   // The plan's list says it, and so does the limits' page.
   const row = page.getByRole('link', { name: 'Limits of the plan' })
-  await expect(row).toHaveAccessibleDescription(/^Loss up to 1 % a week/)
+  await expect(row).toHaveAccessibleDescription(/^Loss up to 1% a week/)
   await row.click()
   const limits = page.getByRole('form', { name: 'Limits of the plan' })
   await expect(

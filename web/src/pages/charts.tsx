@@ -193,10 +193,14 @@ function Progress({
   const logged = days.filter((d) => counted(d) && d.intake !== undefined)
   const kcal = averageOf(logged.map((d) => d.intake?.kcal ?? null))
 
-  const weightLabel =
-    firstTrend === undefined || lastTrend === undefined
-      ? none
-      : said.weight(f.number(firstTrend, 1), f.number(lastTrend, 1), weighIns)
+  // Weigh-ins and no trend are today's alone, which the trend takes once
+  // the day is over.
+  let weightLabel = none
+  if (firstTrend !== undefined && lastTrend !== undefined) {
+    weightLabel = said.weight(f.number(firstTrend, 1), f.number(lastTrend, 1), weighIns)
+  } else if (weighIns > 0) {
+    weightLabel = said.weighInsToday(weighIns)
+  }
   const tdeeSaid = lastTDEE
     ? said.tdee(
         f.number(lastTDEE.kcal),
