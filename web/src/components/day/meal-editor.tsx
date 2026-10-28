@@ -40,7 +40,7 @@ import {
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
-import { addDays, useFormat } from '@/i18n/format'
+import { addDays, rounded, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass, linkTarget } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
@@ -69,6 +69,28 @@ interface EstimateStart {
   name: string
   note: string | undefined
 }
+
+// zero is the values of nothing; plus and minus are a's values with b's
+// added, or taken away, each.
+const zero: Values = { kcal: 0, protein: 0, carbs: 0, fat: 0 }
+const plus = (a: Values, b: Values): Values => ({
+  kcal: a.kcal + b.kcal,
+  protein: a.protein + b.protein,
+  carbs: a.carbs + b.carbs,
+  fat: a.fat + b.fat,
+})
+const minus = (a: Values, b: Values): Values => ({
+  kcal: a.kcal - b.kcal,
+  protein: a.protein - b.protein,
+  carbs: a.carbs - b.carbs,
+  fat: a.fat - b.fat,
+})
+
+// roundsTo tells values that round to shown as the server rounds what it
+// answers: kcal whole, grams to a tenth, a half up.
+const roundsTo = (v: Values, shown: Values) =>
+  Math.round(v.kcal) === shown.kcal &&
+  (['protein', 'carbs', 'fat'] as const).every((m) => Math.round(v[m] * 10) / 10 === shown[m])
 
 // fieldKey is an item's amount field's key: the item, of its food.
 const fieldKey = (item: Item) => `${item.id} ${String(item.food_id)}`
@@ -306,6 +328,9 @@ export function MealEditor({
         return n !== undefined && n === was ? item.nutrients[v] : n
       })
       const [kcal, protein, carbs, fat] = typed
+      if (values.every((v, i) => typed[i] === item.nutrients[v])) {
+        return item.nutrients
+      }
       return kcal === undefined || protein === undefined || carbs === undefined || fat === undefined
         ? undefined
         : { kcal, protein, carbs, fat }
@@ -327,20 +352,42 @@ export function MealEditor({
     }
     return n === undefined || food === undefined ? undefined : nutrientsIn(food, unit, n)
   }
-  const kept = meal.items.filter((item) => !removed.has(item.id))
+  // wasOf is what an item brought as the meal has it, unrounded as the
+  // server sums it where the editor can tell: an item of a food, its
+  // food's values in its amount, when they round to the item's (the food
+  // is as it was when the item was logged); else the item's values, which
+  // come rounded.
+  function wasOf(item: Item): Values {
+    const food = foodOf(item.food_id)
+    const amount = amountOf(item)
+    const worked =
+      food === undefined || amount === undefined
+        ? undefined
+        : nutrientsIn(food, unitIn(food, amount.key), amount.n)
+    return worked !== undefined && roundsTo(worked, item.nutrients) ? worked : item.nutrients
+  }
+  // What each item brought (wasOf) and brings now: one left as it was,
+  // what it brought; one removed, nothing.
+  const items = meal.items.map((item) => {
+    const was = wasOf(item)
+    const now = removed.has(item.id) ? undefined : (nowOf(item) ?? item.nutrients)
+    return { was, now: now === item.nutrients ? was : now, asWas: now === item.nutrients }
+  })
+  // The total is what the items bring now and those added bring, of the
+  // values unrounded, rounded only to be shown. The meal's own is its
+  // items' summed unrounded and rounded once; where the editor cannot
+  // tell what they brought unrounded, their sum may round to another
+  // (186 + 218 + 140 kcal is 544, of a meal of 543.1). Then the
+  // difference is kept while an item is as it was, so a meal opened says
+  // the day's total, and no change.
+  const brought = items.reduce<Values>((sum, i) => plus(sum, i.was), zero)
+  const rounding =
+    items.some((i) => i.asWas) && !roundsTo(brought, meal.total) ? minus(meal.total, brought) : zero
   const total = [
-    ...kept.map((item) => nowOf(item) ?? item.nutrients),
-    ...entries.map((e) => entryValues(e, f.parse) ?? { kcal: 0, protein: 0, carbs: 0, fat: 0 }),
-  ].reduce(
-    (sum, v) => ({
-      kcal: sum.kcal + v.kcal,
-      protein: sum.protein + v.protein,
-      carbs: sum.carbs + v.carbs,
-      fat: sum.fat + v.fat,
-    }),
-    { kcal: 0, protein: 0, carbs: 0, fat: 0 },
-  )
-  const change = Math.round(total.kcal) - Math.round(meal.total.kcal)
+    ...items.flatMap((i) => (i.now === undefined ? [] : [i.now])),
+    ...entries.map((e) => entryValues(e, f.parse) ?? zero),
+  ].reduce<Values>(plus, rounding)
+  const change = rounded(total.kcal) - rounded(meal.total.kcal)
   // The days a meal is of: today and the 30 before it, and the meal's
   // own, when it is not among them: older, or after a today the app has
   // from before the day's start passed. Left as it is, it is not moved.

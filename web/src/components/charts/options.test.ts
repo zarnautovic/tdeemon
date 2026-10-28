@@ -79,7 +79,7 @@ test('the TDEE is a line in a band of its interval, what was eaten dots, the tar
   const option = tdeeOption(days, words, palette)
   const s = series(option)
   expect(s.low).toEqual([2350, null, null])
-  expect(s['80 % interval']).toEqual([100, null, null])
+  expect(s['80% interval']).toEqual([100, null, null])
   expect(s.TDEE).toEqual([2400, null, null])
   expect(s.Eaten).toEqual([2000, null, null])
   expect(s['Target, 7-day average']).toEqual([2100, 2100, 2100])

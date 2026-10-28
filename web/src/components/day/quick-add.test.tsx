@@ -704,7 +704,12 @@ test('a serving whose name holds a number is one of it, not one and the number, 
 test('the meal says what the day has after it, past its target too, and an item is taken out', async () => {
   logServer('2026-10-23', {
     'GET /api/v1/days/today': () =>
-      Response.json(day({ remaining: { kcal: 100, protein: 10, carbs: 10, fat: 10 } })),
+      Response.json(
+        day({
+          total: { kcal: 2400, protein: 150, carbs: 270, fat: 70 },
+          remaining: { kcal: 100, protein: 10, carbs: 10, fat: 10 },
+        }),
+      ),
   })
   renderAt('/')
 
@@ -716,6 +721,17 @@ test('the meal says what the day has after it, past its target too, and an item 
   expect(sheet.queryByRole('list', { name: 'In the meal' })).toBeNull()
   expect(sheet.getByText('Pick a food, or repeat a meal.')).toBeDefined()
   expect(sheet.queryByText(/^after: /)).toBeNull()
+})
+
+test("what the day has after a meal is what it has less the meal's kcal as shown", async () => {
+  logServer()
+  renderAt('/')
+
+  const sheet = await openSheet()
+  await giveEstimate(sheet, 'Soup', '154.5')
+  // 2,500 less 155, not 2,345.5 rounded up.
+  expect(sheet.getByRole('button', { name: 'Log 1 item · 155 kcal' })).toBeDefined()
+  expect(sheet.getByText('after: 2,345 kcal left')).toBeDefined()
 })
 
 test('a new food is made in the sheet, and opens for its amount', async () => {

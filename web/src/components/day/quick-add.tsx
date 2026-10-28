@@ -19,7 +19,7 @@ import { SaveStatus } from '@/components/day/save-status'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
-import { useFormat } from '@/i18n/format'
+import { rounded, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass, linkTarget } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
@@ -147,7 +147,9 @@ function Composer({
 
   const values = entries.map((e) => entryValues(e, f.parse))
   const kcal = values.reduce((sum, v) => sum + (v?.kcal ?? 0), 0)
-  const after = remaining === undefined ? undefined : remaining - kcal
+  // What the day has left after the meal: what it leaves less the meal's
+  // kcal as they are shown, so the two add up.
+  const after = remaining === undefined ? undefined : remaining - rounded(kcal)
 
   function send(body: LogMealBody) {
     log.mutate({ body }, { onSuccess: onDone })

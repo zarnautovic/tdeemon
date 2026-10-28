@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { $api } from '@/api/client'
 import type { Metric } from '@/api/types'
 import { DayMetrics } from '@/components/day/day-metrics'
+import { weekOf } from '@/components/day/week'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -11,23 +12,41 @@ import { linkTarget } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 // BodyToday is what the day measured at a glance, in four tiles: the
-// weight (and the trend calibration smooths it to), the night's sleep,
-// the steps and the resting heart rate, each a dash while the day has
-// none. All its measurements, to correct, delete or add, are a sheet
-// away. A day to come takes none (canLog).
+// weight (and the trend calibration smooths it to: today's, the
+// summary's; of a day before, the one it had then, from the history of
+// its week, which the week strip has asked for), the night's sleep, the
+// steps and the resting heart rate, each a dash while the day has none.
+// All its measurements, to correct, delete or add, are a sheet away. A
+// day to come takes none (canLog). today is the user's, once the app
+// knows it.
 export function BodyToday({
   date,
+  today,
   metrics,
   canLog = true,
 }: {
   date: string
+  today: string | undefined
   metrics: Metric[]
   canLog?: boolean
 }) {
   const t = useMessages()
   const f = useFormat()
   const [open, setOpen] = useState(false)
-  const trend = $api.useQuery('get', '/api/v1/summary').data?.trend
+  const summary = $api.useQuery('get', '/api/v1/summary')
+  const before = today !== undefined && date < today
+  const history = $api.useQuery(
+    'get',
+    '/api/v1/history',
+    { params: { query: weekOf(date, today ?? date) } },
+    { enabled: before },
+  )
+  const trend =
+    date === today
+      ? summary.data?.trend?.kg
+      : before
+        ? history.data?.days.find((d) => d.date === date)?.trend_kg
+        : undefined
   const value = (kind: Metric['kind']) => metrics.find((m) => m.kind === kind)?.value
 
   const weight = value('weight')
@@ -38,7 +57,7 @@ export function BodyToday({
     {
       label: t.day.metric.weight,
       value: weight === undefined ? undefined : `${f.number(weight, 1)} kg`,
-      note: trend === undefined ? undefined : t.day.body.trend(f.number(trend.kg, 1)),
+      note: trend === undefined ? undefined : t.day.body.trend(f.number(trend, 1)),
     },
     {
       label: t.day.metric.sleep_h,

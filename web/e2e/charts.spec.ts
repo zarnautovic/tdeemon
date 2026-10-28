@@ -33,9 +33,13 @@ test('the progress says how the phase goes, and shows the days logged and their 
   await expect(verdict).toContainText('No phase yet.')
   await expect(verdict.getByRole('link', { name: 'Set up a plan' })).toBeVisible()
 
+  // Today's weigh-in joins the trend once the day is over, as the
+  // summary has it.
   const weight = page.getByRole('region', { name: 'Weight' })
   await expect(
-    weight.getByRole('img', { name: 'Trend weight from 80.5 to 80.5 kg, 1 weigh-in.' }),
+    weight.getByRole('img', {
+      name: '1 weigh-in today; the trend weight takes it once the day is over.',
+    }),
   ).toBeVisible()
   await expect(weight.locator('svg').first()).toBeVisible()
   await page.getByText('30 d', { exact: true }).click()

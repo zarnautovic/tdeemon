@@ -236,3 +236,60 @@ func TestGetHistoryBeforePhase(t *testing.T) {
 		t.Errorf("today's TDEE in a phase begun today: %s, want the days before's, said so", body)
 	}
 }
+
+// Today is not over: its trend weight and TDEE are the summary's, of the
+// days up to yesterday, though it has a weigh-in; a window that ended on
+// today would count its weigh-in and not its intake, and say another
+// TDEE beside the summary's.
+func TestGetHistoryTodayIsTheSummarys(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	today := saveHistory(t, in)
+	// Today's weigh-in, well under the trend.
+	if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, today, []metric.Value{
+		{Kind: metric.Weight, Value: 80, Source: metric.Manual},
+	}, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	code, days, body := getHistory(t, in, session, "?from="+today.AddDays(-1).String())
+	if code != http.StatusOK || len(days) != 2 {
+		t.Fatalf("%d %s, want yesterday and today", code, body)
+	}
+	trend, tdee, half := summaryNow(t, in, session)
+
+	yesterday, now := days[0], days[1]
+	if now.WeightKg == nil || *now.WeightKg != 80 {
+		t.Errorf("today's weigh-in = %v, want 80", now.WeightKg)
+	}
+	if now.TrendKg == nil || *now.TrendKg != trend {
+		t.Errorf("today's trend = %v, want the summary's, %v", now.TrendKg, trend)
+	}
+	if now.TDEE == nil || now.TDEE.Kcal != tdee || now.TDEE.HalfWidth != half || now.TDEE.To != yesterday.Date {
+		t.Errorf("today's TDEE = %+v, want the summary's, %v ± %v, up to yesterday", now.TDEE, tdee, half)
+	}
+	if yesterday.TDEE == nil || *yesterday.TDEE != *now.TDEE {
+		t.Errorf("yesterday's TDEE = %+v, want today's, %+v", yesterday.TDEE, now.TDEE)
+	}
+}
+
+// summaryNow is the summary's trend weight, and its TDEE with half its
+// interval, which the test needs it to have.
+func summaryNow(t *testing.T, in *instance, session *http.Cookie) (trendKg, tdee, halfWidth float64) {
+	t.Helper()
+	rec := in.do(t, http.MethodGet, "/api/v1/summary", "", []*http.Cookie{session}, nil)
+	var summary struct {
+		Trend *struct {
+			Kg float64 `json:"kg"`
+		} `json:"trend"`
+		TDEE struct {
+			Kcal      *float64 `json:"kcal"`
+			HalfWidth *float64 `json:"half_width"`
+		} `json:"tdee"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &summary); rec.Code != http.StatusOK || err != nil ||
+		summary.Trend == nil || summary.TDEE.Kcal == nil || summary.TDEE.HalfWidth == nil {
+		t.Fatalf("the summary: %d %s", rec.Code, rec.Body.String())
+	}
+	return summary.Trend.Kg, *summary.TDEE.Kcal, *summary.TDEE.HalfWidth
+}

@@ -151,7 +151,7 @@ test("the plan lists what it rests on of the user's, each a row to its page, and
   })
   await waitFor(() => {
     expect(summaryOf(you.getByRole('link', { name: 'Limits of the plan' }))).toBe(
-      'Loss up to 0.5 % a week · protein from 1.6 g/kg',
+      'Loss up to 0.5% a week · protein from 1.6 g/kg',
     )
   })
   expect(summaryOf(you.getByRole('link', { name: 'Notes for a coach' }))).toBe('None yet')
@@ -466,6 +466,20 @@ test('a unit of days agrees with the number typed beside it', async () => {
   expect(unitOf(limit('Days before the first step of a phase'))).toBe('days')
 })
 
+// A percentage reads as the language writes it: right after the number
+// in English (the plan's rows above), a space between them in Croatian,
+// one that keeps them on a line.
+test("in Croatian a limit's percentage has a space before its sign", async () => {
+  planServer({ limits: limitsBody({ cut_rate: -0.5 }) }, signedIn('hr'))
+  renderAt('/plan')
+  const you = within(await screen.findByRole('region', { name: 'Ti i granice' }))
+  await waitFor(() => {
+    expect(summaryOf(you.getByRole('link', { name: 'Granice plana' }))).toBe(
+      'Gubitak do 0,5 % tjedno · proteini od 1,6 g/kg',
+    )
+  })
+})
+
 test('in Croatian a unit of days agrees with its number too', async () => {
   planServer({ limits: limitsBody({ first_step_days: 21 }) }, signedIn('hr'))
   renderAt('/plan/limits')
@@ -497,7 +511,7 @@ test('a tightened limit is saved as it is, and only what changed is sent', async
   fireEvent.click(within(main()).getByRole('link', { name: 'Plan' }))
   const row = await screen.findByRole('link', { name: 'Limits of the plan' })
   await waitFor(() => {
-    expect(summaryOf(row)).toBe('Loss up to 0.5 % a week · protein from 1.6 g/kg')
+    expect(summaryOf(row)).toBe('Loss up to 0.5% a week · protein from 1.6 g/kg')
   })
   fireEvent.click(row)
   expect(await screen.findByRole('textbox', { name: new RegExp(`^${cutLabel}`) })).toHaveProperty(

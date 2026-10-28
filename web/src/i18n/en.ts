@@ -122,7 +122,7 @@ export const en = {
       setPlan: 'Set up a plan',
       weekOf: (n: number, of: number) => `week ${String(n)} of ${String(of)}`,
       week: (n: number) => `week ${String(n)}`,
-      rate: (pct: string) => `${pct} %/wk`,
+      rate: (pct: string) => `${pct}%/wk`,
       rates: { none: '', on_target: 'in range', below: 'below range', above: 'above range' },
     },
     week: {
@@ -513,7 +513,7 @@ export const en = {
       trend: 'Trend',
       goal: 'Goal',
       tdee: 'TDEE',
-      interval: '80 % interval',
+      interval: '80% interval',
       intake: 'Eaten',
       target: 'Target, 7-day average',
       average: '7-day average',
@@ -543,6 +543,10 @@ export const en = {
     said: {
       weight: (from: string, to: string, weighIns: number) =>
         `Trend weight from ${from} to ${to} kg, ${String(weighIns)} ${plural('en', weighIns, { one: 'weigh-in', other: 'weigh-ins' })}.`,
+      // Weigh-ins of today alone: the trend takes them once the day is
+      // over.
+      weighInsToday: (weighIns: number) =>
+        `${String(weighIns)} ${plural('en', weighIns, { one: 'weigh-in', other: 'weigh-ins' })} today; the trend weight takes it once the day is over.`,
       eaten: (kcal: string, days: number) =>
         `${kcal} kcal a day eaten on average, over ${String(days)} logged ${plural('en', days, { one: 'day', other: 'days' })}.`,
       // trust: trusted; before, the estimate of the days before the phase,
@@ -565,18 +569,17 @@ export const en = {
       waiting: 'Not enough data yet.',
       noPhase: 'No phase yet.',
       noTarget: 'No target yet.',
-      losing: (pct: string) => `You're losing ${pct} % a week`,
-      gaining: (pct: string) => `You're gaining ${pct} % a week`,
+      losing: (pct: string) => `You're losing ${pct}% a week`,
+      gaining: (pct: string) => `You're gaining ${pct}% a week`,
       steady: 'Your weight holds',
       // The phase's range of rates: "0.65–0.85", "−0.85 to −0.65" when the
       // weight goes the other way, "± 0.1" around none.
       range: (lo: string, hi: string) => `${lo}–${hi}`,
       span: (lo: string, hi: string) => `${lo} to ${hi}`,
       around: (pct: string) => `± ${pct}`,
-      within: (moving: string, range: string) =>
-        `${moving}, within the phase's range (${range} %).`,
+      within: (moving: string, range: string) => `${moving}, within the phase's range (${range}%).`,
       outside: (moving: string, range: string) =>
-        `${moving}, outside the phase's range (${range} %).`,
+        `${moving}, outside the phase's range (${range}%).`,
       reasons: {
         no_phase: 'A phase of the plan sets the rate the weight is judged by.',
         no_target: 'The phase is judged once the plan has a target of kcal.',

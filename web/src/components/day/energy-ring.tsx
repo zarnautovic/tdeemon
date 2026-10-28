@@ -1,3 +1,4 @@
+import { kcalLeft } from '@/components/day/left'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
@@ -24,20 +25,19 @@ function Arc({ share, className }: { share: number; className: string }) {
 }
 
 // EnergyRing is the day's energy against its target: the ring filled to
-// what was eaten, its middle what is left. Past the target the ring is
-// full, a second arc in the destructive colour runs on by how far over
-// (a whole turn at most), and the middle says how far over: never the
-// colour alone. Words for a screen reader say it all.
+// what was eaten, its middle what is left (kcalLeft). Past the target the
+// ring is full, a second arc in the destructive colour runs on by how far
+// over (a whole turn at most), and the middle says how far over: never
+// the colour alone. Words for a screen reader say it all.
 export function EnergyRing({ eaten, target }: { eaten: number; target: number }) {
   const t = useMessages()
   const f = useFormat()
-  const over = eaten - target
+  const left = kcalLeft(eaten, target)
+  const over = -left
   const share = target > 0 ? Math.min(eaten / target, 1) : 0
   const beyond = target > 0 && over > 0 ? Math.min(over / target, 1) : 0
   const said =
-    over > 0
-      ? t.day.summary.ringOver(f.number(over))
-      : t.day.summary.ringLeft(f.number(target - eaten))
+    over > 0 ? t.day.summary.ringOver(f.number(over)) : t.day.summary.ringLeft(f.number(left))
 
   return (
     <div className="relative size-34 shrink-0">
@@ -58,7 +58,7 @@ export function EnergyRing({ eaten, target }: { eaten: number; target: number })
         <span
           className={`text-[2.125rem] leading-[2.375rem] font-semibold tracking-tight ${over > 0 ? 'text-destructive' : ''}`}
         >
-          {over > 0 ? `+${f.number(over)}` : f.number(target - eaten)}
+          {over > 0 ? `+${f.number(over)}` : f.number(left)}
         </span>
         <span className="text-caption text-muted-foreground">
           {over > 0 ? t.day.summary.over : t.day.summary.left}

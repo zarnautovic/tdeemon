@@ -2413,6 +2413,106 @@ test('the total is said as the meal changes, and an item changed with what it br
   expect(meal().queryByText(/ · was /)).toBeNull()
 })
 
+// A meal whose items' kcal, which come rounded, add up to more than its
+// own, the server's sum of them unrounded: 160 g of tuna bring 185.6 kcal
+// and 250 g of potatoes 217.5, shown 186 and 218, so 544 with a plate of
+// 140, of a meal of 543.
+const tunaFood = '0193c3a5-0000-7000-8000-0000000000f4'
+const potatoFood = '0193c3a5-0000-7000-8000-0000000000f5'
+const roundedMeal: Meal = {
+  ...breakfast,
+  total: { kcal: 543, protein: 56.6, carbs: 60, fat: 8.6 },
+  items: [
+    {
+      id: '0193c3a5-0000-7000-8000-0000000000b5',
+      food_id: tunaFood,
+      name: 'Tuna',
+      quantity: { amount: 160, unit: 'g' },
+      amount: 160,
+      unit: 'g',
+      nutrients: { kcal: 186, protein: 41.6, carbs: 0, fat: 1.6 },
+      source: 'label',
+    },
+    {
+      id: '0193c3a5-0000-7000-8000-0000000000b6',
+      food_id: potatoFood,
+      name: 'Boiled potatoes',
+      quantity: { amount: 250, unit: 'g' },
+      amount: 250,
+      unit: 'g',
+      nutrients: { kcal: 218, protein: 5, carbs: 50, fat: 0 },
+      source: 'label',
+    },
+    {
+      id: '0193c3a5-0000-7000-8000-0000000000b7',
+      name: 'A plate',
+      quantity: { portions: 1 },
+      amount: 1,
+      unit: 'portion',
+      nutrients: { kcal: 140, protein: 10, carbs: 10, fat: 7 },
+      source: 'estimate',
+    },
+  ],
+}
+
+test("a meal opens with the day's total and no change, though its items' kcal add up to more", async () => {
+  const server = mealServer({
+    [`GET /api/v1/foods/${tunaFood}`]: () =>
+      Response.json(
+        food(tunaFood, {
+          name: 'Tuna',
+          nutrients: { kcal: 116, protein: 26, carbs: 0, fat: 1 },
+          servings: [{ name: 'can', amount: 80 }],
+        }),
+      ),
+    [`GET /api/v1/foods/${potatoFood}`]: () =>
+      Response.json(
+        food(potatoFood, {
+          name: 'Boiled potatoes',
+          nutrients: { kcal: 87, protein: 2, carbs: 20, fat: 0 },
+          servings: [{ name: 'potato', amount: 125 }],
+        }),
+      ),
+  })
+  server.elsewhere(() => roundedMeal)
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const total = () => meal().getByText(/kcal$/, { selector: '[aria-live] span' }).textContent
+  expect(total()).toBe('543 kcal')
+  expect(meal().queryByText(/from the changes/)).toBeNull()
+  // Once the foods come (their units with them), as they are.
+  await meal().findByLabelText('Unit: Tuna')
+  await meal().findByLabelText('Unit: Boiled potatoes')
+  expect(total()).toBe('543 kcal')
+  expect(meal().queryByText(/from the changes/)).toBeNull()
+  // 200 g of tuna bring 232 kcal: 232 + 217.5 + 140 is 589.5, as the
+  // server will sum it, not 232 + 218 + 140.
+  fireEvent.change(meal().getByLabelText('Amount: Tuna'), { target: { value: '200' } })
+  expect(total()).toBe('590 kcal')
+  expect(meal().getByText('+47 kcal from the changes')).toBeDefined()
+})
+
+test("without its items' foods, a meal still opens with the day's total, and changes from it", async () => {
+  const server = mealServer()
+  server.elsewhere(() => roundedMeal)
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const total = () => meal().getByText(/kcal$/, { selector: '[aria-live] span' }).textContent
+  expect(total()).toBe('543 kcal')
+  expect(meal().queryByText(/from the changes/)).toBeNull()
+  fireEvent.change(meal().getByLabelText('Energy (kcal): A plate'), { target: { value: '150' } })
+  expect(total()).toBe('553 kcal')
+  expect(meal().getByText('+10 kcal from the changes')).toBeDefined()
+  // With none of its items left as they were, what they bring now.
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Tuna' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Remove: Boiled potatoes' }))
+  expect(total()).toBe('150 kcal')
+})
+
 test('in Croatian, the day is named in words and the time is on a 24-hour clock', async () => {
   const { 'GET /api/v1/days/today': _today, ...croatian } = signedIn('hr')
   const server = mealServer(croatian)

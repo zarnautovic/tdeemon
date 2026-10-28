@@ -287,7 +287,9 @@ The charts read
 `get_history`: every day of a span of at most 366 days up to today (the
 90 up to it by default), or its weeks, with what was eaten against the
 day's target, the measurements, the trend weight and the TDEE
-calibration measures up to each day, as the summary computes them, the
+calibration measures up to each day, as the summary computes them, of
+the days that are over: today's are the summary's, up to yesterday,
+and its weigh-in joins the trend once the day is over (§7). It is the
 table a coach looks back with (§8). `GET /api/v1/plan`, the tool
 `get_plan`, is the plan a coach reads (§8): the phases and the targets
 in force within the last 365 days and those to come, the limits that
