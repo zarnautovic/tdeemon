@@ -70,8 +70,8 @@ test.describe('keyboard', () => {
   }) => {
     const { sheet, toasts, undo } = await deleteInSheet(page)
 
-    // The card deleted took the focus with it, which the sheet takes back
-    // a moment later: F6 after that, as a user's would be.
+    // The card deleted took the focus with it: the measurements take it,
+    // in the sheet, and F6 goes from there.
     await expect.poll(() => sheet.evaluate((el) => el.contains(document.activeElement))).toBe(true)
     // Tab stays within the sheet; F6, Base UI's key, goes to the toasts.
     await page.keyboard.press('F6')

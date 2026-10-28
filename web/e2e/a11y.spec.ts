@@ -73,6 +73,9 @@ interface Screen {
 async function settled(page: Page) {
   await expect(page.getByText(/^(Loading|Učitavanje)…$/)).toHaveCount(0)
   await expect(page.getByRole('heading').first()).toBeVisible()
+  // Nothing asked again: a part that waits for its data is faded, which
+  // axe would take for its colours.
+  await expect(page.locator('[aria-busy="true"]')).toHaveCount(0)
   await page.evaluate(() =>
     Promise.race([
       Promise.all(

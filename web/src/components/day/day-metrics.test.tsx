@@ -189,6 +189,10 @@ test('a wrong measurement is deleted', async () => {
   ])
   // The day has no weighing again: its field is back.
   expect(screen.getByLabelText('Weight')).toBeDefined()
+  // The focus went with the card; the measurements have it, in the sheet.
+  // (The toast is a dialog too.)
+  const sheet = within(screen.getByRole('dialog', { name: 'Measurements' }))
+  expect(document.activeElement).toBe(sheet.getByText('None yet.').parentElement)
 })
 
 test('a delete that failed says so', async () => {
