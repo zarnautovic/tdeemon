@@ -738,3 +738,28 @@ test("today's chips log yesterday's meal of the hour again, and open the meal wi
   expect(basket(sheet)).toEqual(['Rye bread · 2 slice · 207 kcal'])
   expect(sheet.getByRole('button', { name: 'Log 1 item · 207 kcal' })).toBeDefined()
 })
+
+test('a time is typed on a 24-hour clock, and one that is none is said', async () => {
+  const server = logServer('2026-10-21')
+  renderAt('/?date=2026-10-21')
+
+  const sheet = await openSheet()
+  await giveEstimate(sheet, 'Tea')
+  fireEvent.click(sheet.getByRole('button', { name: 'Change the name and time' }))
+  fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '7 pm' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
+  expect(sheet.getByRole('alert').textContent).toBe('Type the time as 19:30.')
+  expect(sheet.getByLabelText('Time').getAttribute('aria-invalid')).toBe('true')
+  expect(server.sent).toEqual([])
+
+  // 1930 is 19:30, so it reads once the field is left.
+  fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '1930' } })
+  fireEvent.blur(sheet.getByLabelText('Time'))
+  expect(sheet.getByLabelText('Time')).toHaveProperty('value', '19:30')
+  expect(sheet.getByText('Dinner · Oct 21 at 7:30 PM')).toBeDefined()
+  fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ eaten_at: '2026-10-22T02:30:00.000Z' })
+})

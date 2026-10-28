@@ -264,11 +264,11 @@ test('a change refused for want of a session sends the browser to sign in', asyn
 })
 
 test.each([
-  ['en', 'Change: Resting energy', 'Resting energy', '1834.27'],
-  ['hr', 'Promijeni: Energija u mirovanju', 'Energija u mirovanju', '1834,27'],
+  ['en', 'Change: Resting energy', 'Resting energy', '1834', '1,834.5', 'Save'],
+  ['hr', 'Promijeni: Energija u mirovanju', 'Energija u mirovanju', '1834', '1.834,5', 'Spremi'],
 ] as const)(
-  'a value of thousands with decimals is corrected as it is, in %s',
-  async (locale, change, label, initial) => {
+  'a value starts as it is shown, is kept as it is when left so, and takes thousands with decimals, in %s',
+  async (locale, change, label, shown, typed, save) => {
     const server = dayServer(
       day({ metrics: [{ kind: 'basal_kcal', value: 1834.27, unit: 'kcal', source: 'import' }] }),
     )
@@ -278,20 +278,40 @@ test.each([
 
     fireEvent.click(await screen.findByRole('button', { name: change }))
     const field = screen.getByLabelText(label)
-    expect(field).toHaveProperty('value', initial)
-    fireEvent.click(
-      within(formOf(field)).getByRole('button', { name: locale === 'en' ? 'Save' : 'Spremi' }),
-    )
-
-    await waitFor(() => {
-      expect(server.sent.map((s) => s.body)).toEqual([{ value: 1834.27 }])
-    })
-    expect(server.day().metrics[0]?.value).toBe(1834.27)
+    // As its card shows it, not 1834.27.
+    expect(field).toHaveProperty('value', shown)
+    fireEvent.click(within(formOf(field)).getByRole('button', { name: save }))
     await waitFor(() => {
       expect(screen.queryByLabelText(label)).toBeNull()
     })
+    // Left as it was shown: not sent rounded.
+    expect(server.sent).toEqual([])
+    expect(server.day().metrics[0]?.value).toBe(1834.27)
+
+    fireEvent.click(await screen.findByRole('button', { name: change }))
+    fireEvent.change(screen.getByLabelText(label), { target: { value: typed } })
+    fireEvent.click(
+      within(formOf(screen.getByLabelText(label))).getByRole('button', { name: save }),
+    )
+    await waitFor(() => {
+      expect(server.sent.map((s) => s.body)).toEqual([{ value: 1834.5 }])
+    })
   },
 )
+
+test('steps are whole in their field, as on their card', async () => {
+  fakeServer({
+    ...signedIn(),
+    ...dayServer(
+      day({ metrics: [{ kind: 'steps', value: 1798.79, unit: 'steps', source: 'import' }] }),
+    ).routes,
+  })
+  renderAt('/')
+  await openMeasurements()
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Change: Steps' }))
+  expect(screen.getByLabelText('Steps')).toHaveProperty('value', '1799')
+})
 
 test("a field's unit is said with it", async () => {
   fakeServer({ ...signedIn(), ...dayServer().routes })

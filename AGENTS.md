@@ -31,10 +31,11 @@ Croatian) with the day (what was eaten against the target in a ring
 and the macros' bars, with the TDEE, the deficit and the phase, the
 week's days, the day's type, the meals as rows that open to their
 items, the check-in with calibration as a switch, the body's tiles and
-all the measurements in a sheet, a meal's corrections, a meal repeated
-or deleted taken there, a meal logged by hand in a sheet of the foods
-found, eaten lately or most and the meals of before, and the chips that
-add yesterday's meal or a food in a tap),
+all the measurements in a sheet, a meal's corrections in a sheet that
+says its total as it changes, its time on a 24-hour clock, a meal
+repeated or deleted taken there, a meal logged by hand in a sheet of
+the foods found, eaten lately or most and the meals of before, and the
+chips that add yesterday's meal or a food in a tap),
 the foods (their list and search, a food made, corrected or archived),
 the progress (its charts, ECharts loaded with them), the plan (the
 plan as it holds, a proposal that waits, the history of its

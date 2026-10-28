@@ -16,7 +16,9 @@ import { cn } from '@/lib/utils'
 // kind's unit, and stores it for the day; what is not a number, or not a
 // value of the kind (limits.json, the server's bounds), it says so of,
 // and sends nothing, until the field changes. Saved, a toast says so,
-// with Undo. children are more buttons, after Save.
+// with Undo. initial is what the field starts with, as the value is
+// shown: left as it is, it is not sent, so the value keeps the decimals
+// it was shown without. children are more buttons, after Save.
 export function MetricForm({
   date,
   kind,
@@ -59,6 +61,10 @@ export function MetricForm({
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const typed = new FormData(event.currentTarget).get('value')
+    if (initial !== '' && typed === initial) {
+      onSaved?.()
+      return
+    }
     const value = typeof typed === 'string' ? f.parse(typed) : undefined
     const out = value !== undefined && (value < least || value > most)
     setNotNumber(value === undefined)
