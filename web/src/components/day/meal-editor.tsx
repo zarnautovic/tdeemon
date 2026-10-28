@@ -283,8 +283,9 @@ export function MealEditor({
   const [badTime, setBadTime] = useState(false)
 
   // nowOf is what an item brings as the editor has it now, for the total:
-  // another food in its place, that food's; an estimate's values as
-  // typed; a food's amount typed anew (as submit sends it), worked out
+  // another food in its place, that food's; an estimate's values typed
+  // anew, and the others as they are now (as submit sends them); a
+  // food's amount typed anew (as submit sends it), worked out
   // from its food as it is now, as the server works it out; else what it
   // brings now. Undefined while a number typed is none, or a food has not
   // come.
@@ -294,9 +295,12 @@ export function MealEditor({
       return entryValues(swap, f.parse)
     }
     if (item.food_id === undefined) {
-      const typed = values.map((v) =>
-        f.parse(valueTyping[fieldOf(item, v)] ?? estimateOf(item)?.texts[v] ?? ''),
-      )
+      const opened = estimateOf(item)
+      const typed = values.map((v) => {
+        const was = f.parse(opened?.texts[v] ?? '')
+        const n = f.parse(valueTyping[fieldOf(item, v)] ?? opened?.texts[v] ?? '')
+        return n !== undefined && n === was ? item.nutrients[v] : n
+      })
       const [kcal, protein, carbs, fat] = typed
       return kcal === undefined || protein === undefined || carbs === undefined || fat === undefined
         ? undefined
@@ -334,11 +338,10 @@ export function MealEditor({
   )
   const change = Math.round(total.kcal) - Math.round(meal.total.kcal)
   // The days a meal is of: today and the 30 before it, and the meal's
-  // own, when it is older.
-  const days = [
-    ...Array.from({ length: 31 }, (_, i) => addDays(today, -i)),
-    ...(date < addDays(today, -30) ? [date] : []),
-  ]
+  // own, when it is not among them: older, or after a today the app has
+  // from before the day's start passed. Left as it is, it is not moved.
+  const recent = Array.from({ length: 31 }, (_, i) => addDays(today, -i))
+  const days = recent.includes(date) ? recent : date > today ? [date, ...recent] : [...recent, date]
   const dayName = (d: string) =>
     d === today ? t.day.today : d === addDays(today, -1) ? t.meal.yesterday : f.date(d, today)
 

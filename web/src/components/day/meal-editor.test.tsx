@@ -360,6 +360,39 @@ test('a change the server refuses says so, with nothing to try again', async () 
   expect(meal().queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
+test('an estimate changed elsewhere while the meal is open is counted as it is now', async () => {
+  const server = mealServer()
+  fakeServer(server.routes)
+  renderAt('/')
+
+  await edit()
+  const total = () => meal().getByText(/kcal$/, { selector: '[aria-live] span' }).textContent
+  expect(total()).toBe('910 kcal')
+  // A model corrects the salad to 500 kcal; the window gets the focus back.
+  server.elsewhere((m) => ({
+    ...m,
+    total: { ...m.total, kcal: 1160 },
+    items: m.items.map((i) =>
+      i.id === salad.id ? { ...i, nutrients: { ...i.nutrients, kcal: 500 } } : i,
+    ),
+  }))
+  focusManager.setFocused(false)
+  focusManager.setFocused(true)
+
+  // As a save would keep it: its fields left as they were are not sent.
+  await waitFor(() => {
+    expect(total()).toBe('1,160 kcal')
+  })
+  expect(meal().queryByText(/from the changes/)).toBeNull()
+  expect(meal().queryByText(/ · was /)).toBeNull()
+  // Its protein typed anew: its energy stays as it is now.
+  fireEvent.change(meal().getByLabelText('Protein (g): Salad from the canteen'), {
+    target: { value: '20' },
+  })
+  expect(total()).toBe('1,160 kcal')
+  expect(meal().getByText('500 kcal · P 20')).toBeDefined()
+})
+
 test('a meal is deleted at once, and its toast takes the delete back', async () => {
   const server = mealServer()
   const undos: unknown[] = []
@@ -1504,6 +1537,26 @@ test('the day is today or one of the days before, each named in words', async ()
   expect(days).toHaveLength(31)
   expect(days.at(-1)).toBe('Wednesday, September 23')
   expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-23')
+})
+
+test("a meal of a day after the app's today keeps its day, left as it is", async () => {
+  // /me still says the 23rd, though the 24th has begun and has a meal.
+  const server = mealServer()
+  const next: Meal = { ...breakfast, eaten_at: '2026-10-24T15:45:00Z' }
+  fakeServer({
+    ...server.routes,
+    'GET /api/v1/days/2026-10-24': () => Response.json(day({ date: '2026-10-24', meals: [next] })),
+  })
+  renderAt('/?date=2026-10-24')
+
+  await edit()
+  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-24')
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  await waitFor(() => {
+    expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
+  })
+  // Not moved to the 23rd.
+  expect(server.sent).toEqual([])
 })
 
 // food is a food of the user's, as GET /api/v1/foods/{id} answers.
