@@ -5,9 +5,10 @@ import { cn } from '@/lib/utils'
 
 // A button is 44 px high, a finger's target on a phone; sm is denser,
 // 36 px, only on a desktop's width, where a pointer aims. Focus is a ring
-// of 2 px, 2 px off the button.
+// of 2 px, 2 px off the button. Disabled it fades, focusable or not
+// (focusableWhenDisabled sets aria-disabled in place of disabled).
 const variants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 motion-safe:active:not-aria-[haspopup]:scale-[.97] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-body font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-45 aria-disabled:pointer-events-none aria-disabled:opacity-45 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 motion-safe:active:not-aria-[haspopup]:scale-[.97] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-5",
   {
     variants: {
       variant: {
