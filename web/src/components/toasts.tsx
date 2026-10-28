@@ -13,12 +13,20 @@ import { sayUndone, toasts, type Said } from '@/lib/toast'
 
 // Toasts shows the app's toasts, announced as they come (aria-live, by
 // Base UI): above the bar on a phone, at the bottom right on a desktop.
-// Rendered within the router, so a toast links a day.
+// They are over a sheet too (z-50, its portal after theirs), so a change
+// made in one is taken back from there; a sheet keeps Tab within it, and
+// F6 takes the focus to them (Base UI), as a sheet leaves them out of
+// what it hides. Rendered within the router, so a toast links a day.
 export function Toasts() {
+  const t = useMessages()
+
   return (
     <Toast.Provider toastManager={toasts}>
       <Toast.Portal>
-        <Toast.Viewport className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-50 mx-auto flex max-w-md flex-col gap-2 outline-none lg:right-8 lg:bottom-8 lg:left-auto lg:mx-0 lg:w-96">
+        <Toast.Viewport
+          aria-label={t.toast.region}
+          className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-60 mx-auto flex max-w-md flex-col gap-2 outline-none lg:right-8 lg:bottom-8 lg:left-auto lg:mx-0 lg:w-96"
+        >
           <List />
         </Toast.Viewport>
       </Toast.Portal>

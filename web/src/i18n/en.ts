@@ -33,12 +33,15 @@ export const en = {
   },
   toast: {
     close: 'Close',
+    // The region of the toasts, which F6 takes the focus to.
+    region: 'Notifications',
     undo: 'Undo',
     see: (day: string) => `See ${day}`,
     aMeal: 'a meal',
     logged: (what: string, kcal: string) => `Logged: ${what} · ${kcal}`,
     changed: (what: string) => `Changed: ${what}`,
     moved: (day: string) => `Moved to ${day}`,
+    movedToday: 'Moved to today',
     deleted: (what: string) => `Deleted: ${what}`,
     checkIn: 'The check-in is saved',
     dayNote: "The day's note is saved",
@@ -57,6 +60,7 @@ export const en = {
     find: 'Find a food',
     days: 'The day before or after',
     list: 'These shortcuts',
+    toasts: 'The notifications',
     close: 'Close',
   },
   soon: 'This part is on its way.',

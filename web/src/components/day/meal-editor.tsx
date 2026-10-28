@@ -118,7 +118,11 @@ export function MealEditor({
     const moved = answer.day.date !== date
     sayChange(
       {
-        title: moved ? t.toast.moved(f.date(answer.day.date, today)) : t.toast.changed(what),
+        title: !moved
+          ? t.toast.changed(what)
+          : answer.day.date === today
+            ? t.toast.movedToday
+            : t.toast.moved(f.date(answer.day.date, today)),
         lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
         to: moved ? answer.day.date : undefined,
       },

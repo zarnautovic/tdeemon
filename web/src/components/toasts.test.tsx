@@ -2,7 +2,7 @@ import { cleanup, fireEvent, screen, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, problem, renderAt, signedIn, today, type Handler } from '@/test/app'
+import { day, fakeServer, problem, renderAt, signedIn, today, type Handler } from '@/test/app'
 import { dayServer } from '@/test/day-server'
 
 afterEach(() => {
@@ -106,6 +106,47 @@ test('the toast of a change takes the place of the one before: one Undo, of the 
 
   expect(screen.getAllByText('The check-in is saved')).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1)
+})
+
+test('from a sheet, F6 takes the focus to the toasts, named in the language, and Undo there leaves the sheet open', async () => {
+  const weighed = day({ metrics: [{ kind: 'weight', value: 72.5, unit: 'kg', source: 'manual' }] })
+  const server = dayServer(weighed)
+  let undone = false
+  const now = () => Response.json(undone ? weighed : server.day())
+  fakeServer({
+    ...signedIn('hr'),
+    ...server.routes,
+    'GET /api/v1/days/today': now,
+    [`GET /api/v1/days/${today}`]: now,
+    'POST /api/v1/undo': () => {
+      undone = true
+      return Response.json({
+        undone: {
+          action: 'metric.delete',
+          entity: `${today}/weight`,
+          at: `${today}T16:00:00Z`,
+          client: 'web',
+          days: [today],
+        },
+      })
+    },
+  })
+  renderAt('/')
+  fireEvent.click(await screen.findByRole('button', { name: 'Sva mjerenja' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'Mjerenja' }))
+  fireEvent.click(await sheet.findByRole('button', { name: 'Promijeni: Kilaža' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Obriši' }))
+  expect(await screen.findByText('Obrisano: Kilaža')).toBeDefined()
+
+  // A sheet keeps Tab within it; F6 is Base UI's way out to the toasts.
+  fireEvent.keyDown(window, { key: 'F6' })
+  const region = screen.getByRole('region', { name: 'Obavijesti' })
+  expect(document.activeElement).toBe(region)
+  fireEvent.click(within(region).getByRole('button', { name: 'Poništi' }))
+
+  expect(await screen.findByText('Poništeno: obrisano mjerenje.')).toBeDefined()
+  expect(await sheet.findByText('72,5 kg')).toBeDefined()
+  expect(screen.getByRole('dialog', { name: 'Mjerenja' })).toBeDefined()
 })
 
 test('a toast is closed by its button', async () => {

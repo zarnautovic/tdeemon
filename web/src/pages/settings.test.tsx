@@ -444,11 +444,12 @@ test('the notes for a coach are shown and saved, and the page and the list have 
       { notes: 'No lactose.\nKnees: no running.' },
     ])
   })
-  // A toast says it is saved, and the field stays as typed.
+  // A toast says it is saved, and the field has the notes as the server
+  // keeps them.
   expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
   expect(screen.getByRole('textbox', { name: 'Notes for a coach' })).toHaveProperty(
     'value',
-    'No lactose.\nKnees: no running. ',
+    'No lactose.\nKnees: no running.',
   )
   // The plan's list says their first line, and the page, opened again,
   // has them.
@@ -462,6 +463,80 @@ test('the notes for a coach are shown and saved, and the page and the list have 
     'value',
     'No lactose.\nKnees: no running.',
   )
+})
+
+test('notes taken back by their toast are taken back in the field, and Save sends them', async () => {
+  const server = settingsServer({
+    'POST /api/v1/undo': () => {
+      server.setNotes('Knees: no running.')
+      return Response.json({
+        undone: {
+          action: 'notes.set',
+          entity: 'notes',
+          at: '2026-10-23T16:00:00Z',
+          client: 'web',
+          days: [],
+        },
+      })
+    },
+  })
+  renderAt('/plan/notes')
+  const form = within(await screen.findByRole('form', { name: 'Notes for a coach' }))
+
+  fireEvent.change(await form.findByRole('textbox'), {
+    target: { value: 'Knees: no running. No broccoli.' },
+  })
+  fireEvent.click(form.getByRole('button', { name: 'Save' }))
+  expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+
+  expect(await screen.findByText('Taken back: the notes for a coach.')).toBeDefined()
+  await waitFor(() => {
+    expect(form.getByRole('textbox')).toHaveProperty('value', 'Knees: no running.')
+  })
+  fireEvent.click(form.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(server.sent['PUT /api/v1/me/notes']).toEqual([
+      { notes: 'Knees: no running. No broccoli.' },
+      { notes: 'Knees: no running.' },
+    ])
+  })
+})
+
+test('notes typed after a save stay, though the save comes back', async () => {
+  // The save waits here until the test lets it through.
+  const answers: (() => void)[] = []
+  const server = settingsServer({
+    'PUT /api/v1/me/notes': async (r) => {
+      const body: unknown = await r.json()
+      const sent =
+        typeof body === 'object' &&
+        body !== null &&
+        'notes' in body &&
+        typeof body.notes === 'string'
+          ? body.notes
+          : ''
+      await new Promise<void>((resolve) => {
+        answers.push(resolve)
+      })
+      server.setNotes(sent)
+      return Response.json({ notes: sent })
+    },
+  })
+  renderAt('/plan/notes')
+  const form = within(await screen.findByRole('form', { name: 'Notes for a coach' }))
+
+  fireEvent.change(await form.findByRole('textbox'), { target: { value: 'No lactose.' } })
+  fireEvent.click(form.getByRole('button', { name: 'Save' }))
+  await waitFor(() => {
+    expect(answers).toHaveLength(1)
+  })
+  // Typed while the save is on its way.
+  fireEvent.change(form.getByRole('textbox'), { target: { value: 'No lactose. No nuts.' } })
+  answers[0]?.()
+
+  expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
+  expect(form.getByRole('textbox')).toHaveProperty('value', 'No lactose. No nuts.')
 })
 
 test("the notes are the server's, not those a cache kept from before", async () => {

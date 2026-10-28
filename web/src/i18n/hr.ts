@@ -23,12 +23,16 @@ export const hr: Messages = {
   },
   toast: {
     close: 'Zatvori',
+    region: 'Obavijesti',
     undo: 'Poništi',
     see: (day: string) => `Otvori: ${day}`,
     aMeal: 'obrok',
     logged: (what: string, kcal: string) => `Upisano: ${what} · ${kcal}`,
     changed: (what: string) => `Promijenjeno: ${what}`,
-    moved: (day: string) => `Premješteno na ${day}`,
+    // f.date names the day in the nominative: after a colon, as "na"
+    // would take the accusative.
+    moved: (day: string) => `Premješteno: ${day}`,
+    movedToday: 'Premješteno na danas',
     deleted: (what: string) => `Obrisano: ${what}`,
     checkIn: 'Check-in je spremljen',
     dayNote: 'Napomena dana je spremljena',
@@ -47,6 +51,7 @@ export const hr: Messages = {
     find: 'Pronađi namirnicu',
     days: 'Dan prije ili poslije',
     list: 'Ovi prečaci',
+    toasts: 'Obavijesti',
     close: 'Zatvori',
   },
   soon: 'Ovaj dio stiže uskoro.',
