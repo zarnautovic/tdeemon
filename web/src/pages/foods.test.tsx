@@ -60,6 +60,11 @@ function listOf(foods: Food[]) {
   }
 }
 
+// markOf is the classes of a food's mark, the first thing in its row.
+function markOf(row: HTMLElement | undefined): string {
+  return row?.firstElementChild?.className ?? ''
+}
+
 function asked(fetch: ReturnType<typeof fakeServer>, path: string): URL[] {
   return fetch.mock.calls
     .map(([r]) => (r instanceof Request ? new URL(r.url) : undefined))
@@ -125,11 +130,58 @@ test('by how many meals had them, the foods eaten this week come first', async (
   expect(
     within(earlier)
       .getAllByRole('link')
-      .map((a) => a.textContent.slice(2, 14)),
-  ).toEqual(['Basmati rice', 'Chia seedsP '])
+      .map((a) => a.textContent),
+  ).toEqual([
+    // How long ago it was eaten, when not this week.
+    'BRBasmati riceP 5 · C 10 · F 3 · 7 days ago103 kcal/100 g',
+    'CSChia seedsP 5 · C 10 · F 3104 kcal/100 g',
+  ])
+  // The mark of a food eaten this week is in colour, of the others grey.
+  expect(markOf(within(week).getAllByRole('link')[0])).toContain('bg-primary-soft')
+  for (const row of within(earlier).getAllByRole('link')) {
+    expect(markOf(row)).toContain('bg-surface-2')
+    expect(markOf(row)).not.toContain('bg-primary-soft')
+  }
   expect(screen.getByRole('heading', { name: 'This week' })).toBeDefined()
   expect(asked(fetch, '/api/v1/foods/list')[0]?.searchParams.get('order')).toBe('frequent')
-  expect(screen.getByLabelText('Order')).toHaveProperty('value', 'frequent')
+  expect(screen.getByRole('button', { name: 'Order: Most eaten' })).toBeDefined()
+  // The list chosen says how many foods it has.
+  expect(screen.getByRole('radio', { name: 'In use · 4' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('radio', { name: 'Archive' })).toHaveProperty('checked', false)
+})
+
+test('the list chosen says how many foods it has, its order is a menu, in Croatian', async () => {
+  const foods = [
+    oats,
+    food(2, { name: 'Basmati riža', last_use: lastUse('2026-10-14') }),
+    ...Array.from({ length: 1200 }, (_, i) => food(i + 3)),
+  ]
+  const fetch = fakeServer({ ...signedIn('hr'), 'GET /api/v1/foods/list': listOf(foods) })
+  const router = renderAt('/foods')
+
+  expect(await screen.findByRole('radio', { name: 'U upotrebi · 1.202' })).toHaveProperty(
+    'checked',
+    true,
+  )
+  expect(screen.getByRole('link', { name: 'Nova' }).getAttribute('href')).toBe('/foods/new')
+  const earlier = screen.getByRole('list', { name: 'U upotrebi: Ranije' })
+  expect(within(earlier).getByRole('link', { name: /^Basmati riža/ }).textContent).toContain(
+    'M 3 · prije 9 dana',
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: 'Redoslijed: Najčešće' }))
+  const menu = within(await screen.findByRole('menu'))
+  expect(
+    menu.getByRole('menuitemradio', { name: 'Prvo najčešće jedene' }).getAttribute('aria-checked'),
+  ).toBe('true')
+  fireEvent.click(menu.getByRole('menuitemradio', { name: 'Po nazivu' }))
+
+  expect(await screen.findByRole('button', { name: 'Redoslijed: Po nazivu' })).toBeDefined()
+  expect(router.state.location.search).toEqual({ order: 'name' })
+  expect(asked(fetch, '/api/v1/foods/list').at(-1)?.searchParams.get('order')).toBe('name')
+  // By name, the foods are one list, of the same count.
+  expect(await screen.findByRole('list', { name: 'U upotrebi' })).toBeDefined()
+  expect(screen.getByRole('radio', { name: 'U upotrebi · 1.202' })).toBeDefined()
 })
 
 test('the archived foods, and the order of the last use, are in the address', async () => {
@@ -141,11 +193,17 @@ test('the archived foods, and the order of the last use, are in the address', as
       'No foods yet: a meal logged through a model saves its foods, or add one.',
     ),
   ).toBeDefined()
-  // The first action of an empty list.
-  expect(screen.getAllByRole('link', { name: 'Add a food' })).toHaveLength(2)
+  // The first action of an empty list, beside the header's.
+  expect(screen.getByRole('link', { name: 'Add a food' }).getAttribute('href')).toBe('/foods/new')
+  expect(screen.getByRole('link', { name: 'New food' }).getAttribute('href')).toBe('/foods/new')
   fireEvent.click(screen.getByRole('radio', { name: 'Archive' }))
   expect(await screen.findByText('No archived foods.')).toBeDefined()
-  fireEvent.change(screen.getByLabelText('Order'), { target: { value: 'use' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Order: Most eaten' }))
+  fireEvent.click(
+    within(await screen.findByRole('menu')).getByRole('menuitemradio', {
+      name: 'Recently eaten first',
+    }),
+  )
 
   await waitFor(() => {
     expect(router.state.location.search).toEqual({ filter: 'archived', order: 'use' })
@@ -153,7 +211,8 @@ test('the archived foods, and the order of the last use, are in the address', as
   const last = asked(fetch, '/api/v1/foods/list').at(-1)
   expect(last?.searchParams.get('archived')).toBe('true')
   expect(last?.searchParams.get('order')).toBe('use')
-  expect(screen.getByRole('radio', { name: 'Archive' })).toHaveProperty('checked', true)
+  expect(await screen.findByRole('radio', { name: 'Archive · 0' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('button', { name: 'Order: Recent' })).toBeDefined()
 })
 
 test("the archive's address before the lists is the archive", async () => {
@@ -161,7 +220,7 @@ test("the archive's address before the lists is the archive", async () => {
   const router = renderAt('/foods?archived=true')
 
   expect(await screen.findByText('No archived foods.')).toBeDefined()
-  expect(screen.getByRole('radio', { name: 'Archive' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('radio', { name: /^Archive/ })).toHaveProperty('checked', true)
   expect(asked(fetch, '/api/v1/foods/list').at(-1)?.searchParams.get('archived')).toBe('true')
   // The address is the lists' own now, so the foods in use are a tap away.
   await waitFor(() => {
@@ -169,7 +228,7 @@ test("the archive's address before the lists is the archive", async () => {
   })
   fireEvent.click(screen.getByRole('radio', { name: 'In use' }))
   await waitFor(() => {
-    expect(screen.getByRole('radio', { name: 'In use' })).toHaveProperty('checked', true)
+    expect(screen.getByRole('radio', { name: /^In use/ })).toHaveProperty('checked', true)
   })
   expect(router.state.location.search).toEqual({})
 })
@@ -236,7 +295,7 @@ test('a search finds the foods, or says none matches', async () => {
   expect(router.state.location.search).toEqual({ q: 'oat' })
   expect(asked(fetch, '/api/v1/foods').at(-1)?.searchParams.get('query')).toBe('oat')
   // A search is ordered by how well it matches.
-  expect(screen.queryByLabelText('Order')).toBeNull()
+  expect(screen.queryByRole('button', { name: /^Order/ })).toBeNull()
 
   fireEvent.change(screen.getByLabelText('Search the foods'), { target: { value: 'kale' } })
   expect(await screen.findByText('No food matches.')).toBeDefined()
@@ -260,7 +319,7 @@ test('a search in the archive finds the archived foods, and the archive stays', 
   const found = await screen.findByRole('list', { name: 'Found' })
   expect(within(found).getByText('Canteen stew')).toBeDefined()
   expect(asked(fetch, '/api/v1/foods').at(-1)?.searchParams.get('archived')).toBe('true')
-  expect(screen.getByRole('radio', { name: 'Archive' })).toHaveProperty('checked', true)
+  expect(screen.getByRole('radio', { name: /^Archive/ })).toHaveProperty('checked', true)
   // The foods in use, searched for the same.
   fireEvent.click(screen.getByRole('radio', { name: 'In use' }))
   expect(await screen.findByText('No food matches.')).toBeDefined()

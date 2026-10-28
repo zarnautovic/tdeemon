@@ -139,6 +139,99 @@ test('a value below 0 is said to be one, not no number', async () => {
   expect(server.sent).toEqual([])
 })
 
+test("a field's error goes once it is changed, and the others' stay", async () => {
+  const server = foodServer(undefined, 'hr')
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.change(await screen.findByLabelText('Ugljikohidrati (g)'), {
+    target: { value: '-5' },
+  })
+  fireEvent.change(screen.getByLabelText('Masti (g)'), { target: { value: '-1' } })
+  fireEvent.change(screen.getByLabelText('Naziv'), { target: { value: '' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
+  expect(screen.getAllByText('Ne može biti manje od 0.')).toHaveLength(2)
+
+  fireEvent.change(screen.getByLabelText('Ugljikohidrati (g)'), { target: { value: '4' } })
+
+  const carbs = screen.getByLabelText('Ugljikohidrati (g)')
+  expect(carbs.getAttribute('aria-invalid')).toBe('false')
+  expect(carbs.getAttribute('aria-describedby')).toBeNull()
+  expect(screen.getAllByText('Ne može biti manje od 0.')).toHaveLength(1)
+  expect(screen.getByLabelText('Masti (g)').getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByLabelText('Naziv').getAttribute('aria-invalid')).toBe('true')
+  // The next save tells each field again: the one changed back is wrong.
+  fireEvent.change(screen.getByLabelText('Ugljikohidrati (g)'), { target: { value: '-4' } })
+  expect(screen.getAllByText('Ne može biti manje od 0.')).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
+  expect(screen.getAllByText('Ne može biti manje od 0.')).toHaveLength(2)
+  expect(server.sent).toEqual([])
+})
+
+test('grams past what 100 g holds are no longer said wrong once one of them changes', async () => {
+  foodServer()
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.change(await screen.findByLabelText('Protein (g)'), { target: { value: '200' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  expect(screen.getByLabelText('Carbs (g)').getAttribute('aria-invalid')).toBe('true')
+
+  fireEvent.change(screen.getByLabelText('Protein (g)'), { target: { value: '20' } })
+
+  expect(screen.queryByText(/add up to at most/)).toBeNull()
+  expect(screen.getByLabelText('Carbs (g)').getAttribute('aria-invalid')).toBe('false')
+  expect(screen.getByLabelText('Protein (g)').getAttribute('aria-invalid')).toBe('false')
+})
+
+test('a serving or another name given twice, as the server tells names apart, is said there and not sent', async () => {
+  const server = foodServer(undefined, 'hr', {
+    ...oats,
+    servings: [{ name: 'čaša', amount: 250 }],
+    aliases: ['grcki jogurt'],
+  })
+  renderAt(`/foods/${id}?edit=true`)
+
+  // The same name in another case, its č of two code points.
+  fireEvent.click(await screen.findByRole('button', { name: 'Dodaj mjeru' }))
+  fireEvent.change(screen.getByLabelText('Mjera 2'), { target: { value: ' ČAŠA ' } })
+  fireEvent.change(screen.getByLabelText('Količina 2 (g)'), { target: { value: '200' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Dodaj drugi naziv' }))
+  fireEvent.change(screen.getByLabelText('Drugi naziv 2'), { target: { value: 'GRCKI  jogurt' } })
+  // Another letter is another name.
+  fireEvent.click(screen.getByRole('button', { name: 'Dodaj drugi naziv' }))
+  fireEvent.change(screen.getByLabelText('Drugi naziv 3'), { target: { value: 'grčki jogurt' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
+
+  const serving = screen.getByLabelText('Mjera 2')
+  expect(serving.getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByText('Mjera tog naziva već postoji.').id).toBe(
+    serving.getAttribute('aria-describedby'),
+  )
+  const alias = screen.getByLabelText('Drugi naziv 2')
+  expect(alias.getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByText('Taj drugi naziv je već upisan.').id).toBe(
+    alias.getAttribute('aria-describedby'),
+  )
+  expect(screen.getByLabelText('Mjera 1').getAttribute('aria-invalid')).toBe('false')
+  expect(screen.getByLabelText('Drugi naziv 1').getAttribute('aria-invalid')).toBe('false')
+  expect(screen.getByLabelText('Drugi naziv 3').getAttribute('aria-invalid')).toBe('false')
+  expect(server.sent).toEqual([])
+
+  // Named apart, they are sent.
+  fireEvent.change(serving, { target: { value: 'velika čaša' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Ukloni naziv: GRCKI jogurt' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Spremi namirnicu' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({
+    servings: [
+      { name: 'čaša', amount: 250 },
+      { name: 'velika čaša', amount: 200 },
+    ],
+    aliases: ['grcki jogurt', 'grčki jogurt'],
+  })
+})
+
 // conflict is the API's 409 of a save another food is in the way of, at
 // location.
 function conflict(location: string, foodId: string): Response {

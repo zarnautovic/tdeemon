@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
+import { nameKey } from '@/lib/name-key'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -124,8 +125,11 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     note: food?.note ?? '',
   }))
   // The fields that are not what a food can have: needed and empty, or
-  // not a number.
+  // not a number. A field changed since is not said wrong (edited) until
+  // the next save, which tells it again; the others stay.
   const [wrong, setWrong] = useState<ReadonlyMap<string, string>>(new Map())
+  const [edited, setEdited] = useState<ReadonlySet<string>>(new Set())
+  const errorOf = (key: string) => (edited.has(key) ? undefined : wrong.get(key))
   const unit = draft.basis === '100ml' ? 'ml' : 'g'
   // The food in the way of the save, and the field it is in the way of,
   // while it holds what was sent: the name and brand, or the row of the
@@ -246,6 +250,9 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     const portionGrams =
       draft.basis === 'portion' ? number('portionGrams', draft.portionGrams, false) : undefined
     tooMuch(nutrients, portionGrams, errors)
+    // The names of the servings, and the other names, as the server tells
+    // them apart (food.Key): one given twice is refused.
+    const servingNames = new Set<string>()
     const servings = draft.servings.flatMap(({ key, value }) => {
       if (value.name.trim() === '' && value.amount.trim() === '') {
         return []
@@ -256,12 +263,27 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
         errors.set(`serving ${key}`, t.foods.servingBounds)
         amount = undefined
       }
-      if (value.name.trim() === '') {
+      const named = value.name.trim()
+      if (named === '') {
         errors.set(`serving name ${key}`, t.foods.needed)
+      } else if (servingNames.has(nameKey(named))) {
+        errors.set(`serving name ${key}`, t.foods.servingTwice)
       }
-      return amount === undefined ? [] : [{ name: value.name.trim(), amount }]
+      servingNames.add(nameKey(named))
+      return amount === undefined ? [] : [{ name: named, amount }]
     })
-    const aliases = draft.aliases.map((a) => a.value.trim()).filter((a) => a !== '')
+    const aliasNames = new Set<string>()
+    const aliases = draft.aliases.flatMap(({ key, value }) => {
+      const alias = value.trim()
+      if (alias === '') {
+        return []
+      }
+      if (aliasNames.has(nameKey(alias))) {
+        errors.set(`alias ${key}`, t.foods.aliasTwice)
+      }
+      aliasNames.add(nameKey(alias))
+      return [alias]
+    })
     if (errors.size > 0) {
       return { wrong: errors }
     }
@@ -285,6 +307,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
   // send saves the draft, or says what in it is wrong.
   function send() {
     const made = body()
+    setEdited(new Set())
     if ('wrong' in made) {
       setWrong(made.wrong)
       return
@@ -329,14 +352,13 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     onChange: (v: string) => void,
     kind: { decimal: true } | { maxLength: number },
   ) {
-    const error = wrong.get(key)
+    const error = errorOf(key)
     // The field another food is in the way of, which the refusal says;
     // one of the grams that add up to more than 100 can hold.
     const taken = error === undefined && key === conflictKey
+    const weighed = mass.some((k) => k === key)
     const tooHeavy =
-      error === undefined &&
-      wrong.has('mass') &&
-      mass.some((k) => k === key && draft.nutrients[k].trim() !== '')
+      error === undefined && errorOf('mass') !== undefined && weighed && value.trim() !== ''
     // The energy the warning under the macros is of.
     const warned = error === undefined && key === 'kcal' && energy !== undefined
     return (
@@ -365,6 +387,12 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           }
           className={inputClass}
           onChange={(e) => {
+            // Changed, the field is not said wrong; nor, of the grams that
+            // add up, are they.
+            const changed = weighed ? [key, 'mass'] : [key]
+            if (changed.some((k) => wrong.has(k) && !edited.has(k))) {
+              setEdited(new Set([...edited, ...changed]))
+            }
             onChange(e.currentTarget.value)
           }}
         />
@@ -446,9 +474,9 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           </div>
         ))}
       </div>
-      {wrong.has('mass') && (
+      {errorOf('mass') !== undefined && (
         <p id={`${id}-mass-error`} className="text-xs text-destructive">
-          {wrong.get('mass')}
+          {errorOf('mass')}
         </p>
       )}
       <div aria-live="polite">

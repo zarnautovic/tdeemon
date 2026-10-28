@@ -5,8 +5,9 @@ import { cn } from '@/lib/utils'
 // SegmentedControl picks one of a few options, as segments of one
 // control: radios in a fieldset whose legend names it, so a screen reader
 // says them as one group and the arrow keys move between them. A segment
-// is 44 px high on a phone, as a button. children follow the segments
-// in the fieldset (a hint, which describedBy names).
+// is 44 px high on a phone, as a button, and shares the width with the
+// others, its words cut short when they do not fit. children follow the
+// segments in the fieldset (a hint, which describedBy names).
 export function SegmentedControl<T extends string>({
   legend,
   options,
@@ -31,7 +32,9 @@ export function SegmentedControl<T extends string>({
   const id = useId()
 
   return (
-    <fieldset className={cn('space-y-2', className)} aria-describedby={describedBy}>
+    // No wider than its place: a fieldset is at least as wide as its
+    // content, and the segments' words would not be cut short.
+    <fieldset className={cn('min-w-0 space-y-2', className)} aria-describedby={describedBy}>
       <legend className={hideLegend ? 'sr-only' : 'font-medium'}>{legend}</legend>
       <div className="flex gap-1 rounded-md bg-surface-2 p-1">
         {options.map((option) => (

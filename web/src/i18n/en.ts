@@ -357,13 +357,19 @@ export const en = {
     searchHint: 'A name, a brand or another name',
     lists: 'Lists',
     filter: { inUse: 'In use', archived: 'Archive', estimates: 'Estimates' },
-    order: 'Order',
-    byFrequency: 'Most eaten first',
-    byName: 'By name',
-    byUse: 'Recently eaten first',
+    // The list chosen, and how many foods it has: In use · 142.
+    counted: (list: string, n: string) => `${list} · ${n}`,
+    // The order's button says the one chosen, in short, and its menu each
+    // whole.
+    order: (order: string) => `Order: ${order}`,
+    orderShort: { frequent: 'Most eaten', use: 'Recent', name: 'By name' },
+    orders: { frequent: 'Most eaten first', use: 'Recently eaten first', name: 'By name' },
     // The groups of the foods by how many meals had them lately.
     thisWeek: 'This week',
     earlier: 'Earlier',
+    // A food in a list not eaten this week: 9 days ago.
+    eatenAgo: (days: string, n: number) =>
+      `${days} ${plural('en', n, { one: 'day', other: 'days' })} ago`,
     none: 'No foods yet: a meal logged through a model saves its foods, or add one.',
     noneArchived: 'No archived foods.',
     noneEstimates: 'No estimates: the values of every food in use are from a label or you.',
@@ -372,6 +378,7 @@ export const en = {
     more: 'Show more',
     shown: (shown: number, total: number) => `${String(shown)} of ${String(total)}`,
     add: 'Add a food',
+    new: 'New food',
     per: { '100g': 'per 100 g', '100ml': 'per 100 ml', portion: 'per portion' },
     // A food's basis beside its kcal in a list: 370 kcal /100 g.
     perShort: { '100g': '/100 g', '100ml': '/100 ml', portion: '/portion' },
@@ -450,6 +457,10 @@ export const en = {
       'Archived: only a search of the archived foods finds it, and its names stay taken.',
     needed: 'Needed.',
     negative: 'It cannot be less than 0.',
+    // A serving's name, or another name, the same as one above it, whatever
+    // their case.
+    servingTwice: 'Another serving has this name.',
+    aliasTwice: 'This other name is given already.',
     kcalPer100: (most: string, unit: string) =>
       `At most ${most} kcal per 100 ${unit}, the energy of pure fat.`,
     massPer100: (most: string, unit: string) =>
