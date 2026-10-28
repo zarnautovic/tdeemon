@@ -338,12 +338,14 @@ export const hr: Messages = {
     searchHint: 'Naziv, marka ili drugi naziv',
     lists: 'Popisi',
     filter: { inUse: 'U upotrebi', archived: 'Arhiva', estimates: 'Procjene' },
-    order: 'Redoslijed',
-    byFrequency: 'Prvo najčešće jedene',
-    byName: 'Po nazivu',
-    byUse: 'Prvo nedavno jedene',
+    counted: (list: string, n: string) => `${list} · ${n}`,
+    order: (order: string) => `Redoslijed: ${order}`,
+    orderShort: { frequent: 'Najčešće', use: 'Nedavno', name: 'Po nazivu' },
+    orders: { frequent: 'Prvo najčešće jedene', use: 'Prvo nedavno jedene', name: 'Po nazivu' },
     thisWeek: 'Ovaj tjedan',
     earlier: 'Ranije',
+    eatenAgo: (days: string, n: number) =>
+      `prije ${days} ${plural('hr', n, { one: 'dan', few: 'dana', other: 'dana' })}`,
     none: 'Još nema namirnica: obrok upisan preko modela sprema svoje namirnice, a možeš i dodati namirnicu.',
     noneArchived: 'Nema arhiviranih namirnica.',
     noneEstimates:
@@ -353,6 +355,7 @@ export const hr: Messages = {
     more: 'Prikaži još',
     shown: (shown: number, total: number) => `${String(shown)} od ${String(total)}`,
     add: 'Dodaj namirnicu',
+    new: 'Nova',
     per: { '100g': 'na 100 g', '100ml': 'na 100 ml', portion: 'po porciji' },
     perShort: { '100g': '/100 g', '100ml': '/100 ml', portion: '/porcija' },
     pick: 'Odaberi namirnicu da vidiš što donosi ili dodaj novu.',
@@ -429,6 +432,8 @@ export const hr: Messages = {
       'Arhivirano: nalazi je samo pretraga arhiviranih, a njezini nazivi ostaju zauzeti.',
     needed: 'Obavezno.',
     negative: 'Ne može biti manje od 0.',
+    servingTwice: 'Mjera tog naziva već postoji.',
+    aliasTwice: 'Taj drugi naziv je već upisan.',
     kcalPer100: (most: string, unit: string) =>
       `Najviše ${most} kcal na 100 ${unit}, energija čiste masti.`,
     massPer100: (most: string, unit: string) =>

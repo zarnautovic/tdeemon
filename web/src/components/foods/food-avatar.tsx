@@ -24,14 +24,26 @@ function initials(name: string): string {
 
 // FoodAvatar is a food's mark beside its name: the initials of its name,
 // for the eye, as the name beside it says the same. large is a food's
-// page's.
-export function FoodAvatar({ name, large = false }: { name: string; large?: boolean }) {
+// page's; muted, grey, a food in a list not eaten lately.
+export function FoodAvatar({
+  name,
+  large = false,
+  muted = false,
+  className,
+}: {
+  name: string
+  large?: boolean
+  muted?: boolean
+  className?: string
+}) {
   return (
     <span
       aria-hidden
       className={cn(
-        'grid shrink-0 place-items-center rounded-md bg-primary-soft font-semibold text-primary',
+        'grid shrink-0 place-items-center rounded-md font-semibold',
+        muted ? 'bg-surface-2 text-muted-foreground' : 'bg-primary-soft text-primary',
         large ? 'size-14 text-h3' : 'size-10 text-small',
+        className,
       )}
     >
       {initials(name)}

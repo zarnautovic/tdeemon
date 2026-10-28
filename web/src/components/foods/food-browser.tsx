@@ -1,18 +1,17 @@
+import { Menu } from '@base-ui/react/menu'
 import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
-import { Plus, Search } from 'lucide-react'
+import { Check, ChevronDown, Plus, Search } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { $api } from '@/api/client'
 import { useFindEstimates, useFindFoods, useFoodList, type FoodFilter } from '@/api/foods'
-import type { Food } from '@/api/types'
+import { eatenThisWeek } from '@/components/foods/eaten'
 import { FoodRow } from '@/components/foods/food-row'
 import { LoadError } from '@/components/load-error'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { SegmentedControl } from '@/components/ui/segmented'
-import { daysBetween } from '@/i18n/format'
+import { ChipGroup } from '@/components/ui/chip-group'
+import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { inputClass } from '@/lib/styles'
-import { cn } from '@/lib/utils'
 import type { FoodsSearch } from '@/router'
 
 const filters = ['inUse', 'archived', 'estimates'] as const
@@ -25,14 +24,16 @@ type Order = (typeof orders)[number]
 const card = 'divide-y overflow-hidden rounded-lg bg-card shadow-card'
 
 // FoodBrowser is the user's foods: a search of them, or a list (those in
-// use, the archived ones, the estimates in use), by how many of the latest
-// meals had them (those eaten this week first), by when they were eaten
-// last or by name, a page at a time; and a way to add one. A search is of
-// the list chosen. What it shows is in the address (q, filter, order),
-// which a food opened from it keeps, so the list beside a food, and back
-// from it, is as it was.
+// use, the archived ones, the estimates in use, as chips, the one chosen
+// with how many foods it has), by how many of the latest meals had them
+// (those eaten this week first), by when they were eaten last or by name
+// (a menu beside the chips), a page at a time; and a way to add one. A
+// search is of the list chosen. What it shows is in the address (q,
+// filter, order), which a food opened from it keeps, so the list beside a
+// food, and back from it, is as it was.
 export function FoodBrowser() {
   const t = useMessages()
+  const f = useFormat()
   const id = useId()
   const search = useSearch({ from: '/app/foods' })
   const { q = '', filter = 'inUse', order = 'frequent' } = search
@@ -71,6 +72,9 @@ export function FoodBrowser() {
     filter: search.filter,
     order: search.order,
   }
+  // How many foods the list chosen has, once it came (the list's own
+  // request), a search of it too.
+  const total = useFoodList(filter, order).data?.pages.at(-1)?.total
 
   return (
     <section aria-labelledby={`${id}-title`} className="min-w-0 space-y-3">
@@ -78,14 +82,9 @@ export function FoodBrowser() {
         <h1 id={`${id}-title`} className="text-title">
           {t.foods.title}
         </h1>
-        <Link
-          to="/foods/new"
-          search={from}
-          // Merged, as Button merges its own: the outline's border, not the base's.
-          className={buttonVariants({ variant: 'outline', size: 'sm' })}
-        >
+        <Link to="/foods/new" search={from} className={buttonVariants({ size: 'sm' })}>
           <Plus aria-hidden />
-          {t.foods.add}
+          {t.foods.new}
         </Link>
       </header>
       <label className="flex h-12 items-center gap-2.5 rounded-lg border-2 border-input bg-card px-3.5 focus-within:border-ring">
@@ -112,47 +111,45 @@ export function FoodBrowser() {
           }}
         />
       </label>
-      {/* The search too is of the list chosen. */}
-      <SegmentedControl
-        legend={t.foods.lists}
-        hideLegend
-        options={filters.map((value) => ({ value, label: t.foods.filter[value] }))}
-        value={filter}
-        onChange={(chosen) => {
-          void navigate({
-            to: '.',
-            search: (s: FoodsSearch) => ({ ...s, filter: chosen === 'inUse' ? undefined : chosen }),
-          })
-        }}
-      />
-      {!searching && (
-        <div className="flex justify-end">
-          <label className="flex items-center gap-2 text-small text-muted-foreground">
-            {t.foods.order}
-            <select
-              value={order}
-              className={cn(
-                inputClass,
-                'h-11 w-auto rounded-sm px-2 text-small text-foreground lg:h-9',
-              )}
-              onChange={(event) => {
-                const chosen = orders.find((o) => o === event.currentTarget.value)
-                void navigate({
-                  to: '.',
-                  search: (s: FoodsSearch) => ({
-                    ...s,
-                    order: chosen === 'frequent' ? undefined : chosen,
-                  }),
-                })
-              }}
-            >
-              <option value="frequent">{t.foods.byFrequency}</option>
-              <option value="use">{t.foods.byUse}</option>
-              <option value="name">{t.foods.byName}</option>
-            </select>
-          </label>
-        </div>
-      )}
+      {/* The search too is of the list chosen, and ordered by how well a
+          food matches. Rows of chips apart, a chip's target clear of the
+          next row's. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+        <ChipGroup
+          legend={t.foods.lists}
+          options={filters.map((value) => ({
+            value,
+            label:
+              value === filter && total !== undefined
+                ? t.foods.counted(t.foods.filter[value], f.number(total))
+                : t.foods.filter[value],
+          }))}
+          value={filter}
+          onChange={(chosen) => {
+            void navigate({
+              to: '.',
+              search: (s: FoodsSearch) => ({
+                ...s,
+                filter: chosen === 'inUse' ? undefined : chosen,
+              }),
+            })
+          }}
+        />
+        {!searching && (
+          <OrderMenu
+            order={order}
+            onChange={(chosen) => {
+              void navigate({
+                to: '.',
+                search: (s: FoodsSearch) => ({
+                  ...s,
+                  order: chosen === 'frequent' ? undefined : chosen,
+                }),
+              })
+            }}
+          />
+        )}
+      </div>
       {searching ? (
         <Found query={typed} filter={filter} from={from} />
       ) : (
@@ -162,10 +159,59 @@ export function FoodBrowser() {
   )
 }
 
+// OrderMenu is the order of a list, as a menu whose button says the one
+// chosen, in short.
+function OrderMenu({ order, onChange }: { order: Order; onChange: (order: Order) => void }) {
+  const t = useMessages()
+
+  return (
+    <Menu.Root>
+      <Menu.Trigger
+        aria-label={t.foods.order(t.foods.orderShort[order])}
+        className="relative ml-auto flex h-8 shrink-0 items-center gap-0.5 rounded-md px-1.5 text-small font-semibold whitespace-nowrap text-primary outline-none after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {t.foods.orderShort[order]}
+        <ChevronDown aria-hidden className="size-3.5" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={6} align="end" className="z-40">
+          <Menu.Popup className="min-w-48 rounded-lg border bg-card p-1 shadow-sheet outline-none">
+            <Menu.RadioGroup
+              value={order}
+              onValueChange={(value: Order) => {
+                if (value !== order) {
+                  onChange(value)
+                }
+              }}
+            >
+              {orders.map((o) => (
+                <Menu.RadioItem
+                  key={o}
+                  value={o}
+                  closeOnClick
+                  className="flex h-11 cursor-default items-center gap-2 rounded-md pr-3 pl-2 text-sm outline-none select-none data-highlighted:bg-muted"
+                >
+                  <span className="flex size-4 items-center justify-center">
+                    <Menu.RadioItemIndicator>
+                      <Check aria-hidden className="size-4" />
+                    </Menu.RadioItemIndicator>
+                  </span>
+                  {t.foods.orders[o]}
+                </Menu.RadioItem>
+              ))}
+            </Menu.RadioGroup>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  )
+}
+
 // Found is what a search of a list finds: of the archived foods, or of
 // those in use, all or their estimates.
 function Found({ query, filter, from }: { query: string; filter: FoodFilter; from: FoodsSearch }) {
   const t = useMessages()
+  const today = $api.useQuery('get', '/api/v1/me').data?.today
   const estimates = filter === 'estimates'
   // The estimates are searched in their own list: a search of all the
   // foods finds 50 at most, which may leave them out.
@@ -186,7 +232,7 @@ function Found({ query, filter, from }: { query: string; filter: FoodFilter; fro
   return (
     <ul aria-label={t.foods.found} className={card}>
       {foods.map((food) => (
-        <FoodRow key={food.id} food={food} from={from} />
+        <FoodRow key={food.id} food={food} from={from} today={today} />
       ))}
     </ul>
   )
@@ -226,13 +272,11 @@ function Listed({ filter, order, from }: { filter: FoodFilter; order: Order; fro
     )
   }
   const name = t.foods.filter[filter]
-  const thisWeek = (food: Food) =>
-    today !== undefined && food.last_use !== undefined && daysBetween(food.last_use.day, today) < 7
   const groups =
     order === 'frequent' && today !== undefined
       ? [
-          { title: t.foods.thisWeek, foods: foods.filter(thisWeek) },
-          { title: t.foods.earlier, foods: foods.filter((food) => !thisWeek(food)) },
+          { title: t.foods.thisWeek, foods: foods.filter((food) => eatenThisWeek(food, today)) },
+          { title: t.foods.earlier, foods: foods.filter((food) => !eatenThisWeek(food, today)) },
         ].filter((g) => g.foods.length > 0)
       : [{ title: undefined, foods }]
   return (
@@ -247,7 +291,7 @@ function Listed({ filter, order, from }: { filter: FoodFilter; order: Order; fro
             className={card}
           >
             {group.foods.map((food) => (
-              <FoodRow key={food.id} food={food} from={from} />
+              <FoodRow key={food.id} food={food} from={from} today={today} />
             ))}
           </ul>
         </section>

@@ -9,7 +9,7 @@ test('a food is made, logged, found, corrected, archived and brought back', asyn
     .getByRole('link', { name: 'Foods' })
     .click()
 
-  await page.getByRole('link', { name: 'Add a food' }).first().click()
+  await page.getByRole('link', { name: 'New food' }).click()
   await page.getByLabel('Name', { exact: true }).fill('Buckwheat')
   // A slip of the energy, which the macros tell, and their energy taken.
   await page.getByLabel('Energy (kcal)').fill('34')
@@ -63,4 +63,38 @@ test('a food is made, logged, found, corrected, archived and brought back', asyn
   await archived.getByRole('link', { name: /Buckwheat/ }).click()
   await page.getByRole('button', { name: 'Bring back' }).click()
   await expect(page.getByRole('button', { name: 'Archive' })).toBeVisible()
+})
+
+test("a food's servings of long names fit a phone's width", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await signIn(page)
+  // Two servings, so segments, each of a name longer than a third of it.
+  const food = await page.request.post('/api/v1/foods', {
+    data: {
+      name: 'Rye loaf',
+      basis: '100g',
+      source: 'label',
+      nutrients: { kcal: 250, protein: 8, carbs: 48, fat: 2 },
+      servings: [
+        { name: 'a very thick slice of home-made bread', amount: 65 },
+        { name: 'half a loaf of rye bread', amount: 250 },
+      ],
+    },
+  })
+  const saved: unknown = await food.json()
+  const id =
+    typeof saved === 'object' && saved !== null && 'id' in saved && typeof saved.id === 'string'
+      ? saved.id
+      : ''
+  await page.goto(`/foods/${id}`)
+  const half = page.getByRole('radio', { name: 'half a loaf of rye bread (250 g)' })
+  await expect(half).not.toBeChecked()
+
+  // The segments share the card's width, their names cut short: the page
+  // does not scroll sideways. A string: the tests' types know no DOM.
+  const width = await page.evaluate<number>('document.documentElement.scrollWidth')
+  expect(width).toBe(390)
+  await page.getByText('half a loaf of rye bread (250 g)', { exact: true }).click()
+  await expect(half).toBeChecked()
+  await expect(page.getByRole('cell', { name: '625 kcal' })).toBeVisible()
 })
