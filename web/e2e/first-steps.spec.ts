@@ -46,7 +46,7 @@ test("a new user's first steps lead to a plan, one ticked at a time", async ({ p
 
   // The first meal: + opens the meal to log; this one an AI coach logs.
   await steps.getByRole('link', { name: 'Log your first meal' }).click()
-  const meal = page.getByRole('dialog', { name: 'A new meal' })
+  const meal = page.getByRole('dialog', { name: 'New meal' })
   await expect(meal).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(meal).toBeHidden()

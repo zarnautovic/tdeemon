@@ -35,7 +35,7 @@ test('a meal eaten at this hour before is suggested above the search, and logged
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('button', { name: 'Log a meal' })
     .click()
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   const cards = sheet.getByRole('region', { name: /^For / })
   await expect(cards.getByRole('button', { name: 'Repeat: Lentil soup' })).toHaveCount(0)
   await cards.getByRole('button', { name: 'Repeat: Chickpea curry' }).click()
@@ -55,7 +55,7 @@ test("the bar's + logs a meal over the foods, which stay, its toast the way to t
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('button', { name: 'Log a meal' })
     .click()
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   await sheet.getByRole('button', { name: 'An estimate', exact: true }).click()
   await sheet.getByLabel('What it is').fill('Flat white')
   await sheet.getByLabel('Energy (kcal)').fill('120')
@@ -80,7 +80,7 @@ test('on a phone the keyboard waits for a tap on the search', async ({ page }) =
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('button', { name: 'Log a meal' })
     .click()
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   const search = sheet.getByLabel('Find a food or a meal')
   await expect(sheet).toBeFocused()
   await expect(search).not.toBeFocused()
@@ -95,7 +95,7 @@ test.describe('on a desktop', () => {
   test('the search has the focus, opened by its key', async ({ page }) => {
     await signIn(page)
     await page.keyboard.press('n')
-    const sheet = page.getByRole('dialog', { name: 'A new meal' })
+    const sheet = page.getByRole('dialog', { name: 'New meal' })
     await expect(sheet.getByLabel('Find a food or a meal')).toBeFocused()
   })
 })
@@ -108,12 +108,12 @@ test('a food not found is made in a step of its own, and goes into the meal logg
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('button', { name: 'Log a meal' })
     .click()
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   await sheet.getByLabel('Find a food or a meal').fill('kefir')
   await expect(
-    sheet.getByText('Nothing of yours matches: give an estimate, or make a new food.'),
+    sheet.getByText('Nothing matches. Add an estimate, or make a new food.'),
   ).toBeVisible()
-  await sheet.getByRole('button', { name: 'A new food' }).click()
+  await sheet.getByRole('button', { name: 'New food' }).click()
 
   // In the search's place, with one button: the meal's is not there.
   await expect(sheet.getByRole('button', { name: 'Back to search' })).toBeVisible()

@@ -461,7 +461,7 @@ test('the notes for a coach are shown and saved, and the page and the list have 
   })
   // A toast says it is saved, and the field has the notes as the server
   // keeps them.
-  expect(await screen.findByText('The notes for your AI coach are saved')).toBeDefined()
+  expect(await screen.findByText('Notes for your AI coach saved')).toBeDefined()
   expect(screen.getByRole('textbox', { name: 'Notes for your AI coach' })).toHaveProperty(
     'value',
     'No lactose.\nKnees: no running.',
@@ -502,10 +502,10 @@ test('notes taken back by their toast are taken back in the field, and Save send
     target: { value: 'Knees: no running. No broccoli.' },
   })
   fireEvent.click(form.getByRole('button', { name: 'Save' }))
-  expect(await screen.findByText('The notes for your AI coach are saved')).toBeDefined()
+  expect(await screen.findByText('Notes for your AI coach saved')).toBeDefined()
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: the notes for your AI coach.')).toBeDefined()
+  expect(await screen.findByText('Undone: the notes for your AI coach.')).toBeDefined()
   await waitFor(() => {
     expect(form.getByRole('textbox')).toHaveProperty('value', 'Knees: no running.')
   })
@@ -550,7 +550,7 @@ test('notes typed after a save stay, though the save comes back', async () => {
   fireEvent.change(form.getByRole('textbox'), { target: { value: 'No lactose. No nuts.' } })
   answers[0]?.()
 
-  expect(await screen.findByText('The notes for your AI coach are saved')).toBeDefined()
+  expect(await screen.findByText('Notes for your AI coach saved')).toBeDefined()
   expect(form.getByRole('textbox')).toHaveProperty('value', 'No lactose. No nuts.')
 })
 
@@ -674,7 +674,7 @@ test('another is connected with the scopes picked, its key shown once and copied
   fireEvent.click(sheet.getByRole('button', { name: 'Create the access key' }))
 
   expect(await sheet.findByText('tdm_made_up')).toBeDefined()
-  expect(live.textContent).toBe('The access key, shown only now: copy it.')
+  expect(live.textContent).toBe("Your access key. It's shown only now, so copy it.")
   expect(server.sent['POST /api/v1/tokens']).toEqual([
     { name: 'Laptop', scopes: ['ingest', 'read'] },
   ])
@@ -755,7 +755,7 @@ test('a key the browser cannot copy is selected to copy by hand', async () => {
     await sheet.findByRole('button', { name: 'Copy: Header Authorization, with this value' }),
   )
   expect((await sheet.findByRole('alert')).textContent).toBe(
-    'Copying failed: it is selected, copy it by hand.',
+    "Couldn't copy. It's selected, so copy it by hand.",
   )
   expect(window.getSelection()?.toString()).toBe('Bearer tdm_made_up')
   Reflect.deleteProperty(navigator, 'clipboard')

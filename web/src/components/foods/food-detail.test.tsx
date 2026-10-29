@@ -172,7 +172,7 @@ test('a food says its energy, where it comes from, and what it brings for 100 g 
   expect(screen.getByText('80 g · 296 kcal')).toBeDefined()
   expect(screen.getByText('porridge oats')).toBeDefined()
   expect(screen.getByText('from the label')).toBeDefined()
-  expect(screen.getByText('a label')).toBeDefined()
+  expect(screen.getByText('Label')).toBeDefined()
   expect(await screen.findByText('14× · last Oct 21')).toBeDefined()
 })
 
@@ -230,7 +230,7 @@ test('Log 80 g opens the meal to log with the food in it, as it was eaten last',
 
   fireEvent.click(await screen.findByRole('button', { name: 'Log 80 g' }))
 
-  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'New meal' }))
   const basket = within(sheet.getByRole('list', { name: 'In the meal' })).getAllByRole('listitem')
   expect(basket.map((li) => li.textContent.replace('×', ''))).toEqual([
     'Rolled oats · 80 g · 296 kcal',
@@ -249,7 +249,7 @@ test('Log 80 g opens the meal to log with the food in it, as it was eaten last',
   ])
   // The food's page stays, the sheet closed.
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   expect(screen.getByRole('heading', { name: 'Rolled oats', level: 1 })).toBeDefined()
 })
@@ -266,7 +266,7 @@ test('a food archived says so, and its toast takes it back', async () => {
   expect(screen.queryByRole('button', { name: 'Log 80 g' })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: a food saved.')).toBeDefined()
+  expect(await screen.findByText('Undone: a food saved.')).toBeDefined()
   expect(server.sent.map((s) => s.body)).toEqual([
     { ...oats, archived: true },
     { id: expect.any(String) as unknown, last: { action: 'food.save', entity: id } },

@@ -47,6 +47,8 @@ function astray(texts: [string, string][], words: RegExp): string[] {
 test("the messages call the coach the AI coach, and the weight the weight's word", () => {
   expect(astray(textsOf(en), /\b(a coach|the coach|models?|AI clients?)\b/i)).toEqual([])
   expect(astray(textsOf(hr), /\b(coach\w*|model\w*|AI klijent\w*|težin\w*)/i)).toEqual([])
+  // A serving is a "mjera" in Croatian.
+  expect(astray(textsOf(hr), /\bserving\w*/i)).toEqual([])
 })
 
 // What a device or an AI coach signs in with is its access key, the
@@ -54,4 +56,34 @@ test("the messages call the coach the AI coach, and the weight the weight's word
 test('the messages call a token an access key', () => {
   expect(astray(textsOf(en), /\btokens?\b/i)).toEqual([])
   expect(astray(textsOf(hr), /\btoken\w*/i)).toEqual([])
+})
+
+// long are the keys of the texts with a sentence of more than 20 words.
+function long(texts: [string, string][]): string[] {
+  return texts
+    .filter(([, text]) =>
+      text.split(/(?<=[.?!])\s+/).some((sentence) => sentence.split(/\s+/).length > 20),
+    )
+    .map(([key]) => key)
+}
+
+// The voice (docs/conventions.md, "Words"): a sentence of 20 words at
+// most, but the list of Health Auto Export's metrics to tick, which are
+// its names.
+test('a sentence of a message is 20 words at most', () => {
+  expect(long(textsOf(en))).toEqual(['connect.hae.metrics'])
+  expect(long(textsOf(hr))).toEqual(['connect.hae.metrics'])
+})
+
+// counts are how many words each text has.
+function counts(texts: [string, string][]): number[] {
+  return texts.map(([, text]) => text.split(/\s+/).length)
+}
+
+// What is wrong with an amount or an estimate is said at its field, in
+// 15 words at most.
+test('what is wrong with an amount is said in 15 words at most', () => {
+  expect(
+    Math.max(...counts(textsOf(en.log.wrong)), ...counts(textsOf(hr.log.wrong))),
+  ).toBeLessThanOrEqual(15)
 })

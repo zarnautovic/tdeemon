@@ -709,10 +709,30 @@ the API's `locale`); English is the base.
     "access key" and "pristupni ključ", never a "token";
   - hunger goes up one kind of word: "full · a bit hungry · hungry ·
     very hungry · starving", "sit · malo gladan · gladan · jako gladan
-    · stalno gladan".
-
-  A text is short and warm: a sentence of about 15 words at most, a
-  button a verb and its object ("Log the meal", "Upiši obrok").
+    · stalno gladan";
+  - the day's check-in is "Check-in" in both languages, in its toast
+    and its undo too; a value given by eye is an "estimate" and a
+    "procjena"; a food's serving is a "serving" and a "mjera" (never
+    "serving" in Croatian).
+- **The voice is short and warm**, a person's, not the code's or a
+  lawyer's:
+  - a sentence has about 15 words, 20 at most, which
+    `src/i18n/messages.test.ts` holds the messages to (the list of
+    Health Auto Export's metrics to tick aside);
+  - what is wrong with a field is said at it, of it alone and in 15
+    words at most ("At most 10,000 g.", "Najviše 50 mjera."), never as
+    every rule at once;
+  - a button is a verb and its object ("Log the meal", "Upiši obrok");
+    a title or a toast says what it is, in English without an article
+    it does not need ("New meal", "Check-in saved", "Plan history");
+  - a hint says why, not how the code works ("Used to estimate how much
+    energy you burn");
+  - a colon introduces what it names (a list, a value, "Undone: a meal
+    deleted"); two thoughts are two sentences, not a colon between
+    them;
+  - undo is "Undo" and what it did "Undone", "Poništi" and "Poništeno";
+    a revision of the plan is taken back ("Take back", "Vrati"), which
+    is not an undo.
 - **Telegram's texts** (the morning summary, the alarms, the bot's
   commands, the hello of `user set-telegram`) are written on the
   server, in a map of each language (`morningWords`, `botWords`, the

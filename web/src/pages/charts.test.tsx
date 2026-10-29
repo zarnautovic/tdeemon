@@ -232,7 +232,7 @@ test('the progress says how the phase goes, then the charts and the weeks, over 
   // What was eaten against the TDEE comes to a sentence: 2,000 a day
   // against 2,400, 400 kcal a day, 2,800 a week, about 0.4 kg.
   expect(
-    within(tdee).getByText('You eat about 400 kcal under what you burn: about -0.4 kg a week.'),
+    within(tdee).getByText('You eat about 400 kcal under what you burn, about -0.4 kg a week.'),
   ).toBeDefined()
   // Each chart is drawn.
   await waitFor(() => {
@@ -284,7 +284,7 @@ test("the space between the TDEE and the 7 days' intake is shaded, and said, eit
 
   const tdee = await screen.findByRole('region', { name: 'TDEE and intake' }, { timeout: 10_000 })
   expect(
-    within(tdee).getByText('You eat about 300 kcal over what you burn: about +0.3 kg a week.'),
+    within(tdee).getByText('You eat about 300 kcal over what you burn, about +0.3 kg a week.'),
   ).toBeDefined()
   expect(within(tdee).getByText('Eaten to TDEE, 7-day average')).toBeDefined()
 })
@@ -343,7 +343,7 @@ async function calibration() {
 // A TDEE measured but not reliable yet: what it needs to be, a sentence
 // for each doubt, by the summary's own thresholds.
 test.each([
-  ['wide_interval', 'It is once ± is 200 or less; weighing in 3× a week helps most.'],
+  ['wide_interval', 'Reliable once ± is 200 or less. Weighing in 3× a week helps most.'],
   ['few_weigh_ins', 'It needs 3 weigh-ins a week, in the last week too.'],
   ['few_logged_days', 'It needs 4 logged days a week, in the last week too.'],
 ])('a TDEE not reliable yet for %s says what it needs', async (doubt, said) => {
@@ -387,7 +387,7 @@ test('a threshold of the user’s own is said as the summary gives it', async ()
   const card = await calibration()
   expect(
     within(card).getByText(
-      'It needs 1 weigh-in a week, in the last week too. It is once ± is 150 or less; weighing in 1× a week helps most.',
+      'It needs 1 weigh-in a week, in the last week too. Reliable once ± is 150 or less. Weighing in 1× a week helps most.',
     ),
   ).toBeDefined()
 })
@@ -506,7 +506,7 @@ test('a new phase says until when the TDEE is from the days before it', async ()
   const verdict = await hero()
   expect(within(verdict).getByText('Not enough data yet.')).toBeDefined()
   expect(
-    within(verdict).getByText('New phase: until Nov 21 the TDEE is from the days before it.'),
+    within(verdict).getByText('New phase. Until Nov 21 the TDEE comes from the days before it.'),
   ).toBeDefined()
   expect(within(verdict).getByText('From before the phase')).toBeDefined()
 })

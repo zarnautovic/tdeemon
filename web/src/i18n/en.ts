@@ -47,16 +47,16 @@ export const en = {
     moved: (day: string) => `Moved to ${day}`,
     movedToday: 'Moved to today',
     deleted: (what: string) => `Deleted: ${what}`,
-    checkIn: 'The check-in is saved',
-    dayNote: "The day's note is saved",
-    dayType: "The day's type is saved",
-    excluded: 'The day is left out of calibration',
-    included: 'The day is counted in calibration again',
+    checkIn: 'Check-in saved',
+    dayNote: 'Note saved',
+    dayType: 'Day type saved',
+    excluded: 'Day left out of calibration',
+    included: 'Day back in calibration',
     saved: 'Saved',
     savedOf: (what: string) => `Saved: ${what}`,
     archived: (food: string) => `Archived: ${food}`,
     inUse: (food: string) => `In use again: ${food}`,
-    notes: 'The notes for your AI coach are saved',
+    notes: 'Notes for your AI coach saved',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',
@@ -164,13 +164,14 @@ export const en = {
     unsure: (kcal: string, half: string) => `TDEE ≈ ${kcal} ± ${half} · not reliable yet.`,
     doubts: {
       wide_interval: (half: string, weighIns: string) =>
-        `It is once ± is ${half} or less; weighing in ${weighIns}× a week helps most.`,
+        `Reliable once ± is ${half} or less. Weighing in ${weighIns}× a week helps most.`,
       few_weigh_ins: (weighIns: string, count: number) =>
         `It needs ${weighIns} ${plural('en', count, { one: 'weigh-in', other: 'weigh-ins' })} a week, in the last week too.`,
       few_logged_days: (days: string, count: number) =>
         `It needs ${days} logged ${plural('en', count, { one: 'day', other: 'days' })} a week, in the last week too.`,
     },
-    beforePhase: (date: string) => `New phase: until ${date} the TDEE is from the days before it.`,
+    beforePhase: (date: string) =>
+      `New phase. Until ${date} the TDEE comes from the days before it.`,
   },
   // What a number is, an ⓘ beside it away (InfoTip): the ⓘ's name, the
   // number's, and two or three sentences, from DESIGN.md §7 in plain
@@ -184,7 +185,7 @@ export const en = {
     trusted: {
       label: 'What reliable means',
       title: 'Reliable',
-      text: 'Reliable means the ± is 200 kcal or less, with data enough behind it: 4 logged days and 3 weigh-ins in every week, the last one too. Until then TDEE is a first estimate, and the phase gets no verdict.',
+      text: 'Reliable means the ± is 200 kcal or less. It also needs 4 logged days and 3 weigh-ins every week, the last one too. Until then TDEE is a first estimate, and the phase gets no verdict.',
     },
     trend: {
       label: 'What trend weight is',
@@ -204,7 +205,7 @@ export const en = {
     verdict: {
       label: 'How the phase is judged',
       title: 'The verdict',
-      text: "The verdict compares how fast your trend weight really changes with the phase's range. It comes only once TDEE is reliable and measured from the phase's own days, and only then proposes a change of the target.",
+      text: "The verdict compares how fast your trend weight really changes with the phase's range. It comes once TDEE is reliable and measured from the phase's own days. Only then does it propose a new target.",
     },
   },
   day: {
@@ -254,7 +255,7 @@ export const en = {
       setPlan: 'Set up a plan',
       // A day before the plan's first target, which says when it starts;
       // a plan of phases that has no target yet.
-      startsOn: (date: string) => `No target on this day: the plan starts on ${date}.`,
+      startsOn: (date: string) => `No target on this day. The plan starts on ${date}.`,
       noTargetYet: 'The plan gives no target yet.',
       seePlan: 'See the plan',
       weekOf: (n: number, of: number) => `week ${String(n)} of ${String(of)}`,
@@ -294,8 +295,8 @@ export const en = {
       budgetToday: (kcal: string) => `Today you can eat ${kcal} and stay on your weekly target.`,
       // Past the plan's kcal floor: the day's target, not less.
       keep: (kcal: string) =>
-        `The week is ${kcal} over its target: keep to your day's target until Sunday.`,
-      keepToday: (kcal: string) => `The week is ${kcal} over its target: keep to today's target.`,
+        `The week is ${kcal} over target. Stick to your daily target until Sunday.`,
+      keepToday: (kcal: string) => `The week is ${kcal} over target. Stick to today's target.`,
       legendTarget: 'target',
       legendAverage: 'average',
     },
@@ -346,7 +347,7 @@ export const en = {
     calibration: 'Calibration',
     inCalibration: 'Counted in calibration',
     calibrationHint:
-      'Calibration measures your TDEE from the days it counts: leave out one you could not log well.',
+      "Calibration measures your TDEE from the days it counts. Leave out a day you couldn't log well.",
     leaveOut: 'Leave out of calibration',
     body: {
       title: 'Body today',
@@ -407,17 +408,17 @@ export const en = {
     portions: (n: number) => plural('en', n, { one: 'portion', other: 'portions' }),
     save: 'Save the meal',
     cancel: 'Cancel',
-    oneItem: 'A meal keeps at least one item: delete the meal instead.',
+    oneItem: 'A meal needs at least one item. Delete the meal instead.',
     delete: 'Delete the meal',
     refused: 'The server did not take this change.',
-    recomputed: 'A changed amount is worked out from the food as it is now.',
+    recomputed: "A changed amount uses the food's current values.",
     note: 'Note',
     add: 'Add to the meal',
     addNote: 'Add a note',
     changeNote: 'Change the note',
     day: 'Day',
     yesterday: 'Yesterday',
-    timeToCome: 'That time is still to come: a meal is logged once eaten.',
+    timeToCome: "That time hasn't come yet. Log a meal once it's eaten.",
     anotherFood: (name: string) => `Another food in place of: ${name}`,
     // An item's menu of the ways to change it but its amount, and the
     // visible words of its choices, named in full above.
@@ -427,7 +428,7 @@ export const en = {
     inPlaceOf: (name: string) => `In place of ${name}:`,
     findInPlaceOf: (name: string) => `A food of yours in place of ${name}`,
     saveAsFood: (name: string) => `Save as a food of yours: ${name}`,
-    asFood: 'Saved as a food of yours, a portion of it eaten.',
+    asFood: 'Saved as your food, one portion eaten.',
     asFoodShort: 'Save as a food',
     editTitle: 'Change the meal',
     itemsTitle: 'Items',
@@ -448,7 +449,7 @@ export const en = {
       sugars: 'Sugars are more than all the carbs.',
       polyols: 'Polyols are more than all the carbs.',
       duplicate_meal:
-        'A meal with the same items was logged just before: if this one was sent twice, delete it.',
+        'A meal with the same items was logged just before. If this one was sent twice, delete it.',
       food_kept: 'A food of yours was logged with its own values, not those sent.',
     },
   },
@@ -461,7 +462,7 @@ export const en = {
       dinner: 'Add dinner',
     },
     left: (kcal: string) => `${kcal} kcal left`,
-    title: 'A new meal',
+    title: 'New meal',
     // When the meal is: "Snack · today at 16:10".
     when: (slot: string, day: string, time: string) => `${slot} · ${day} at ${time}`,
     today: 'today',
@@ -475,9 +476,9 @@ export const en = {
     find: 'Find a food of yours',
     findHint: 'A name, a brand or another name',
     search: 'Find a food or a meal',
-    noFood: 'No food of yours matches: give it as an estimate.',
-    nothing: 'Nothing of yours matches: give an estimate, or make a new food.',
-    none: 'Nothing logged yet: find a food, or give an estimate.',
+    noFood: 'No food of yours matches. Add it as an estimate.',
+    nothing: 'Nothing matches. Add an estimate, or make a new food.',
+    none: 'Nothing added yet. Find a food, or add an estimate.',
     lists: 'Show',
     list: { all: 'All', recent: 'Recent', frequent: 'Frequent', meals: 'Meals' },
     results: 'What there is to add',
@@ -497,7 +498,7 @@ export const en = {
       dinner: 'For dinner',
     },
     anEstimateOf: 'An estimate',
-    newFood: 'A new food',
+    newFood: 'New food',
     back: 'Back to search',
     addToMeal: 'Add to meal',
     // The amount of a food made in the meal, eaten now, in its unit.
@@ -506,8 +507,6 @@ export const en = {
       '100ml': 'Eaten now (ml)',
       portion: 'Eaten now (portions)',
     },
-    amountWrong: (most: { amount: string; portions: string }) =>
-      `An amount is more than 0 and at most ${most.amount} g or ml, or ${most.portions} portions.`,
     basket: 'In the meal',
     empty: 'Pick a food, or repeat a meal.',
     after: (kcal: string) => `after: ${kcal} kcal left`,
@@ -521,8 +520,22 @@ export const en = {
     portions: (n: number) => plural('en', n, { one: 'portion', other: 'portions' }),
     remove: (name: string) => `Remove: ${name}`,
     anEstimate: 'an estimate',
-    wrong: (most: { amount: string; servings: string; portions: string; kcal: string }) =>
-      `An amount is more than 0 and at most ${most.amount} g or ml, ${most.servings} servings or ${most.portions} portions; an estimate has a name and its values, such as 72.5, and at most ${most.kcal} kcal.`,
+    // Why an amount or an estimate cannot be logged, said at its field:
+    // the most in a unit is a function of it and its count.
+    wrong: {
+      number: 'Write a number, such as 72.5.',
+      none: 'The amount must be more than 0.',
+      name: 'Give the estimate a name.',
+      most: {
+        g: (n: string) => `At most ${n} g.`,
+        ml: (n: string) => `At most ${n} ml.`,
+        serving: (n: string, count: number) =>
+          `At most ${n} ${plural('en', count, { one: 'serving', other: 'servings' })}.`,
+        portion: (n: string, count: number) =>
+          `At most ${n} ${plural('en', count, { one: 'portion', other: 'portions' })}.`,
+        kcal: (n: string) => `At most ${n} kcal.`,
+      },
+    },
     save: 'Log the meal',
     cancel: 'Cancel',
     refused: (detail: string) => `The server did not take this meal: ${detail}`,
@@ -538,11 +551,11 @@ export const en = {
     },
   },
   undo: {
-    done: (what: string) => `Taken back: ${what}.`,
-    nothing: 'There is no change to take back.',
-    clash: 'It cannot be taken back: what came since clashes with it.',
-    notLatest: 'Another change came since, so nothing was taken back.',
-    failed: (why: string) => `Not taken back: ${why}`,
+    done: (what: string) => `Undone: ${what}.`,
+    nothing: 'Nothing to undo.',
+    clash: "A later change is in the way, so this can't be undone.",
+    notLatest: 'Another change came first, so nothing was undone.',
+    failed: (why: string) => `Not undone. ${why}`,
     // What a change taken back did, by its action.
     actions: {
       'food.save': 'a food saved',
@@ -599,7 +612,7 @@ export const en = {
     // before.
     by: (when: string, who: string) => `${when} · ${who}`,
     at: (day: string, time: string) => `${day}, ${time}`,
-    undone: 'Taken back',
+    undone: 'Undone',
     undoOf: (what: string) => `Undo: ${what}`,
   },
   foods: {
@@ -620,7 +633,7 @@ export const en = {
     earlier: 'Earlier',
     none: 'No foods yet. They appear when your AI coach logs a meal, or add one here.',
     noneArchived: 'No archived foods.',
-    noneEstimates: 'No estimates: the values of every food in use are from a label or you.',
+    noneEstimates: 'No estimates. Every food in use has values from a label or from you.',
     noMatch: 'No food matches.',
     found: 'Found',
     more: 'Show more',
@@ -670,7 +683,7 @@ export const en = {
     takeKcal: (kcal: string) => `Use ${kcal} kcal`,
     back: 'Back to the foods',
     notFound: 'There is no such food.',
-    newTitle: 'A new food',
+    newTitle: 'New food',
     name: 'Name',
     brand: 'Brand',
     basis: 'The values are',
@@ -701,14 +714,13 @@ export const en = {
     alias: (n: number) => `Other name ${String(n)}`,
     addAlias: 'Add another name',
     removeAlias: (name: string) => (name ? `Remove the name: ${name}` : 'Remove the name'),
-    source: 'The values are from',
-    sources: { label: 'a label', estimate: 'an estimate', user: 'me', dish: 'a dish' },
+    source: 'Values from',
+    sources: { label: 'Label', estimate: 'Estimate', user: 'Me', dish: 'Dish' },
     note: 'Note',
     save: 'Save the food',
     archive: 'Archive',
     unarchive: 'Bring back',
-    archivedNote:
-      'Archived: only a search of the archived foods finds it, and its names stay taken.',
+    archivedNote: 'Archived. Find it among the archived foods; its names stay taken.',
     needed: 'Needed.',
     negative: 'It cannot be less than 0.',
     // A serving's name, or another name, the same as one above it, whatever
@@ -781,9 +793,9 @@ export const en = {
     // week."
     balance: {
       under: (kcal: string, kg: string) =>
-        `You eat about ${kcal} kcal under what you burn: about ${kg} kg a week.`,
+        `You eat about ${kcal} kcal under what you burn, about ${kg} kg a week.`,
       over: (kcal: string, kg: string) =>
-        `You eat about ${kcal} kcal over what you burn: about ${kg} kg a week.`,
+        `You eat about ${kcal} kcal over what you burn, about ${kg} kg a week.`,
       even: 'You eat about what you burn: your weight holds.',
     },
     eaten: (kcal: string, days: number) =>
@@ -867,7 +879,7 @@ export const en = {
         no_phase: 'A phase of the plan sets the rate the weight is judged by.',
         no_target: 'The phase is judged once the plan has a target of kcal.',
         before_phase:
-          'The phase is new: until its own days are enough, the TDEE is of the days before it.',
+          'The phase is new. Until it has enough days of its own, the TDEE comes from the days before it.',
         no_tdee: 'The TDEE came out at 0 or less: are the meals all logged?',
       },
       tdee: (kcal: string, half: string) => `TDEE ${kcal} ± ${half} kcal`,
@@ -900,7 +912,7 @@ export const en = {
   settings: {
     title: 'Settings',
     appearance: 'Appearance',
-    appearanceHint: 'For this browser only: a phone can be dark and a laptop light.',
+    appearanceHint: 'For this browser only, so a phone can be dark and a laptop light.',
     themes: {
       system: 'System',
       light: 'Light',
@@ -927,8 +939,7 @@ export const en = {
     notesPlaceholder: 'Knees: no running. No lactose.',
     noNotes: 'None yet',
     devices: 'Devices and AI coaches',
-    devicesHint:
-      'A device or an AI coach signs in with an access key of its own: a phone that sends its health data, an AI coach through MCP.',
+    devicesHint: 'Each device and AI coach signs in with its own access key.',
     devicesSummary: (n: number) =>
       n === 0
         ? 'None yet'
@@ -947,14 +958,14 @@ export const en = {
       tools: 'Reads and logs',
     },
     create: 'Create the access key',
-    created: 'The access key, shown only now: copy it.',
+    created: "Your access key. It's shown only now, so copy it.",
     copy: 'Copy',
     // A button that copies what its label names, among others; and once
     // it has.
     copyOf: (what: string) => `Copy: ${what}`,
     copiedOf: (what: string) => `Copied: ${what}`,
     copied: 'Copied',
-    copyFailed: 'Copying failed: it is selected, copy it by hand.',
+    copyFailed: "Couldn't copy. It's selected, so copy it by hand.",
     done: 'Done',
     lastUsed: (when: string) => `Last used ${when}`,
     neverUsed: 'Not used yet',
@@ -989,8 +1000,7 @@ export const en = {
     claudeCode: 'Claude Code: run this in a terminal',
     claudeDesktop:
       'Claude Desktop: add this to its claude_desktop_config.json, through mcp-remote, and restart it.',
-    chatGpt:
-      'ChatGPT signs in to a server with OAuth, not a key, which tdeemon does not offer yet.',
+    chatGpt: "ChatGPT signs in with OAuth, not a key, and tdeemon doesn't offer that yet.",
     first: 'Then write to your AI coach',
     message: 'Look at my data and propose a plan.',
     hae: {
@@ -1032,9 +1042,9 @@ export const en = {
     title: 'Plan',
     you: 'You and limits',
     profile: 'Profile',
-    profileHint: 'A plan needs all of it, logging none of it. A field left empty is cleared.',
+    profileHint: "A plan needs all of these; logging meals doesn't. Clear a field to remove it.",
     sex: 'Sex',
-    sexHint: 'The one the energy equations take.',
+    sexHint: 'Used to estimate how much energy you burn.',
     sexes: { male: 'Male', female: 'Female' },
     noSex: 'Not given',
     birthDate: 'Birth date',
@@ -1195,18 +1205,17 @@ export const en = {
         trusted: (kcal: string, pm: string) => `Its TDEE, ${kcal} ± ${pm} kcal, is reliable.`,
         notTrusted: (kcal: string) => `Its TDEE, about ${kcal} kcal, is not reliable yet.`,
         noTdee: 'No TDEE measured yet.',
-        inRange: "The pace is in range: the data alone don't ask for this change.",
+        inRange: "The pace is in range, so the data alone don't ask for this change.",
         more: 'The data point the other way: they ask for more kcal, not fewer.',
         fewer: 'The data point the other way: they ask for fewer kcal, not more.',
       },
       accept: 'Accept',
       reject: 'Reject',
       sending: 'Sending…',
-      gone: 'The proposal waits no more: the plan changed, or it expired.',
+      gone: 'This proposal is no longer open. The plan changed, or it expired.',
       refusedNow: 'The limits refuse it now:',
       failed: 'It did not go through. Try again.',
-      stale:
-        'It cannot be applied any more: a change of it would now start before today. Ask for a new one.',
+      stale: "It can't be applied anymore, as it would now start before today. Ask for a new one.",
       limitsHere:
         'A change of your limits is accepted only here, in the app, never by your AI coach.',
       average: (from: string, kcal: string) => `From ${from}: ${kcal} kcal a day on average`,
@@ -1288,7 +1297,7 @@ export const en = {
         range: (min: string, max: string) => `From ${min} to ${max}.`,
         over: 'Protein and fat give more kcal than the day has.',
         endBefore: 'Before the phase starts.',
-        endPast: 'Before today: the days gone stay as they were.',
+        endPast: 'Before today. Past days stay as they were.',
         startAfter: (date: string) => `After ${date}.`,
         startPast: 'Today or later.',
       },
@@ -1304,7 +1313,7 @@ export const en = {
       saved: { phase: 'Phase changed', next: 'Next phase planned', targets: 'Targets changed' },
     },
     revisions: {
-      title: 'History of the plan',
+      title: 'Plan history',
       none: 'No change of the plan yet.',
       applied: (date: string, who: string) => `${date}, by ${who}`,
       reverted: 'Taken back',
@@ -1315,7 +1324,7 @@ export const en = {
       yes: 'Take back',
       no: 'Keep it',
       cannot:
-        'This change cannot be taken back any more: it took effect, or the plan changed since. Ask for a new change instead.',
+        "This change can't be taken back anymore. It took effect, or the plan changed since. Ask for a new change.",
     },
     rules: {
       profile_missing: 'a plan needs your profile',
@@ -1349,11 +1358,11 @@ export const en = {
     // is advised, and why it matters.
     warnings: {
       below_bmr: (value: string, threshold: string) =>
-        `Below your resting burn (${value} kcal, your BMR is about ${threshold}): fine for a while, hard to keep up for long.`,
+        `Below your resting burn (${value} kcal, BMR about ${threshold}). Fine for a while, but hard to keep up.`,
       low_energy_availability: (value: string, threshold: string) =>
-        `Low energy for your lean mass (${value} kcal/kg, at least ${threshold} advised): over time it can tire you and slow recovery.`,
+        `Low energy for your lean mass (${value} kcal/kg, at least ${threshold} advised). Over time it can tire you and slow recovery.`,
       low_carbs: (value: string, threshold: string) =>
-        `Few carbs (${value} g, at least ${threshold} g advised): fine if you choose it, but training may feel harder.`,
+        `Few carbs (${value} g, at least ${threshold} g advised). Fine if you choose it, but training may feel harder.`,
     },
   },
   notFound: {

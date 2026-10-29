@@ -188,7 +188,7 @@ test("a repeat's toast takes the repeat back, and no other change", async () => 
   fireEvent.click(await screen.findByRole('button', { name: 'Undo' }))
 
   // Taken back on today, which yesterday's page does not show.
-  expect(await screen.findByText('Taken back: a meal logged.')).toBeDefined()
+  expect(await screen.findByText('Undone: a meal logged.')).toBeDefined()
   expect(screen.getByRole('link', { name: 'See it today' })).toBeDefined()
   expect(undos).toEqual([
     {

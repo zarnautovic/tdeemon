@@ -226,69 +226,105 @@ export function quantityIn(unit: string, n: number): ItemInput {
   return { amount: n, unit: unit === 'ml' ? 'ml' : 'g' }
 }
 
-// tooMuch tells n of food in unit (unitsOf) past what an item may hold
-// (limits.json, the server's): grams or ml past the most, servings past
-// the most of them or of their grams, portions past the most, as the
-// grams of a food by the portion may be too. Of a food not known yet,
-// the count alone.
-export function tooMuch(food: Food | undefined, unit: string, n: number): boolean {
+// A Wrong is why an entry cannot be sent, as its field says it: an
+// amount or a value that is not a number, an amount of 0 or less, an
+// estimate without a name, or past the most an item may hold
+// (limits.json, the server's) in a unit: grams, millilitres, servings,
+// portions, or an estimate's kcal.
+export type Wrong =
+  | { kind: 'number' | 'none' | 'name' }
+  | { kind: 'most'; most: number; unit: 'g' | 'ml' | 'serving' | 'portion' | 'kcal' }
+
+// amountWrong is what is wrong with n of food in unit (unitsOf), if
+// anything: 0 or less, grams or ml past the most, servings past the most
+// of them or of their grams, portions past the most, as the grams of a
+// food by the portion may be too. Of a food not known yet, the count
+// alone.
+export function amountWrong(food: Food | undefined, unit: string, n: number): Wrong | undefined {
   const { maxAmount, maxServings, maxPortions } = limits.meal
+  if (n <= 0) {
+    return { kind: 'none' }
+  }
   if (servingOf(unit) !== undefined) {
     const grams = food && unitGrams(food, unit)
-    return n > maxServings || (grams !== undefined && n * grams > maxAmount)
+    const most = grams === undefined ? maxServings : Math.min(maxServings, maxAmount / grams)
+    return n > most ? { kind: 'most', most: Math.floor(most), unit: 'serving' } : undefined
   }
   if (unit === 'portion') {
-    return n > maxPortions
+    return n > maxPortions ? { kind: 'most', most: maxPortions, unit: 'portion' } : undefined
   }
+  const own = unit === 'ml' ? 'ml' : 'g'
   if (n > maxAmount) {
-    return true
+    return { kind: 'most', most: maxAmount, unit: own }
   }
-  return food?.basis === 'portion' && food.portion_grams !== undefined
-    ? n / food.portion_grams > maxPortions
-    : false
+  if (food?.basis === 'portion' && food.portion_grams !== undefined) {
+    const most = maxPortions * food.portion_grams
+    return n > most ? { kind: 'most', most, unit: own } : undefined
+  }
+  return undefined
 }
 
-// most is what an item may hold at most (limits.json), each number as
-// number says it, for a message to say.
-export function most(number: (n: number) => string) {
-  const { maxAmount, maxServings, maxPortions, maxEstimateKcal } = limits.meal
-  return {
-    amount: number(maxAmount),
-    servings: number(maxServings),
-    portions: number(maxPortions),
-    kcal: number(maxEstimateKcal),
-  }
-}
-
-// itemOf is the item an entry sends, with parse reading its numbers; or
-// undefined when one is not a number, a food's amount is 0 or more than
-// an item may hold (tooMuch), or the estimate has no name or more energy
+// entryWrong is what is wrong with an entry, with parse reading its
+// numbers, if anything: a food's amount (amountWrong), or an estimate
+// without a name, with a value that is not a number, or with more energy
 // than one may have.
+export function entryWrong(
+  entry: Entry,
+  parse: (s: string) => number | undefined,
+): Wrong | undefined {
+  if (entry.kind === 'food') {
+    const n = entry.exact ?? parse(entry.amount)
+    return n === undefined ? { kind: 'number' } : amountWrong(entry.food, entry.unit, n)
+  }
+  if (entry.name.trim() === '') {
+    return { kind: 'name' }
+  }
+  const kcal = parse(entry.kcal)
+  if (
+    kcal === undefined ||
+    [entry.protein, entry.carbs, entry.fat].some((v) => parse(v) === undefined)
+  ) {
+    return { kind: 'number' }
+  }
+  const most = limits.meal.maxEstimateKcal
+  return kcal > most ? { kind: 'most', most, unit: 'kcal' } : undefined
+}
+
+// sayWrong is what w says at its field, its numbers as number says them.
+export function sayWrong(w: Wrong, t: Messages, number: (n: number) => string): string {
+  return w.kind === 'most' ? t.log.wrong.most[w.unit](number(w.most), w.most) : t.log.wrong[w.kind]
+}
+
+// entryItem is the item an entry sends, with parse reading its numbers,
+// or what is wrong with it (entryWrong).
+export function entryItem(
+  entry: Entry,
+  parse: (s: string) => number | undefined,
+): { item: ItemInput } | { wrong: Wrong } {
+  const wrong = entryWrong(entry, parse)
+  if (wrong !== undefined) {
+    return { wrong }
+  }
+  if (entry.kind === 'food') {
+    const n = entry.exact ?? parse(entry.amount)
+    return n === undefined
+      ? { wrong: { kind: 'number' } }
+      : { item: { id: entry.key, food_id: entry.food.id, ...quantityIn(entry.unit, n) } }
+  }
+  const nutrients = entryValues(entry, parse)
+  return nutrients === undefined
+    ? { wrong: { kind: 'number' } }
+    : { item: { id: entry.key, name: entry.name.trim(), nutrients } }
+}
+
+// itemOf is the item an entry sends, or undefined when something is
+// wrong with it (entryItem).
 export function itemOf(
   entry: Entry,
   parse: (s: string) => number | undefined,
 ): ItemInput | undefined {
-  if (entry.kind === 'food') {
-    const n = entry.exact ?? parse(entry.amount)
-    if (n === undefined || n <= 0 || tooMuch(entry.food, entry.unit, n)) {
-      return undefined
-    }
-    return { id: entry.key, food_id: entry.food.id, ...quantityIn(entry.unit, n) }
-  }
-  const values = [entry.kcal, entry.protein, entry.carbs, entry.fat].map(parse)
-  const [kcal, protein, carbs, fat] = values
-  const name = entry.name.trim()
-  if (
-    name === '' ||
-    kcal === undefined ||
-    protein === undefined ||
-    carbs === undefined ||
-    fat === undefined ||
-    kcal > limits.meal.maxEstimateKcal
-  ) {
-    return undefined
-  }
-  return { id: entry.key, name, nutrients: { kcal, protein, carbs, fat } }
+  const checked = entryItem(entry, parse)
+  return 'item' in checked ? checked.item : undefined
 }
 
 // An amount is how much of an item was given, as it was given (grams,

@@ -80,7 +80,7 @@ test('Ctrl+Z takes back the latest change, and says which', async ({ page }) => 
 
   await page.keyboard.press('Control+z')
 
-  await expect(page.getByText('Taken back: a meal logged.')).toBeVisible()
+  await expect(page.getByText('Undone: a meal logged.')).toBeVisible()
   await expect(page.getByRole('article', { name })).toHaveCount(0)
 })
 
@@ -138,7 +138,7 @@ test('the arrows move between the meals, Enter changes one, R repeats it and Del
     .getByRole('region', { name: 'Notifications' })
     .getByRole('button', { name: 'Undo' })
     .click()
-  await expect(page.getByText('Taken back: a meal deleted.')).toBeVisible()
+  await expect(page.getByText('Undone: a meal deleted.')).toBeVisible()
   await expect(repeats).toHaveCount(2)
 })
 
@@ -150,7 +150,7 @@ test('after N and a meal logged, the focus is on its row', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 
   await page.keyboard.press('n')
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   await sheet.getByRole('button', { name: `Repeat: ${name}` }).click()
 
   await expect(sheet).toBeHidden()

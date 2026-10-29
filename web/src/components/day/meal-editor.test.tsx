@@ -330,7 +330,7 @@ test('a meal is not left without items', async () => {
   await edit()
   await removeItems(['Oats', 'Banana bread', 'Egg', 'Salad from the canteen'])
 
-  expect(meal().getByText('A meal keeps at least one item: delete the meal instead.')).toBeDefined()
+  expect(meal().getByText('A meal needs at least one item. Delete the meal instead.')).toBeDefined()
   expect(meal().getByRole('button', { name: 'Save the meal' }).hasAttribute('disabled')).toBe(true)
 })
 
@@ -373,12 +373,14 @@ test("an item's amount of 0, or past what the server takes, is not sent", async 
   fireEvent.change(meal().getByLabelText('Amount: Banana bread'), { target: { value: '0' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
-  expect(meal().getByRole('alert').textContent).toBe(
-    'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
-  )
+  // The first item's, in its unit; then, that one put right, the next's.
+  expect(meal().getByRole('alert').textContent).toBe('At most 10,000 g.')
   expect(meal().getByLabelText('Amount: Oats').getAttribute('aria-invalid')).toBe('true')
   expect(meal().getByLabelText('Amount: Banana bread').getAttribute('aria-invalid')).toBe('true')
   expect(meal().getByLabelText('Amount: Egg').getAttribute('aria-invalid')).toBe('false')
+  fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '90' } })
+  fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
+  expect(meal().getByRole('alert').textContent).toBe('The amount must be more than 0.')
   expect(server.sent).toEqual([])
 })
 
@@ -403,7 +405,7 @@ test("the server's warnings of a change are said in the app's words", async () =
   expect(await screen.findByText('Changed: Breakfast')).toBeDefined()
   expect(
     screen.getByText(
-      'A meal with the same items was logged just before: if this one was sent twice, delete it.',
+      'A meal with the same items was logged just before. If this one was sent twice, delete it.',
     ),
   ).toBeDefined()
 })
@@ -485,7 +487,7 @@ test('a meal is deleted at once, and its toast takes the delete back', async () 
   expect(await screen.findByText('Deleted: Breakfast')).toBeDefined()
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  expect(await screen.findByText('Undone: a meal deleted.')).toBeDefined()
   // Only the delete, while it is the latest change, under the toast's id.
   expect(undos).toEqual([
     { id: expect.any(String) as unknown, last: { action: 'meal.delete', entity: mealId } },
@@ -524,7 +526,7 @@ test("an item removed is brought back by its change's toast", async () => {
   })
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: a meal changed.')).toBeDefined()
+  expect(await screen.findByText('Undone: a meal changed.')).toBeDefined()
   expect(await meal().findByText('Egg')).toBeDefined()
   expect(undos).toEqual([
     { id: expect.any(String) as unknown, last: { action: 'meal.replace', entity: mealId } },
@@ -830,7 +832,7 @@ test('an item removed here and elsewhere leaves the meal its others', async () =
   await waitFor(() => {
     expect(meal().queryByText('Egg')).toBeNull()
   })
-  expect(meal().queryByText('A meal keeps at least one item: delete the meal instead.')).toBeNull()
+  expect(meal().queryByText('A meal needs at least one item. Delete the meal instead.')).toBeNull()
   expect(meal().getByRole('button', { name: 'Save the meal' }).hasAttribute('disabled')).toBe(false)
 })
 
@@ -995,7 +997,7 @@ test('a try again keeps the meal its one item', async () => {
   expect(
     fetch.mock.calls.filter(([r]) => r instanceof Request && r.method === 'PATCH'),
   ).toHaveLength(1)
-  expect(meal().getByText('A meal keeps at least one item: delete the meal instead.')).toBeDefined()
+  expect(meal().getByText('A meal needs at least one item. Delete the meal instead.')).toBeDefined()
 })
 
 test('an item of another food now starts its field as it is now', async () => {
@@ -1180,13 +1182,13 @@ test('a time still to come is not sent: a meal is logged once eaten', async () =
     fireEvent.change(meal().getByLabelText('Time'), { target: { value: '12:00' } })
     fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
     expect((await meal().findByRole('alert')).textContent).toBe(
-      'That time is still to come: a meal is logged once eaten.',
+      "That time hasn't come yet. Log a meal once it's eaten.",
     )
     expect(meal().getByLabelText('Time').getAttribute('aria-invalid')).toBe('true')
     fireEvent.change(meal().getByLabelText('Time'), { target: { value: '02:30' } })
     fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
     expect(meal().getByRole('alert').textContent).toBe(
-      'That time is still to come: a meal is logged once eaten.',
+      "That time hasn't come yet. Log a meal once it's eaten.",
     )
     expect(server.sent).toEqual([])
     // A time already gone is sent.
@@ -1323,11 +1325,7 @@ test('an item added that cannot be sent as it is holds the meal back', async () 
   fireEvent.click(meal().getByRole('button', { name: 'Add an estimate' }))
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
-  expect(
-    await meal().findByText(
-      'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
-    ),
-  ).toBeDefined()
+  expect(await meal().findByText('Give the estimate a name.')).toBeDefined()
   expect(server.sent).toEqual([])
   // Removed, it holds nothing back.
   fireEvent.click(meal().getByRole('button', { name: 'Remove: an estimate' }))
@@ -1972,11 +1970,7 @@ test('another food of no amount holds the meal back', async () => {
   fireEvent.change(meal().getByLabelText('Amount: Rye bread'), { target: { value: '0' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
-  expect(
-    await meal().findByText(
-      'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
-    ),
-  ).toBeDefined()
+  expect(await meal().findByText('The amount must be more than 0.')).toBeDefined()
   expect(server.sent).toEqual([])
 })
 
@@ -1987,7 +1981,7 @@ test("an estimate is saved as a food of the user's, a portion of it, as it is ty
 
   await edit()
   await saveAsFood('Salad from the canteen')
-  expect(meal().getByText('Saved as a food of yours, a portion of it eaten.')).toBeDefined()
+  expect(meal().getByText('Saved as your food, one portion eaten.')).toBeDefined()
   expect(
     (await itemMenu('Salad from the canteen'))
       .getByRole('menuitemcheckbox', { name: 'Save as a food of yours: Salad from the canteen' })
@@ -2039,7 +2033,7 @@ test('an estimate saved as a food and taken back sends nothing', async () => {
       .getAttribute('aria-checked'),
   ).toBe('false')
   fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
-  expect(meal().queryByText('Saved as a food of yours, a portion of it eaten.')).toBeNull()
+  expect(meal().queryByText('Saved as your food, one portion eaten.')).toBeNull()
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   await waitFor(() => {
@@ -2174,14 +2168,14 @@ test('an estimate saved as a food is found by the next search of a meal to log',
   fireEvent.click(
     await within(await screen.findByRole('main')).findByRole('button', { name: logMeal }),
   )
-  let log = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  let log = within(await screen.findByRole('dialog', { name: 'New meal' }))
   fireEvent.change(log.getByLabelText('Find a food or a meal'), { target: { value: 'canteen' } })
   expect(
-    await log.findByText('Nothing of yours matches: give an estimate, or make a new food.'),
+    await log.findByText('Nothing matches. Add an estimate, or make a new food.'),
   ).toBeDefined()
   fireEvent.click(log.getByRole('button', { name: 'Close' }))
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   await edit()
   await saveAsFood('Salad from the canteen')
@@ -2193,7 +2187,7 @@ test('an estimate saved as a food is found by the next search of a meal to log',
   fireEvent.click(
     await within(await screen.findByRole('main')).findByRole('button', { name: logMeal }),
   )
-  log = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  log = within(await screen.findByRole('dialog', { name: 'New meal' }))
   fireEvent.change(log.getByLabelText('Find a food or a meal'), { target: { value: 'canteen' } })
   expect(await log.findByRole('button', { name: /^Canteen salad/ })).toBeDefined()
 })

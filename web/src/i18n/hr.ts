@@ -36,16 +36,16 @@ export const hr: Messages = {
     moved: (day: string) => `Premješteno: ${day}`,
     movedToday: 'Premješteno na danas',
     deleted: (what: string) => `Obrisano: ${what}`,
-    checkIn: 'Check-in je spremljen',
-    dayNote: 'Napomena dana je spremljena',
-    dayType: 'Tip dana je spremljen',
-    excluded: 'Dan je izostavljen iz kalibracije',
-    included: 'Dan se opet računa u kalibraciju',
+    checkIn: 'Check-in spremljen',
+    dayNote: 'Napomena spremljena',
+    dayType: 'Tip dana spremljen',
+    excluded: 'Dan izostavljen iz kalibracije',
+    included: 'Dan vraćen u kalibraciju',
     saved: 'Spremljeno',
     savedOf: (what: string) => `Spremljeno: ${what}`,
     archived: (food: string) => `Arhivirano: ${food}`,
     inUse: (food: string) => `Opet u upotrebi: ${food}`,
-    notes: 'Bilješke za AI trenera su spremljene',
+    notes: 'Bilješke za AI trenera spremljene',
   },
   shortcuts: {
     title: 'Prečaci tipkovnice',
@@ -137,13 +137,13 @@ export const hr: Messages = {
     unsure: (kcal: string, half: string) => `TDEE ≈ ${kcal} ± ${half} · još nepouzdan.`,
     doubts: {
       wide_interval: (half: string, weighIns: string) =>
-        `Pouzdan je kad je ± ${half} ili manje; najviše pomaže vaganje ${weighIns}× tjedno.`,
+        `Pouzdan je kad je ± ${half} ili manje. Najviše pomaže vaganje ${weighIns}× tjedno.`,
       few_weigh_ins: (weighIns: string, count: number) =>
         `Treba ${weighIns} ${plural('hr', count, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })} tjedno, i u zadnjem tjednu.`,
       few_logged_days: (days: string, count: number) =>
         `Treba ${days} ${plural('hr', count, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} tjedno, i u zadnjem tjednu.`,
     },
-    beforePhase: (date: string) => `Nova faza: do ${date} TDEE je iz dana prije nje.`,
+    beforePhase: (date: string) => `Nova faza. Do ${date} TDEE je iz dana prije nje.`,
   },
   info: {
     tdee: {
@@ -154,7 +154,7 @@ export const hr: Messages = {
     trusted: {
       label: 'Što znači pouzdan',
       title: 'Pouzdan',
-      text: 'Pouzdan znači da je ± najviše 200 kcal i da iza njega ima dovoljno podataka: 4 upisana dana i 3 vaganja svaki tjedan, i ovaj zadnji. Dotad je TDEE prva procjena, a faza još nema ocjenu.',
+      text: 'Pouzdan znači da je ± najviše 200 kcal. Za to treba i 4 upisana dana i 3 vaganja svaki tjedan, i u zadnjem. Dotad je TDEE prva procjena, a faza još nema ocjenu.',
     },
     trend: {
       label: 'Što je trend kilaže',
@@ -214,7 +214,7 @@ export const hr: Messages = {
       overBy: (g: string) => `+${g} g`,
       noTarget: 'Plan daje danu cilj.',
       setPlan: 'Postavi plan',
-      startsOn: (date: string) => `Ovaj dan nema cilja: plan počinje ${date}.`,
+      startsOn: (date: string) => `Ovaj dan nema cilja. Plan počinje ${date}.`,
       noTargetYet: 'Plan još ne daje cilj.',
       seePlan: 'Otvori plan',
       weekOf: (n: number, of: number) =>
@@ -249,8 +249,8 @@ export const hr: Messages = {
       budget: (kcal: string) =>
         `Do nedjelje možeš prosječno ${kcal} na dan i ostati na tjednom cilju.`,
       budgetToday: (kcal: string) => `Danas možeš pojesti ${kcal} i ostati na tjednom cilju.`,
-      keep: (kcal: string) => `Tjedan je ${kcal} iznad cilja: do nedjelje se drži dnevnog cilja.`,
-      keepToday: (kcal: string) => `Tjedan je ${kcal} iznad cilja: danas se drži dnevnog cilja.`,
+      keep: (kcal: string) => `Tjedan je ${kcal} iznad cilja. Do nedjelje se drži dnevnog cilja.`,
+      keepToday: (kcal: string) => `Tjedan je ${kcal} iznad cilja. Danas se drži dnevnog cilja.`,
       legendTarget: 'cilj',
       legendAverage: 'prosjek',
     },
@@ -298,7 +298,7 @@ export const hr: Messages = {
     calibration: 'Kalibracija',
     inCalibration: 'Ulazi u kalibraciju',
     calibrationHint:
-      'Kalibracija mjeri TDEE iz dana koje broji: izostavi dan koji nisi dobro upisao.',
+      'Kalibracija mjeri TDEE iz dana koje broji. Izostavi dan koji nisi dobro upisao.',
     leaveOut: 'Izostavi iz kalibracije',
     body: {
       title: 'Tijelo danas',
@@ -350,17 +350,17 @@ export const hr: Messages = {
     portions: (n: number) => plural('hr', n, { one: 'porcija', few: 'porcije', other: 'porcija' }),
     save: 'Spremi obrok',
     cancel: 'Odustani',
-    oneItem: 'Obrok mora imati barem jednu stavku: umjesto toga obriši obrok.',
+    oneItem: 'Obrok mora imati barem jednu stavku. Umjesto toga obriši obrok.',
     delete: 'Obriši obrok',
     refused: 'Server nije prihvatio ovu promjenu.',
-    recomputed: 'Promijenjena količina računa se iz namirnice kakva je sada.',
+    recomputed: 'Promijenjena količina računa se po trenutnim vrijednostima namirnice.',
     note: 'Napomena',
     add: 'Dodaj u obrok',
     addNote: 'Dodaj napomenu',
     changeNote: 'Promijeni napomenu',
     day: 'Dan',
     yesterday: 'Jučer',
-    timeToCome: 'To vrijeme još nije došlo: obrok se upisuje kad je pojeden.',
+    timeToCome: 'To vrijeme još nije došlo. Obrok upiši kad ga pojedeš.',
     anotherFood: (name: string) => `Druga namirnica umjesto: ${name}`,
     more: (name: string) => `Više: ${name}`,
     anotherFoodShort: 'Druga namirnica',
@@ -368,7 +368,7 @@ export const hr: Messages = {
     inPlaceOf: (name: string) => `Umjesto ${name}:`,
     findInPlaceOf: (name: string) => `Tvoja namirnica umjesto: ${name}`,
     saveAsFood: (name: string) => `Spremi kao namirnicu: ${name}`,
-    asFood: 'Sprema se kao tvoja namirnica, pojedena jedna porcija.',
+    asFood: 'Sprema se kao tvoja namirnica, pojedena je jedna porcija.',
     asFoodShort: 'Spremi kao namirnicu',
     editTitle: 'Promijeni obrok',
     itemsTitle: 'Stavke',
@@ -385,7 +385,7 @@ export const hr: Messages = {
       sugars: 'Šećera je više nego svih ugljikohidrata.',
       polyols: 'Poliola je više nego svih ugljikohidrata.',
       duplicate_meal:
-        'Obrok s istim stavkama upisan je malo prije: ako je ovaj poslan dvaput, obriši ga.',
+        'Obrok s istim stavkama upisan je malo prije. Ako je ovaj poslan dvaput, obriši ga.',
       food_kept: 'Tvoja namirnica upisana je sa svojim vrijednostima, ne s poslanima.',
     },
   },
@@ -411,9 +411,9 @@ export const hr: Messages = {
     find: 'Pronađi svoju namirnicu',
     findHint: 'Naziv, marka ili drugi naziv',
     search: 'Pronađi namirnicu ili obrok',
-    noFood: 'Nijedna tvoja namirnica ne odgovara: upiši procjenu.',
-    nothing: 'Ništa tvoje ne odgovara: upiši procjenu ili napravi novu namirnicu.',
-    none: 'Još ništa nije upisano: pronađi namirnicu ili upiši procjenu.',
+    noFood: 'Nijedna tvoja namirnica ne odgovara. Upiši procjenu.',
+    nothing: 'Ništa ne odgovara. Upiši procjenu ili napravi novu namirnicu.',
+    none: 'Još ništa nije dodano. Pronađi namirnicu ili upiši procjenu.',
     lists: 'Prikaz',
     list: { all: 'Sve', recent: 'Nedavno', frequent: 'Česte', meals: 'Obroci' },
     results: 'Što se može dodati',
@@ -438,8 +438,6 @@ export const hr: Messages = {
       '100ml': 'Pojedeno sada (ml)',
       portion: 'Pojedeno sada (porcije)',
     },
-    amountWrong: (most: { amount: string; portions: string }) =>
-      `Količina je veća od 0 i najviše ${most.amount} g ili ml ili ${most.portions} porcija.`,
     basket: 'U obroku',
     empty: 'Odaberi namirnicu ili ponovi obrok.',
     after: (kcal: string) => `nakon: ostaje ${kcal} kcal`,
@@ -453,8 +451,20 @@ export const hr: Messages = {
     portions: (n: number) => plural('hr', n, { one: 'porcija', few: 'porcije', other: 'porcija' }),
     remove: (name: string) => `Ukloni: ${name}`,
     anEstimate: 'procjena',
-    wrong: (most: { amount: string; servings: string; portions: string; kcal: string }) =>
-      `Količina je veća od 0 i najviše ${most.amount} g ili ml, ${most.servings} servinga ili ${most.portions} porcija; procjena ima naziv i vrijednosti, npr. 72,5, i najviše ${most.kcal} kcal.`,
+    wrong: {
+      number: 'Upiši broj, npr. 72,5.',
+      none: 'Količina mora biti veća od 0.',
+      name: 'Upiši naziv procjene.',
+      most: {
+        g: (n: string) => `Najviše ${n} g.`,
+        ml: (n: string) => `Najviše ${n} ml.`,
+        serving: (n: string, count: number) =>
+          `Najviše ${n} ${plural('hr', count, { one: 'mjera', few: 'mjere', other: 'mjera' })}.`,
+        portion: (n: string, count: number) =>
+          `Najviše ${n} ${plural('hr', count, { one: 'porcija', few: 'porcije', other: 'porcija' })}.`,
+        kcal: (n: string) => `Najviše ${n} kcal.`,
+      },
+    },
     save: 'Upiši obrok',
     cancel: 'Odustani',
     refused: (detail: string) => `Server nije prihvatio ovaj obrok: ${detail}`,
@@ -470,10 +480,10 @@ export const hr: Messages = {
   },
   undo: {
     done: (what: string) => `Poništeno: ${what}.`,
-    nothing: 'Nema ničega za poništavanje.',
-    clash: 'Ne može se poništiti: s time se sukobljava ono što je došlo poslije.',
+    nothing: 'Nema se što poništiti.',
+    clash: 'Ne može se poništiti jer joj smeta kasnija promjena.',
     notLatest: 'U međuvremenu je došla druga promjena, pa ništa nije poništeno.',
-    failed: (why: string) => `Nije poništeno: ${why}`,
+    failed: (why: string) => `Nije poništeno. ${why}`,
     actions: {
       'food.save': 'spremljena namirnica',
       'food.archive': 'arhivirana namirnica',
@@ -538,7 +548,7 @@ export const hr: Messages = {
     none: 'Još nema namirnica. Nastaju same kad AI trener upiše obrok, a možeš ih dodati i ovdje.',
     noneArchived: 'Nema arhiviranih namirnica.',
     noneEstimates:
-      'Nema procjena: vrijednosti svih namirnica u upotrebi su s deklaracije ili tvoje.',
+      'Nema procjena. Sve namirnice u upotrebi imaju vrijednosti s deklaracije ili od tebe.',
     noMatch: 'Nijedna namirnica ne odgovara.',
     found: 'Pronađeno',
     more: 'Prikaži još',
@@ -613,14 +623,13 @@ export const hr: Messages = {
     alias: (n: number) => `Drugi naziv ${String(n)}`,
     addAlias: 'Dodaj drugi naziv',
     removeAlias: (name: string) => (name ? `Ukloni naziv: ${name}` : 'Ukloni naziv'),
-    source: 'Vrijednosti su iz',
+    source: 'Vrijednosti iz',
     sources: { label: 'deklaracije', estimate: 'procjene', user: 'mog unosa', dish: 'jela' },
     note: 'Napomena',
     save: 'Spremi namirnicu',
     archive: 'Arhiviraj',
     unarchive: 'Vrati iz arhive',
-    archivedNote:
-      'Arhivirano: nalazi je samo pretraga arhiviranih, a njezini nazivi ostaju zauzeti.',
+    archivedNote: 'Arhivirana je. Pronaći ćeš je među arhiviranima, a nazivi joj ostaju zauzeti.',
     needed: 'Obavezno.',
     negative: 'Ne može biti manje od 0.',
     servingTwice: 'Mjera tog naziva već postoji.',
@@ -750,7 +759,7 @@ export const hr: Messages = {
       reasons: {
         no_phase: 'Faza plana zadaje tempo po kojem se kilaža ocjenjuje.',
         no_target: 'Faza se ocjenjuje kad plan ima cilj u kcal.',
-        before_phase: 'Faza je nova: dok njezinih dana nije dovoljno, TDEE je iz dana prije nje.',
+        before_phase: 'Faza je nova. Dok nema dovoljno svojih dana, TDEE je iz dana prije nje.',
         no_tdee: 'TDEE je ispao 0 ili manji: jesu li svi obroci upisani?',
       },
       tdee: (kcal: string, half: string) => `TDEE ${kcal} ± ${half} kcal`,
@@ -781,7 +790,7 @@ export const hr: Messages = {
   settings: {
     title: 'Postavke',
     appearance: 'Izgled',
-    appearanceHint: 'Samo za ovaj preglednik: mobitel može biti taman, a laptop svijetao.',
+    appearanceHint: 'Samo za ovaj preglednik, pa mobitel može biti taman, a laptop svijetao.',
     themes: {
       system: 'Sustav',
       light: 'Svijetla',
@@ -807,8 +816,7 @@ export const hr: Messages = {
     notesPlaceholder: 'Koljena: bez trčanja. Bez laktoze.',
     noNotes: 'Još nema',
     devices: 'Uređaji i AI treneri',
-    devicesHint:
-      'Uređaj ili AI trener prijavljuje se svojim pristupnim ključem: mobitel koji šalje zdravstvene podatke, AI trener preko MCP-a.',
+    devicesHint: 'Svaki uređaj i AI trener prijavljuje se svojim pristupnim ključem.',
     devicesSummary: (n: number) =>
       n === 0
         ? 'Još nema'
@@ -826,12 +834,12 @@ export const hr: Messages = {
       tools: 'Čita i upisuje',
     },
     create: 'Napravi pristupni ključ',
-    created: 'Pristupni ključ, prikazan samo sada: kopiraj ga.',
+    created: 'Tvoj pristupni ključ. Prikazuje se samo sada, zato ga kopiraj.',
     copy: 'Kopiraj',
     copyOf: (what: string) => `Kopiraj: ${what}`,
     copiedOf: (what: string) => `Kopirano: ${what}`,
     copied: 'Kopirano',
-    copyFailed: 'Kopiranje nije uspjelo: označeno je, kopiraj ručno.',
+    copyFailed: 'Kopiranje nije uspjelo. Ključ je označen, kopiraj ga ručno.',
     done: 'Gotovo',
     lastUsed: (when: string) => `Zadnji put korišten ${when}`,
     neverUsed: 'Još nije korišten',
@@ -901,9 +909,9 @@ export const hr: Messages = {
     title: 'Plan',
     you: 'Ti i granice',
     profile: 'Profil',
-    profileHint: 'Plan treba sve, upisivanje ništa od toga. Prazno polje se briše.',
+    profileHint: 'Plan treba sve ovo, a za upis obroka ne treba ništa. Prazno polje se briše.',
     sex: 'Spol',
-    sexHint: 'Onaj koji uzimaju jednadžbe energije.',
+    sexHint: 'Potreban za procjenu potrošnje energije.',
     sexes: { male: 'Muški', female: 'Ženski' },
     noSex: 'Nije zadan',
     birthDate: 'Datum rođenja',
@@ -1062,18 +1070,18 @@ export const hr: Messages = {
         trusted: (kcal: string, pm: string) => `TDEE od ${kcal} ± ${pm} kcal je pouzdan.`,
         notTrusted: (kcal: string) => `TDEE od oko ${kcal} kcal još nije pouzdan.`,
         noTdee: 'TDEE još nije izmjeren.',
-        inRange: 'Tempo je u rasponu: sami podaci ne traže ovu promjenu.',
+        inRange: 'Tempo je u rasponu, pa sami podaci ne traže ovu promjenu.',
         more: 'Podaci pokazuju suprotno: traže više kcal, ne manje.',
         fewer: 'Podaci pokazuju suprotno: traže manje kcal, ne više.',
       },
       accept: 'Prihvati',
       reject: 'Odbij',
       sending: 'Šaljem…',
-      gone: 'Prijedlog više ne čeka: plan se promijenio ili je istekao.',
+      gone: 'Prijedlog više nije otvoren. Plan se promijenio ili je prijedlog istekao.',
       refusedNow: 'Granice ga sada ne dopuštaju:',
       failed: 'Nije prošlo. Pokušaj ponovno.',
       stale:
-        'Više se ne može primijeniti: promjena bi sada počela prije današnjeg dana. Zatraži novi prijedlog.',
+        'Više se ne može primijeniti jer bi promjena sada počela prije današnjeg dana. Zatraži novi prijedlog.',
       limitsHere:
         'Promjenu svojih granica prihvaćaš samo ovdje, u aplikaciji, nikad tvoj AI trener.',
       average: (from: string, kcal: string) => `Od ${from}: prosječno ${kcal} kcal na dan`,
@@ -1147,7 +1155,7 @@ export const hr: Messages = {
         range: (min: string, max: string) => `Od ${min} do ${max}.`,
         over: 'Proteini i masti daju više kcal nego što dan ima.',
         endBefore: 'Prije početka faze.',
-        endPast: 'Prije današnjeg dana: prošli dani ostaju kakvi su bili.',
+        endPast: 'Prije današnjeg dana. Prošli dani ostaju kakvi su bili.',
         startAfter: (date: string) => `Nakon ${date}.`,
         startPast: 'Danas ili kasnije.',
       },
@@ -1178,7 +1186,7 @@ export const hr: Messages = {
       yes: 'Vrati',
       no: 'Zadrži',
       cannot:
-        'Ova promjena se više ne može vratiti: već je stupila na snagu ili se plan od tada mijenjao. Zatraži novu promjenu.',
+        'Ova se promjena više ne može vratiti. Već je stupila na snagu ili se plan od tada mijenjao. Zatraži novu promjenu.',
     },
     rules: {
       profile_missing: 'plan treba tvoj profil',
@@ -1210,11 +1218,11 @@ export const hr: Messages = {
       `predloženo ${proposed}, granica ${limit}: ${level}`,
     warnings: {
       below_bmr: (value: string, threshold: string) =>
-        `Ispod tvoje potrošnje u mirovanju (${value} kcal, BMR ti je oko ${threshold}): neko vrijeme ide, dugo je teško izdržati.`,
+        `Ispod tvoje potrošnje u mirovanju (${value} kcal, BMR oko ${threshold}). Neko vrijeme ide, ali dugo je teško izdržati.`,
       low_energy_availability: (value: string, threshold: string) =>
-        `Malo energije za tvoju nemasnu masu (${value} kcal/kg, preporuka barem ${threshold}): na duže može umarati i usporiti oporavak.`,
+        `Malo energije za tvoju nemasnu masu (${value} kcal/kg, preporuka barem ${threshold}). Na duže može umarati i usporiti oporavak.`,
       low_carbs: (value: string, threshold: string) =>
-        `Malo ugljikohidrata (${value} g, preporuka barem ${threshold} g): u redu ako to biraš, ali trening može biti teži.`,
+        `Malo ugljikohidrata (${value} g, preporuka barem ${threshold} g). U redu ako to biraš, ali trening može biti teži.`,
     },
   },
   notFound: {

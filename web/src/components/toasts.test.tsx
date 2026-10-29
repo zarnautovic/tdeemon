@@ -30,7 +30,7 @@ async function tapMood(undo: Handler) {
   renderAt('/')
   const mood = within(await screen.findByRole('group', { name: 'Mood' }))
   fireEvent.click(mood.getByRole('button', { name: '4 good' }))
-  expect(await screen.findByText('The check-in is saved')).toBeDefined()
+  expect(await screen.findByText('Check-in saved')).toBeDefined()
   return { undos, mood }
 }
 
@@ -49,7 +49,7 @@ test('a change is taken back from its toast, and the toast says so', async () =>
 
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: a check-in.')).toBeDefined()
+  expect(await screen.findByText('Undone: a check-in.')).toBeDefined()
   // Of the day shown: no link to it.
   expect(screen.queryByRole('link', { name: /^See/ })).toBeNull()
   expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull()
@@ -57,9 +57,9 @@ test('a change is taken back from its toast, and the toast says so', async () =>
 })
 
 test.each([
-  [412, 'Another change came since, so nothing was taken back.'],
-  [409, 'It cannot be taken back: what came since clashes with it.'],
-  [404, 'There is no change to take back.'],
+  [412, 'Another change came first, so nothing was undone.'],
+  [409, "A later change is in the way, so this can't be undone."],
+  [404, 'Nothing to undo.'],
 ])('an undo refused (%i) says why, and offers no other', async (status, said) => {
   await tapMood(() => problem(status))
 
@@ -87,11 +87,11 @@ test('an undo without an answer is sent again under its id', async () => {
   )
 
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
-  expect(await screen.findByText(/^Not taken back: /)).toBeDefined()
+  expect(await screen.findByText(/^Not undone. /)).toBeDefined()
   answer = true
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: a check-in.')).toBeDefined()
+  expect(await screen.findByText('Undone: a check-in.')).toBeDefined()
   expect(undos).toHaveLength(2)
   expect(undos[1]).toEqual(undos[0])
 })
@@ -104,7 +104,7 @@ test('the toast of a change takes the place of the one before: one Undo, of the 
     expect(mood.getByRole('button', { name: '2 low' }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  expect(screen.getAllByText('The check-in is saved')).toHaveLength(1)
+  expect(screen.getAllByText('Check-in saved')).toHaveLength(1)
   expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1)
 })
 
@@ -158,6 +158,6 @@ test('a toast is closed by its button', async () => {
   fireEvent.click(screen.getByLabelText('Close'))
 
   await vi.waitFor(() => {
-    expect(screen.queryByText('The check-in is saved')).toBeNull()
+    expect(screen.queryByText('Check-in saved')).toBeNull()
   })
 })

@@ -37,8 +37,8 @@ test('a meal deleted comes back from the recent changes, after its toast is gone
   await expect(sheet.getByRole('button', { name: /^Undo/ })).toHaveCount(1)
   await sheet.getByRole('button', { name: `Undo: Deleted: ${name}` }).click()
 
-  await expect(toasts).toContainText('Taken back: a meal deleted.')
-  await expect(rows.first()).toContainText('Taken back')
+  await expect(toasts).toContainText('Undone: a meal deleted.')
+  await expect(rows.first()).toContainText('Undone')
   // The list follows: the meal's log is the next to take back.
   await expect(sheet.getByRole('button', { name: `Undo: Logged: ${name}` })).toBeVisible()
   await page.keyboard.press('Escape')

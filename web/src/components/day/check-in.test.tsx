@@ -41,7 +41,7 @@ test('a step of the mood is saved in a tap, and a tap on it again clears it', as
   await waitFor(() => {
     expect(mood.getByRole('button', { name: '4 good' }).getAttribute('aria-pressed')).toBe('true')
   })
-  expect(await screen.findByText('The check-in is saved')).toBeDefined()
+  expect(await screen.findByText('Check-in saved')).toBeDefined()
   expect(server.sent).toEqual([{ method: 'PATCH', path, body: { mood: 4 } }])
   expect(server.day().mood).toBe(4)
 
@@ -99,7 +99,7 @@ test('a pick that was not saved stays, says why, and is sent again', async () =>
   up = true
   fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
 
-  expect(await screen.findByText('The check-in is saved')).toBeDefined()
+  expect(await screen.findByText('Check-in saved')).toBeDefined()
   expect(server.day().hunger).toBe(3)
 })
 
@@ -174,7 +174,7 @@ test('the note is saved when the field is left, and only when it changed', async
   fireEvent.change(note, { target: { value: 'slept badly\nlong walk' } })
   fireEvent.blur(note)
 
-  expect(await screen.findByText("The day's note is saved")).toBeDefined()
+  expect(await screen.findByText('Note saved')).toBeDefined()
   expect(server.sent).toEqual([{ method: 'PATCH', path, body: { note: 'slept badly\nlong walk' } }])
 })
 
@@ -199,7 +199,7 @@ test("the day's type is the user's choice, or the plan's", async () => {
   fireEvent.click(menu.getByRole('menuitemradio', { name: 'Training' }))
 
   expect(await screen.findByRole('button', { name: 'Type of day: Training day' })).toBeDefined()
-  expect(await screen.findByText("The day's type is saved")).toBeDefined()
+  expect(await screen.findByText('Day type saved')).toBeDefined()
   expect(server.sent).toEqual([{ method: 'PATCH', path, body: { training_day: 'training' } }])
 })
 
@@ -369,7 +369,7 @@ test('the note is saved without the spaces at its ends, which the server refuses
   fireEvent.change(note, { target: { value: ' long walk \n' } })
   fireEvent.blur(note)
 
-  expect(await screen.findByText("The day's note is saved")).toBeDefined()
+  expect(await screen.findByText('Note saved')).toBeDefined()
   expect(server.sent.map((s) => s.body)).toEqual([{ note: 'long walk' }])
   // Only spaces are no change of an empty note.
   fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'long walk  ' } })
@@ -458,7 +458,7 @@ test('what is typed in the note while an earlier note is saved stays', async () 
   fireEvent.change(note, { target: { value: 'long walk, then pizza' } })
   answers[0]?.()
 
-  expect(await screen.findByText("The day's note is saved")).toBeDefined()
+  expect(await screen.findByText('Note saved')).toBeDefined()
   expect(screen.getByLabelText('Note')).toHaveProperty('value', 'long walk, then pizza')
   fireEvent.blur(screen.getByLabelText('Note'))
   await waitFor(() => {
@@ -494,7 +494,7 @@ test('a note sent again after it failed leaves the field to follow the day', asy
   fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))
 
   // Sent again with what is typed now.
-  expect(await screen.findByText("The day's note is saved")).toBeDefined()
+  expect(await screen.findByText('Note saved')).toBeDefined()
   expect(server.day().note).toBe('long walk, then pizza')
   // The note changed elsewhere, the day comes again: the field shows it.
   elsewhere.note = 'from the phone'
@@ -524,7 +524,7 @@ test("a new user's check-in is a line that asks how the day was, and opens", asy
       name: '4 good',
     }),
   )
-  expect(await screen.findByText('The check-in is saved')).toBeDefined()
+  expect(await screen.findByText('Check-in saved')).toBeDefined()
   expect(server.day().mood).toBe(4)
 })
 

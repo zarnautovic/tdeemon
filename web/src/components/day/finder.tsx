@@ -8,15 +8,16 @@ import { useRecentMeals } from '@/api/meals'
 import type { Food, Meal, RecentMeal } from '@/api/types'
 import {
   entryValues,
+  entryWrong,
   foodEntry,
   inUnit,
-  itemOf,
   lastAmountOf,
-  most,
+  sayWrong,
   servingOf,
   unitsOf,
   type Entry,
   type FoodEntry,
+  type Wrong,
 } from '@/components/day/meal-entries'
 import { longName, mealName } from '@/components/day/meal-slot'
 import type { Making } from '@/components/day/new-entry'
@@ -76,7 +77,7 @@ export function Finder({
   const [list, setList] = useState<List>('all')
   // The food picked, with its amount, which opens in its row.
   const [picked, setPicked] = useState<FoodEntry | undefined>(undefined)
-  const [pickedWrong, setPickedWrong] = useState(false)
+  const [pickedWrong, setPickedWrong] = useState<Wrong | undefined>(undefined)
   // Two cards side by side on a phone, three on a desktop's sheet.
   const cards = useDesktop() ? 3 : 2
   const found = useFindFoods(query)
@@ -136,19 +137,20 @@ export function Finder({
 
   function pick(food: Food) {
     setPicked(foodEntry(food, f.field))
-    setPickedWrong(false)
+    setPickedWrong(undefined)
   }
 
   // add adds an entry checked.
   function add(entry: FoodEntry) {
-    if (itemOf(entry, f.parse) === undefined) {
+    const wrong = entryWrong(entry, f.parse)
+    if (wrong !== undefined) {
       setPicked(entry)
-      setPickedWrong(true)
+      setPickedWrong(wrong)
       return
     }
     onAdd(entry)
     setPicked(undefined)
-    setPickedWrong(false)
+    setPickedWrong(undefined)
   }
 
   const pickedRow = (food: Food) =>
@@ -158,7 +160,7 @@ export function Finder({
         wrong={pickedWrong}
         onChange={(e) => {
           setPicked(e)
-          setPickedWrong(false)
+          setPickedWrong(undefined)
         }}
         onAdd={add}
       />
@@ -492,7 +494,7 @@ function Amount({
   onAdd,
 }: {
   entry: FoodEntry
-  wrong: boolean
+  wrong: Wrong | undefined
   onChange: (entry: FoodEntry) => void
   onAdd: (entry: FoodEntry) => void
 }) {
@@ -517,7 +519,7 @@ function Amount({
         <input
           ref={field}
           aria-label={t.log.amount(name)}
-          aria-invalid={wrong}
+          aria-invalid={wrong !== undefined}
           aria-describedby={wrong ? `${id}-wrong` : undefined}
           value={entry.amount}
           inputMode="decimal"
@@ -587,7 +589,7 @@ function Amount({
       </p>
       {wrong && (
         <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
-          {t.log.wrong(most(f.number))}
+          {sayWrong(wrong, t, f.number)}
         </p>
       )}
     </div>

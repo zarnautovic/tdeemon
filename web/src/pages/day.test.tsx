@@ -734,7 +734,7 @@ test("a day before the plan's first target says when the plan starts, not to set
 
   const eaten = await screen.findByRole('region', { name: 'Eaten' })
   expect(
-    await within(eaten).findByText('No target on this day: the plan starts on Oct 21.'),
+    await within(eaten).findByText('No target on this day. The plan starts on Oct 21.'),
   ).toBeDefined()
   expect(within(eaten).getByRole('link', { name: 'See the plan' }).getAttribute('href')).toBe(
     '/plan',

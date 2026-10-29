@@ -68,7 +68,7 @@ test('a proposed change is accepted in the app, and taken back from its history'
     targets.getByRole('listitem').filter({ hasText: /^From .*: 2,100 kcal/ }),
   ).toBeVisible()
 
-  const history = page.getByRole('region', { name: 'History of the plan' })
+  const history = page.getByRole('region', { name: 'Plan history' })
   const revision = history.getByRole('listitem').filter({ hasText: rationale })
   await expect(revision).toBeVisible()
   await revision.getByRole('button', { name: 'Take back' }).click()

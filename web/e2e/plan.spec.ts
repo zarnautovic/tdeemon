@@ -159,7 +159,7 @@ test('the plan is changed in the app, each change a revision taken back', async 
   await expect(hero.getByText('-0.6% a week', { exact: true })).toBeVisible()
 
   // The history says each, the latest first, and takes it back.
-  const history = page.getByRole('region', { name: 'History of the plan' })
+  const history = page.getByRole('region', { name: 'Plan history' })
   const latest = history.getByRole('listitem').first()
   await expect(latest.getByText('Changed in the app.')).toBeVisible()
   await expect(latest.getByText(/, by you$/)).toBeVisible()

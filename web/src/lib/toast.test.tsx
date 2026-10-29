@@ -38,7 +38,7 @@ test('a toast stays while the pointer is over the toasts, and goes in its time a
   vi.useFakeTimers()
   render(<Toasts />)
   act(() => {
-    sayChange({ title: 'The check-in is saved' })
+    sayChange({ title: 'Check-in saved' })
   })
   const region = screen.getByRole('region', { name: 'Notifications' })
 
@@ -46,7 +46,7 @@ test('a toast stays while the pointer is over the toasts, and goes in its time a
   act(() => {
     vi.advanceTimersByTime(20_000)
   })
-  expect(screen.queryByText('The check-in is saved')).not.toBeNull()
+  expect(screen.queryByText('Check-in saved')).not.toBeNull()
 
   fireEvent.mouseLeave(region)
   act(() => {
@@ -55,5 +55,5 @@ test('a toast stays while the pointer is over the toasts, and goes in its time a
   act(() => {
     vi.runAllTimers()
   })
-  expect(screen.queryByText('The check-in is saved')).toBeNull()
+  expect(screen.queryByText('Check-in saved')).toBeNull()
 })

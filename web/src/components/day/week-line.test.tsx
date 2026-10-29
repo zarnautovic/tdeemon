@@ -119,7 +119,7 @@ test("a week far over its target says to keep to the day's target, not to eat le
   const sheet = await screen.findByRole('dialog', { name: 'This week' })
   expect(
     within(sheet).getByText(
-      "The week is 5,684 over its target: keep to your day's target until Sunday.",
+      'The week is 5,684 over target. Stick to your daily target until Sunday.',
     ),
   ).toBeDefined()
   expect(within(sheet).queryByText(/you can average/)).toBeNull()
