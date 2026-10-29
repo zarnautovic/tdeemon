@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Plus, TriangleAlert, X } from 'lucide-react'
+import { Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
 
 import { $api } from '@/api/client'
@@ -9,6 +9,7 @@ import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
 import { amountWrong, sayWrong } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
+import { Scanner } from '@/components/day/scanner'
 import { energyOff } from '@/components/foods/energy'
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented'
@@ -56,6 +57,8 @@ interface Draft {
   portionGrams: string
   servings: Row<{ name: string; amount: string }>[]
   aliases: Row<string>[]
+  // The product's barcodes: scanned or typed (Scanner), each once.
+  barcodes: string[]
   source: Food['source']
   note: string
 }
@@ -163,6 +166,7 @@ export function FoodForm({
     portionGrams: field(from?.portion_grams),
     servings: (from?.servings ?? []).map((s) => row({ name: s.name, amount: field(s.amount) })),
     aliases: (from?.aliases ?? []).map((a) => row(a)),
+    barcodes: from?.barcodes ?? [],
     source: from?.source ?? 'label',
     note: from?.note ?? '',
   }))
@@ -200,6 +204,8 @@ export function FoodForm({
       save.reset()
     }
   }
+  // Whether the camera is open for a barcode, or its digits typed.
+  const [scanning, setScanning] = useState(false)
   // The field of a row just added (a serving's name, another name), which
   // takes the focus.
   const [added, setAdded] = useState<string | undefined>(undefined)
@@ -371,11 +377,7 @@ export function FoodForm({
       ...(portionGrams === undefined ? {} : { portion_grams: portionGrams }),
       ...(servings.length > 0 ? { servings } : {}),
       ...(aliases.length > 0 ? { aliases } : {}),
-      // Its barcodes, which a scan adds, not the form: a save replaces
-      // the whole food, so they go as they are.
-      ...(from?.barcodes !== undefined && from.barcodes.length > 0
-        ? { barcodes: from.barcodes }
-        : {}),
+      ...(draft.barcodes.length > 0 ? { barcodes: draft.barcodes } : {}),
       source: draft.source,
       ...(note ? { note } : {}),
     }
@@ -699,6 +701,68 @@ export function FoodForm({
       </Button>
     </fieldset>
   )
+  // The barcodes, in the full form: a compact one's come from its scan.
+  const barcodesField = (
+    <fieldset className="space-y-2">
+      <legend className={fieldLabel}>{t.foods.barcodes}</legend>
+      {draft.barcodes.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5">
+          {draft.barcodes.map((code) => (
+            <li
+              key={code}
+              className="flex items-center gap-0.5 rounded-full bg-surface-2 pl-3 text-small tabular-nums"
+            >
+              {code}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="rounded-full"
+                aria-label={t.foods.removeBarcode(code)}
+                onClick={() => {
+                  set({ barcodes: draft.barcodes.filter((c) => c !== code) })
+                }}
+              >
+                <X aria-hidden />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {scanning ? (
+        <div className="space-y-2 rounded-lg border p-3">
+          <Scanner
+            sendWith={t.foods.addCode}
+            onCode={(code) => {
+              setScanning(false)
+              if (!draft.barcodes.includes(code)) {
+                set({ barcodes: [...draft.barcodes, code] })
+              }
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setScanning(false)
+            }}
+          >
+            {t.foods.stopScan}
+          </Button>
+        </div>
+      ) : (
+        <Button
+          variant="outline"
+          disabled={draft.barcodes.length >= limits.food.maxBarcodes}
+          onClick={() => {
+            setScanning(true)
+          }}
+        >
+          <ScanBarcode aria-hidden />
+          {t.foods.addBarcode}
+        </Button>
+      )}
+    </fieldset>
+  )
   const saveStatus = refused ? (
     <p id={`${id}-refused`} role="alert" className="text-sm text-destructive">
       {refused}
@@ -788,6 +852,7 @@ export function FoodForm({
       {portionField}
       {servingsField}
       {aliasesField}
+      {barcodesField}
       <div className="space-y-1">
         <label htmlFor={`${id}-source`} className={cn(fieldLabel, 'block')}>
           {t.foods.source}

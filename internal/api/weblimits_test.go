@@ -38,6 +38,7 @@ type webLimits struct {
 		MaxKcalPerPortion float64 `json:"maxKcalPerPortion"`
 		MaxServings       int     `json:"maxServings"`
 		MaxAliases        int     `json:"maxAliases"`
+		MaxBarcodes       int     `json:"maxBarcodes"`
 	} `json:"food"`
 	Profile struct {
 		MinHeightCm float64 `json:"minHeightCm"`
@@ -77,7 +78,7 @@ func newWebLimits() webLimits {
 	l.Meal.MaxEstimateKcal = meal.MaxEstimateKcal
 	l.Food.MaxKcalPer100, l.Food.MaxKcalPerPortion = food.MaxKcalPer100, food.MaxKcalPerPortion
 	l.Food.MaxGramsPer100g, l.Food.MaxGramsPer100ml = food.MaxGramsPer100g, food.MaxGramsPer100ml
-	l.Food.MaxServings, l.Food.MaxAliases = food.MaxServings, food.MaxAliases
+	l.Food.MaxServings, l.Food.MaxAliases, l.Food.MaxBarcodes = food.MaxServings, food.MaxAliases, food.MaxBarcodes
 	l.Profile.MinHeightCm, l.Profile.MaxHeightCm, l.Profile.MaxAge = profile.MinHeightCm, profile.MaxHeightCm, profile.MaxAge
 	l.User.MaxNameLen = user.MaxNameLen
 	l.History.Since = api.HistorySince.String()

@@ -73,11 +73,11 @@ the list chosen; a food's page with its energy and its split, its
 nutrition per 100 g or a serving, its barcodes, how often it was
 logged, logged again in its last amount, archived with Undo, and
 corrected in its own form, which warns when the kcal and the macros
-disagree; beside the list on a desktop), the progress (the phase's
-verdict as its hero, or until the TDEE is reliable calibration on its
-way to it, its counts against
-what it needs and about when a first comes; the weight, its goal drawn
-only near it, and the TDEE against intake, the space between them
+disagree and adds a barcode, scanned or typed, or takes one away;
+beside the list on a desktop), the progress (the phase's verdict as its
+hero, or until the TDEE is reliable calibration on its way to it, its
+counts against what it needs and about when a first comes; the weight,
+its goal drawn only near it, and the TDEE against intake, the space between them
 shaded and said, as charts, the calendar weeks in a table, sleep, the
 heart, the steps and the body fat in small, the last 7 days against
 the usual, each tile a button to a chart, over 30 days to a year or
