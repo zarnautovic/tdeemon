@@ -982,7 +982,8 @@ the first spec.
     meal in its middle, and a sidebar from 1024 px, with the settings at
     its foot. Log a meal (and its key, N) opens the meal to log on today
     over the screen shown, which stays as it was, and the toast of the meal
-    logged leads to the day. On a phone the settings are a list under the
+    logged leads to the day; on today's page it is the page's own, so the
+    meal's row takes the focus. On a phone the settings are a list under the
     plan, beside what a plan rests on of the user's (the profile, the
     limits, the notes for a coach), each row with its value in short and a
     page of its own. The keyboard has shortcuts (`?` lists them): N logs a

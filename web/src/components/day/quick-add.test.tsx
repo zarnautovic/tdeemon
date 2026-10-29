@@ -350,6 +350,27 @@ test('a meal of before is logged again in two taps', async () => {
   ])
 })
 
+// The app's Log a meal (its key N, the bar's +) logs on today's page as
+// the page's own button does: the meal's row takes the focus.
+test("on today's page, N logs the meal there, and its row takes the focus", async () => {
+  logServer()
+  renderAt('/')
+  await (await page()).findByRole('button', { name: logMeal })
+
+  fireEvent.keyDown(window, { key: 'n' })
+  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  fireEvent.click(await sheet.findByRole('button', { name: 'Repeat: Porridge' }))
+
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+  })
+  await waitFor(() => {
+    expect(document.activeElement?.getAttribute('data-meal')).toBe(
+      '0193c3a5-0000-7000-8000-0000000000a1',
+    )
+  })
+})
+
 test("another day's meal is at noon, and one past midnight is of the night after the day", async () => {
   const server = logServer('2026-10-21')
   renderAt('/?date=2026-10-21')

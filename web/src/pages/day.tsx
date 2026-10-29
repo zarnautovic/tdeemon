@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { use, useEffect, useRef, useState } from 'react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
@@ -27,6 +27,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
+import { LogHereContext } from '@/lib/log-here'
 import { useDesktop } from '@/lib/media'
 import { useShortcuts } from '@/lib/shortcuts'
 import type { DaySearch } from '@/router'
@@ -111,6 +112,20 @@ export function DayPage() {
       void navigate({ to: '/', search: {}, replace: true })
     }
   }, [log, navigate])
+  // Today's page logs the app's Log a meal itself, while it shows.
+  const setLogHere = use(LogHereContext)
+  useEffect(() => {
+    if (setLogHere === null || date !== undefined) {
+      return undefined
+    }
+    setLogHere((from) => {
+      opener.current = from
+      setAdding({})
+    })
+    return () => {
+      setLogHere(null)
+    }
+  }, [setLogHere, date])
 
   if (day.isPending) {
     return <output className="block text-muted-foreground">{t.loading}</output>
