@@ -138,6 +138,16 @@ const screens: Screen[] = [
     },
   },
   {
+    name: 'changes',
+    open: async (page) => {
+      await page.goto('/')
+      await settled(page)
+      await page.getByRole('button', { name: /^(Recent changes|Zadnje promjene)$/ }).click()
+      await expect(page.getByRole('dialog').getByRole('listitem').first()).toBeVisible()
+      await settled(page)
+    },
+  },
+  {
     name: 'quick-add',
     open: async (page) => {
       await page.goto('/?log=true')

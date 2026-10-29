@@ -35,12 +35,15 @@ const changeToast = 'change'
 
 // sayChange shows that a change is done: with Undo when undo takes it
 // back (undo, the change and its day), longer when it says what the
-// server warned of.
+// server warned of, or of a delete, which asked nothing first. Base UI
+// keeps it while the pointer is over the toasts, the keyboard's focus is
+// in them, or a finger touched them last.
 export function sayChange(said: Omit<Said, 'undo'>, undo?: { last: Change; date: string }) {
+  const long = (said.lines?.length ?? 0) > 0 || undo?.last.action.endsWith('.delete') === true
   toasts.add({
     id: changeToast,
     title: said.title,
-    timeout: said.lines?.length ? 10_000 : 6000,
+    timeout: long ? 10_000 : 6000,
     data: { ...said, ...(undo && { undo: { ...undo, id: uuidv7() } }) },
   })
 }

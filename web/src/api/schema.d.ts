@@ -104,6 +104,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your recent changes
+         * @description Needs a web session. Your latest changes, the latest first, made through any client (you in the app, your AI coach, an app with an access key): what each did and to what, when, through what, the names of what it was of, whether an undo took it back, and the one undo takes back next. The undos themselves are not among them, nor an import's writes, which undo leaves, nor the new foods a meal brought, which are part of the meal's change.
+         */
+        get: operations["list-changes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/days/{date}": {
         parameters: {
             query?: never;
@@ -734,6 +754,44 @@ export interface components {
             /** @description Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused. */
             confirm?: boolean;
         };
+        ChangeBody: {
+            /** @description What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status. */
+            action: string;
+            /** @description Of food.archive: true when it archived the food, false when it brought it back in use. */
+            archived?: boolean;
+            /**
+             * Format: date-time
+             * @description When the change was made.
+             */
+            at: string;
+            /** @description A food's brand, beside its name. */
+            brand?: string;
+            /** @description What it came through: web, api, mcp. */
+            client: string;
+            /** @description The days (YYYY-MM-DD) it was of, as undo's answer says them: a meal's before and after it, a check-in's, a measurement's or a day's; none for a food, the notes or the plan. */
+            days: string[];
+            /** @description What it changed, as undo's last names it: a food's, a meal's or a proposal's id, a day (YYYY-MM-DD), a day and a metric (2026-10-21/weight), profile, limits, plan or notes. */
+            entity: string;
+            /**
+             * Format: uuid
+             * @description The change's own id, its event's.
+             */
+            id: string;
+            /** @description A meal's items by their names, as the change left it (as it was, for a delete); none for anything else. */
+            items: string[];
+            /** @description A measurement's kind, of metric.set and metric.delete. */
+            metric?: string;
+            /** @description The AI model that made it for the user, when one said so. */
+            model?: string;
+            /** @description A meal's description, or a food's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back). */
+            name?: string;
+            /** @description Undo takes it back next: POST /api/v1/undo naming it (last) takes it back while it stays the latest. At most one change is next, and none when undo has nothing to take back. */
+            next?: boolean;
+            /** @description Of proposal.status: the proposal's status after it (applied, rejected, superseded, reverted). */
+            status?: string;
+            /** @description An undo took it back. */
+            undone?: boolean;
+        };
         ChangePlanBody: {
             phases?: components["schemas"]["PhaseChangeIn"][] | null;
             targets?: components["schemas"]["TargetChangeIn"][] | null;
@@ -747,6 +805,10 @@ export interface components {
             targets: components["schemas"]["TargetChangeBody"][];
             /** @description The training weekdays, when it changes them. */
             training_weekdays?: components["schemas"]["WeekdaysChangeBody"];
+        };
+        ChangesOutputBody: {
+            /** @description The latest first. */
+            changes: components["schemas"]["ChangeBody"][];
         };
         CheckBody: {
             /**
@@ -2808,6 +2870,75 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "list-changes": {
+        parameters: {
+            query?: {
+                /** @description The most changes. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChangesOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

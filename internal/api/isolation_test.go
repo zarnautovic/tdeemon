@@ -851,6 +851,10 @@ func isolationCases() map[string]isolationCase {
 		"list-recent-meals": read("/api/v1/meals/recent", false, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s toast"}
 		}),
+		// Their own meal by its name, and their food archived.
+		"list-changes": read("/api/v1/changes?limit=50", false, func(e isolationEnv) []string {
+			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s canteen stew"}
+		}),
 		"upsert-food":   isolateUpsertFood,
 		"create-food":   isolateCreateFood,
 		"get-food":      isolateGetFood,

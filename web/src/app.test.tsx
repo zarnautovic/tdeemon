@@ -48,7 +48,7 @@ test("the day is the start page, and only it is current there, not every path un
   const current = within(nav)
     .getAllByRole('link')
     .filter((a) => a.getAttribute('aria-current') === 'page')
-  expect(current.map((a) => a.textContent)).toEqual(['Today'])
+  expect(current.map((a) => a.getAttribute('href'))).toEqual(['/'])
   expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
 })
 

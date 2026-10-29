@@ -803,7 +803,8 @@ test("another day's header has its date between the arrows, its type and the way
     throw new Error('the date is in no header')
   }
   // In the order they are read and shown: the arrow back, the date, its
-  // type and the way back to today under it, then the arrow ahead.
+  // type and the recent changes, the way back to today under them, then
+  // the arrow ahead.
   const parts = Array.from(header.querySelectorAll('a, h1, button')).map(
     (e) => e.getAttribute('aria-label') ?? e.textContent,
   )
@@ -811,6 +812,7 @@ test("another day's header has its date between the arrows, its type and the way
     'Dan prije',
     'utorak, 20. listopada',
     'Tip dana: Dan odmora',
+    'Zadnje promjene',
     'Natrag na danas',
     'Dan poslije',
   ])
@@ -947,7 +949,7 @@ test('on another day, the section is still the current one, and no link to a day
   renderAt('/?date=2026-10-22')
 
   expect(await screen.findByRole('link', { name: 'Back to today' })).toBeDefined()
-  expect(currentIn('Sections').map((a) => a.textContent)).toEqual(['Today'])
+  expect(currentIn('Sections').map((a) => a.getAttribute('href'))).toEqual(['/'])
   // And in the week, the day shown.
   expect(currentIn('The week').map((a) => a.getAttribute('href'))).toEqual(['/?date=2026-10-22'])
   const others = screen

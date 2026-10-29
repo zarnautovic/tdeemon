@@ -334,7 +334,19 @@ passed over, or a 404 with nothing left. The web app's undo of a change
 it just made (a toast's) names that change by its action and entity
 (`last`, which MCP neither shows nor takes): it takes it back only
 while it is the latest, and after another, made since through any
-client, it takes back nothing (412).
+client, it takes back nothing (412). The app lists the latest changes
+with `GET /api/v1/changes?limit=`, a web session's only: the user's
+latest (10 by default, 50 at most), made through any client, each with
+what it did and to what (its action and entity, as undo names them),
+when, through what client and model, the days it was of, the names of
+what it was of as the user's data has them (a meal's description and
+its items', a food's name and brand, a measurement's kind, a proposal's
+status after it), whether an undo took it back, and the one undo takes
+back next (`next`), which the app's Undo there names (`last`). The
+undos themselves are not among them, nor an import's writes, which undo
+leaves and a device sends often enough to bury the user's own, nor the
+new foods a meal brought, which are part of the meal's change. The
+server gives codes and names, and the app the words.
 
 ## 6. AI layer
 
@@ -971,10 +983,26 @@ the first spec.
     its foot; on a phone the settings are a list under the plan, beside
     what a plan rests on of the user's (the profile, the limits, the
     notes for a coach), each row with its value in short and a page of
-    its own. The keyboard has shortcuts (`?` lists them). A change says
+    its own. The keyboard has shortcuts (`?` lists them): N logs a meal,
+    / finds a food, ⌘Z or Ctrl+Z outside a field takes back the latest
+    change (made anywhere, which its toast says), G and a letter goes to
+    a section (D, F, P, L, S, which the sidebar shows as the pointer or
+    the focus is on one), and ← → to the day before or after; the first
+    stop of Tab skips the sections to the page. On a desktop, the day's
+    meals are one stop of Tab (a roving tabindex): ↑ ↓ Home End move
+    between the rows, and on a row Enter opens its editor (a click or
+    Space opens it to its items, as a tap does), R repeats it today and
+    Delete deletes it. A meal just logged or repeated takes the focus to
+    its row, which a screen reader says. A change says
     it is done in a toast (Base UI), one at a time, with what the server
     warned of it and Undo, which takes back that change only (`last`,
-    §5); a delete asks nothing first. The toasts are over a sheet too,
+    §5); a delete asks nothing first, and its toast stays 10 s, as one
+    that warns, 6 s the others; none goes while the pointer or the
+    focus is on the toasts, or a finger touched them last. After the
+    toast, the recent changes (a sheet from the day's header and from
+    the settings) list the latest changes, made by the user, their AI
+    coach or a device, each said as its toast said it, with Undo on the
+    one undo takes back next. The toasts are over a sheet too,
     so a change made in one is taken back there, and F6 takes the focus
     to them from a sheet, which keeps Tab within it. A sheet has one
     primary button at a time: the quick add's new food (in short, its

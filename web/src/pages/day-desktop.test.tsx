@@ -145,7 +145,8 @@ test('the phone has its week above the day, and the phase in the hero', async ()
 })
 
 // On a desktop another day's header is today's, as wide as the page: the
-// arrows, the date, then its type and the way back to today.
+// arrows, the date, then its type, the recent changes and the way back to
+// today.
 test("another day's header on a desktop is laid out as today's", async () => {
   desktop()
   fakeServer({
@@ -164,8 +165,130 @@ test("another day's header on a desktop is laid out as today's", async () => {
     'The day after',
     'Thursday, October 22',
     'Type of day: Rest day',
+    'Recent changes',
     'Back to today',
   ])
   // The week beside the day: that week's.
   expect(screen.getByRole('region', { name: 'This week' })).toBeDefined()
+})
+
+const lunch: Meal = {
+  ...breakfast,
+  id: '0193c3a5-0000-7000-8000-0000000000a2',
+  // 12:30 in Los Angeles.
+  eaten_at: '2026-10-23T19:30:00Z',
+  description: 'Lunch',
+  client: 'web',
+}
+
+// keyServer is today with breakfast and lunch, which takes a meal logged
+// (a repeat, at 13:00) and a meal deleted as the API does; each change
+// sent is kept.
+function keyServer() {
+  let meals: Meal[] = [breakfast, lunch]
+  const sent: string[] = []
+  const todays = () => day({ meals })
+  const summary = () => {
+    const { meals: _meals, metrics: _metrics, ...rest } = todays()
+    return rest
+  }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () => Response.json(todays()),
+    [`GET /api/v1/days/${today}`]: () => Response.json(todays()),
+    'POST /api/v1/meals': () => {
+      sent.push('POST /api/v1/meals')
+      const meal: Meal = {
+        ...lunch,
+        id: '0193c3a5-0000-7000-8000-0000000000a3',
+        eaten_at: '2026-10-23T20:00:00Z',
+      }
+      meals = [...meals, meal]
+      return Response.json({ meal, day: summary(), warnings: [] }, { status: 201 })
+    },
+    [`DELETE /api/v1/meals/${breakfast.id}`]: () => {
+      sent.push(`DELETE ${breakfast.id}`)
+      meals = meals.filter((m) => m.id !== breakfast.id)
+      return Response.json({ day: summary() })
+    },
+  })
+  return sent
+}
+
+// rowOf is the row of a meal, of its name: the button that opens it.
+function rowOf(name: string, which = 0): HTMLElement {
+  const meal = screen.getAllByRole('article', { name })[which]
+  const row = meal && within(meal).getAllByRole('button')[0]
+  if (row === undefined) {
+    throw new Error(`no row of ${name}`)
+  }
+  return row
+}
+
+test("a desktop's meals are one stop of Tab, whose arrows move between the rows", async () => {
+  desktop()
+  keyServer()
+  renderAt('/')
+  await screen.findByRole('article', { name: 'Lunch' })
+
+  // The first row is Tab's stop at first, and only it.
+  expect(rowOf('Oats with a banana').tabIndex).toBe(0)
+  expect(rowOf('Lunch').tabIndex).toBe(-1)
+  rowOf('Oats with a banana').focus()
+  fireEvent.keyDown(rowOf('Oats with a banana'), { key: 'ArrowDown' })
+  expect(document.activeElement).toBe(rowOf('Lunch'))
+  // The row the keyboard is on is Tab's stop now.
+  expect(rowOf('Lunch').tabIndex).toBe(0)
+  expect(rowOf('Oats with a banana').tabIndex).toBe(-1)
+  // The last goes no further; Home and End go to the ends.
+  fireEvent.keyDown(rowOf('Lunch'), { key: 'ArrowDown' })
+  expect(document.activeElement).toBe(rowOf('Lunch'))
+  fireEvent.keyDown(rowOf('Lunch'), { key: 'Home' })
+  expect(document.activeElement).toBe(rowOf('Oats with a banana'))
+  fireEvent.keyDown(rowOf('Oats with a banana'), { key: 'End' })
+  expect(document.activeElement).toBe(rowOf('Lunch'))
+  fireEvent.keyDown(rowOf('Lunch'), { key: 'ArrowUp' })
+  expect(document.activeElement).toBe(rowOf('Oats with a banana'))
+})
+
+test("Enter opens a desktop's meal in its editor; a click opens it to its items", async () => {
+  desktop()
+  keyServer()
+  renderAt('/')
+  await screen.findByRole('article', { name: 'Lunch' })
+
+  fireEvent.click(rowOf('Lunch'))
+  expect(rowOf('Lunch').getAttribute('aria-expanded')).toBe('true')
+  expect(screen.queryByRole('dialog')).toBeNull()
+
+  const oats = rowOf('Oats with a banana')
+  oats.focus()
+  fireEvent.keyDown(oats, { key: 'Enter' })
+  expect(await screen.findByRole('dialog', { name: 'Change the meal' })).toBeDefined()
+  expect(oats.getAttribute('aria-expanded')).toBe('false')
+})
+
+test('R repeats a meal today, whose new row takes the focus; Delete deletes one, with Undo', async () => {
+  desktop()
+  const sent = keyServer()
+  renderAt('/')
+  await screen.findByRole('article', { name: 'Lunch' })
+
+  rowOf('Lunch').focus()
+  fireEvent.keyDown(rowOf('Lunch'), { key: 'r' })
+  expect(await screen.findByText('Repeated: Lunch · 520 kcal')).toBeDefined()
+  await vi.waitFor(() => {
+    expect(document.activeElement).toBe(rowOf('Lunch', 1))
+  })
+
+  rowOf('Oats with a banana').focus()
+  fireEvent.keyDown(rowOf('Oats with a banana'), { key: 'Delete' })
+  expect(await screen.findByText('Deleted: Oats with a banana')).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Undo' })).toBeDefined()
+  expect(sent).toEqual(['POST /api/v1/meals', `DELETE ${breakfast.id}`])
+  // The row went, and the focus to the meals' heading.
+  await vi.waitFor(() => {
+    expect(screen.queryByRole('article', { name: 'Oats with a banana' })).toBeNull()
+  })
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Meals' }))
 })

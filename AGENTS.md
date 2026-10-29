@@ -27,8 +27,12 @@ calibration
 that serves them at `/mcp`, the API contract and the web app's frame
 (signing in, under the product's mark and what it is, and out, its
 sections in a bar at the bottom on a phone and
-a sidebar on a desktop, keyboard shortcuts, a light and a dark theme,
-each change said in a toast whose Undo takes it back, each number of
+a sidebar on a desktop, keyboard shortcuts (a skip to the content, G
+and a letter to a section, ⌘Z or Ctrl+Z to undo the latest change), a
+light and a dark theme,
+each change said in a toast whose Undo takes it back, a delete's for
+10 s, and after it the recent changes in a sheet, by whom, with Undo
+on the next, each number of
 calibration's an ⓘ away from what it is, in English and Croatian) with
 the day (a new user's first steps to a plan in place of its hero,
 ticked one by one; what was eaten against the target in a ring and the macros'
@@ -39,7 +43,9 @@ line, a day before the plan saying when it starts, the week's days,
 Monday to Sunday, and their average against the target, whose sheet
 says what the days left can eat, the day's type, the meals as rows that
 open to their items, on a desktop a table with its total beside the
-week, the body, the check-in and the phase, the check-in with
+week, which the arrows move through, Enter opening a meal's editor, R
+repeating it and Delete deleting it, a meal logged or repeated taking
+the focus, the body, the check-in and the phase, the check-in with
 calibration as a switch, a line until the user has measured anything,
 the body's tiles each a tap from its measurement, and all the
 measurements in a sheet, sleep in hours and minutes, a meal's
@@ -82,8 +88,9 @@ list (the theme, the account with a time zone found by its name, the
 devices and AI coaches connected in a guided sheet, an access key (a
 token) shown once with the steps to give it (an AI coach's MCP address
 and commands, Health Auto Export's checklist) and its first call seen
-as it comes, signing out), each screen checked for access (axe, a
-finger's targets, the focus, less motion) on a phone and a desktop, in
+as it comes, the recent changes, signing out), each screen checked for
+access (axe, a finger's targets, the focus, less motion) on a phone and
+a desktop, in
 both themes and languages, exist.
 
 | Path | What |
@@ -100,7 +107,7 @@ both themes and languages, exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the list of foods, a new food, a food's use and the recent meals (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the list of foods, a new food, a food's use, the recent meals and the recent changes (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |

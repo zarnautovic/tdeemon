@@ -1,20 +1,23 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Globe, LogOut, Palette, Smartphone } from 'lucide-react'
+import { Globe, History, LogOut, Palette, Smartphone } from 'lucide-react'
+import { useState } from 'react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
 import { ListGroup } from '@/components/list-group'
 import { ListRow } from '@/components/list-row'
+import { RecentChanges } from '@/components/recent-changes'
 import { locales } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
 import { useTheme } from '@/lib/theme'
 
 // SettingsList is the user's settings, each a row to its page with its
 // value in short: this browser's theme, the account's language, time zone
-// and day's start, and the devices and AI clients with a token; then
-// signing out, as whom, and what the server is. On the plan's page it has
-// its heading; the settings' page is its title.
+// and day's start, and the devices and AI clients with a token; the
+// recent changes, in a sheet; then signing out, as whom, and what the
+// server is. On the plan's page it has its heading; the settings' page is
+// its title.
 export function SettingsList({
   titled = false,
   className,
@@ -30,6 +33,7 @@ export function SettingsList({
   const info = $api.useQuery('get', '/api/v1/info')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [changes, setChanges] = useState(false)
   const signOut = $api.useMutation('post', '/api/v1/auth/logout', {
     // Nothing of this user stays in the app for whoever signs in next.
     onSuccess: async () => {
@@ -88,6 +92,15 @@ export function SettingsList({
         to="/settings/devices"
         summary={tokens.data && s.devicesSummary(tokens.data.tokens.length)}
       />
+      <ListRow
+        icon={History}
+        title={t.changes.title}
+        summary={t.changes.summary}
+        onClick={() => {
+          setChanges(true)
+        }}
+      />
+      <RecentChanges open={changes} onOpenChange={setChanges} />
       <ListRow
         icon={LogOut}
         title={s.signOut}

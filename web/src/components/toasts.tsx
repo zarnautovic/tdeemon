@@ -1,5 +1,5 @@
 import { Toast, type ToastObject } from '@base-ui/react/toast'
-import { Link, useLocation, useSearch } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { X } from 'lucide-react'
 
 import { $api } from '@/api/client'
@@ -8,8 +8,8 @@ import { useUndo } from '@/api/meals'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { problem } from '@/i18n/problem'
 import { sayUndone, toasts, type Said } from '@/lib/toast'
+import { undoRefused, useShownDay } from '@/lib/undo'
 
 // Toasts shows the app's toasts, announced as they come (aria-live, by
 // Base UI): above the bar on a phone, at the bottom right on a desktop.
@@ -98,25 +98,8 @@ function DayLink({ date }: { date: string }) {
 function UndoAction({ undo }: { undo: NonNullable<Said['undo']> }) {
   const t = useMessages()
   const run = useUndo(undo.date)
-  // The day shown, on a day's page: its date, or today.
-  const onDay = useLocation({ select: (l) => l.pathname === '/' })
-  const date = useSearch({ strict: false, select: (s) => s.date })
-  const today = $api.useQuery('get', '/api/v1/me').data?.today
-  const shown = onDay ? (date ?? today) : undefined
-
-  function said(error: unknown): string {
-    const status = statusOf(error)
-    if (status === 404) {
-      return t.undo.nothing
-    }
-    if (status === 409) {
-      return t.undo.clash
-    }
-    if (status === 412) {
-      return t.undo.notLatest
-    }
-    return t.undo.failed(problem(t, error))
-  }
+  const shown = useShownDay()
+  const said = (error: unknown) => undoRefused(t, error)
 
   function send(id: string | undefined) {
     run.mutate(
