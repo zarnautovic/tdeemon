@@ -54,7 +54,7 @@ export const en = {
     savedOf: (what: string) => `Saved: ${what}`,
     archived: (food: string) => `Archived: ${food}`,
     inUse: (food: string) => `In use again: ${food}`,
-    notes: 'The notes for a coach are saved',
+    notes: 'The notes for your AI coach are saved',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',
@@ -219,7 +219,7 @@ export const en = {
     mood: 'Mood',
     moods: scale('bad', 'low', 'okay', 'good', 'great'),
     hunger: 'Hunger',
-    hungers: scale('full', 'calm', 'moderate', 'hungry', 'very hungry'),
+    hungers: scale('full', 'a bit hungry', 'hungry', 'very hungry', 'starving'),
     note: 'Note',
     notePlaceholder: 'restaurant, sick, travelling…',
     dayTypes: { training: 'Training', rest: 'Rest', plan: 'By plan' },
@@ -413,7 +413,7 @@ export const en = {
       'metric.set': 'a measurement',
       'metric.delete': 'a measurement deleted',
       'metrics.merge': 'measurements imported',
-      'notes.set': 'the notes for a coach',
+      'notes.set': 'the notes for your AI coach',
     } as Record<string, string>,
     change: 'a change',
   },
@@ -436,7 +436,7 @@ export const en = {
     // A food in a list not eaten this week: 9 days ago.
     eatenAgo: (days: string, n: number) =>
       `${days} ${plural('en', n, { one: 'day', other: 'days' })} ago`,
-    none: 'No foods yet: a meal logged through a model saves its foods, or add one.',
+    none: 'No foods yet. They appear when your AI coach logs a meal, or add one here.',
     noneArchived: 'No archived foods.',
     noneEstimates: 'No estimates: the values of every food in use are from a label or you.',
     noMatch: 'No food matches.',
@@ -708,14 +708,14 @@ export const en = {
     dayStartHint: 'A meal before it belongs to the day before.',
     save: 'Save',
     refused: (detail: string) => `The server did not take it: ${detail}`,
-    notes: 'Notes for a coach',
+    notes: 'Notes for your AI coach',
     notesHint:
-      'What a coach, a model, should know of you: an injury, what you do not eat, how you train.',
+      'What your AI coach should know of you: an injury, what you do not eat, how you train.',
     notesPlaceholder: 'Knees: no running. No lactose.',
     noNotes: 'None yet',
-    devices: 'Devices and AI clients',
+    devices: 'Devices and AI coaches',
     devicesHint:
-      'A device or a client signs in with a token of its own: a phone that sends its health data, an AI coach through MCP.',
+      'A device or an AI coach signs in with a token of its own: a phone that sends its health data, an AI coach through MCP.',
     devicesSummary: (n: number) =>
       n === 0 ? 'None yet' : `${String(n)} ${plural('en', n, { one: 'token', other: 'tokens' })}`,
     tokens: 'Tokens',

@@ -154,7 +154,7 @@ test("the plan lists what it rests on of the user's, each a row to its page, and
       'Loss up to 0.5% a week · protein from 1.6 g/kg',
     )
   })
-  expect(summaryOf(you.getByRole('link', { name: 'Notes for a coach' }))).toBe('None yet')
+  expect(summaryOf(you.getByRole('link', { name: 'Notes for your AI coach' }))).toBe('None yet')
   // A phone has the settings there too.
   const settings = within(screen.getByRole('region', { name: 'Settings' }))
   expect(settings.getByRole('link', { name: 'Appearance' })).toBeDefined()

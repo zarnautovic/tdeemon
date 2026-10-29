@@ -44,7 +44,7 @@ export const hr: Messages = {
     savedOf: (what: string) => `Spremljeno: ${what}`,
     archived: (food: string) => `Arhivirano: ${food}`,
     inUse: (food: string) => `Opet u upotrebi: ${food}`,
-    notes: 'Bilješke za coacha su spremljene',
+    notes: 'Bilješke za AI trenera su spremljene',
   },
   shortcuts: {
     title: 'Prečaci tipkovnice',
@@ -199,7 +199,7 @@ export const hr: Messages = {
     mood: 'Osjećaj',
     moods: scale('loše', 'slabije', 'solidno', 'dobro', 'odlično'),
     hunger: 'Glad',
-    hungers: scale('sit', 'mirno', 'umjereno', 'gladan', 'stalno gladan'),
+    hungers: scale('sit', 'malo gladan', 'gladan', 'jako gladan', 'stalno gladan'),
     note: 'Napomena',
     notePlaceholder: 'restoran, bolest, putovanje…',
     dayTypes: { training: 'Trening', rest: 'Odmor', plan: 'Po planu' },
@@ -377,7 +377,7 @@ export const hr: Messages = {
       'metric.set': 'mjerenje',
       'metric.delete': 'obrisano mjerenje',
       'metrics.merge': 'uvezena mjerenja',
-      'notes.set': 'bilješke za coacha',
+      'notes.set': 'bilješke za AI trenera',
     },
     change: 'promjena',
   },
@@ -395,7 +395,7 @@ export const hr: Messages = {
     earlier: 'Ranije',
     eatenAgo: (days: string, n: number) =>
       `prije ${days} ${plural('hr', n, { one: 'dan', few: 'dana', other: 'dana' })}`,
-    none: 'Još nema namirnica: obrok upisan preko modela sprema svoje namirnice, a možeš i dodati namirnicu.',
+    none: 'Još nema namirnica. Nastaju same kad AI trener upiše obrok, a možeš ih dodati i ovdje.',
     noneArchived: 'Nema arhiviranih namirnica.',
     noneEstimates:
       'Nema procjena: vrijednosti svih namirnica u upotrebi su s deklaracije ili tvoje.',
@@ -647,11 +647,11 @@ export const hr: Messages = {
     dayStartHint: 'Obrok prije toga pripada danu prije.',
     save: 'Spremi',
     refused: (detail: string) => `Server to nije prihvatio: ${detail}`,
-    notes: 'Bilješke za coacha',
-    notesHint: 'Što coach, model, treba znati o tebi: ozljeda, što ne jedeš, kako treniraš.',
+    notes: 'Bilješke za AI trenera',
+    notesHint: 'Što AI trener treba znati o tebi: ozljeda, što ne jedeš, kako treniraš.',
     notesPlaceholder: 'Koljena: bez trčanja. Bez laktoze.',
     noNotes: 'Još nema',
-    devices: 'Uređaji i AI klijenti',
+    devices: 'Uređaji i AI treneri',
     devicesHint:
       'Uređaj ili klijent prijavljuje se svojim tokenom: mobitel koji šalje zdravstvene podatke, AI trener preko MCP-a.',
     devicesSummary: (n: number) =>
@@ -719,7 +719,7 @@ export const hr: Messages = {
     limitsSummary: (loss: string, protein: string) => `Gubitak do ${loss} · proteini od ${protein}`,
     groups: { rates: 'Tempo', food: 'Hrana', autopilot: 'Autopilot' },
     groupHints: {
-      rates: 'Koliko brzo faza smije mijenjati tvoju težinu.',
+      rates: 'Koliko brzo faza smije mijenjati tvoju kilažu.',
       food: 'Najmanje i najviše što dan plana smije imati.',
       autopilot: 'Koliko daleko i koliko često autopilot smije pomicati tvoje ciljeve.',
     },

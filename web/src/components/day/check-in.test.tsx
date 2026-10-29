@@ -63,12 +63,12 @@ test('the hunger has its words, and the day the server keeps shows', async () =>
   const hunger = within(await screen.findByRole('group', { name: 'Hunger' }))
   expect(hunger.getAllByRole('button').map((b) => b.textContent)).toEqual([
     '1 full',
-    '2 calm',
-    '3 moderate',
-    '4 hungry',
-    '5 very hungry',
+    '2 a bit hungry',
+    '3 hungry',
+    '4 very hungry',
+    '5 starving',
   ])
-  expect(hunger.getByRole('button', { name: '5 very hungry' }).getAttribute('aria-pressed')).toBe(
+  expect(hunger.getByRole('button', { name: '5 starving' }).getAttribute('aria-pressed')).toBe(
     'true',
   )
   const mood = within(screen.getByRole('group', { name: 'Mood' }))
@@ -89,13 +89,11 @@ test('a pick that was not saved stays, says why, and is sent again', async () =>
   renderAt('/')
 
   const hunger = within(await screen.findByRole('group', { name: 'Hunger' }))
-  fireEvent.click(hunger.getByRole('button', { name: '3 moderate' }))
+  fireEvent.click(hunger.getByRole('button', { name: '3 hungry' }))
 
   const alert = await within(checkIn()).findByRole('alert')
   expect(alert.textContent).toContain('Not saved. The server cannot be reached.')
-  expect(hunger.getByRole('button', { name: '3 moderate' }).getAttribute('aria-pressed')).toBe(
-    'true',
-  )
+  expect(hunger.getByRole('button', { name: '3 hungry' }).getAttribute('aria-pressed')).toBe('true')
 
   up = true
   fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }))

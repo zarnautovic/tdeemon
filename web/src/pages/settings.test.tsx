@@ -151,7 +151,7 @@ test('the settings are rows that say their value, each leading to its page and b
   expect(summaryOf(screen.getByRole('link', { name: 'Account, language and day' }))).toBe(
     'English · America/Los_Angeles · the day from 04:00',
   )
-  const devices = screen.getByRole('link', { name: 'Devices and AI clients' })
+  const devices = screen.getByRole('link', { name: 'Devices and AI coaches' })
   await waitFor(() => {
     expect(summaryOf(devices)).toBe('2 tokens')
   })
@@ -161,7 +161,7 @@ test('the settings are rows that say their value, each leading to its page and b
   expect((await screen.findByTestId('server-version')).textContent).toBe('v0.9.0')
 
   fireEvent.click(devices)
-  expect(await screen.findByRole('heading', { name: 'Devices and AI clients' })).toBeDefined()
+  expect(await screen.findByRole('heading', { name: 'Devices and AI coaches' })).toBeDefined()
   expect(router.state.location.pathname).toBe('/settings/devices')
   // Back to the settings on a desktop, to the plan on a phone.
   fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Settings' }))
@@ -430,11 +430,11 @@ test('the notes for a coach are shown and saved, and the page and the list have 
   const server = settingsServer()
   renderAt('/plan/notes')
 
-  const notes = await screen.findByRole('textbox', { name: 'Notes for a coach' })
+  const notes = await screen.findByRole('textbox', { name: 'Notes for your AI coach' })
   expect(notes).toHaveProperty('value', 'Knees: no running.')
   fireEvent.change(notes, { target: { value: 'No lactose.\nKnees: no running. ' } })
   fireEvent.click(
-    within(screen.getByRole('form', { name: 'Notes for a coach' })).getByRole('button', {
+    within(screen.getByRole('form', { name: 'Notes for your AI coach' })).getByRole('button', {
       name: 'Save',
     }),
   )
@@ -446,20 +446,20 @@ test('the notes for a coach are shown and saved, and the page and the list have 
   })
   // A toast says it is saved, and the field has the notes as the server
   // keeps them.
-  expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
-  expect(screen.getByRole('textbox', { name: 'Notes for a coach' })).toHaveProperty(
+  expect(await screen.findByText('The notes for your AI coach are saved')).toBeDefined()
+  expect(screen.getByRole('textbox', { name: 'Notes for your AI coach' })).toHaveProperty(
     'value',
     'No lactose.\nKnees: no running.',
   )
   // The plan's list says their first line, and the page, opened again,
   // has them.
   fireEvent.click(within(screen.getByRole('main')).getByRole('link', { name: 'Plan' }))
-  const row = await screen.findByRole('link', { name: 'Notes for a coach' })
+  const row = await screen.findByRole('link', { name: 'Notes for your AI coach' })
   await waitFor(() => {
     expect(summaryOf(row)).toBe('No lactose.')
   })
   fireEvent.click(row)
-  expect(await screen.findByRole('textbox', { name: 'Notes for a coach' })).toHaveProperty(
+  expect(await screen.findByRole('textbox', { name: 'Notes for your AI coach' })).toHaveProperty(
     'value',
     'No lactose.\nKnees: no running.',
   )
@@ -481,16 +481,16 @@ test('notes taken back by their toast are taken back in the field, and Save send
     },
   })
   renderAt('/plan/notes')
-  const form = within(await screen.findByRole('form', { name: 'Notes for a coach' }))
+  const form = within(await screen.findByRole('form', { name: 'Notes for your AI coach' }))
 
   fireEvent.change(await form.findByRole('textbox'), {
     target: { value: 'Knees: no running. No broccoli.' },
   })
   fireEvent.click(form.getByRole('button', { name: 'Save' }))
-  expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
+  expect(await screen.findByText('The notes for your AI coach are saved')).toBeDefined()
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: the notes for a coach.')).toBeDefined()
+  expect(await screen.findByText('Taken back: the notes for your AI coach.')).toBeDefined()
   await waitFor(() => {
     expect(form.getByRole('textbox')).toHaveProperty('value', 'Knees: no running.')
   })
@@ -524,7 +524,7 @@ test('notes typed after a save stay, though the save comes back', async () => {
     },
   })
   renderAt('/plan/notes')
-  const form = within(await screen.findByRole('form', { name: 'Notes for a coach' }))
+  const form = within(await screen.findByRole('form', { name: 'Notes for your AI coach' }))
 
   fireEvent.change(await form.findByRole('textbox'), { target: { value: 'No lactose.' } })
   fireEvent.click(form.getByRole('button', { name: 'Save' }))
@@ -535,7 +535,7 @@ test('notes typed after a save stay, though the save comes back', async () => {
   fireEvent.change(form.getByRole('textbox'), { target: { value: 'No lactose. No nuts.' } })
   answers[0]?.()
 
-  expect(await screen.findByText('The notes for a coach are saved')).toBeDefined()
+  expect(await screen.findByText('The notes for your AI coach are saved')).toBeDefined()
   expect(form.getByRole('textbox')).toHaveProperty('value', 'No lactose. No nuts.')
 })
 
@@ -543,7 +543,7 @@ test("the notes are the server's, not those a cache kept from before", async () 
   const server = settingsServer()
   renderAt('/plan/notes')
 
-  expect(await screen.findByRole('textbox', { name: 'Notes for a coach' })).toHaveProperty(
+  expect(await screen.findByRole('textbox', { name: 'Notes for your AI coach' })).toHaveProperty(
     'value',
     'Knees: no running.',
   )
@@ -552,13 +552,16 @@ test("the notes are the server's, not those a cache kept from before", async () 
   // An undo through a model took them back meanwhile.
   server.setNotes('')
   fireEvent.click(screen.getByRole('link', { name: 'Plan' }))
-  const row = await screen.findByRole('link', { name: 'Notes for a coach' })
+  const row = await screen.findByRole('link', { name: 'Notes for your AI coach' })
   await waitFor(() => {
     expect(summaryOf(row)).toBe('None yet')
   })
   fireEvent.click(row)
   await waitFor(() => {
-    expect(screen.getByRole('textbox', { name: 'Notes for a coach' })).toHaveProperty('value', '')
+    expect(screen.getByRole('textbox', { name: 'Notes for your AI coach' })).toHaveProperty(
+      'value',
+      '',
+    )
   })
 })
 
@@ -566,20 +569,20 @@ test('notes typed stay when the user cannot be asked again', async () => {
   const server = settingsServer()
   renderAt('/plan/notes')
 
-  const notes = await screen.findByRole('textbox', { name: 'Notes for a coach' })
+  const notes = await screen.findByRole('textbox', { name: 'Notes for your AI coach' })
   fireEvent.change(notes, { target: { value: 'Knees: no running. Shoulder too.' } })
   // Saved, the user is asked again, which fails.
   server.failMe()
   const before = asked(server.fetch, 'GET /api/v1/me')
   fireEvent.click(
-    within(screen.getByRole('form', { name: 'Notes for a coach' })).getByRole('button', {
+    within(screen.getByRole('form', { name: 'Notes for your AI coach' })).getByRole('button', {
       name: 'Save',
     }),
   )
   await waitFor(() => {
     expect(asked(server.fetch, 'GET /api/v1/me')).toBeGreaterThan(before)
   })
-  expect(screen.getByRole('textbox', { name: 'Notes for a coach' })).toHaveProperty(
+  expect(screen.getByRole('textbox', { name: 'Notes for your AI coach' })).toHaveProperty(
     'value',
     'Knees: no running. Shoulder too.',
   )
@@ -590,15 +593,15 @@ test("notes the server failed to give again are not the cache's", async () => {
   const server = settingsServer()
   renderAt('/plan/notes')
 
-  await screen.findByRole('textbox', { name: 'Notes for a coach' })
+  await screen.findByRole('textbox', { name: 'Notes for your AI coach' })
   fireEvent.click(screen.getByRole('link', { name: 'Today' }))
   await screen.findByRole('heading', { name: 'Today' })
   server.failMe()
   fireEvent.click(screen.getByRole('link', { name: 'Plan' }))
-  fireEvent.click(await screen.findByRole('link', { name: 'Notes for a coach' }))
-  await screen.findByRole('heading', { name: 'Notes for a coach' })
+  fireEvent.click(await screen.findByRole('link', { name: 'Notes for your AI coach' }))
+  await screen.findByRole('heading', { name: 'Notes for your AI coach' })
   expect(await screen.findByText('The server failed to answer.')).toBeDefined()
-  expect(screen.queryByRole('textbox', { name: 'Notes for a coach' })).toBeNull()
+  expect(screen.queryByRole('textbox', { name: 'Notes for your AI coach' })).toBeNull()
   expect(screen.getByRole('button', { name: 'Try again' })).toBeDefined()
 })
 

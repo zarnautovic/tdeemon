@@ -14,7 +14,7 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
   await checkIn.getByRole('group', { name: 'Mood' }).getByRole('button', { name: '4 good' }).click()
   await checkIn
     .getByRole('group', { name: 'Hunger' })
-    .getByRole('button', { name: '2 calm' })
+    .getByRole('button', { name: '2 a bit hungry' })
     .click()
   await checkIn.getByRole('button', { name: '+ Add a note' }).click()
   await checkIn.getByLabel('Note').fill('long walk')
@@ -56,7 +56,7 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
     'aria-pressed',
     'true',
   )
-  await expect(checkIn.getByRole('button', { name: '2 calm' })).toHaveAttribute(
+  await expect(checkIn.getByRole('button', { name: '2 a bit hungry' })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
