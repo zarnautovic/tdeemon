@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useId, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
-import { barcodeReader } from '@/lib/barcode'
+import { barcodeOf, barcodeReader, type BarcodeReader, type NoBarcode } from '@/lib/barcode'
 import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
@@ -11,8 +11,8 @@ import { cn } from '@/lib/utils'
 const readEvery = 300
 
 // What the camera does: starts, reads, or is not there to read (refused,
-// or a browser or a device without one).
-type Camera = 'starting' | 'reading' | 'refused' | 'none'
+// a browser or a device without one, or a reader that did not load).
+type Camera = 'starting' | 'reading' | 'refused' | 'none' | 'broken'
 
 // cameraOf is the browser's camera, when it has one to give: none on an
 // origin without HTTPS, nor in a browser without the API.
@@ -20,16 +20,23 @@ function cameraOf(): MediaDevices | undefined {
   return 'mediaDevices' in navigator ? navigator.mediaDevices : undefined
 }
 
+function stop(stream: MediaStream | undefined) {
+  for (const track of stream?.getTracks() ?? []) {
+    track.stop()
+  }
+}
+
 // Scanner reads a barcode off the camera, the back one of a phone, or
-// takes its digits typed: onCode gets the first read or the digits sent,
-// once. The camera stops when the scanner goes.
+// takes its digits typed: onCode gets the first read or typed, once, as
+// the server keeps it (barcodeOf). The camera stops when the scanner
+// goes, or when its reader fails, which says to type the digits.
 export function Scanner({ onCode }: { onCode: (code: string) => void }) {
   const t = useMessages()
   const id = useId()
   const video = useRef<HTMLVideoElement>(null)
   const [camera, setCamera] = useState<Camera>(() => (cameraOf() ? 'starting' : 'none'))
   const [typed, setTyped] = useState('')
-  const [wrong, setWrong] = useState(false)
+  const [wrong, setWrong] = useState<NoBarcode | undefined>(undefined)
   const done = useRef(false)
 
   function found(code: string) {
@@ -39,6 +46,16 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
     }
   }
   const read = useEffectEvent(found)
+
+  // send sends the digits typed, when they are a barcode.
+  function send() {
+    const b = barcodeOf(typed)
+    if ('no' in b) {
+      setWrong(b.no)
+      return
+    }
+    found(b.code)
+  }
 
   useEffect(() => {
     let stream: MediaStream | undefined
@@ -50,6 +67,17 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
     const devices = cameraOf()
     if (devices === undefined) {
       return undefined
+    }
+    // The reader loads while the camera starts.
+    const reading = barcodeReader().then(
+      (reader) => ({ reader }),
+      () => ({ reader: undefined }),
+    )
+    const broken = () => {
+      stop(stream)
+      if (!gone()) {
+        setCamera('broken')
+      }
     }
     async function start(media: MediaDevices) {
       try {
@@ -67,33 +95,51 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
       }
       const v = video.current
       if (gone() || v === null) {
+        // Gone while the camera started: it stops now.
+        stop(stream)
         return
       }
       v.srcObject = stream
       await v.play().catch(() => undefined)
-      const reader = await barcodeReader()
-      setCamera('reading')
-      const frame = async () => {
-        if (gone()) {
+      const { reader } = await reading
+      if (reader === undefined) {
+        broken()
+        return
+      }
+      if (!gone()) {
+        setCamera('reading')
+      }
+      void frames(v, reader)
+    }
+    async function frames(v: HTMLVideoElement, reader: BarcodeReader) {
+      if (gone()) {
+        return
+      }
+      let codes: { rawValue: string }[] = []
+      if (v.readyState >= 2) {
+        try {
+          codes = await reader.detect(v)
+        } catch {
+          // A reader that cannot read reads nothing again.
+          broken()
           return
         }
-        const codes = v.readyState >= 2 ? await reader.detect(v).catch(() => []) : []
-        const code = codes.map((c) => c.rawValue).find((raw) => /^\d{8,14}$/.test(raw))
-        if (code === undefined) {
-          timer = setTimeout(() => void frame(), readEvery)
-        } else if (!gone()) {
-          read(code)
-        }
       }
-      void frame()
+      const code = codes
+        .map((c) => barcodeOf(c.rawValue))
+        .flatMap((b) => ('code' in b ? [b.code] : []))[0]
+      if (code === undefined) {
+        timer = setTimeout(() => void frames(v, reader), readEvery)
+      } else if (!gone()) {
+        stop(stream)
+        read(code)
+      }
     }
     void start(devices)
     return () => {
       run.stopped = true
       clearTimeout(timer)
-      for (const track of stream?.getTracks() ?? []) {
-        track.stop()
-      }
+      stop(stream)
     }
   }, [])
 
@@ -124,22 +170,15 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
         </div>
       ) : (
         <output className="block text-sm text-muted-foreground">
-          {camera === 'refused' ? t.scan.refused : t.scan.noCamera}
+          {camera === 'refused'
+            ? t.scan.refused
+            : camera === 'broken'
+              ? t.scan.broken
+              : t.scan.noCamera}
         </output>
       )}
-      <form
-        noValidate
-        className="space-y-1"
-        onSubmit={(e) => {
-          e.preventDefault()
-          const code = typed.replaceAll(/\s/g, '')
-          if (!/^\d{8,14}$/.test(code)) {
-            setWrong(true)
-            return
-          }
-          found(code)
-        }}
-      >
+      {/* No form of its own: it may be in a food's form. */}
+      <div className="space-y-1">
         <label htmlFor={`${id}-code`} className={cn(fieldLabel, 'block')}>
           {t.scan.typeIt}
         </label>
@@ -149,24 +188,30 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
             value={typed}
             inputMode="numeric"
             autoComplete="off"
-            aria-invalid={wrong}
+            aria-invalid={wrong !== undefined}
             aria-describedby={wrong ? `${id}-wrong` : undefined}
             className={cn(inputClass, 'min-w-0 flex-1 tabular-nums')}
             onChange={(e) => {
               setTyped(e.currentTarget.value)
-              setWrong(false)
+              setWrong(undefined)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                send()
+              }
             }}
           />
-          <Button type="submit" variant="outline">
+          <Button type="button" variant="outline" onClick={send}>
             {t.scan.lookUp}
           </Button>
         </div>
         {wrong && (
           <p id={`${id}-wrong`} className="text-xs text-destructive">
-            {t.scan.digits}
+            {wrong === 'length' ? t.scan.digits : t.scan.check}
           </p>
         )}
-      </form>
+      </div>
     </div>
   )
 }

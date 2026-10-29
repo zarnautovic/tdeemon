@@ -402,7 +402,10 @@ export const hr: Messages = {
     noCamera: 'Ovdje nema kamere. Upiši znamenke.',
     typeIt: 'Ili upiši znamenke ispod crtica',
     lookUp: 'Potraži kod',
-    digits: 'Od 8 do 14 znamenki.',
+    digits: '8, 12, 13 ili 14 znamenki.',
+    check: 'Te se znamenke ne slažu: provjeri ih.',
+    broken: 'Čitač barkoda se nije učitao. Upiši znamenke.',
+    makeIt: 'Napravi namirnicu',
     looking: (code: string) => `Tražim ${code}…`,
     unknown: (code: string) =>
       `Kod ${code} još nitko nema. Upiši vrijednosti s deklaracije, pa ga sljedeći put imaš.`,

@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest'
 
-import { barcodeReader } from '@/lib/barcode'
+import { barcodeOf, barcodeReader } from '@/lib/barcode'
 
 type Prepare = (options: {
   overrides: { locateFile: (path: string, prefix: string) => string }
@@ -63,4 +63,34 @@ test("without one, or one that reads no EAN, zxing-wasm's, its WASM the app's ow
   const locate = ponyfill.prepareZXingModule.mock.lastCall?.[0].overrides.locateFile
   expect(locate?.('zxing_reader.wasm', 'https://cdn.example/')).toBe('/assets/zxing_reader-x.wasm')
   expect(locate?.('other.js', '/x/')).toBe('/x/other.js')
+})
+
+test("zxing-wasm's reader is made once, its WASM compiled once", async () => {
+  vi.stubGlobal('BarcodeDetector', undefined)
+  const [one, two] = await Promise.all([barcodeReader(), barcodeReader()])
+  expect(one).toBe(two)
+  expect(await barcodeReader()).toBe(one)
+})
+
+test('a barcode is kept as the server keeps it, or said to be none', () => {
+  for (const [typed, code] of [
+    ['4 006381 333931', '4006381333931'],
+    ['96385074', '96385074'],
+    ['036000291452', '0036000291452'],
+    ['00036000291452', '0036000291452'],
+    ['10036000291459', '10036000291459'],
+    ['04252614', '0042100005264'],
+    ['0000096385074', '96385074'],
+  ] as const) {
+    expect(barcodeOf(typed)).toEqual({ code })
+  }
+  for (const [typed, no] of [
+    ['1234567', 'length'],
+    ['1234567890', 'length'],
+    ['4006381333932', 'check'],
+    ['24252615', 'check'],
+    ['400638133393x', 'length'],
+  ] as const) {
+    expect(barcodeOf(typed)).toEqual({ no })
+  }
 })

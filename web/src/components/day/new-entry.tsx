@@ -1,7 +1,8 @@
 import { useIsMutating } from '@tanstack/react-query'
 import { ChevronLeft } from 'lucide-react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 
+import type { components } from '@/api/schema'
 import { EstimateFields } from '@/components/day/estimate-fields'
 import {
   entryWrong,
@@ -16,6 +17,8 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { uuidv7 } from '@/lib/uuid'
 
+type FoodFields = components['schemas']['FoodFields']
+
 // What the next step of the quick add makes: a food, an estimate, or an
 // entry of a barcode (ScanEntry).
 export type Making = 'food' | 'estimate' | 'scan'
@@ -24,16 +27,22 @@ export type Making = 'food' | 'estimate' | 'scan'
 // the user's made in short (FoodForm's compact form) and added in the
 // amount eaten now, or an estimate of a plate, its name and values; each
 // added with the one button at its foot, Add to meal. name is what was
-// searched for, which the food or the estimate is named to start with;
-// onBack goes back to the search, and onAdd takes the entry, checked.
+// searched for, which the food or the estimate is named to start with; a
+// food may start from more (start, a barcode's product), which said says
+// where it came from. onBack goes back to the search, and onAdd takes the
+// entry, checked.
 export function NewEntry({
   making,
   name,
+  start,
+  said,
   onBack,
   onAdd,
 }: {
   making: Exclude<Making, 'scan'>
   name: string
+  start?: Partial<FoodFields>
+  said?: ReactNode
   onBack: () => void
   onAdd: (entry: Entry) => void
 }) {
@@ -69,12 +78,16 @@ export function NewEntry({
         </Button>
         <h3 className="text-h3">{making === 'food' ? t.log.newFood : t.log.anEstimateOf}</h3>
       </div>
-      <div ref={body} className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div ref={body} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        {said !== undefined && (
+          <p className="rounded-lg bg-surface-2 p-3 text-sm text-muted-foreground">{said}</p>
+        )}
         {making === 'food' ? (
           <FoodForm
             compact={{
               id: form,
               name,
+              ...(start === undefined ? {} : { start }),
               // In the unit of what its values are for.
               onAdd: (food, amount) => {
                 const unit = unitsOf(food)[0] ?? 'g'

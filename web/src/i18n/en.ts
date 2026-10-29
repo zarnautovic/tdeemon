@@ -468,7 +468,10 @@ export const en = {
     noCamera: 'No camera here. Type the digits instead.',
     typeIt: 'Or type the digits under the bars',
     lookUp: 'Look up the code',
-    digits: 'From 8 to 14 digits.',
+    digits: '8, 12, 13 or 14 digits.',
+    check: 'Those digits do not add up: check them.',
+    broken: 'The barcode reader did not load. Type the digits instead.',
+    makeIt: 'Make the food',
     looking: (code: string) => `Looking up ${code}…`,
     unknown: (code: string) =>
       `Nobody has ${code} yet. Type its values off the label, and it is yours next time.`,

@@ -170,8 +170,10 @@ and adds the barcode to it, where a save of the product would correct
 it. The web app's Log a meal scans one with the camera, or takes its
 digits typed: the user's food opens for its amount (the last eaten),
 the product as a new food to check against the label and add, the
-food of its name gets the barcode, and one nobody has opens a new food
-of it, typed off the label. Chrome on Android reads it with its own
+food of its name gets the barcode, and one nobody has, or one a lookup
+that failed may not tell, opens a new food of it, typed off the label.
+Digits typed are checked as the server checks them (their length and
+check digit) before they are sent. Chrome on Android reads it with its own
 `BarcodeDetector`; Safari has none, and zxing-wasm reads it there
 (`barcode-detector`, MIT), loaded with the camera alone, its WASM the
 app's own, which the content security policy lets compile

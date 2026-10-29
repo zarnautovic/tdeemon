@@ -779,7 +779,7 @@ export interface components {
             barcode: string;
             /** @description Your food of the barcode, archived too, with its last use. */
             food?: components["schemas"]["FoodBody"];
-            /** @description Your food of the product's name and brand, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it. */
+            /** @description Your food of the product's name and brand, with its last use, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it. */
             named_food?: components["schemas"]["FoodBody"];
             /** @description Without a food of yours of the barcode, the product at Open Food Facts. */
             open_food_facts?: components["schemas"]["OpenFoodFactsBody"];

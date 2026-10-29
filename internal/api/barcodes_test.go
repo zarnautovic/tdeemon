@@ -146,9 +146,14 @@ func TestLookupBarcodeOfAProductYouHaveByName(t *testing.T) {
 			mine := decodeJSON[struct {
 				ID string `json:"id"`
 			}](t, rec.Body.Bytes())
+			// Drunk once, 250 ml: the amount it offers.
+			if rec := in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [{"food_id": "`+mine.ID+`", "amount": 250, "unit": "ml"}]}`, session, nil); rec.Code != http.StatusCreated {
+				t.Fatalf("a meal of the kefir: %d %s", rec.Code, rec.Body.String())
+			}
 			rec = in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil)
 			body := rec.Body.String()
 			if rec.Code != http.StatusOK || !strings.Contains(body, `"named_food":{"id":"`+mine.ID+`"`) ||
+				!strings.Contains(body, `"quantity":{"amount":250,"unit":"ml"}`) ||
 				strings.Contains(body, `"food":{"id"`) || strings.Contains(body, "open_food_facts") != (answer == kefir) {
 				t.Errorf("%d %s, want the user's kefir", rec.Code, body)
 			}

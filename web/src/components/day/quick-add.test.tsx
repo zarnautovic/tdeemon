@@ -1445,12 +1445,12 @@ test('a product of Open Food Facts is a new food to check, saved with its barcod
   expect(server.made).toEqual([kefir])
 })
 
-test("the user's food of a product's name gets the barcode, and opens for its amount", async () => {
+test("the user's food of a product's name gets the barcode, said with Undo, and opens in its last amount", async () => {
   const server = scanServer({
     '4006381333931': () =>
       Response.json({
         barcode: '4006381333931',
-        named_food: oats,
+        named_food: skyr,
         open_food_facts: {
           food: kefir,
           url: 'https://world.openfoodfacts.org/product/4006381333931',
@@ -1461,11 +1461,14 @@ test("the user's food of a product's name gets the barcode, and opens for its am
 
   const sheet = await openSheet()
   await typeCode(sheet, '4006381333931')
-  expect(await sheet.findByText('It is your Rolled oats, without this barcode yet.')).toBeDefined()
+  expect(await sheet.findByText('It is your Skyr, without this barcode yet.')).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'Add the barcode to it' }))
 
-  expect(await sheet.findByLabelText('Amount: Rolled oats')).toBeDefined()
-  expect(server.saved).toEqual([{ ...oats, barcodes: ['4006381333931'] }])
+  // In the amount eaten last, which the save's answer has not.
+  expect(await sheet.findByLabelText('Amount: Skyr')).toHaveProperty('value', '150')
+  expect(await screen.findByText('Saved: Skyr')).toBeDefined()
+  const { last_use: _lastUse, ...fields } = skyr
+  expect(server.saved).toEqual([{ ...fields, barcodes: ['4006381333931'] }])
   expect(server.made).toEqual([])
 })
 
@@ -1502,32 +1505,52 @@ test('a barcode nobody has is a new food of it, typed off the label', async () =
   })
 })
 
-test('a barcode misread is said, and read again; digits that are no barcode are said at the field', async () => {
-  const server = scanServer({ '4006381333932': () => problem(422) })
+test('digits that are no barcode are said at the field, and send nothing', async () => {
+  const server = scanServer({})
   renderAt('/')
 
   const sheet = await openSheet()
   fireEvent.click(sheet.getByRole('button', { name: 'Scan a barcode' }))
-  fireEvent.change(await sheet.findByLabelText('Or type the digits under the bars'), {
-    target: { value: '1234' },
+  const field = await sheet.findByLabelText('Or type the digits under the bars')
+  for (const [typed, said] of [
+    ['1234567890', '8, 12, 13 or 14 digits.'],
+    // A digit mistyped: its check digit does not hold.
+    ['4006381333932', 'Those digits do not add up: check them.'],
+  ] as const) {
+    fireEvent.change(field, { target: { value: typed } })
+    fireEvent.click(sheet.getByRole('button', { name: 'Look up the code' }))
+    expect(sheet.getByText(said)).toBeDefined()
+    expect(field.getAttribute('aria-invalid')).toBe('true')
+  }
+  expect(server.made).toEqual([])
+})
+
+test('a code the server says is misread is read again; a lookup that fails may make the food', async () => {
+  const server = scanServer({
+    '4006381333931': () => problem(422),
+    '96385074': () => problem(502),
   })
-  fireEvent.click(sheet.getByRole('button', { name: 'Look up the code' }))
-  expect(sheet.getByText('From 8 to 14 digits.')).toBeDefined()
+  renderAt('/')
+
+  const sheet = await openSheet()
+  await typeCode(sheet, '4006381333931')
   expect(
-    sheet.getByLabelText('Or type the digits under the bars').getAttribute('aria-invalid'),
-  ).toBe('true')
+    await sheet.findByText('4006381333931 does not add up: a digit was misread. Scan it again.'),
+  ).toBeDefined()
+  expect(sheet.queryByRole('button', { name: 'Make the food' })).toBeNull()
+  fireEvent.click(sheet.getByRole('button', { name: 'Scan it again' }))
+  // The step's heading has the focus again.
+  await waitFor(() => {
+    expect(document.activeElement).toBe(sheet.getByRole('heading', { name: 'Scan a barcode' }))
+  })
 
   fireEvent.change(sheet.getByLabelText('Or type the digits under the bars'), {
-    target: { value: '4006381333932' },
+    target: { value: '96385074' },
   })
   fireEvent.click(sheet.getByRole('button', { name: 'Look up the code' }))
-  expect(
-    await sheet.findByText('4006381333932 does not add up: a digit was misread. Scan it again.'),
-  ).toBeDefined()
-  fireEvent.click(sheet.getByRole('button', { name: 'Scan it again' }))
-  expect(await sheet.findByLabelText('Or type the digits under the bars')).toHaveProperty(
-    'value',
-    '',
-  )
+  expect(await sheet.findByText('The lookup failed: what went wrong')).toBeDefined()
+  fireEvent.click(sheet.getByRole('button', { name: 'Make the food' }))
+  expect(sheet.getByLabelText('Name')).toHaveProperty('value', '')
+  expect(sheet.getByText(/^Nobody has 96385074 yet\./)).toBeDefined()
   expect(server.made).toEqual([])
 })
