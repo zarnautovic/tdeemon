@@ -495,6 +495,12 @@ func TestMealConflicts(t *testing.T) {
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `the alias \"Ana's loaf\" is taken by food `+e.bread) {
 		t.Errorf("a new food of a taken alias: %d %s, want 409 naming the bread", rec.Code, rec.Body.String())
 	}
+	body = fmt.Sprintf(`{"id": %q, "items": [{"food": {"name": "Loaf", "basis": "100g", "source": "label", "barcodes": ["3850000000015"],
+		"nutrients": {"kcal": 250, "protein": 8, "carbs": 46, "fat": 3}}, "amount": 50, "unit": "g"}]}`, meal.NewIDAt(e.now))
+	rec = e.in.do(t, http.MethodPost, "/api/v1/meals", body, e.session, nil)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "the barcode 3850000000015 is taken by food "+e.bread) {
+		t.Errorf("a new food of a taken barcode: %d %s, want 409 naming the bread", rec.Code, rec.Body.String())
+	}
 }
 
 // Changes of a meal sent at once, as an agent's calls in parallel, are
@@ -616,7 +622,7 @@ func TestUpdateMealSavesFoodsOnce(t *testing.T) {
 }
 
 // A meal refused saves none of its new foods, whatever refuses it: a food
-// in the way of another's alias, an item of another meal's id.
+// in the way of another's alias or barcode, an item of another meal's id.
 func TestMealsRefusedSaveNoFood(t *testing.T) {
 	t.Parallel()
 
@@ -625,8 +631,9 @@ func TestMealsRefusedSaveNoFood(t *testing.T) {
 	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, other, item))
 	kefir := `{"food": {"name": "Kefir", "basis": "100ml", "source": "label", "nutrients": {"kcal": 50, "protein": 3.4, "carbs": 4.7, "fat": 1.5}}, "amount": 250, "unit": "ml"}`
 	for name, second := range map[string]string{
-		"a food of a taken alias": `{"food": {"name": "Loaf", "basis": "100g", "source": "label", "aliases": ["Ana's loaf"], "nutrients": {"kcal": 250, "protein": 8, "carbs": 46, "fat": 3}}, "amount": 50, "unit": "g"}`,
-		"an item of another meal": fmt.Sprintf(`{"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}`, item),
+		"a food of a taken alias":   `{"food": {"name": "Loaf", "basis": "100g", "source": "label", "aliases": ["Ana's loaf"], "nutrients": {"kcal": 250, "protein": 8, "carbs": 46, "fat": 3}}, "amount": 50, "unit": "g"}`,
+		"a food of a taken barcode": `{"food": {"name": "Loaf", "basis": "100g", "source": "label", "barcodes": ["3850000000015"], "nutrients": {"kcal": 250, "protein": 8, "carbs": 46, "fat": 3}}, "amount": 50, "unit": "g"}`,
+		"an item of another meal":   fmt.Sprintf(`{"id": %q, "name": "Tea", "nutrients": {"kcal": 2, "protein": 0, "carbs": 0.3, "fat": 0}}`, item),
 	} {
 		rec := e.in.do(t, http.MethodPost, "/api/v1/meals", fmt.Sprintf(`{"id": %q, "items": [%s, %s]}`, meal.NewIDAt(e.now), kefir, second), e.session, nil)
 		if rec.Code != http.StatusConflict {

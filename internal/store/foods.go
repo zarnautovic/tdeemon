@@ -22,30 +22,38 @@ var (
 	ErrNameTaken = errors.New("another food has this name and brand")
 	// ErrAliasTaken: another of the user's foods goes by the alias.
 	ErrAliasTaken = errors.New("another food goes by this alias")
+	// ErrBarcodeTaken: another of the user's foods has the barcode.
+	ErrBarcodeTaken = errors.New("another food has this barcode")
 )
 
 // FoodConflictError is a save SaveFood refuses because another of the
-// user's foods is in the way: it has the name and brand (ErrNameTaken), or
-// goes by Alias (ErrAliasTaken). Food is that food, archived perhaps,
-// which a search would not find, so a client can rename or correct it.
+// user's foods is in the way: it has the name and brand (ErrNameTaken),
+// goes by Alias (ErrAliasTaken) or has Barcode (ErrBarcodeTaken). Food is
+// that food, archived perhaps, which a search would not find, so a client
+// can rename or correct it.
 type FoodConflictError struct {
-	// Err is ErrNameTaken or ErrAliasTaken.
-	Err   error
-	Food  food.Food
-	Alias string
+	// Err is ErrNameTaken, ErrAliasTaken or ErrBarcodeTaken.
+	Err     error
+	Food    food.Food
+	Alias   string
+	Barcode string
 }
 
 func (e *FoodConflictError) Error() string {
-	if e.Alias != "" {
+	switch {
+	case e.Alias != "":
 		return fmt.Sprintf("%v: %q, by food %s %q", e.Err, e.Alias, e.Food.ID, e.Food.Name)
+	case e.Barcode != "":
+		return fmt.Sprintf("%v: %s, by food %s %q", e.Err, e.Barcode, e.Food.ID, e.Food.Name)
 	}
 	return fmt.Sprintf("%v: food %s %q", e.Err, e.Food.ID, e.Food.Name)
 }
 
 func (e *FoodConflictError) Unwrap() error { return e.Err }
 
-// conflict returns the FoodConflictError of the food with id in the way.
-func conflict(ctx context.Context, tx *sql.Tx, userID uuid.UUID, err error, id, alias string) error {
+// conflict returns the FoodConflictError of the food with id in the way:
+// of the name and brand, or of what, its alias or barcode (as err says).
+func conflict(ctx context.Context, tx *sql.Tx, userID uuid.UUID, err error, id, what string) error {
 	other, perr := uuid.Parse(id)
 	if perr != nil {
 		return fmt.Errorf("food id %q: %w", id, perr)
@@ -54,7 +62,10 @@ func conflict(ctx context.Context, tx *sql.Tx, userID uuid.UUID, err error, id, 
 	if ferr != nil {
 		return ferr
 	}
-	return &FoodConflictError{Err: err, Food: f, Alias: alias}
+	if errors.Is(err, ErrBarcodeTaken) {
+		return &FoodConflictError{Err: err, Food: f, Barcode: what}
+	}
+	return &FoodConflictError{Err: err, Food: f, Alias: what}
 }
 
 // MaxFoodResults bounds FindFoods.
@@ -120,7 +131,7 @@ func nullable(p *float64) any {
 }
 
 // SaveFood stores f in userID's food database and returns the food as
-// stored, with its servings and aliases replaced by f's. Saving is
+// stored, with its servings, aliases and barcodes replaced by f's. Saving is
 // idempotent and follows the rule that the same name and brand are the
 // same food:
 //   - a food with f's id is updated, renamed if f says so, unless another
@@ -132,7 +143,8 @@ func nullable(p *float64) any {
 //
 // Saving the name and brand of an archived food corrects it and, unless f
 // is archived too, brings it back: it is in use again. An alias another
-// food goes by is refused (ErrAliasTaken). The save is recorded as a's
+// food goes by is refused (ErrAliasTaken), and so is a barcode another
+// food has (ErrBarcodeTaken). The save is recorded as a's
 // event, with the food before (none for a new one) and after.
 func (db *DB) SaveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f food.Food, now time.Time) (food.Food, error) {
 	return db.saveFood(ctx, userID, a, f, saveOrCorrect, now)
@@ -181,7 +193,7 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 		stored, _, err = saveFoodInTx(ctx, tx, userID, a, f, mode, now)
 		return err
 	})
-	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
+	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) || errors.Is(err, ErrBarcodeTaken) {
 		return food.Food{}, err
 	}
 	if err != nil {
@@ -201,6 +213,9 @@ func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 	}
 	f.ID = target
 	if err := checkAliases(ctx, tx, userID, f); err != nil {
+		return food.Food{}, uuid.Nil(), err
+	}
+	if err := checkBarcodes(ctx, tx, userID, f); err != nil {
 		return food.Food{}, uuid.Nil(), err
 	}
 	var before *food.Food
@@ -400,6 +415,23 @@ func checkAliases(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f food.Food
 	return nil
 }
 
+// checkBarcodes refuses a barcode of f's that another of userID's foods
+// has.
+func checkBarcodes(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f food.Food) error {
+	for _, code := range f.Barcodes {
+		var other string
+		err := tx.QueryRowContext(ctx, "SELECT food_id FROM food_barcodes WHERE user_id = ? AND code = ? AND food_id <> ?",
+			userID.String(), code, f.ID.String()).Scan(&other)
+		if err == nil {
+			return conflict(ctx, tx, userID, ErrBarcodeTaken, other, code)
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+	}
+	return nil
+}
+
 func foodValues(f food.Food) []any {
 	o := optionalNutrients(&f.Nutrients)
 	var portion any
@@ -437,13 +469,14 @@ func updateFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f food.Food, 
 	return err
 }
 
-// replaceFoodChildren writes f's servings, aliases and search row in
-// place of the old ones.
+// replaceFoodChildren writes f's servings, aliases, barcodes and search
+// row in place of the old ones.
 func replaceFoodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f food.Food) error {
 	id, uid := f.ID.String(), userID.String()
 	for _, q := range []string{
 		"DELETE FROM food_servings WHERE food_id = ? AND user_id = ?",
 		"DELETE FROM food_aliases WHERE food_id = ? AND user_id = ?",
+		"DELETE FROM food_barcodes WHERE food_id = ? AND user_id = ?",
 		"DELETE FROM foods_fts WHERE food_id = ? AND user_id = ?",
 	} {
 		if _, err := tx.ExecContext(ctx, q, id, uid); err != nil {
@@ -459,6 +492,12 @@ func replaceFoodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f fo
 	for _, a := range f.Aliases {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO food_aliases (food_id, user_id, alias, alias_key) VALUES (?, ?, ?, ?)",
 			id, uid, a, food.Key(a)); err != nil {
+			return err
+		}
+	}
+	for _, code := range f.Barcodes {
+		if _, err := tx.ExecContext(ctx, "INSERT INTO food_barcodes (food_id, user_id, code) VALUES (?, ?, ?)",
+			id, uid, code); err != nil {
 			return err
 		}
 	}
@@ -550,7 +589,8 @@ func foodInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (food.Food,
 	return f, err
 }
 
-// foodChildren reads f's servings and aliases, in the order saved.
+// foodChildren reads f's servings, aliases and barcodes, in the order
+// saved.
 func foodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f *food.Food) error {
 	rows, err := tx.QueryContext(ctx, "SELECT name, amount FROM food_servings WHERE food_id = ? AND user_id = ? ORDER BY rowid",
 		f.ID.String(), userID.String())
@@ -581,7 +621,23 @@ func foodChildren(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f *food.Foo
 		}
 		f.Aliases = append(f.Aliases, a)
 	}
-	return arows.Err()
+	if err := arows.Err(); err != nil {
+		return err
+	}
+	brows, err := tx.QueryContext(ctx, "SELECT code FROM food_barcodes WHERE food_id = ? AND user_id = ? ORDER BY rowid",
+		f.ID.String(), userID.String())
+	if err != nil {
+		return err
+	}
+	defer func() { _ = brows.Close() }()
+	for brows.Next() {
+		var code string
+		if err := brows.Scan(&code); err != nil {
+			return err
+		}
+		f.Barcodes = append(f.Barcodes, code)
+	}
+	return brows.Err()
 }
 
 // SetFoodArchived archives userID's food with id (or brings it back): an
@@ -660,7 +716,7 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 	if err := decode(e.Before, &f); err != nil {
 		return err
 	}
-	// Another food may have taken the name or an alias since.
+	// Another food may have taken the name, an alias or a barcode since.
 	var other int
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
 		userID.String(), food.Key(f.Name), food.Key(f.Brand), f.ID.String()).Scan(&other); err != nil {
@@ -671,6 +727,11 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 	}
 	if err := checkAliases(ctx, tx, userID, f); errors.Is(err, ErrAliasTaken) {
 		return fmt.Errorf("%w: %w", clash{UndoAliasTaken}, err)
+	} else if err != nil {
+		return err
+	}
+	if err := checkBarcodes(ctx, tx, userID, f); errors.Is(err, ErrBarcodeTaken) {
+		return fmt.Errorf("%w: %w", clash{UndoBarcodeTaken}, err)
 	} else if err != nil {
 		return err
 	}
@@ -779,8 +840,8 @@ const MaxFoodList = 200
 
 // ListFoods returns a page of userID's foods, the archived ones or the
 // others as archived says, and of source alone unless it is empty, in
-// order, from offset and at most limit of them, with their servings and
-// aliases; and how many such foods there are.
+// order, from offset and at most limit of them, with their servings,
+// aliases and barcodes; and how many such foods there are.
 func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, source food.Source, order FoodOrder, limit, offset int) ([]food.Food, int, error) {
 	by := "f.name_key, f.brand_key, f.id"
 	lastUse := `(SELECT max(m.eaten_at) FROM meal_items AS i JOIN meals AS m ON m.id = i.meal_id AND m.user_id = i.user_id
@@ -830,7 +891,7 @@ func (db *DB) ListFoods(ctx context.Context, userID uuid.UUID, archived bool, so
 }
 
 // queryFoods runs q, which selects foodColumns, and returns the foods,
-// without their servings and aliases.
+// without their servings, aliases and barcodes.
 func queryFoods(ctx context.Context, tx *sql.Tx, q string, args ...any) ([]food.Food, error) {
 	rows, err := tx.QueryContext(ctx, q, args...)
 	if err != nil {

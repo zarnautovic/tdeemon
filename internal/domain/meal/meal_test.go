@@ -460,18 +460,26 @@ func TestSentFood(t *testing.T) {
 	if !sentFoodForm.MatchString(d) {
 		t.Fatalf("SentFood = %q, want 64 hex digits", d)
 	}
+	// A food without barcodes has the digest it had before foods had
+	// them, so a meal sent before is still told as sent.
+	if before := "a8eea474596860bfd94dcfc8100e82219f6a33a4617372f5efbc4fb710dd30d4"; d != before {
+		t.Errorf("SentFood = %s, want %s, as before barcodes", d, before)
+	}
 	if f := base(); func() bool { f.ID = uuid.NewV7(); return SentFood(f) != d }() {
 		t.Error("another id changed SentFood")
 	}
-	// Servings and aliases are sets: in another order, the same food.
+	// Servings, aliases and barcodes are sets: in another order, the same
+	// food.
 	two := base()
 	two.Servings = []food.Serving{{Name: "piece", Amount: 60}, {Name: "half", Amount: 30}}
 	two.Aliases = []string{"hen's egg", "egg"}
+	two.Barcodes = []string{"96385074", "4006381333931"}
 	swapped := two
 	swapped.Servings = []food.Serving{two.Servings[1], two.Servings[0]}
 	swapped.Aliases = []string{"egg", "hen's egg"}
+	swapped.Barcodes = []string{"4006381333931", "96385074"}
 	if SentFood(swapped) != SentFood(two) {
-		t.Error("servings and aliases in another order changed SentFood")
+		t.Error("servings, aliases and barcodes in another order changed SentFood")
 	}
 	SentFood(two)
 	if two.Servings[0].Name != "piece" || two.Aliases[0] != "hen's egg" {
@@ -492,6 +500,7 @@ func TestSentFood(t *testing.T) {
 		"salt":                 func(f *food.Food) { f.Nutrients.Salt = new(0.0) },
 		"an alias":             func(f *food.Food) { f.Aliases = append(f.Aliases, "egg") },
 		"no alias":             func(f *food.Food) { f.Aliases = nil },
+		"a barcode":            func(f *food.Food) { f.Barcodes = []string{"96385074"} },
 		"a serving's name":     func(f *food.Food) { f.Servings[0].Name = "Piece" },
 		"a serving's amount":   func(f *food.Food) { f.Servings[0].Amount++ },
 		"no serving":           func(f *food.Food) { f.Servings = nil },

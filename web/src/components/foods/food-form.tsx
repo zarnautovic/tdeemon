@@ -364,6 +364,11 @@ export function FoodForm({
       ...(portionGrams === undefined ? {} : { portion_grams: portionGrams }),
       ...(servings.length > 0 ? { servings } : {}),
       ...(aliases.length > 0 ? { aliases } : {}),
+      // Its barcodes, which a scan adds, not the form: a save replaces
+      // the whole food, so they go as they are.
+      ...(food?.barcodes !== undefined && food.barcodes.length > 0
+        ? { barcodes: food.barcodes }
+        : {}),
       source: draft.source,
       ...(note ? { note } : {}),
     }

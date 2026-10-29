@@ -77,8 +77,12 @@ type FoodFields struct {
 	PortionGrams float64           `json:"portion_grams,omitempty" minimum:"0" doc:"For basis portion only: the grams of a portion, when known."`
 	Servings     []servingBody     `json:"servings,omitempty" nullable:"false" maxItems:"20" doc:"Named amounts: a piece, a slice."`
 	Aliases      []string          `json:"aliases,omitempty" nullable:"false" maxItems:"20" minLength:"1" maxLength:"100" doc:"Other names search finds."`
-	Source       string            `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from; dish is an earlier client's, for no new food."`
-	Note         string            `json:"note,omitempty" maxLength:"2000"`
+	// Barcodes has no bounds of its own: food.Validate holds it to them,
+	// and its 422 says them, as MCP sends a model the schema with each
+	// request, within a budget (TestMCPFitsItsBudget).
+	Barcodes []string `json:"barcodes,omitempty" nullable:"false" doc:"EAN-13, EAN-8 or UPC-A, each of one food."`
+	Source   string   `json:"source" enum:"label,estimate,user,dish" doc:"Where the values come from; dish is an earlier client's, for no new food."`
+	Note     string   `json:"note,omitempty" maxLength:"2000"`
 }
 
 // lastUseBody is the last time a meal used a food: what search offers as
@@ -104,7 +108,7 @@ type foodBody struct {
 func newFoodBody(f *food.Food) foodBody {
 	b := foodBody{
 		ID: f.ID.String(), Name: f.Name, Brand: f.Brand, Basis: string(f.Basis), Nutrients: newFoodNutrientsBody(f.Nutrients),
-		PortionGrams: f.PortionGrams, Aliases: f.Aliases, Source: string(f.Source), Note: f.Note, Archived: f.Archived,
+		PortionGrams: f.PortionGrams, Aliases: f.Aliases, Barcodes: f.Barcodes, Source: string(f.Source), Note: f.Note, Archived: f.Archived,
 	}
 	for _, s := range f.Servings {
 		b.Servings = append(b.Servings, servingBody{Name: s.Name, Amount: s.Amount})
@@ -272,8 +276,8 @@ func (s *sessions) registerFoods(a huma.API) {
 		Path:        Prefix + "/foods/new",
 		Summary:     "Make a new food",
 		Description: "Needs a web session. Saves a new food: a food you have of the name and brand, archived too, is refused (409), naming it, " +
-			"and so is an alias another food has; upsert_food corrects a food instead. " +
-			"The 409's errors say it as data: where (body.name, or the alias's body.aliases[i]) and the food's id as the value.",
+			"and so is an alias or a barcode another food has; upsert_food corrects a food instead. " +
+			"The 409's errors say it as data: where (body.name, the alias's body.aliases[i] or the barcode's body.barcodes[i]) and the food's id as the value.",
 		Tags:          []string{"foods"},
 		DefaultStatus: http.StatusCreated,
 		Errors:        []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
@@ -385,7 +389,7 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 	case errors.Is(err, store.ErrNotFound):
 		return nil, huma.Error404NotFound("no such food: a new food comes without an id")
 	case errors.As(err, &conflict):
-		return nil, huma.Error409Conflict(conflictDetail(conflict), conflictError(conflict, b.Aliases))
+		return nil, huma.Error409Conflict(conflictDetail(conflict), conflictError(conflict, &b.FoodFields))
 	case err != nil:
 		return nil, internalError("saving the food failed", err)
 	}
@@ -396,7 +400,7 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 func (b *FoodFields) food() food.Food {
 	f := food.Food{
 		ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Basis(b.Basis), Nutrients: b.Nutrients.nutrients(),
-		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Source: food.Source(b.Source), Note: b.Note,
+		PortionGrams: b.PortionGrams, Aliases: b.Aliases, Barcodes: food.CanonicalBarcodes(b.Barcodes), Source: food.Source(b.Source), Note: b.Note,
 	}
 	for _, sv := range b.Servings {
 		f.Servings = append(f.Servings, food.Serving{Name: sv.Name, Amount: sv.Amount})
@@ -428,20 +432,25 @@ func (s *sessions) createFood(ctx context.Context, in *createFoodInput) (*create
 	var conflict *store.FoodConflictError
 	switch {
 	case errors.As(err, &conflict):
-		return nil, huma.Error409Conflict(conflictDetail(conflict), conflictError(conflict, in.Body.Aliases))
+		return nil, huma.Error409Conflict(conflictDetail(conflict), conflictError(conflict, &in.Body))
 	case err != nil:
 		return nil, internalError("saving the food failed", err)
 	}
 	return &createdFoodOutput{Body: newFoodBody(&saved)}, nil
 }
 
-// conflictError names the food in the way of a save as data, for a client
-// to say it in its own words: where it is in the way, body.name or the
-// alias's body.aliases[i], and as the value the food's id.
-func conflictError(c *store.FoodConflictError, aliases []string) *huma.ErrorDetail {
+// conflictError names the food in the way of a save of sent as data, for
+// a client to say it in its own words: where it is in the way, body.name,
+// the alias's body.aliases[i] or the barcode's body.barcodes[i], and as
+// the value the food's id.
+func conflictError(c *store.FoodConflictError, sent *FoodFields) *huma.ErrorDetail {
 	at := "body.name"
-	if i := slices.Index(aliases, c.Alias); c.Alias != "" && i >= 0 {
+	if i := slices.Index(sent.Aliases, c.Alias); c.Alias != "" && i >= 0 {
 		at = fmt.Sprintf("body.aliases[%d]", i)
+	}
+	// The barcode as sent, which may be the form of it a save keeps.
+	if i := slices.Index(food.CanonicalBarcodes(sent.Barcodes), c.Barcode); c.Barcode != "" && i >= 0 {
+		at = fmt.Sprintf("body.barcodes[%d]", i)
 	}
 	return &huma.ErrorDetail{Location: at, Message: "taken by food " + c.Food.ID.String(), Value: ownValue(c.Food.ID.String())}
 }
@@ -451,13 +460,16 @@ func conflictError(c *store.FoodConflictError, aliases []string) *huma.ErrorDeta
 // in no search.
 func conflictDetail(c *store.FoodConflictError) string {
 	what := "the name and brand are taken by food "
-	if c.Alias != "" {
+	switch {
+	case c.Alias != "":
 		what = fmt.Sprintf("the alias %q is taken by food ", c.Alias)
+	case c.Barcode != "":
+		what = fmt.Sprintf("the barcode %s is taken by food ", c.Barcode)
 	}
 	archived := ""
 	if c.Food.Archived {
 		archived = ", archived"
 	}
-	return fmt.Sprintf("%s%s (%q%s): correct that food, or save this one under another name or without the alias",
+	return fmt.Sprintf("%s%s (%q%s): correct that food, or save this one under another name, or without the alias or barcode",
 		what, c.Food.ID, c.Food.Name, archived)
 }

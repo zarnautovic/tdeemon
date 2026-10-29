@@ -171,11 +171,13 @@ var isolationActor = event.Actor{Kind: event.User, Client: "web"}
 // archived one per portion, their names u's own, and returns the first.
 func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) food.Food {
 	t.Helper()
-	// A food with a serving and an alias, its name the party's own.
+	// A food with a serving, an alias and a barcode, its name the party's
+	// own; the barcode both parties', each a food of their own by it.
 	bread := food.Food{
 		ID: uuid.NewV7(), Name: u.Name + "'s rye bread", Basis: food.Per100g, Source: food.User,
 		Nutrients: food.Nutrients{Kcal: 259, Protein: 8.5, Carbs: 48, Fat: 3.3, Fiber: new(6.0)},
 		Servings:  []food.Serving{{Name: "slice", Amount: 40}}, Aliases: []string{u.Name + "'s loaf"},
+		Barcodes: []string{"3850000000015"},
 	}
 	if _, err := db.SaveFood(t.Context(), u.ID, isolationActor, bread, now); err != nil {
 		t.Fatalf("save %s's food: %v", u.Name, err)

@@ -638,6 +638,18 @@ test('a serving or another name past the most a food has is said there, and not 
   })
 })
 
+test("a food's barcodes, which a scan adds, go with it when the form saves it", async () => {
+  const server = foodServer(undefined, 'en', { ...oats, barcodes: ['3850000000015', '96385074'] })
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.change(await screen.findByLabelText('Energy (kcal)'), { target: { value: '372' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ id, barcodes: ['3850000000015', '96385074'] })
+})
+
 test('energy far from what the macros make is warned of, with theirs to take, and saved all the same', async () => {
   const server = foodServer()
   const router = renderAt('/foods/new')

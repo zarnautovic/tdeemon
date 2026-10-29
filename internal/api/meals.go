@@ -217,7 +217,8 @@ func (s *sessions) foodOf(ctx context.Context, p auth.Principal, id uuid.UUID) (
 func newFood(in *FoodFields) (food.Food, error) {
 	f := food.Food{
 		ID: uuid.NewV7(), Name: in.Name, Brand: in.Brand, Basis: food.Basis(in.Basis), Nutrients: in.Nutrients.nutrients(),
-		PortionGrams: in.PortionGrams, Aliases: in.Aliases, Source: food.Source(in.Source), Note: in.Note,
+		PortionGrams: in.PortionGrams, Aliases: in.Aliases, Barcodes: food.CanonicalBarcodes(in.Barcodes), Source: food.Source(in.Source),
+		Note: in.Note,
 	}
 	for _, sv := range in.Servings {
 		f.Servings = append(f.Servings, food.Serving{Name: sv.Name, Amount: sv.Amount})

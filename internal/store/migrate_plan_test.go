@@ -34,6 +34,23 @@ func upTo(t *testing.T, last string) fs.FS {
 	return out
 }
 
+// laterTables makes in db the tables of the migrations named, as they
+// make them: the store saves a food in tables an earlier schema lacks
+// (its barcodes, 0022), and a test of an earlier migration saves its
+// foods through the store.
+func laterTables(t *testing.T, db *DB, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		b, err := fs.ReadFile(embedded, "migrations/"+name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.write.ExecContext(t.Context(), string(b)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+}
+
 // 0010 rebuilds the events table for its new operations: every row stays
 // as it was, in the order of its rowid, which orders a user's events
 // whatever their ids say.

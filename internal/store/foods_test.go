@@ -28,6 +28,12 @@ func bar() food.Food {
 	}
 }
 
+// withBarcode is f with code its barcode.
+func withBarcode(f food.Food, code string) food.Food {
+	f.Barcodes = []string{code}
+	return f
+}
+
 func saveFood(t *testing.T, db *store.DB, userID uuid.UUID, f food.Food) food.Food {
 	t.Helper()
 	got, err := db.SaveFood(t.Context(), userID, testActor, f, t0)
@@ -285,8 +291,8 @@ func TestFoodsBelongToTheirUser(t *testing.T) {
 	}
 }
 
-// A serving or an alias can only belong to a food of its own user: the
-// foreign key names both.
+// A serving, an alias or a barcode can only belong to a food of its own
+// user: the foreign key names both.
 func TestFoodChildrenCannotCrossUsers(t *testing.T) {
 	t.Parallel()
 
@@ -295,6 +301,7 @@ func TestFoodChildrenCannotCrossUsers(t *testing.T) {
 	for _, q := range []string{
 		"INSERT INTO food_servings (food_id, user_id, name, name_key, amount) VALUES (?, ?, 'x', 'x', 1)",
 		"INSERT INTO food_aliases (food_id, user_id, alias, alias_key) VALUES (?, ?, 'x', 'x')",
+		"INSERT INTO food_barcodes (food_id, user_id, code) VALUES (?, ?, '96385074')",
 	} {
 		err := db.WriteTx(t.Context(), func(tx *sql.Tx) error {
 			_, err := tx.ExecContext(t.Context(), q, anas.ID.String(), ivo.String())
@@ -586,6 +593,51 @@ func TestSaveFoodNamesTheFoodInTheWay(t *testing.T) {
 	}
 }
 
+// A food's barcodes are saved with it, in their order, and replaced by a
+// save; a barcode leads to one food of the user's, archived too, and the
+// same barcode is free for another user.
+func TestSaveFoodBarcodes(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	f := bar()
+	f.Barcodes = []string{"3850000000015", "96385074"}
+	saved := saveFood(t, db, ana, f)
+	if got, err := db.FoodByID(t.Context(), ana, saved.ID); err != nil || !slices.Equal(got.Barcodes, f.Barcodes) {
+		t.Fatalf("the barcodes read back: %q, %v; want %q", got.Barcodes, err, f.Barcodes)
+	}
+	saved.Barcodes = []string{"96385074"}
+	if got := saveFood(t, db, ana, saved); !slices.Equal(got.Barcodes, []string{"96385074"}) {
+		t.Errorf("a save of one barcode left %q", got.Barcodes)
+	}
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, saved.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+
+	other := food.Food{
+		ID: uuid.NewV7(), Name: "Caramel wafer", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 500, Protein: 6, Carbs: 60, Fat: 25}, Barcodes: []string{"4006381333931", "96385074"},
+	}
+	_, err := db.SaveFood(t.Context(), ana, testActor, other, t0)
+	var conflict *store.FoodConflictError
+	if !errors.As(err, &conflict) || !errors.Is(err, store.ErrBarcodeTaken) || conflict.Food.ID != saved.ID ||
+		!conflict.Food.Archived || conflict.Barcode != "96385074" || conflict.Alias != "" {
+		t.Errorf("a taken barcode = %#v, want the archived bar in the way", err)
+	}
+	if _, err := db.FoodByID(t.Context(), ana, other.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the refused food was saved: %v", err)
+	}
+	if got := saveFood(t, db, ivo, other); !slices.Equal(got.Barcodes, other.Barcodes) {
+		t.Errorf("Ivo's food of Ana's barcode: %q", got.Barcodes)
+	}
+	// Taken off the bar, the barcode is free.
+	saved.Barcodes = nil
+	saveFood(t, db, ana, saved)
+	if got := saveFood(t, db, ana, other); !slices.Equal(got.Barcodes, other.Barcodes) {
+		t.Errorf("the wafer after the bar let its barcode go: %q", got.Barcodes)
+	}
+}
+
 // CorrectFood saves a food the user has, by its id, in the save's own
 // transaction: an id they have no food of is ErrNotFound, and saves
 // nothing, rather than a new food or the food of the same name.
@@ -750,6 +802,7 @@ func TestCreateFood(t *testing.T) {
 	oats := saveFood(t, db, ana, food.Food{
 		ID: uuid.NewV7(), Name: "Rolled oats", Brand: "Mill", Basis: food.Per100g, Source: food.Label,
 		Nutrients: food.Nutrients{Kcal: 370, Protein: 13, Carbs: 60, Fat: 7}, Aliases: []string{"porridge"},
+		Barcodes: []string{"4006381333931"},
 	})
 	if err := db.SetFoodArchived(t.Context(), ana, testActor, oats.ID, true, t0); err != nil {
 		t.Fatal(err)
@@ -767,6 +820,7 @@ func TestCreateFood(t *testing.T) {
 	}{
 		{"the name and brand, in another case, archived", mk("rolled OATS", "mill"), store.ErrNameTaken},
 		{"an alias another food has", mk("Oat flakes", "", "Porridge"), store.ErrAliasTaken},
+		{"a barcode another food has", withBarcode(mk("Oat flakes", ""), "4006381333931"), store.ErrBarcodeTaken},
 	} {
 		_, err := db.CreateFood(t.Context(), ana, testActor, tc.f, t0)
 		var conflict *store.FoodConflictError

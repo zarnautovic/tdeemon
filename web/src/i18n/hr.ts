@@ -624,6 +624,7 @@ export const hr: Messages = {
     addServing: 'Dodaj mjeru',
     removeServing: (name: string) => (name ? `Ukloni mjeru: ${name}` : 'Ukloni mjeru'),
     aliases: 'Drugi nazivi',
+    barcodes: 'Barkodovi',
     alias: (n: number) => `Drugi naziv ${String(n)}`,
     addAlias: 'Dodaj drugi naziv',
     removeAlias: (name: string) => (name ? `Ukloni naziv: ${name}` : 'Ukloni naziv'),

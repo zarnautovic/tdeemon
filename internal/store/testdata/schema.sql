@@ -89,6 +89,18 @@ CREATE TABLE food_aliases (
 
 CREATE UNIQUE INDEX food_aliases_user_alias ON food_aliases (user_id, alias_key);
 
+CREATE TABLE food_barcodes (
+    food_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    code TEXT NOT NULL CHECK (
+        length(code) IN (8, 13, 14) AND code NOT GLOB '*[^0-9]*'
+    ),
+    PRIMARY KEY (user_id, food_id, code),
+    FOREIGN KEY (user_id, food_id) REFERENCES foods (user_id, id) ON DELETE CASCADE
+) STRICT;
+
+CREATE UNIQUE INDEX food_barcodes_user_code ON food_barcodes (user_id, code);
+
 CREATE TABLE food_servings (
     food_id TEXT NOT NULL,
     user_id TEXT NOT NULL,

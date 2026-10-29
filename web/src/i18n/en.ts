@@ -716,6 +716,7 @@ export const en = {
     addServing: 'Add a serving',
     removeServing: (name: string) => (name ? `Remove the serving: ${name}` : 'Remove the serving'),
     aliases: 'Other names',
+    barcodes: 'Barcodes',
     alias: (n: number) => `Other name ${String(n)}`,
     addAlias: 'Add another name',
     removeAlias: (name: string) => (name ? `Remove the name: ${name}` : 'Remove the name'),

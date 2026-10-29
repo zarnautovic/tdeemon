@@ -391,8 +391,9 @@ var sentFoodForm = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // SentFood returns a digest of new food f as a client sent it, its id
 // left out: every field in a fixed order, each quoted or in its shortest
-// exact form, so no two foods write the same text. Its servings and
-// aliases are sets: in any order, the same digest.
+// exact form, so no two foods write the same text. Its servings,
+// aliases and barcodes are sets: in any order, the same digest. A food
+// without barcodes has the digest it had before foods had them.
 func SentFood(f food.Food) string {
 	servings := slices.Clone(f.Servings)
 	// A food names each serving once.
@@ -401,6 +402,10 @@ func SentFood(f food.Food) string {
 		fmt.Sprintf("%q %q %q %q %q %v", f.Name, f.Brand, f.Basis, f.Source, f.Note, f.PortionGrams),
 		nutrientsText(f.Nutrients),
 		fmt.Sprintf("%q", slices.Sorted(slices.Values(f.Aliases))),
+	}
+	if len(f.Barcodes) > 0 {
+		// Bracketed, as no serving's line is.
+		lines = append(lines, fmt.Sprintf("%q", slices.Sorted(slices.Values(f.Barcodes))))
 	}
 	for _, sv := range servings {
 		lines = append(lines, fmt.Sprintf("%q %v", sv.Name, sv.Amount))

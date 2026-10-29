@@ -20,6 +20,7 @@ func TestMigrationOfTheFoodsSearchIndexesAsTheStore(t *testing.T) {
 	if err := db.migrate(t.Context(), upTo(t, "0017_telegram_chats.sql"), discard()); err != nil {
 		t.Fatalf("migrate to 0017: %v", err)
 	}
+	laterTables(t, db, "0022_food_barcodes.sql")
 	user := uuid.MustParse("0199f0a0-0000-7000-8000-000000000001")
 	exec := func(q string, args ...any) {
 		t.Helper()

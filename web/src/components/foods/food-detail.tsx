@@ -40,6 +40,7 @@ export function FoodDetail({ food }: { food: Food }) {
   const eaten: Food = last === undefined ? food : { ...food, last_use: last }
   const servings = food.servings ?? []
   const aliases = food.aliases ?? []
+  const barcodes = food.barcodes ?? []
 
   return (
     <article aria-labelledby={`food-${food.id}`} className="space-y-4">
@@ -110,7 +111,7 @@ export function FoodDetail({ food }: { food: Food }) {
       </div>
       <SaveStatus change={archive} />
       <NutritionTable food={food} />
-      {(servings.length > 0 || aliases.length > 0 || food.note) && (
+      {(servings.length > 0 || aliases.length > 0 || barcodes.length > 0 || food.note) && (
         <section className={cn(card, 'space-y-4')}>
           {servings.length > 0 && (
             <div className="space-y-1.5">
@@ -136,6 +137,21 @@ export function FoodDetail({ food }: { food: Food }) {
                 {aliases.map((a) => (
                   <li key={a} className="rounded-sm bg-surface-2 px-2.5 py-1 text-small">
                     {a}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {barcodes.length > 0 && (
+            <div className="space-y-1.5">
+              <h2 className="text-h3">{t.foods.barcodes}</h2>
+              <ul className="flex flex-wrap gap-1.5">
+                {barcodes.map((code) => (
+                  <li
+                    key={code}
+                    className="rounded-sm bg-surface-2 px-2.5 py-1 text-small tabular-nums"
+                  >
+                    {code}
                   </li>
                 ))}
               </ul>
