@@ -8,13 +8,16 @@ import { sessionQuery } from '@/api/session'
 import type { Food } from '@/api/types'
 import { BodyToday } from '@/components/day/body-today'
 import { CheckIn } from '@/components/day/check-in'
+import { DayPhase } from '@/components/day/day-phase'
 import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
 import { kcalLeft } from '@/components/day/left'
-import { MealCard } from '@/components/day/meal-card'
+import { MealList } from '@/components/day/meal-list'
 import { slotAt } from '@/components/day/meal-slot'
 import { QuickAdd } from '@/components/day/quick-add'
 import { QuickChips } from '@/components/day/quick-chips'
+import { WeekCard } from '@/components/day/week-card'
+import { WeekLine } from '@/components/day/week-line'
 import { WeekStrip } from '@/components/day/week-strip'
 import { LoadError } from '@/components/load-error'
 import { ProposalNudge } from '@/components/plan/proposal-nudge'
@@ -22,6 +25,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
+import { useDesktop } from '@/lib/media'
 import { useShortcuts } from '@/lib/shortcuts'
 import type { DaySearch } from '@/router'
 
@@ -52,11 +56,12 @@ function DayKeys({
 }
 
 // DayPage is a day of the user's: today at /, another at /?date=YYYY-MM-DD.
-// It shows the week's days, what was eaten against the target, the
-// meals, the check-in and the measurements, takes the day's type, the
-// check-in and the measurements, logs a meal (QuickAdd), and moves a day
-// back or ahead, up to today. /?log=true opens the meal to log on today
-// (the app's Log a meal).
+// It shows the week's days and their average, what was eaten against the
+// target, the meals, the check-in and the measurements (on a desktop in
+// two columns, the meals a table), takes the day's type, the check-in
+// and the measurements, logs a meal (QuickAdd), and moves a day back or
+// ahead, up to today. /?log=true opens the meal to log on today (the
+// app's Log a meal).
 export function DayPage() {
   const t = useMessages()
   const f = useFormat()
@@ -72,6 +77,8 @@ export function DayPage() {
   )
   const me = $api.useQuery('get', '/api/v1/me')
   const session = useQuery(sessionQuery)
+  // A desktop lays the day out in columns, beside its week.
+  const desktop = useDesktop()
   const timeZone = session.data?.user.timezone ?? 'UTC'
   const today = me.data?.today
   // When the page opened, for the meal of the hour to add.
@@ -169,57 +176,103 @@ export function DayPage() {
     </div>
   )
 
+  const toToday = (
+    <Link
+      to="/"
+      activeOptions={{ exact: true }}
+      className="relative flex h-9 shrink-0 items-center rounded-full bg-primary-soft px-4 text-small font-semibold text-primary outline-none after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:bg-primary-soft/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+    >
+      {t.day.toToday}
+    </Link>
+  )
+  let header
+  if (isToday) {
+    // Today's: the day's type beside the title, and the date under both
+    // on a line of its own, which a phone's width keeps whole.
+    header = (
+      <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2">
+        <div className="row-span-2 flex shrink-0 items-center">
+          {previous}
+          {next}
+        </div>
+        <h1 className="text-title">{t.day.today}</h1>
+        <p className="col-span-2 col-start-2 row-start-2 text-small text-muted-foreground">
+          {f.date(shown, todayDate)}
+        </p>
+        <div className="col-start-3 row-start-1">{dayType}</div>
+      </header>
+    )
+  } else if (desktop) {
+    // Another day's on a desktop, as today's is: its date the title, and
+    // its type and the way back to today at the other end.
+    header = (
+      <header className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center">
+          {previous}
+          {next}
+        </div>
+        <h1 className="min-w-0 flex-1 text-title">{f.date(shown, todayDate)}</h1>
+        {dayType}
+        {toToday}
+      </header>
+    )
+  } else {
+    // Another day's on a phone: its date between the arrows, on a line
+    // of its own, its type under it, and the way back to today right
+    // there.
+    header = (
+      <header className="flex items-start gap-2">
+        {previous}
+        <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
+          <h1 className="flex min-h-11 items-center text-h3 text-balance">
+            {f.date(shown, todayDate)}
+          </h1>
+          {dayType}
+          {toToday}
+        </div>
+        {next}
+      </header>
+    )
+  }
+  // What the user says of the day, and what it measured: their fields
+  // start again with each day.
+  const checkIn = <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
+  const body = (
+    <BodyToday
+      key={`body ${day.data.date}`}
+      date={day.data.date}
+      today={todayDate}
+      metrics={day.data.metrics}
+      canLog={!future}
+    />
+  )
+
   return (
     <div className="max-w-3xl space-y-4 lg:max-w-none">
       <DayKeys
         before={hasBefore ? searchOf(before) : undefined}
         after={hasNext ? searchOf(after) : undefined}
       />
-      {isToday ? (
-        <header className="flex items-center gap-2">
-          <div className="flex shrink-0 items-center">
-            {previous}
-            {next}
-          </div>
-          <div className="min-w-0 flex-1">
-            <h1 className="text-title">{t.day.today}</h1>
-            <p className="text-small text-muted-foreground">{f.date(shown, todayDate)}</p>
-          </div>
-          {dayType}
-        </header>
-      ) : (
-        // Another day's: its date between the arrows, on a line of its
-        // own, its type under it, and the way back to today right there.
-        <header className="flex items-start gap-2 lg:max-w-md">
-          {previous}
-          <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
-            <h1 className="flex min-h-11 items-center text-h3 text-balance lg:min-h-9 lg:text-h2">
-              {f.date(shown, todayDate)}
-            </h1>
-            {dayType}
-            <Link
-              to="/"
-              activeOptions={{ exact: true }}
-              className="relative flex h-9 items-center rounded-full bg-primary-soft px-4 text-small font-semibold text-primary outline-none after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:bg-primary-soft/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              {t.day.toToday}
-            </Link>
-          </div>
-          {next}
-        </header>
+      {header}
+      {/* A phone's week, above the day; a desktop's is beside it. */}
+      {!desktop && todayDate !== undefined && (
+        <div className="space-y-2">
+          <WeekStrip date={shown} today={todayDate} />
+          <WeekLine date={shown} today={todayDate} />
+        </div>
       )}
-      {todayDate !== undefined && <WeekStrip date={shown} today={todayDate} />}
       <div
         aria-busy={waiting}
         // What is changed while it waits would be the day before's.
         inert={waiting}
         className={`grid grid-cols-1 gap-4 lg:grid-cols-12 lg:items-start ${waiting ? 'opacity-60' : ''}`}
       >
-        {/* A desktop's columns: the day and its meals, and beside them
-            what the user says of it and measures. A phone has them one
-            after the other. */}
+        {/* A desktop's columns: the day and its meals, a table, and
+            beside them the week, the body, the check-in and the phase. A
+            phone has them one after the other, the phase in the day's
+            hero. */}
         <div className="space-y-4 lg:col-span-8">
-          <DaySummary day={day.data} />
+          <DaySummary day={day.data} phase={!desktop} />
           {/* A proposal that waits, under the day's hero. */}
           {isToday && <ProposalNudge />}
           {isToday && (
@@ -247,20 +300,14 @@ export function DayPage() {
             {day.data.meals.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t.day.noMeals}</p>
             ) : (
-              <ul className="space-y-2">
-                {day.data.meals.map((meal) => (
-                  <li key={meal.id}>
-                    <MealCard
-                      meal={meal}
-                      date={day.data.date}
-                      today={todayDate ?? day.data.date}
-                      timeZone={timeZone}
-                      startHour={session.data?.user.day_start_hour ?? 0}
-                      afterDelete={mealsHeading}
-                    />
-                  </li>
-                ))}
-              </ul>
+              <MealList
+                day={day.data}
+                today={todayDate ?? day.data.date}
+                timeZone={timeZone}
+                startHour={session.data?.user.day_start_hour ?? 0}
+                afterDelete={mealsHeading}
+                columns={desktop}
+              />
             )}
             {!future && (
               <Button
@@ -284,15 +331,19 @@ export function DayPage() {
           </section>
         </div>
         <div className="space-y-4 lg:col-span-4">
-          {/* Its fields start again with each day. */}
-          <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
-          <BodyToday
-            key={`body ${day.data.date}`}
-            date={day.data.date}
-            today={todayDate}
-            metrics={day.data.metrics}
-            canLog={!future}
-          />
+          {desktop ? (
+            <>
+              {todayDate !== undefined && <WeekCard date={shown} today={todayDate} />}
+              {body}
+              {checkIn}
+              <DayPhase date={day.data.date} card />
+            </>
+          ) : (
+            <>
+              {checkIn}
+              {body}
+            </>
+          )}
         </div>
       </div>
       {!future && (

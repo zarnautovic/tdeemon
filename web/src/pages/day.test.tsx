@@ -220,8 +220,8 @@ test("a day before's body is the day's: the weight's trend of that day, which a 
       const query = new URL(request.url).searchParams
       asked.push(`${query.get('from') ?? ''} to ${query.get('to') ?? ''}`)
       return Response.json({
-        from: '2026-08-19',
-        to: date,
+        from: '2026-08-24',
+        to: '2026-08-30',
         days: [{ date, status: 'complete', type: 'rest', meals: 0, trend_kg: trend }],
         weeks: [],
       })
@@ -235,8 +235,8 @@ test("a day before's body is the day's: the weight's trend of that day, which a 
   await waitFor(() => {
     expect(tile('Weight')).toBe('Weight85.9 kgtrend 86.4 kg')
   })
-  // Asked once, with the week strip.
-  expect(new Set(asked)).toEqual(new Set(['2026-08-19 to 2026-08-25']))
+  // Asked once, with the week strip: of its week, Monday to Sunday.
+  expect(new Set(asked)).toEqual(new Set(['2026-08-24 to 2026-08-30']))
 
   trend = 86.2
   fireEvent.click(within(body).getByRole('button', { name: 'All measurements' }))
@@ -598,14 +598,14 @@ test('the phase of the day, its week, and the rate against the phase', async () 
   expect(phase.getAttribute('href')).toBe('/progress')
 })
 
-test('the week up to today, each day what it ate of its target, linked', async () => {
+test("today's calendar week, Monday first, each day up to today what it ate of its target, linked", async () => {
   fakeServer({
     ...signedIn(),
     'GET /api/v1/history': (request) => {
       const query = new URL(request.url).searchParams
-      expect([query.get('from'), query.get('to')]).toEqual(['2026-10-17', today])
+      expect([query.get('from'), query.get('to')]).toEqual(['2026-10-19', today])
       return Response.json({
-        from: '2026-10-17',
+        from: '2026-10-19',
         to: today,
         days: [
           {
@@ -625,18 +625,56 @@ test('the week up to today, each day what it ate of its target, linked', async (
   renderAt('/')
 
   const week = await screen.findByRole('navigation', { name: 'The week' })
+  expect(within(week).getAllByRole('listitem')).toHaveLength(7)
+  // Friday is today: its weekend is still to come, no day to go to.
   const days = within(week).getAllByRole('link')
-  expect(days).toHaveLength(7)
+  expect(days).toHaveLength(5)
   expect(
     await within(week).findByRole('link', { name: 'Thu 22: 2,300 of 2,500 kcal' }),
   ).toBeDefined()
   // Named as it reads, so a voice that says what it sees reaches it.
-  expect(days[0]?.getAttribute('aria-label')).toBe('Sat 17: nothing logged')
-  expect(days[0]?.textContent).toBe('Sat 17')
+  expect(days[0]?.getAttribute('aria-label')).toBe('Mon 19: nothing logged')
+  expect(days[0]?.textContent).toBe('Mon 19')
   // Today, the day shown, is the current one.
-  expect(days[6]?.getAttribute('aria-current')).toBe('page')
-  expect(days[6]?.getAttribute('href')).toBe('/')
-  expect(days[5]?.getAttribute('href')).toBe('/?date=2026-10-22')
+  expect(days[4]?.getAttribute('aria-current')).toBe('page')
+  expect(days[4]?.getAttribute('href')).toBe('/')
+  expect(days[3]?.getAttribute('href')).toBe('/?date=2026-10-22')
+  expect(within(week).getByText('Sat 24: to come')).toBeDefined()
+  expect(within(week).getByText('Sun 25: to come')).toBeDefined()
+})
+
+// A day to come only an address names: its own week, which has nothing
+// to show yet nor any day to go to, the day marked.
+test('a day to come shows its own week, with nothing in it yet, and asks for no history', async () => {
+  const asked: string[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-11-04': () => Response.json(day({ date: '2026-11-04', status: 'open' })),
+    'GET /api/v1/history': (request) => {
+      asked.push(new URL(request.url).search)
+      return problem(422)
+    },
+  })
+
+  renderAt('/?date=2026-11-04')
+
+  expect(await screen.findByRole('heading', { name: 'Wednesday, November 4' })).toBeDefined()
+  const week = screen.getByRole('navigation', { name: 'The week' })
+  expect(within(week).queryAllByRole('link')).toEqual([])
+  const days = within(week).getAllByRole('listitem')
+  expect(days.map((d) => d.textContent)).toEqual([
+    'Mon 2: to comeMon 2',
+    'Tue 3: to comeTue 3',
+    'Wed 4: to comeWed 4',
+    'Thu 5: to comeThu 5',
+    'Fri 6: to comeFri 6',
+    'Sat 7: to comeSat 7',
+    'Sun 8: to comeSun 8',
+  ])
+  expect(days[2]?.firstElementChild?.getAttribute('aria-current')).toBe('date')
+  // Nor a line of its week.
+  expect(screen.queryByRole('button', { name: /^That week/ })).toBeNull()
+  expect(asked).toEqual([])
 })
 
 test('a day before the first target says it has none, and still adds up', async () => {

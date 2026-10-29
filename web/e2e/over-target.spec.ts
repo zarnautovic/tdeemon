@@ -100,6 +100,16 @@ for (const size of sizes) {
         expect(await axe()).toEqual([])
         await summary.getByRole('button', { name: 'What TDEE is' }).click()
         await expect(page.getByRole('dialog', { name: 'TDEE' })).toBeVisible()
+        // Its fade in over, as axe sees colours as they are drawn: a
+        // popover just come is all but transparent.
+        await page.evaluate(() =>
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a.effect?.getComputedTiming().endTime !== Infinity)
+              .map((a) => a.finished.catch(() => undefined)),
+          ),
+        )
         expect(await axe()).toEqual([])
       })
 

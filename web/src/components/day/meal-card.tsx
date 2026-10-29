@@ -5,6 +5,7 @@ import { statusOf } from '@/api/errors'
 import { useDeleteMeal, useLogMeal } from '@/api/meals'
 import type { Item, Meal } from '@/api/types'
 import { MacroSplit } from '@/components/day/macro-split'
+import { mealColumns } from '@/components/day/meal-columns'
 import { MealEditor } from '@/components/day/meal-editor'
 import { itemName, repeatOf, shownAmount } from '@/components/day/meal-entries'
 import { longName, mealName } from '@/components/day/meal-slot'
@@ -20,6 +21,8 @@ import { cn } from '@/lib/utils'
 
 // The clients a model logs through: its meals are marked AI.
 const models: ReadonlySet<Meal['client']> = new Set(['mcp', 'chat', 'telegram'])
+
+const macros = ['protein', 'carbs', 'fat'] as const
 
 // together is values said each with its label or unit ("P 47", "248
 // kcal"), in a line that breaks between them, after a "·", and never
@@ -37,7 +40,9 @@ function together(pairs: readonly string[]): string {
 // sheet), repeat it today at this time, or delete it; a toast says what
 // was done, with what the server warned of it, and Undo. Deleted, in its
 // editor or from the card, the focus goes to afterDelete, as the card
-// goes with it.
+// goes with it. In columns, a desktop's table of meals (MealList), the
+// row has its kcal and each macro in a column of its own, under their
+// heads, and the meal's marks beside its name.
 export function MealCard({
   meal,
   date,
@@ -45,6 +50,7 @@ export function MealCard({
   timeZone,
   startHour,
   afterDelete,
+  columns = false,
 }: {
   meal: Meal
   date: string
@@ -54,6 +60,7 @@ export function MealCard({
   timeZone: string
   startHour: number
   afterDelete?: RefObject<HTMLElement | null>
+  columns?: boolean
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -113,8 +120,46 @@ export function MealCard({
       : inUnit
   }
 
+  const timeOf = (
+    <time
+      dateTime={meal.eaten_at}
+      className="text-small whitespace-nowrap text-muted-foreground tabular-nums"
+    >
+      {time}
+    </time>
+  )
+  // The energy on one line, whatever the name's length; its unit is the
+  // meals', said above them, and to a screen reader here.
+  const energy = (
+    <span className="font-semibold whitespace-nowrap tabular-nums">
+      <span aria-hidden>{kcal}</span>
+      <span className="sr-only">{t.unit.kcal(kcal)}</span>
+    </span>
+  )
+  const marks = (
+    <>
+      {models.has(meal.client) && <Badge>{t.meal.ai}</Badge>}
+      {meal.items.some((item) => item.source === 'estimate') && (
+        <Badge tone="warning">{t.meal.estimate}</Badge>
+      )}
+    </>
+  )
+  // That a tap shows the items.
+  const chevron = (
+    <ChevronDown
+      aria-hidden
+      className={cn(
+        'size-4 shrink-0 transition-transform motion-reduce:transition-none',
+        open && 'rotate-180',
+      )}
+    />
+  )
+
   return (
-    <article aria-labelledby={`${id}-name`} className="rounded-lg border bg-card">
+    <article
+      aria-labelledby={`${id}-name`}
+      className={columns ? undefined : 'rounded-lg border bg-card'}
+    >
       <h3>
         <button
           type="button"
@@ -124,59 +169,71 @@ export function MealCard({
             setOpen((o) => !o)
           }}
           // The time's column as wide as the language's times, so the
-          // name has the rest of the line but the energy.
+          // name has the rest of the line but the energy (and, in
+          // columns, the macros).
           className={cn(
-            'grid min-h-14 w-full items-baseline gap-x-2.5 gap-y-1.5 rounded-lg px-4 py-3.5 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-            f.hour12
-              ? 'grid-cols-[3.75rem_minmax(0,1fr)_auto]'
-              : 'grid-cols-[2.5rem_minmax(0,1fr)_auto]',
+            'grid min-h-14 w-full items-baseline gap-y-1.5 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            columns && mealColumns(f.hour12),
+            columns ? 'py-3' : 'gap-x-2.5 rounded-lg px-4 py-3.5',
+            !columns &&
+              (f.hour12
+                ? 'grid-cols-[3.75rem_minmax(0,1fr)_auto]'
+                : 'grid-cols-[2.5rem_minmax(0,1fr)_auto]'),
           )}
         >
-          <time
-            dateTime={meal.eaten_at}
-            className="text-small whitespace-nowrap text-muted-foreground tabular-nums"
-          >
-            {time}
-          </time>
-          <span id={`${id}-name`} className="truncate font-semibold">
-            {name}
-          </span>
-          {/* The energy on one line, whatever the name's length; its unit
-              is the meals', said above them, and to a screen reader here. */}
-          <span className="font-semibold whitespace-nowrap tabular-nums">
-            <span aria-hidden>{kcal}</span>
-            <span className="sr-only">{t.unit.kcal(kcal)}</span>
-          </span>
-          {long && (
-            <span className="col-span-2 col-start-2 line-clamp-2 text-small text-muted-foreground">
-              {meal.description}
-            </span>
-          )}
-          <span className="col-span-2 col-start-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-caption text-muted-foreground">
-            <MacroSplit nutrients={meal.total} />
-            <span>
-              {together([
-                `${t.day.short.protein} ${f.grams(meal.total.protein)}`,
-                `${t.day.short.carbs} ${f.grams(meal.total.carbs)}`,
-                `${t.day.short.fat} ${f.grams(meal.total.fat)}`,
-              ])}
-            </span>
-            <span className="ml-auto flex items-center gap-1.5">
-              {models.has(meal.client) && <Badge>{t.meal.ai}</Badge>}
-              {meal.items.some((item) => item.source === 'estimate') && (
-                <Badge tone="warning">{t.meal.estimate}</Badge>
+          {timeOf}
+          {columns ? (
+            <>
+              <span className="flex min-w-0 items-center gap-2">
+                <span id={`${id}-name`} className="truncate font-semibold">
+                  {name}
+                </span>
+                {marks}
+              </span>
+              <span className="text-right">{energy}</span>
+              {macros.map((m) => (
+                <span key={m} className="text-right text-small tabular-nums">
+                  <span className="sr-only">{t.day.short[m]} </span>
+                  {f.grams(meal.total[m])}
+                </span>
+              ))}
+              <span className="self-center">{chevron}</span>
+              {/* A model's list of what was eaten, under its name. */}
+              {long && (
+                <span className="col-start-2 line-clamp-2 text-small text-muted-foreground">
+                  {meal.description}
+                </span>
               )}
-              {/* The items, and that a tap shows them. */}
-              <span>{t.meal.items(meal.items.length)}</span>
-              <ChevronDown
-                aria-hidden
-                className={cn(
-                  'size-4 shrink-0 transition-transform motion-reduce:transition-none',
-                  open && 'rotate-180',
-                )}
-              />
-            </span>
-          </span>
+            </>
+          ) : (
+            <>
+              <span id={`${id}-name`} className="truncate font-semibold">
+                {name}
+              </span>
+              {energy}
+              {long && (
+                <span className="col-span-2 col-start-2 line-clamp-2 text-small text-muted-foreground">
+                  {meal.description}
+                </span>
+              )}
+              <span className="col-span-2 col-start-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-caption text-muted-foreground">
+                <MacroSplit nutrients={meal.total} />
+                <span>
+                  {together([
+                    `${t.day.short.protein} ${f.grams(meal.total.protein)}`,
+                    `${t.day.short.carbs} ${f.grams(meal.total.carbs)}`,
+                    `${t.day.short.fat} ${f.grams(meal.total.fat)}`,
+                  ])}
+                </span>
+                <span className="ml-auto flex items-center gap-1.5">
+                  {marks}
+                  {/* The items, and that a tap shows them. */}
+                  <span>{t.meal.items(meal.items.length)}</span>
+                  {chevron}
+                </span>
+              </span>
+            </>
+          )}
         </button>
       </h3>
       {open && (

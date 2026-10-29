@@ -58,8 +58,25 @@ async function make(page: Page, tag: string): Promise<Made> {
   expect((await api.put('/api/v1/days/today/metrics/weight', { data: { value: 72.5 } })).ok()).toBe(
     true,
   )
+  // A day of a week long past, which the other tests leave alone: its
+  // week has a day logged to say (today's has none over yet).
+  const before = await api.post('/api/v1/meals', {
+    data: {
+      eaten_at: `${weekDay}T12:00:00Z`,
+      items: [
+        {
+          name: `Barley risotto ${tag}`,
+          nutrients: { kcal: 520, protein: 28, carbs: 70, fat: 12 },
+        },
+      ],
+    },
+  })
+  expect(before.ok()).toBe(true)
   return { foodId, meal }
 }
+
+// The day of the week whose sheet is checked.
+const weekDay = '2025-03-12'
 
 // A screen is a page of the app, or a sheet over one, opened and settled.
 interface Screen {
@@ -107,6 +124,16 @@ const screens: Screen[] = [
       await expect(
         page.getByRole('link', { name: /^(Back to today|Natrag na danas)$/ }),
       ).toBeVisible()
+      await settled(page)
+    },
+  },
+  {
+    name: 'week',
+    open: async (page) => {
+      await page.goto(`/?date=${weekDay}`)
+      await settled(page)
+      await page.getByRole('button', { name: /^(That week|Taj tjedan): / }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
       await settled(page)
     },
   },

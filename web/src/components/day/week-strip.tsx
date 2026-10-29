@@ -3,9 +3,10 @@ import { Link } from '@tanstack/react-router'
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
 import { kcalStanding } from '@/components/day/left'
-import { weekOf } from '@/components/day/week'
-import { addDays, useFormat } from '@/i18n/format'
+import { weekDates, weekOf } from '@/components/day/week'
+import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { cn } from '@/lib/utils'
 
 type HistoryDay = components['schemas']['HistoryDayBody']
 
@@ -64,52 +65,87 @@ function MiniRing({ day }: { day: HistoryDay | undefined }) {
 // Bar is a day's intake as a bar, against the week's most (scale), with
 // its target a tick across: a desktop's week, the days side by side. Past
 // its target by more than the week takes in its stride, the bar is the
-// brand's up to the tick and, above it, narrower in the over colour.
-function Bar({ day, scale }: { day: HistoryDay | undefined; scale: number }) {
+// brand's up to the tick and, above it, narrower in the over colour. The
+// week's average, when it has one, is a line across the day's column,
+// which meets the next day's over the gap between them.
+function Bar({
+  day,
+  scale,
+  average,
+}: {
+  day: HistoryDay | undefined
+  scale: number
+  average: number | undefined
+}) {
   const intake = day?.intake?.kcal
   const target = day?.target?.kcal
   const over = overOf(intake, target) > 0
   const below = over && target !== undefined ? target : intake
 
   return (
-    <span aria-hidden className="relative hidden h-16 w-6 rounded-sm bg-surface-2 lg:block">
-      {below !== undefined && (
+    <span aria-hidden className="relative hidden h-20 w-full lg:block">
+      <span className="absolute inset-y-0 left-1/2 w-6 -translate-x-1/2 rounded-sm bg-surface-2">
+        {below !== undefined && (
+          <span
+            className="absolute inset-x-0 bottom-0 rounded-sm bg-primary"
+            style={{ height: `${String((below / scale) * 100)}%` }}
+          />
+        )}
+        {over && intake !== undefined && below !== undefined && (
+          <span
+            className="absolute inset-x-1.5 rounded-t-sm bg-over"
+            style={{
+              bottom: `${String((below / scale) * 100)}%`,
+              height: `${String(((intake - below) / scale) * 100)}%`,
+            }}
+          />
+        )}
+        {target !== undefined && (
+          <span
+            className="absolute -inset-x-1 border-t-2 border-dashed border-foreground/60"
+            style={{ bottom: `${String((target / scale) * 100)}%` }}
+          />
+        )}
+      </span>
+      {average !== undefined && (
         <span
-          className="absolute inset-x-0 bottom-0 rounded-sm bg-primary"
-          style={{ height: `${String((below / scale) * 100)}%` }}
-        />
-      )}
-      {over && intake !== undefined && below !== undefined && (
-        <span
-          className="absolute inset-x-1.5 rounded-t-sm bg-over"
-          style={{
-            bottom: `${String((below / scale) * 100)}%`,
-            height: `${String(((intake - below) / scale) * 100)}%`,
-          }}
-        />
-      )}
-      {target !== undefined && (
-        <span
-          className="absolute -inset-x-1 border-t-2 border-dashed border-foreground/60"
-          style={{ bottom: `${String((target / scale) * 100)}%` }}
+          data-average
+          className="absolute -inset-x-0.5 border-t-2 border-muted-foreground group-aria-[current]:border-background dark:group-aria-[current]:border-primary"
+          style={{ bottom: `${String((average / scale) * 100)}%` }}
         />
       )}
     </span>
   )
 }
 
-// WeekStrip is the seven days up to today, or up to the day shown when it
-// is before them: each a link to its day, with what was eaten of its
-// target, as a mini ring on a phone and as bars on a desktop; the day
-// shown is the current one, inverted (in the dark, the brand's tint).
-// Each says it in words.
-export function WeekStrip({ date, today }: { date: string; today: string }) {
+// WeekStrip is the calendar week of the day shown, Monday to Sunday, as
+// the progress's weeks are: each day a link to its day, with what was
+// eaten of its target, as a mini ring on a phone and as bars on a
+// desktop, where average, the week's, is a line across them; the day
+// shown is the current one, inverted (in the dark, the brand's tint). A
+// day to come is no link, as the arrows stop at today, and has nothing
+// to show. Each says it in words.
+export function WeekStrip({
+  date,
+  today,
+  average,
+}: {
+  date: string
+  today: string
+  average?: number | undefined
+}) {
   const t = useMessages()
   const f = useFormat()
-  const { from, to } = weekOf(date, today)
-  const history = $api.useQuery('get', '/api/v1/history', { params: { query: { from, to } } })
+  const query = weekOf(date, today)
+  const history = $api.useQuery(
+    'get',
+    '/api/v1/history',
+    { params: { query } },
+    // A week to come has no history yet.
+    { enabled: query.from <= query.to },
+  )
   const byDate = new Map(history.data?.days.map((d) => [d.date, d]))
-  const dates = Array.from({ length: 7 }, (_, i) => addDays(from, i))
+  const dates = weekDates(date)
   const scale = Math.max(
     1,
     ...dates.map((d) =>
@@ -128,37 +164,62 @@ export function WeekStrip({ date, today }: { date: string; today: string }) {
       : t.day.week.eatenOf(f.number(intake), f.number(target))
   }
 
+  const cell = 'group flex flex-col items-center gap-1 rounded-md py-1.5 text-muted-foreground'
+
   return (
     <nav aria-label={t.day.week.label}>
       <ol className="grid grid-cols-7 gap-1">
         {dates.map((d) => {
           const day = byDate.get(d)
+          // Named as it reads, its weekday and day, so a voice says what
+          // it sees.
+          const name = `${f.weekday(d)} ${f.dayOfMonth(d)}`
+          const face = (
+            <>
+              {/* A space after the weekday, which a phone does not show
+                  in a column, and the text reads "Tue 22", as the name. */}
+              <span aria-hidden className="text-caption">
+                {f.weekday(d)}{' '}
+              </span>
+              <MiniRing day={day} />
+              <Bar day={day} scale={scale} average={average} />
+              <span
+                aria-hidden
+                className="text-caption font-semibold text-foreground group-aria-[current]:text-background dark:group-aria-[current]:text-primary"
+              >
+                {f.dayOfMonth(d)}
+              </span>
+            </>
+          )
           return (
             <li key={d}>
-              <Link
-                to="/"
-                // Today's link is / itself.
-                search={d === today ? {} : { date: d }}
-                activeOptions={{ exact: true }}
-                // Named as it reads, its weekday and day, so a voice
-                // says what it sees.
-                aria-label={t.day.week.day(`${f.weekday(d)} ${f.dayOfMonth(d)}`, said(day))}
-                className="group flex flex-col items-center gap-1 rounded-md py-1.5 text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:bg-foreground aria-[current=page]:text-background dark:aria-[current=page]:bg-primary-soft dark:aria-[current=page]:text-primary"
-              >
-                {/* A space after the weekday, which a phone does not show
-                    in a column, and the text reads "Tue 22", as the name. */}
-                <span aria-hidden className="text-caption">
-                  {f.weekday(d)}{' '}
-                </span>
-                <MiniRing day={day} />
-                <Bar day={day} scale={scale} />
+              {d > today ? (
+                // A day to come, the day shown only by an address.
                 <span
-                  aria-hidden
-                  className="text-caption font-semibold text-foreground group-aria-[current=page]:text-background dark:group-aria-[current=page]:text-primary"
+                  aria-current={d === date ? 'date' : undefined}
+                  className={cn(
+                    cell,
+                    'aria-[current]:bg-foreground aria-[current]:text-background dark:aria-[current]:bg-primary-soft dark:aria-[current]:text-primary',
+                  )}
                 >
-                  {f.dayOfMonth(d)}
+                  <span className="sr-only">{t.day.week.day(name, t.day.week.toCome)}</span>
+                  {face}
                 </span>
-              </Link>
+              ) : (
+                <Link
+                  to="/"
+                  // Today's link is / itself.
+                  search={d === today ? {} : { date: d }}
+                  activeOptions={{ exact: true }}
+                  aria-label={t.day.week.day(name, said(day))}
+                  className={cn(
+                    cell,
+                    'outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring aria-[current]:bg-foreground aria-[current]:text-background dark:aria-[current]:bg-primary-soft dark:aria-[current]:text-primary',
+                  )}
+                >
+                  {face}
+                </Link>
+              )}
             </li>
           )
         })}
