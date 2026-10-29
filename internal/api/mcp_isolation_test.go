@@ -103,6 +103,8 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 		"find_foods": mcpWorks("find_foods", func(isolationEnv) map[string]any { return map[string]any{"query": "rye"} },
 			func(e isolationEnv) []string { return []string{e.other.user.Name + "'s rye bread"} }),
 		"get_food": mcpOnTheirs("get_food", ownersBread, ownBread, nil),
+		"lookup_barcode": mcpWorks("lookup_barcode", func(isolationEnv) map[string]any { return map[string]any{"code": "3850000000015"} },
+			func(e isolationEnv) []string { return []string{e.other.bread.ID.String()} }),
 		"upsert_food": mcpWorks("upsert_food", func(e isolationEnv) map[string]any {
 			return map[string]any{
 				"name": e.other.user.Name + "'s crackers", "basis": "100g", "source": "user",

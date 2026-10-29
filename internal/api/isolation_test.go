@@ -683,13 +683,18 @@ func isolateGetFood(t *testing.T, e isolationEnv) {
 }
 
 // isolateLookupBarcode is lookup-barcode's case: the barcode both have
-// is the other's own food to them, never the owner's.
+// is the other's own food to them, never the owner's, with a session or
+// a token.
 func isolateLookupBarcode(t *testing.T, e isolationEnv) {
 	t.Helper()
-	rec := e.in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000015", "", []*http.Cookie{e.other.session}, nil)
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), e.other.bread.ID.String()) ||
-		strings.Contains(rec.Body.String(), e.owner.bread.ID.String()) {
-		t.Errorf("the barcode both have: %d %s, want their own bread", rec.Code, rec.Body.String())
+	for way, rec := range map[string]*httptest.ResponseRecorder{
+		"session": e.in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000015", "", []*http.Cookie{e.other.session}, nil),
+		"token":   e.in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000015", "", nil, bearer(e.other.token.Token)),
+	} {
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), e.other.bread.ID.String()) ||
+			strings.Contains(rec.Body.String(), e.owner.bread.ID.String()) {
+			t.Errorf("the barcode both have, with a %s: %d %s, want their own bread", way, rec.Code, rec.Body.String())
+		}
 	}
 }
 

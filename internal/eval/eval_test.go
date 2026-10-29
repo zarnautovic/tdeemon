@@ -100,6 +100,9 @@ type expect struct {
 	// not (get_day around a log, whose answer holds the day).
 	Tools    []string `json:"tools,omitempty"`
 	NotTools []string `json:"not_tools,omitempty"`
+	// Barcodes are barcodes the user's foods have after the case, by a
+	// word of the food's name.
+	Barcodes map[string]string `json:"barcodes,omitempty"`
 }
 
 // systemPrompt is all the client says of itself: the policy comes from
@@ -219,7 +222,7 @@ func newInstance(t *testing.T, c evalCase) instance {
 		},
 		{
 			ID: uuid.NewV7(), Name: n[2], Brand: "Dukat", Basis: food.Per100g, Source: food.Label,
-			Nutrients: food.Nutrients{Kcal: 73, Protein: 9.5, Carbs: 3.6, Fat: 2},
+			Nutrients: food.Nutrients{Kcal: 73, Protein: 9.5, Carbs: 3.6, Fat: 2}, Barcodes: []string{"3850000000015"},
 		},
 		{
 			ID: uuid.NewV7(), Name: n[3], Basis: food.Per100g, Source: food.Label,
@@ -703,6 +706,12 @@ func checkFoods(t *testing.T, in instance, e expect, foodsBefore []string) {
 	for _, w := range e.NewFoods {
 		if !slices.ContainsFunc(made, func(n string) bool { return strings.Contains(strings.ToLower(n), strings.ToLower(w)) }) {
 			t.Errorf("no new food of %q among %v", w, made)
+		}
+	}
+	for w, code := range e.Barcodes {
+		f, err := in.db.FoodByBarcode(t.Context(), in.user.ID, code)
+		if err != nil || !strings.Contains(strings.ToLower(f.Name), strings.ToLower(w)) {
+			t.Errorf("the food of barcode %s: %q, %v; want one of %q", code, f.Name, err, w)
 		}
 	}
 }

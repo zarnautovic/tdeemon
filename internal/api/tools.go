@@ -306,6 +306,20 @@ func (s *sessions) tools() []tool {
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
 		}, s.getFood).
 			briefly("A food by its id, archived too."),
+		newTool("lookup_barcode", readScopes, huma.Operation{
+			OperationID: "lookup-barcode",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/barcodes/{code}",
+			Summary:     "Look up a barcode",
+			Description: "Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, " +
+				"with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. " +
+				"A barcode misread, its check digit wrong, is refused (422). " +
+				"One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusBadGateway},
+		}, s.lookupBarcode).
+			briefly("What a barcode is, read off a photo by the digits under its bars (a misread one fails its check digit, 422): the user's food of it, " +
+				"or else Open Food Facts' product as a new food, not saved, to log as an item's food; with it may come the user's food of its name and brand, " +
+				"to add the barcode to instead. 404: nobody has it."),
 		newTool("upsert_food", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "upsert-food",
 			Method:      http.MethodPost,

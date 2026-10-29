@@ -673,5 +673,47 @@
       ],
       "max_rounds": 4
     }
+  },
+  {
+    "name": "a product by its barcode",
+    "lang": "en",
+    "say": [
+      "I had 150 g of this one: 3850000000015"
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "known_items": 1,
+      "kcal": [
+        100,
+        120
+      ],
+      "no_new_foods": true,
+      "tools": [
+        "lookup_barcode"
+      ],
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a barcode tied to a food",
+    "lang": "hr",
+    "say": [
+      "Barkod 4006381333931 je moj raženi kruh, zapamti ga."
+    ],
+    "expect": {
+      "meals": 0,
+      "writes": 1,
+      "no_new_foods": true,
+      "tools": [
+        "upsert_food"
+      ],
+      "barcodes": {
+        "kruh": "4006381333931"
+      },
+      "max_rounds": 3
+    }
   }
 ]

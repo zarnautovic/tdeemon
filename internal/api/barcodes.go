@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -34,21 +33,6 @@ type barcodeOutput struct {
 type openFoodFactsBody struct {
 	Food FoodFields `json:"food" doc:"The product as a new food of the barcode, not saved: what a save of a food, or a meal's new food, takes once you have seen it."`
 	URL  string     `json:"url" format:"uri" doc:"The product's page at Open Food Facts, whose data are open under the ODbL: say where they come from."`
-}
-
-func (s *sessions) registerBarcodes(a huma.API) {
-	huma.Register(a, huma.Operation{
-		OperationID: "lookup-barcode",
-		Method:      http.MethodGet,
-		Path:        Prefix + "/barcodes/{code}",
-		Summary:     "Look up a barcode",
-		Description: "Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, " +
-			"with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. " +
-			"A barcode misread, its check digit wrong, is refused (422). " +
-			"One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
-		Tags:   []string{"foods"},
-		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusBadGateway},
-	}, s.lookupBarcode)
 }
 
 // lookupBarcode finds what a barcode is: a food of the user's, or else a

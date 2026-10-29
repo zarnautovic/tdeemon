@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * Look up a barcode
-         * @description Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.
+         * @description Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.
          */
         get: operations["lookup-barcode"];
         put?: never;

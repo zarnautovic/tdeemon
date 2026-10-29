@@ -20,7 +20,7 @@ plan, the user's own change of the plan (a proposal applied at once),
 calibration
 (the measured TDEE and the verdict on a phase), the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
-`find_foods`, `get_food`, `upsert_food`, `log_meal`, `update_meal`,
+`find_foods`, `get_food`, `lookup_barcode`, `upsert_food`, `log_meal`, `update_meal`,
 `delete_meal`, `log_metric`, `delete_metric`, `checkin`,
 `update_profile_notes`, `propose_changes`, `apply_proposal`,
 `reject_proposal`, `revert_proposal` and `undo_last`, the MCP server

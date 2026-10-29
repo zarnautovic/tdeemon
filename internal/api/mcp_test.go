@@ -93,7 +93,7 @@ func TestMCPListsTheTools(t *testing.T) {
 			if strings.Contains(string(schema), "$ref") || !strings.Contains(string(schema), `"type":"object"`) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
-			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "find_foods", "get_food"}, tl.Name)
+			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "find_foods", "get_food", "lookup_barcode"}, tl.Name)
 			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last", "update_profile_notes", "apply_proposal"}, tl.Name)
 			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive || tl.Description == "" {
 				t.Errorf("%s: annotations %+v, description %q", tl.Name, tl.Annotations, tl.Description)
@@ -103,12 +103,12 @@ func TestMCPListsTheTools(t *testing.T) {
 		return out
 	}
 	all := names(`"tools"`)
-	for _, want := range []string{"apply_proposal", "checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "propose_changes", "reject_proposal", "revert_proposal", "update_profile_notes", "upsert_food"} {
+	for _, want := range []string{"apply_proposal", "checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "lookup_barcode", "propose_changes", "reject_proposal", "revert_proposal", "update_profile_notes", "upsert_food"} {
 		if !slices.Contains(all, want) {
 			t.Errorf("the tools %v lack %s", all, want)
 		}
 	}
-	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary"}) {
+	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "lookup_barcode"}) {
 		t.Errorf("a read token's tools = %v", read)
 	}
 }
@@ -130,7 +130,7 @@ func TestMCPToolSchemas(t *testing.T) {
 	}
 	for name, want := range map[string][]string{
 		"get_day": nil, "get_summary": nil, "checkin": nil, "log_metric": {"kind", "value"}, "get_food": {"id"},
-		"log_meal": {"items"}, "find_foods": {"query"},
+		"log_meal": {"items"}, "find_foods": {"query"}, "lookup_barcode": {"code"},
 	} {
 		schema, _ := byName[name].InputSchema.(map[string]any)
 		var got []string
@@ -258,11 +258,11 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // 2026, raised for the rules of a meal's parts, then for the coach's
 // history and notes, then for an item's quantities and a search again,
 // then for the coach's plan, then for its proposals, then for the limits
-// they change, then for a food's barcodes.
+// they change, then for a food's barcodes and their lookup.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 21000
+	const budget = 21600
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
