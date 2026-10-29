@@ -344,7 +344,8 @@ its items', a food's name and brand, a measurement's kind, a proposal's
 status after it), whether an undo took it back, and the one undo takes
 back next (`next`), which the app's Undo there names (`last`). The
 undos themselves are not among them, nor an import's writes, which undo
-leaves and a device sends often enough to bury the user's own. The
+leaves and a device sends often enough to bury the user's own, nor the
+new foods a meal brought, which are part of the meal's change. The
 server gives codes and names, and the app the words.
 
 ## 6. AI layer

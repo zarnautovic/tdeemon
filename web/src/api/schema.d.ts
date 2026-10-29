@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * List your recent changes
-         * @description Needs a web session. Your latest changes, the latest first, made through any client (you in the app, your AI coach, an app with an access key): what each did and to what, when, through what, the names of what it was of, whether an undo took it back, and the one undo takes back next. The undos themselves are not among them, nor an import's writes, which undo leaves.
+         * @description Needs a web session. Your latest changes, the latest first, made through any client (you in the app, your AI coach, an app with an access key): what each did and to what, when, through what, the names of what it was of, whether an undo took it back, and the one undo takes back next. The undos themselves are not among them, nor an import's writes, which undo leaves, nor the new foods a meal brought, which are part of the meal's change.
          */
         get: operations["list-changes"];
         put?: never;

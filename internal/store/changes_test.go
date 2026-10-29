@@ -6,6 +6,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -66,5 +67,31 @@ func TestRecentChangesOfAFoodGone(t *testing.T) {
 	}
 	if c := cs[0]; c.Event.Action != event.FoodArchive || c.Name != "" || c.Event.UndoneBy == uuid.Nil() || c.Next {
 		t.Errorf("the archive of a food gone = %+v", c)
+	}
+}
+
+// A meal saved with a new food is one change, the meal's: the food's
+// save is part of it, and undo takes it back with the meal.
+func TestRecentChangesOfAMealWithItsNewFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	k := kefir()
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{itemOf(t, k, meal.Quantity{Amount: 250, Unit: "ml"})}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{k}, t0); err != nil {
+		t.Fatalf("CreateMealWithFoods: %v", err)
+	}
+
+	cs, err := db.RecentChanges(t.Context(), ana, 10)
+	if err != nil || len(cs) != 2 {
+		t.Fatalf("RecentChanges = %+v, %v; want the meal's create and the bar's save", cs, err)
+	}
+	if c := cs[0]; c.Event.Action != event.MealCreate || c.Event.Entity != m.ID.String() || !c.Next {
+		t.Errorf("the meal = %+v", c)
+	}
+	if c := cs[1]; c.Event.Action != event.FoodSave || c.Event.Entity != b.ID.String() {
+		t.Errorf("the change before the meal = %+v, want the bar's save", c)
 	}
 }
