@@ -37,11 +37,11 @@
           },
           "food": {
             "$ref": "#/components/schemas/FoodBody",
-            "description": "Your food of the barcode, archived too."
+            "description": "Your food of the barcode, archived too, with its last use."
           },
           "named_food": {
             "$ref": "#/components/schemas/FoodBody",
-            "description": "Your food of the product's name and brand, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it."
+            "description": "Your food of the product's name and brand, with its last use, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it."
           },
           "open_food_facts": {
             "$ref": "#/components/schemas/OpenFoodFactsBody",

@@ -19,6 +19,7 @@ import {
 import { mealName, namedBy, slotAt } from '@/components/day/meal-slot'
 import { NewEntry, type Making } from '@/components/day/new-entry'
 import { SaveStatus } from '@/components/day/save-status'
+import { ScanEntry } from '@/components/day/scan-entry'
 import { WeighInChip } from '@/components/day/weigh-in-chip'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
@@ -265,8 +266,12 @@ function Composer({
 
   return (
     <>
-      {making !== undefined && (
-        <NewEntry making={making} name={query.trim()} onBack={back} onAdd={added} />
+      {making === 'scan' ? (
+        <ScanEntry onBack={back} onAdd={added} />
+      ) : (
+        making !== undefined && (
+          <NewEntry making={making} name={query.trim()} onBack={back} onAdd={added} />
+        )
       )}
       {/* Under the next step, as it was. */}
       <div hidden={making !== undefined} className="contents">

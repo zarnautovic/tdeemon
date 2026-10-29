@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"uuid"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -26,9 +27,9 @@ type barcodeOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
 		Barcode       string             `json:"barcode" doc:"The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it."`
-		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too."`
+		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too, with its last use."`
 		OpenFoodFacts *openFoodFactsBody `json:"open_food_facts,omitempty" doc:"Without a food of yours of the barcode, the product at Open Food Facts."`
-		NamedFood     *foodBody          `json:"named_food,omitempty" doc:"Your food of the product's name and brand, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it."`
+		NamedFood     *foodBody          `json:"named_food,omitempty" doc:"Your food of the product's name and brand, with its last use, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it."`
 	}
 }
 
@@ -56,8 +57,10 @@ func (s *sessions) lookupBarcode(ctx context.Context, in *barcodeInput) (*barcod
 	f, err := s.db.FoodByBarcode(ctx, p.User.ID, code)
 	switch {
 	case err == nil:
-		b := newFoodBody(&f)
-		out.Body.Food = &b
+		out.Body.Food, err = s.usedFoodBody(ctx, p.User.ID, &f)
+		if err != nil {
+			return nil, internalError("looking up the barcode failed", err)
+		}
 		return out, nil
 	case !errors.Is(err, store.ErrNotFound):
 		return nil, internalError("looking up the barcode failed", err)
@@ -84,8 +87,9 @@ func (s *sessions) atOpenFoodFacts(ctx context.Context, u user.User, code string
 	}
 	switch named, err := s.db.FoodByKey(ctx, u.ID, product.Name, product.Brand); {
 	case err == nil:
-		b := newFoodBody(&named)
-		out.Body.NamedFood = &b
+		if out.Body.NamedFood, err = s.usedFoodBody(ctx, u.ID, &named); err != nil {
+			return nil, internalError("looking up the barcode failed", err)
+		}
 	case !errors.Is(err, store.ErrNotFound):
 		return nil, internalError("looking up the barcode failed", err)
 	}
@@ -105,4 +109,18 @@ func (s *sessions) atOpenFoodFacts(ctx context.Context, u user.User, code string
 	}
 	out.Body.OpenFoodFacts = &openFoodFactsBody{Food: newFoodBody(&nf).FoodFields, URL: product.URL}
 	return out, nil
+}
+
+// usedFoodBody is f with its last use, as find_foods gives it: the amount
+// a scan of it offers.
+func (s *sessions) usedFoodBody(ctx context.Context, userID uuid.UUID, f *food.Food) (*foodBody, error) {
+	uses, err := s.db.LastUses(ctx, userID, []uuid.UUID{f.ID})
+	if err != nil {
+		return nil, err
+	}
+	b := newFoodBody(f)
+	if u, ok := uses[f.ID]; ok {
+		b.LastUse = newLastUseBody(u)
+	}
+	return &b, nil
 }

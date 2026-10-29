@@ -60,6 +60,11 @@ func TestLookupBarcodeOfAFoodOfYours(t *testing.T) {
 	session := []*http.Cookie{sessionOf(t, in)}
 	asked := withOpenFoodFacts(t, in, http.StatusOK, kefir).asked
 	bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	// Eaten once, 60 g: the amount a scan offers.
+	rec := in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [{"food_id": "`+bread.ID.String()+`", "amount": 60, "unit": "g"}]}`, session, nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("a meal of the bread: %d %s", rec.Code, rec.Body.String())
+	}
 	if err := in.db.SetFoodArchived(t.Context(), in.user.ID, isolationActor, bread.ID, true, in.clock.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +72,7 @@ func TestLookupBarcodeOfAFoodOfYours(t *testing.T) {
 		rec := in.do(t, http.MethodGet, "/api/v1/barcodes/"+url.PathEscape(code), "", session, nil)
 		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"barcode":"3850000000015"`) ||
 			!strings.Contains(rec.Body.String(), `"id":"`+bread.ID.String()+`"`) || !strings.Contains(rec.Body.String(), `"archived":true`) ||
-			strings.Contains(rec.Body.String(), "open_food_facts") {
+			!strings.Contains(rec.Body.String(), `"quantity":{"amount":60,"unit":"g"}`) || strings.Contains(rec.Body.String(), "open_food_facts") {
 			t.Errorf("%q: %d %s, want the archived bread", code, rec.Code, rec.Body.String())
 		}
 	}
@@ -75,7 +80,7 @@ func TestLookupBarcodeOfAFoodOfYours(t *testing.T) {
 		t.Errorf("Open Food Facts was asked %d times", asked.Load())
 	}
 	// A barcode misread is refused, saying why, and asks nobody.
-	rec := in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000016", "", session, nil)
+	rec = in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000016", "", session, nil)
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "check digit") || asked.Load() != 0 {
 		t.Errorf("a misread barcode: %d %s, asked %d", rec.Code, rec.Body.String(), asked.Load())
 	}
@@ -141,9 +146,14 @@ func TestLookupBarcodeOfAProductYouHaveByName(t *testing.T) {
 			mine := decodeJSON[struct {
 				ID string `json:"id"`
 			}](t, rec.Body.Bytes())
+			// Drunk once, 250 ml: the amount it offers.
+			if rec := in.do(t, http.MethodPost, "/api/v1/meals", `{"items": [{"food_id": "`+mine.ID+`", "amount": 250, "unit": "ml"}]}`, session, nil); rec.Code != http.StatusCreated {
+				t.Fatalf("a meal of the kefir: %d %s", rec.Code, rec.Body.String())
+			}
 			rec = in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil)
 			body := rec.Body.String()
 			if rec.Code != http.StatusOK || !strings.Contains(body, `"named_food":{"id":"`+mine.ID+`"`) ||
+				!strings.Contains(body, `"quantity":{"amount":250,"unit":"ml"}`) ||
 				strings.Contains(body, `"food":{"id"`) || strings.Contains(body, "open_food_facts") != (answer == kefir) {
 				t.Errorf("%d %s, want the user's kefir", rec.Code, body)
 			}

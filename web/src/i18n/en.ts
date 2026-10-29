@@ -458,6 +458,32 @@ export const en = {
       food_kept: 'A food of yours was logged with its own values, not those sent.',
     },
   },
+  scan: {
+    // A barcode's step of Log a meal: the camera, or the digits typed.
+    title: 'Scan a barcode',
+    camera: 'The camera',
+    starting: 'Starting the camera…',
+    holdStill: 'Hold the barcode in the frame.',
+    refused: 'The camera is not allowed here. Type the digits instead.',
+    noCamera: 'No camera here. Type the digits instead.',
+    typeIt: 'Or type the digits under the bars',
+    lookUp: 'Look up the code',
+    digits: '8, 12, 13 or 14 digits.',
+    check: 'Those digits do not add up: check them.',
+    broken: 'The barcode reader did not load. Type the digits instead.',
+    makeIt: 'Make the food',
+    looking: (code: string) => `Looking up ${code}…`,
+    unknown: (code: string) =>
+      `Nobody has ${code} yet. Type its values off the label, and it is yours next time.`,
+    misread: (code: string) => `${code} does not add up: a digit was misread. Scan it again.`,
+    failed: (why: string) => `The lookup failed: ${why}`,
+    again: 'Scan it again',
+    fromOpenFoodFacts: 'Found at',
+    checkLabel: 'Check the values against the label before you add it.',
+    yours: 'Your food',
+    named: (name: string) => `It is your ${name}, without this barcode yet.`,
+    link: 'Add the barcode to it',
+  },
   log: {
     open: 'Log a meal',
     add: {

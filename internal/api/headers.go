@@ -6,8 +6,11 @@ import "net/http"
 // third-party CDN (docs/conventions.md), no inline script, no plugins, no
 // <base> tricks, and no framing by anyone (clickjacking). Images may also
 // be data: and blob: URLs (assets the build inlines, a photo picked for
-// upload before it goes up).
-const contentSecurityPolicy = "default-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+// upload before it goes up). The scripts may compile WebAssembly
+// ('wasm-unsafe-eval'), the barcode reader of a browser without its own
+// (Safari), and no more: no eval of text.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; " +
+	"object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 
 // securityHeaders sets, on every response, the headers that keep a
 // browser strict with the app: the content security policy, no MIME

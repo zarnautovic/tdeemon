@@ -167,6 +167,17 @@ const screens: Screen[] = [
     },
   },
   {
+    name: 'quick-add-scan',
+    open: async (page) => {
+      await page.goto('/?log=true')
+      await page.getByRole('button', { name: /^(Scan a barcode|Skeniraj barkod)$/ }).click()
+      await expect(
+        page.getByRole('button', { name: /^(Look up the code|Potraži kod)$/ }),
+      ).toBeVisible()
+      await settled(page)
+    },
+  },
+  {
     name: 'meal-editor',
     open: async (page, made) => {
       await page.goto('/')

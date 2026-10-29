@@ -35,7 +35,7 @@ func TestSecurityHeaders(t *testing.T) {
 			}
 			// The whole policy, written out: a source added to it (a CDN,
 			// 'unsafe-inline') is a decision this test makes visible.
-			const csp = "default-src 'self'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+			const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 			if got := h.Get("Content-Security-Policy"); got != csp {
 				t.Errorf("Content-Security-Policy = %q, want %q", got, csp)
 			}
