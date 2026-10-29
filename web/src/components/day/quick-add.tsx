@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
 
 import { detailOf, statusOf } from '@/api/errors'
 import { useLogMeal } from '@/api/meals'
@@ -15,12 +16,14 @@ import {
   type Entry,
 } from '@/components/day/meal-entries'
 import { mealName, namedBy, slotAt } from '@/components/day/meal-slot'
+import { NewEntry, type Making } from '@/components/day/new-entry'
 import { SaveStatus } from '@/components/day/save-status'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
 import { rounded, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { touchScreen } from '@/lib/media'
 import { fieldLabel, inputClass, linkTarget } from '@/lib/styles'
 import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
@@ -49,10 +52,14 @@ interface Start {
 // user's that a search finds, or that were eaten lately or most, each in
 // the amount it was eaten in last or another, and estimates, gathered in
 // the meal at the sheet's foot with what each brings, the total, and what
-// the day has left after it; or a meal of before, repeated in a tap. The
-// meal is timed now (on another day, at noon), and named by what is in
-// it, both of which can be changed. Each opening is a meal anew. opener
-// is what opened it, which the focus goes back to.
+// the day has left after it; or a meal of before, repeated in a tap,
+// those eaten lately at the meal of the day first. A new food or an
+// estimate is a step of its own, in the search's place. The meal is
+// timed now (on another day, at noon), and named by what is in it, both
+// of which can be changed. Each opening is a meal anew. The focus goes to
+// the search, but on a touch screen, whose keyboard would cover the
+// lists, until it is tapped. opener is what opened it, which the focus
+// goes back to.
 export function QuickAdd({
   open,
   onOpenChange,
@@ -72,6 +79,7 @@ export function QuickAdd({
       onOpenChange={onOpenChange}
       title={t.log.title}
       initialFocus={search}
+      tapToType
       finalFocus={opener}
       tall
       bare
@@ -90,7 +98,9 @@ export function QuickAdd({
 // Composer is a meal being logged. Its id is made as it is sent, so the
 // meal sent again (no answer came) is the same meal, not another: it
 // holds still until it is sent again, or given up. Logged, it is done,
-// and a toast says so, with what the server warned of it and Undo.
+// and a toast says so, with what the server warned of it and Undo. Its
+// next step (a new food, an estimate) takes the search's place, which
+// stays as it was under it, and the foot's: one button, Add to meal.
 function Composer({
   remaining,
   initial,
@@ -143,7 +153,16 @@ function Composer({
   const held = log.isPending || (log.isError && !refused)
   const night = nightAfter(time, startHour)
   const at = mealInstant(date, time, timeZone, startHour)
-  const slot = t.meal.slots[slotAt(Date.parse(at), timeZone)]
+  const slotOf = slotAt(Date.parse(at), timeZone)
+  const slot = t.meal.slots[slotOf]
+  // When the sheet opened: what was eaten in the two weeks before counts
+  // for what it offers first.
+  const [now] = useState(Date.now)
+  const [query, setQuery] = useState('')
+  const [making, setMaking] = useState<Making | undefined>(undefined)
+  // The button that opened the next step, which the focus goes back to.
+  const maker = useRef<HTMLElement | null>(null)
+  const logButton = useRef<HTMLButtonElement>(null)
 
   const values = entries.map((e) => entryValues(e, f.parse))
   const kcal = values.reduce((sum, v) => sum + (v?.kcal ?? 0), 0)
@@ -196,6 +215,29 @@ function Composer({
     }
   }
 
+  // added takes an entry into the meal, from the lists or the next step,
+  // and readies the search for the next: emptied, with the focus; on a
+  // touch screen, whose keyboard would cover the lists, the meal's button
+  // has it.
+  function added(entry: Entry) {
+    flushSync(() => {
+      setEntries((es) => [...es, entry])
+      setQuery('')
+      setMaking(undefined)
+    })
+    const next = touchScreen() ? logButton.current : search.current
+    next?.focus()
+  }
+
+  // back goes back to the search from the next step, to the button that
+  // opened it.
+  function back() {
+    flushSync(() => {
+      setMaking(undefined)
+    })
+    maker.current?.focus()
+  }
+
   // amountOf is how much of a food an entry has, as its field says it (a
   // serving's, servingsOf).
   function amountOf(entry: Entry & { kind: 'food' }): string {
@@ -210,165 +252,176 @@ function Composer({
 
   return (
     <>
-      <div className="flex flex-wrap items-baseline gap-x-2 px-4 pt-2 text-small text-muted-foreground">
-        <span>{t.log.when(slot, today ? t.log.today : f.short(date), f.time(at, timeZone))}</span>
-        <button
-          type="button"
-          aria-expanded={details}
-          aria-controls={`${id}-details`}
-          aria-label={t.log.changeOf}
-          disabled={held}
-          className={cn(
-            linkTarget,
-            'font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
-          )}
-          onClick={() => {
-            setDetails((d) => !d)
-          }}
-        >
-          {t.log.change}
-        </button>
-      </div>
-      <fieldset disabled={held} className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto p-4">
-        {details && (
-          <div id={`${id}-details`} className="space-y-1">
-            <div className="flex gap-3">
-              <label className="flex-1 space-y-1">
-                <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
-                <input
-                  value={description}
-                  maxLength={200}
-                  // The name the meal gets without one: what is in it.
-                  placeholder={namedBy(
-                    entries.map((e) => (e.kind === 'food' ? e.food.name : e.name.trim())),
-                    t,
-                  )}
-                  autoComplete="off"
-                  className={inputClass}
-                  onChange={(e) => {
-                    setDescription(e.currentTarget.value)
-                  }}
-                />
-              </label>
-              <label className="w-28 space-y-1">
-                <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
-                <TimeInput
-                  value={timeText}
-                  aria-invalid={later || badTime}
-                  aria-describedby={night ? `${id}-night` : undefined}
-                  onChange={(e) => {
-                    const typed = e.currentTarget.value
-                    setTimeText(typed)
-                    setBadTime(false)
-                    setLater(false)
-                    const clock = parseClock(typed)
-                    if (clock !== undefined) {
-                      setTime(clock)
-                      setTimeSet(true)
-                    }
-                  }}
-                  onBlur={() => {
-                    // As the time it reads, 19:30 for 1930.
-                    setTimeText((typed) => parseClock(typed) ?? typed)
-                  }}
-                />
-              </label>
-            </div>
-            {night && (
-              <p id={`${id}-night`} className="text-xs text-muted-foreground">
-                {t.log.nightAfter(time)}
-              </p>
+      {making !== undefined && (
+        <NewEntry making={making} name={query.trim()} onBack={back} onAdd={added} />
+      )}
+      {/* Under the next step, as it was. */}
+      <div hidden={making !== undefined} className="contents">
+        <div className="flex flex-wrap items-baseline gap-x-2 px-4 pt-2 text-small text-muted-foreground">
+          <span>{t.log.when(slot, today ? t.log.today : f.short(date), f.time(at, timeZone))}</span>
+          <button
+            type="button"
+            aria-expanded={details}
+            aria-controls={`${id}-details`}
+            aria-label={t.log.changeOf}
+            disabled={held}
+            className={cn(
+              linkTarget,
+              'font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring',
             )}
-          </div>
-        )}
-        <Finder
-          search={search}
-          timeZone={timeZone}
-          onAdd={(entry) => {
-            setEntries((es) => [...es, entry])
-          }}
-          onRepeat={repeat}
-        />
-      </fieldset>
-      <div className="space-y-2 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {entries.length > 0 ? (
-          <ul aria-label={t.log.basket} className="flex flex-wrap gap-1.5">
-            {entries.map((entry, i) => {
-              const name = entry.kind === 'food' ? entry.food.name : entry.name
-              const v = values[i]
-              return (
-                <li
-                  key={entry.key}
-                  className="flex items-center gap-0.5 rounded-full bg-surface-2 pl-3 text-small"
-                >
-                  <span>
-                    {[
-                      name,
-                      ...(entry.kind === 'food' ? [amountOf(entry)] : []),
-                      ...(v === undefined ? [] : [t.unit.kcal(f.number(v.kcal))]),
-                    ].join(' · ')}
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="rounded-full"
-                    aria-label={t.log.remove(name)}
-                    disabled={held}
-                    onClick={() => {
-                      setEntries((es) => es.filter((e) => e.key !== entry.key))
+            onClick={() => {
+              setDetails((d) => !d)
+            }}
+          >
+            {t.log.change}
+          </button>
+        </div>
+        <fieldset disabled={held} className="min-h-0 min-w-0 flex-1 space-y-3 overflow-y-auto p-4">
+          {details && (
+            <div id={`${id}-details`} className="space-y-1">
+              <div className="flex gap-3">
+                <label className="flex-1 space-y-1">
+                  <span className={cn(fieldLabel, 'block')}>{t.log.description}</span>
+                  <input
+                    value={description}
+                    maxLength={200}
+                    // The name the meal gets without one: what is in it.
+                    placeholder={namedBy(
+                      entries.map((e) => (e.kind === 'food' ? e.food.name : e.name.trim())),
+                      t,
+                    )}
+                    autoComplete="off"
+                    className={inputClass}
+                    onChange={(e) => {
+                      setDescription(e.currentTarget.value)
                     }}
-                  >
-                    <span aria-hidden>×</span>
-                  </Button>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p id={`${id}-empty`} className="text-small text-muted-foreground">
-            {t.log.empty}
-          </p>
-        )}
-        {after !== undefined && entries.length > 0 && (
-          <p className="text-small text-muted-foreground">
-            {after >= 0
-              ? t.log.after(f.number(Math.round(after)))
-              : t.log.afterOver(f.number(Math.round(-after)))}
-          </p>
-        )}
-        {(later || badTime) && (
-          <p role="alert" className="text-sm text-destructive">
-            {badTime ? t.meal.timeFormat : t.meal.timeToCome}
-          </p>
-        )}
-        {refused ? (
-          <p role="alert" className="text-sm text-destructive">
-            {t.log.refused(detailOf(log.error))}
-          </p>
-        ) : (
-          <SaveStatus
-            change={log}
-            // Again, as it was sent, under its id: the server takes the same
-            // meal sent again for the one it has.
-            onRetry={() => {
-              if (log.variables) {
-                send(log.variables.body)
-              }
+                  />
+                </label>
+                <label className="w-28 space-y-1">
+                  <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
+                  <TimeInput
+                    value={timeText}
+                    aria-invalid={later || badTime}
+                    aria-describedby={night ? `${id}-night` : undefined}
+                    onChange={(e) => {
+                      const typed = e.currentTarget.value
+                      setTimeText(typed)
+                      setBadTime(false)
+                      setLater(false)
+                      const clock = parseClock(typed)
+                      if (clock !== undefined) {
+                        setTime(clock)
+                        setTimeSet(true)
+                      }
+                    }}
+                    onBlur={() => {
+                      // As the time it reads, 19:30 for 1930.
+                      setTimeText((typed) => parseClock(typed) ?? typed)
+                    }}
+                  />
+                </label>
+              </div>
+              {night && (
+                <p id={`${id}-night`} className="text-xs text-muted-foreground">
+                  {t.log.nightAfter(time)}
+                </p>
+              )}
+            </div>
+          )}
+          <Finder
+            search={search}
+            query={query}
+            onQuery={setQuery}
+            at={{ slot: slotOf, now, timeZone, date }}
+            onAdd={added}
+            onRepeat={repeat}
+            onMake={(m, button) => {
+              maker.current = button
+              setMaking(m)
             }}
           />
-        )}
-        {/* Disabled, it stays in reach of the focus, and says what it waits for. */}
-        <Button
-          className="h-13 w-full text-base"
-          disabled={held || entries.length === 0}
-          focusableWhenDisabled
-          aria-describedby={entries.length === 0 ? `${id}-empty` : undefined}
-          onClick={submit}
-        >
-          {entries.length > 0
-            ? t.log.logItems(entries.length, f.number(Math.round(kcal)))
-            : t.log.save}
-        </Button>
+        </fieldset>
+        <div className="space-y-2 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+          {entries.length > 0 ? (
+            <ul aria-label={t.log.basket} className="flex flex-wrap gap-1.5">
+              {entries.map((entry, i) => {
+                const name = entry.kind === 'food' ? entry.food.name : entry.name
+                const v = values[i]
+                return (
+                  <li
+                    key={entry.key}
+                    className="flex items-center gap-0.5 rounded-full bg-surface-2 pl-3 text-small"
+                  >
+                    <span>
+                      {[
+                        name,
+                        ...(entry.kind === 'food' ? [amountOf(entry)] : []),
+                        ...(v === undefined ? [] : [t.unit.kcal(f.number(v.kcal))]),
+                      ].join(' · ')}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="rounded-full"
+                      aria-label={t.log.remove(name)}
+                      disabled={held}
+                      onClick={() => {
+                        setEntries((es) => es.filter((e) => e.key !== entry.key))
+                      }}
+                    >
+                      <span aria-hidden>×</span>
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p id={`${id}-empty`} className="text-small text-muted-foreground">
+              {t.log.empty}
+            </p>
+          )}
+          {after !== undefined && entries.length > 0 && (
+            <p className="text-small text-muted-foreground">
+              {after >= 0
+                ? t.log.after(f.number(Math.round(after)))
+                : t.log.afterOver(f.number(Math.round(-after)))}
+            </p>
+          )}
+          {(later || badTime) && (
+            <p role="alert" className="text-sm text-destructive">
+              {badTime ? t.meal.timeFormat : t.meal.timeToCome}
+            </p>
+          )}
+          {refused ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t.log.refused(detailOf(log.error))}
+            </p>
+          ) : (
+            <SaveStatus
+              change={log}
+              // Again, as it was sent, under its id: the server takes the same
+              // meal sent again for the one it has.
+              onRetry={() => {
+                if (log.variables) {
+                  send(log.variables.body)
+                }
+              }}
+            />
+          )}
+          {/* Disabled, it stays in reach of the focus, and says what it waits for. */}
+          <Button
+            ref={logButton}
+            className="h-13 w-full text-base"
+            disabled={held || entries.length === 0}
+            focusableWhenDisabled
+            aria-describedby={entries.length === 0 ? `${id}-empty` : undefined}
+            onClick={submit}
+          >
+            {entries.length > 0
+              ? t.log.logItems(entries.length, f.number(Math.round(kcal)))
+              : t.log.save}
+          </Button>
+        </div>
       </div>
     </>
   )

@@ -453,7 +453,7 @@ export interface paths {
         };
         /**
          * List your recent meals
-         * @description Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), of your latest 200: what a meal logged anew may repeat.
+         * @description Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), of your latest 200, with when it and each time before were eaten: what a meal logged anew may repeat, and how often and when each is eaten.
          */
         get: operations["list-recent-meals"];
         put?: never;
@@ -956,6 +956,15 @@ export interface components {
         DeleteMealOutputBody: {
             /** @description The meal's day, without the meal. */
             day: components["schemas"]["DaySummary"];
+        };
+        EatenBody: {
+            /** Format: date-time */
+            at: string;
+            /**
+             * Format: date
+             * @description The meal's logical day: a meal before the day's start hour is of the day before.
+             */
+            day: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -1831,9 +1840,26 @@ export interface components {
              */
             unit?: "g" | "ml";
         };
+        RecentMealBody: {
+            /**
+             * @description What the meal was logged through: api is the API with a token.
+             * @enum {string}
+             */
+            client: "mcp" | "chat" | "web" | "telegram" | "import" | "api";
+            description: string;
+            /** @description When it and each meal of the same items before it were eaten, of your latest 200, the latest first: how often, and at which hours, it is eaten. */
+            eaten: components["schemas"]["EatenBody"][];
+            /** Format: date-time */
+            eaten_at: string;
+            /** Format: uuid */
+            id: string;
+            items: components["schemas"]["ItemBody"][];
+            note?: string;
+            total: components["schemas"]["NutrientsBody"];
+        };
         RecentMealsOutputBody: {
             /** @description The latest first. */
-            meals: components["schemas"]["MealBody"][];
+            meals: components["schemas"]["RecentMealBody"][];
         };
         RecoveryBody: {
             /** @description What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base). */

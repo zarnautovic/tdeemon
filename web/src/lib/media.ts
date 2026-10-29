@@ -23,3 +23,12 @@ function subscribe(onChange: () => void): () => void {
 export function useDesktop(): boolean {
   return useSyncExternalStore(subscribe, () => desktopMedia()?.matches ?? false)
 }
+
+// touchScreen tells a screen a finger points at, (pointer: coarse), where
+// a text field given the focus opens the keyboard over half the screen.
+// Without matchMedia it is not one.
+export function touchScreen(): boolean {
+  return typeof globalThis.matchMedia === 'function'
+    ? globalThis.matchMedia('(pointer: coarse)').matches
+    : false
+}

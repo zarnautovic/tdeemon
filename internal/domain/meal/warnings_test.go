@@ -1,9 +1,11 @@
 package meal
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
+	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 )
@@ -151,7 +153,7 @@ func TestCheckNutrientsMessage(t *testing.T) {
 }
 
 // Distinct keeps each meal once, the first of those with the same items,
-// whatever their times, descriptions and order.
+// whatever their times, descriptions and order, with the others after it.
 func TestDistinct(t *testing.T) {
 	t.Parallel()
 
@@ -166,8 +168,15 @@ func TestDistinct(t *testing.T) {
 	lunchAgain := meal(t, at.Add(-96*time.Hour), burger)
 
 	got := Distinct([]Meal{breakfast, again, more, lunch, lunchAgain})
-	if len(got) != 3 || got[0].ID != breakfast.ID || got[1].ID != more.ID || got[2].ID != lunch.ID {
-		t.Errorf("Distinct = %v, want the breakfast, the one with more egg and the first burger", got)
+	ids := make([][]uuid.UUID, len(got))
+	for i, g := range got {
+		for j := range g {
+			ids[i] = append(ids[i], g[j].ID)
+		}
+	}
+	want := [][]uuid.UUID{{breakfast.ID, again.ID}, {more.ID}, {lunch.ID, lunchAgain.ID}}
+	if !slices.EqualFunc(ids, want, slices.Equal) {
+		t.Errorf("Distinct = %v, want the breakfast and the one again, the one with more egg, and the burgers", ids)
 	}
 	if got := Distinct(nil); len(got) != 0 {
 		t.Errorf("Distinct(nil) = %v", got)

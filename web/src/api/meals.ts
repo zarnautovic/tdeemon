@@ -83,6 +83,13 @@ export function useDeleteMeal(date: string, done?: (answer: DeleteAnswer) => voi
   })
 }
 
+// useRecentMeals are the meals of before, the latest 50 that are not the
+// same, each with when it was eaten every time: what the quick add and
+// the day's chips offer, of one query.
+export function useRecentMeals() {
+  return $api.useQuery('get', '/api/v1/meals/recent', { params: { query: { limit: 50 } } })
+}
+
 // useUndo takes back the user's latest change, made anywhere, or the one
 // it names (last) while it is the latest: after the changes of day date
 // made before it. What it took back may be of any day, a food or the

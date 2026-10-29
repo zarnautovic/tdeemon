@@ -106,19 +106,22 @@ func DuplicateOf(m Meal, recent []Meal, loc *time.Location) (Warning, bool) {
 	return Warning{}, false
 }
 
-// Distinct returns ms without a meal with the same items as one before
-// it, in any amounts within 1 % (as DuplicateOf tells them): of the
-// latest meals first, each meal a user eats again, once, the latest.
-func Distinct(ms []Meal) []Meal {
-	var out []Meal
+// Distinct returns ms grouped by their items, a meal with the same items
+// as one before it, in any amounts within 1 % (as DuplicateOf tells
+// them), with that one: of the latest meals first, each meal a user eats
+// again once, the latest, with the times before it after it. The groups
+// are in the order of their first meal, each in the order of ms.
+func Distinct(ms []Meal) [][]Meal {
+	var out [][]Meal
 next:
 	for i := range ms {
 		for j := range out {
-			if sameItems(out[j].Items, ms[i].Items) {
+			if sameItems(out[j][0].Items, ms[i].Items) {
+				out[j] = append(out[j], ms[i])
 				continue next
 			}
 		}
-		out = append(out, ms[i])
+		out = append(out, []Meal{ms[i]})
 	}
 	return out
 }

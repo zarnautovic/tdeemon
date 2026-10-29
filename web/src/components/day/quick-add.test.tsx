@@ -7,10 +7,17 @@ import {
   type BoundFunctions,
   type queries,
 } from '@testing-library/react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
-import type { Day, Food, Item, Meal } from '@/api/types'
+import type { Day, Food, Item, Meal, RecentMeal } from '@/api/types'
 import { day, fakeServer, problem, renderAt, signedIn, type Handler } from '@/test/app'
+
+beforeEach(() => {
+  // A clock of the tests' own, as what the sheet offers first is of the
+  // hour: 15:00 on the 23rd in Los Angeles, a snack's.
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date('2026-10-23T22:00:00Z'))
+})
 
 afterEach(() => {
   cleanup()
@@ -18,6 +25,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
   localStorage.clear()
 })
+
+// recent is a meal of before as the server lists it: eaten at its time
+// and at these others, each of its day (by default, the date of its time
+// in UTC).
+function recent(meal: Meal, ...others: [at: string, day?: string][]): RecentMeal {
+  const times: [at: string, day?: string][] = [[meal.eaten_at], ...others]
+  return { ...meal, eaten: times.map(([at, of]) => ({ at, day: of ?? at.slice(0, 10) })) }
+}
 
 const bread: Food = {
   id: '0193c3a5-0000-7000-8000-0000000000f1',
@@ -107,7 +122,7 @@ function logServer(date = '2026-10-23', over: Record<string, Handler> = {}) {
             : [bread, oats],
         total: 2,
       }),
-    'GET /api/v1/meals/recent': () => Response.json({ meals: [porridge] }),
+    'GET /api/v1/meals/recent': () => Response.json({ meals: [porridge].map((m) => recent(m)) }),
     'POST /api/v1/meals': async (request) => {
       const body: unknown = await request.json()
       sent.push(body)
@@ -159,6 +174,7 @@ async function findRye(sheet: Sheet, search = 'Find a food or a meal') {
   fireEvent.click(await sheet.findByRole('button', { name: /^Rye bread/ }))
 }
 
+// giveEstimate gives an estimate in its step, and adds it to the meal.
 async function giveEstimate(sheet: Sheet, name: string, kcal = '1') {
   fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
   fireEvent.change(sheet.getByLabelText('What it is'), { target: { value: name } })
@@ -170,7 +186,7 @@ async function giveEstimate(sheet: Sheet, name: string, kcal = '1') {
   ] as const) {
     fireEvent.change(sheet.getByLabelText(label), { target: { value } })
   }
-  fireEvent.click(sheet.getByRole('button', { name: `Add: ${name}` }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
   await waitFor(() => {
     expect(basket(sheet).some((item) => item.startsWith(name))).toBe(true)
   })
@@ -372,8 +388,15 @@ test('a search that finds nothing says so, an estimate is given up, and the shee
     await sheet.findByText('Nothing of yours matches: give an estimate, or make a new food.'),
   ).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
-  fireEvent.click(sheet.getByRole('button', { name: 'Remove: an estimate' }))
+  // A step of its own, named by what was searched for, the focus in it.
+  expect(sheet.getByLabelText('What it is')).toHaveProperty('value', 'kale')
+  expect(document.activeElement).toBe(sheet.getByLabelText('What it is'))
+  expect(sheet.queryByRole('searchbox', { name: 'Find a food or a meal' })).toBeNull()
+  fireEvent.click(sheet.getByRole('button', { name: 'Back to search' }))
   expect(sheet.queryByLabelText('What it is')).toBeNull()
+  // The search as it was, and the focus on what opened the step.
+  expect(sheet.getByLabelText('Find a food or a meal')).toHaveProperty('value', 'kale')
+  expect(document.activeElement).toBe(sheet.getByRole('button', { name: 'An estimate' }))
 
   fireEvent.click(sheet.getByRole('button', { name: 'Close' }))
   await waitFor(() => {
@@ -587,11 +610,15 @@ test('what is wrong with an estimate is no longer said once it is given up', asy
 
   const sheet = await openSheet()
   fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
-  fireEvent.click(sheet.getByRole('button', { name: 'Add: an estimate' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
   expect(sheet.getByRole('alert').textContent).toContain('an estimate has a name')
+  expect(sheet.getByLabelText('What it is').getAttribute('aria-invalid')).toBe('true')
+  expect(sheet.queryByRole('list', { name: 'In the meal' })).toBeNull()
 
-  fireEvent.click(sheet.getByRole('button', { name: 'Remove: an estimate' }))
-
+  fireEvent.click(sheet.getByRole('button', { name: 'Back to search' }))
+  expect(sheet.queryByText(/an estimate has a name/)).toBeNull()
+  // Given again, it is a new one.
+  fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
   expect(sheet.queryByText(/an estimate has a name/)).toBeNull()
 })
 
@@ -788,7 +815,9 @@ test("what the day has after a meal is what it has less the meal's kcal as shown
   expect(sheet.getByText('after: 2,345 kcal left')).toBeDefined()
 })
 
-test('a new food is made in the sheet, and opens for its amount', async () => {
+// newFoodServer is a day whose server makes a new food as it was sent,
+// and keeps what it was sent.
+function newFoodServer(over: Record<string, Handler> = {}) {
   const sent: unknown[] = []
   logServer('2026-10-23', {
     'POST /api/v1/foods/new': async (request) => {
@@ -800,13 +829,41 @@ test('a new food is made in the sheet, and opens for its amount', async () => {
         { status: 201 },
       )
     },
+    ...over,
   })
+  return { sent }
+}
+
+// primaries are the sheet's primary buttons, as the eye and a screen
+// reader find them.
+function primaries(sheet: Sheet) {
+  return sheet
+    .getAllByRole('button')
+    .filter((b) => b.className.includes('bg-primary') && !b.className.includes('bg-primary-'))
+    .map((b) => b.textContent)
+}
+
+test('a new food is a step of its own, in short, and goes into the meal in the amount eaten now', async () => {
+  const server = newFoodServer()
   renderAt('/')
 
   const sheet = await openSheet()
+  fireEvent.change(sheet.getByLabelText('Find a food or a meal'), { target: { value: 'kefir' } })
+  await sheet.findByText('Nothing of yours matches: give an estimate, or make a new food.')
+  expect(primaries(sheet)).toEqual(['Log the meal'])
   fireEvent.click(sheet.getByRole('button', { name: 'A new food' }))
+
+  // In the search's place, one button of its own: never two at once.
+  expect(primaries(sheet)).toEqual(['Add to meal'])
+  expect(sheet.queryByRole('button', { name: /^Log / })).toBeNull()
+  expect(sheet.queryByRole('button', { name: 'Save the food' })).toBeNull()
+  expect(sheet.getByRole('heading', { name: 'A new food' })).toBeDefined()
+  // Named by what was searched for; the brand and the rest under More.
+  expect(sheet.getByLabelText('Name')).toHaveProperty('value', 'kefir')
+  expect(document.activeElement).toBe(sheet.getByLabelText('Name'))
+  expect(sheet.getByText('More').closest('details')?.open).toBe(false)
   fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Kefir' } })
-  fireEvent.change(sheet.getByLabelText('The values are'), { target: { value: '100ml' } })
+  fireEvent.click(sheet.getByRole('radio', { name: 'per 100 ml' }))
   for (const [label, value] of [
     ['Energy (kcal)', '41'],
     ['Protein (g)', '3.4'],
@@ -815,13 +872,62 @@ test('a new food is made in the sheet, and opens for its amount', async () => {
   ] as const) {
     fireEvent.change(sheet.getByLabelText(label), { target: { value } })
   }
-  fireEvent.click(sheet.getByRole('button', { name: 'Save the food' }))
+  // 100 ml to start with.
+  expect(sheet.getByLabelText('Eaten now (ml)')).toHaveProperty('value', '100')
+  fireEvent.change(sheet.getByLabelText('Eaten now (ml)'), { target: { value: '250' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
 
-  const amount = await sheet.findByLabelText('Amount: Kefir')
-  expect(amount).toHaveProperty('value', '100')
-  expect(sent).toHaveLength(1)
-  fireEvent.click(sheet.getByRole('button', { name: 'Add: Kefir' }))
-  expect(basket(sheet)).toEqual(['Kefir · 100 ml · 41 kcal'])
+  // In the meal, and the search empty, with the focus, for the next.
+  await waitFor(() => {
+    expect(basket(sheet)).toEqual(['Kefir · 250 ml · 103 kcal'])
+  })
+  expect(sheet.getByLabelText('Find a food or a meal')).toHaveProperty('value', '')
+  expect(document.activeElement).toBe(sheet.getByLabelText('Find a food or a meal'))
+  expect(primaries(sheet)).toEqual(['Log 1 item · 103 kcal'])
+  expect(server.sent).toEqual([
+    {
+      name: 'Kefir',
+      basis: '100ml',
+      nutrients: { kcal: 41, protein: 3.4, carbs: 4, fat: 1.5 },
+      source: 'label',
+    },
+  ])
+})
+
+test("a new food's step checks it as the food's form does, and its amount, and sends nothing wrong", async () => {
+  const server = newFoodServer()
+  renderAt('/')
+
+  const sheet = await openSheet()
+  fireEvent.click(sheet.getByRole('button', { name: 'A new food' }))
+  fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Kefir' } })
+  // The kcal the macros tell otherwise, which does not keep it from a save.
+  for (const [label, value] of [
+    ['Energy (kcal)', '4'],
+    ['Protein (g)', '3.4'],
+    ['Carbs (g)', '4'],
+    ['Fat (g)', '1.5'],
+  ] as const) {
+    fireEvent.change(sheet.getByLabelText(label), { target: { value } })
+  }
+  expect(sheet.getByText('The macros make about 43 kcal, not 4: check the values.')).toBeDefined()
+  // An amount past what an item holds, and another name twice, under More.
+  fireEvent.change(sheet.getByLabelText('Eaten now (g)'), { target: { value: '20000' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Add another name' }))
+  fireEvent.change(sheet.getByLabelText('Other name 1'), { target: { value: 'Milk kefir' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Add another name' }))
+  fireEvent.change(sheet.getByLabelText('Other name 2'), { target: { value: 'milk kefir' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
+
+  expect(
+    await sheet.findByText('An amount is more than 0 and at most 10,000 g or ml, or 50 portions.'),
+  ).toBeDefined()
+  expect(sheet.getByLabelText('Eaten now (g)').getAttribute('aria-invalid')).toBe('true')
+  // More opens on what is wrong in it.
+  expect(sheet.getByText('More').closest('details')?.open).toBe(true)
+  expect(sheet.getByText('This other name is given already.')).toBeDefined()
+  expect(server.sent).toEqual([])
+  expect(sheet.queryByRole('list', { name: 'In the meal' })).toBeNull()
 })
 
 test("today's chips log yesterday's meal of the hour again, and open the meal with a food", async () => {
@@ -850,6 +956,208 @@ test("today's chips log yesterday's meal of the hour again, and open the meal wi
   const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
   expect(basket(sheet)).toEqual(['Rye bread · 2 slice · 207 kcal'])
   expect(sheet.getByRole('button', { name: 'Log 1 item · 207 kcal' })).toBeDefined()
+})
+
+// skyrBowl is a breakfast of skyr, eaten on the 22nd and the 21st at
+// 07:30 in Los Angeles; sandwich, a lunch of the bread on the 22nd.
+const skyrBowl = recent(
+  {
+    ...porridge,
+    id: '0193c3a5-0000-7000-8000-0000000000b7',
+    eaten_at: '2026-10-22T14:30:00Z',
+    description: 'Skyr bowl',
+    items: [{ ...slices, food_id: skyr.id, name: skyr.name }],
+  },
+  ['2026-10-21T14:30:00Z'],
+)
+const sandwich = recent({
+  ...porridge,
+  id: '0193c3a5-0000-7000-8000-0000000000b8',
+  eaten_at: '2026-10-22T19:30:00Z',
+  description: 'Sandwich',
+})
+
+test.each([
+  // 12:30 in Los Angeles: the bread of the lunch first.
+  ['2026-10-23T19:30:00Z', ['Rye bread 2 slice', 'Skyr 150 g']],
+  // 08:00: the skyr of the breakfasts, as the foods logged most.
+  ['2026-10-23T15:00:00Z', ['Skyr 150 g', 'Rye bread 2 slice']],
+])(
+  "at %s today's chips offer the foods eaten at the meal of the hour first",
+  async (now, chips) => {
+    vi.setSystemTime(new Date(now))
+    logServer('2026-10-23', {
+      'GET /api/v1/meals/recent': () => Response.json({ meals: [sandwich, skyrBowl] }),
+    })
+    renderAt('/')
+
+    const quick = within(await screen.findByRole('region', { name: 'Quick add' }))
+    await quick.findByRole('button', { name: 'Skyr 150 g' })
+    await waitFor(() => {
+      expect(quick.getAllByRole('button').map((b) => b.textContent)).toEqual(chips)
+    })
+  },
+)
+
+test('the foods eaten at the meal of the day lately come first: skyr in the morning', async () => {
+  // 08:00 in Los Angeles.
+  vi.setSystemTime(new Date('2026-10-23T15:00:00Z'))
+  logServer('2026-10-23', {
+    // The bread used last.
+    'GET /api/v1/foods/list': () => Response.json({ foods: [bread, skyr], total: 2 }),
+    'GET /api/v1/meals/recent': () => Response.json({ meals: [sandwich, skyrBowl] }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  await sheet.findByRole('region', { name: 'For breakfast' })
+  expect(await offered(sheet)).toEqual(['Repeat: Sandwich', 'Add: Skyr', 'Add: Rye bread'])
+})
+
+// plate is a meal of before of one estimate, named, eaten at these times
+// (the latest first), each of its day on the user's clock.
+function plate(name: string, ...times: [at: string, day: string][]): RecentMeal {
+  const nutrients = { kcal: 500, protein: 30, carbs: 50, fat: 20 }
+  return {
+    id: name,
+    eaten_at: times[0]?.[0] ?? '',
+    description: name,
+    client: 'web',
+    total: nutrients,
+    items: [
+      {
+        id: `${name} item`,
+        name,
+        quantity: { portions: 1 },
+        amount: 1,
+        unit: 'portion',
+        nutrients,
+        source: 'estimate',
+      },
+    ],
+    eaten: times.map(([at, of]) => ({ at, day: of })),
+  }
+}
+
+// The meals of before at 20:00 on the 23rd in Los Angeles, the latest
+// first: today's lunch and breakfast; a stew eaten at dinner twice, a
+// pasta and a soup once; a salad at lunch; and a goulash at dinner, three
+// weeks before.
+const ofDinner = [
+  plate('Tuna', ['2026-10-23T20:32:00Z', '2026-10-23']),
+  plate('Yoghurt', ['2026-10-23T14:32:00Z', '2026-10-23']),
+  plate('Stew', ['2026-10-23T02:00:00Z', '2026-10-22'], ['2026-10-21T02:30:00Z', '2026-10-20']),
+  plate('Salad', ['2026-10-22T19:00:00Z', '2026-10-22']),
+  plate('Pasta', ['2026-10-22T03:00:00Z', '2026-10-21']),
+  plate('Soup', ['2026-10-20T03:00:00Z', '2026-10-19']),
+  plate('Goulash', ['2026-10-04T03:00:00Z', '2026-10-03']),
+]
+
+// suggested are the meals the sheet suggests as cards, by their buttons.
+async function suggested(sheet: Sheet, name: string) {
+  return within(await sheet.findByRole('region', { name }))
+    .getAllByRole('button')
+    .map((b) => b.getAttribute('aria-label'))
+}
+
+test("at dinner the dinners of lately come first, the most eaten first, and today's meals last", async () => {
+  vi.setSystemTime(new Date('2026-10-24T03:00:00Z'))
+  const server = logServer('2026-10-23', {
+    'GET /api/v1/meals/recent': () => Response.json({ meals: ofDinner }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  // Above the search, two on a phone.
+  expect(await suggested(sheet, 'For dinner')).toEqual(['Repeat: Stew', 'Repeat: Pasta'])
+  expect(
+    within(sheet.getByRole('region', { name: 'For dinner' }))
+      .getAllByRole('listitem')
+      .map((li) => li.textContent),
+  ).toEqual(['Stew500 kcalRepeat', 'Pasta500 kcalRepeat'])
+  // The lists leave them out: the next dinner, the others, and the meals
+  // of today last, the one just logged no first Repeat.
+  expect(await offered(sheet)).toEqual([
+    'Repeat: Soup',
+    'Repeat: Salad',
+    'Repeat: Goulash',
+    'Add: Rye bread',
+  ])
+  fireEvent.click(sheet.getByRole('tab', { name: 'Meals' }))
+  expect(await offered(sheet)).toEqual([
+    'Repeat: Soup',
+    'Repeat: Salad',
+    'Repeat: Goulash',
+    'Repeat: Tuna',
+    'Repeat: Yoghurt',
+  ])
+  // A search is of them all, without the cards.
+  const search = sheet.getByLabelText('Find a food or a meal')
+  fireEvent.change(search, { target: { value: 'stew' } })
+  expect(await offered(sheet)).toEqual(['Repeat: Stew'])
+  expect(sheet.queryByRole('region', { name: 'For dinner' })).toBeNull()
+
+  // A card's Repeat logs the meal again.
+  fireEvent.change(search, { target: { value: '' } })
+  fireEvent.click(
+    within(await sheet.findByRole('region', { name: 'For dinner' })).getByRole('button', {
+      name: 'Repeat: Stew',
+    }),
+  )
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({
+    description: 'Stew',
+    items: [{ name: 'Stew', nutrients: { kcal: 500, protein: 30, carbs: 50, fat: 20 } }],
+  })
+})
+
+// media makes matchMedia match one query alone: a desktop's width, or a
+// finger's screen.
+function media(matched: string) {
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: query === matched,
+    media: query,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }))
+}
+
+test("a desktop's sheet suggests three", async () => {
+  media('(min-width: 64rem)')
+  vi.setSystemTime(new Date('2026-10-24T03:00:00Z'))
+  logServer('2026-10-23', {
+    'GET /api/v1/meals/recent': () => Response.json({ meals: ofDinner }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  expect(await suggested(sheet, 'For dinner')).toEqual([
+    'Repeat: Stew',
+    'Repeat: Pasta',
+    'Repeat: Soup',
+  ])
+  expect((await offered(sheet)).slice(0, 2)).toEqual(['Repeat: Salad', 'Repeat: Goulash'])
+})
+
+test('on a touch screen the keyboard waits for a tap on the search, and does not come with an item', async () => {
+  media('(pointer: coarse)')
+  logServer()
+  renderAt('/')
+
+  const sheet = await openSheet()
+  // The sheet has the focus, not the search.
+  const dialog = screen.getByRole('dialog', { name: 'A new meal' })
+  await waitFor(() => {
+    expect(document.activeElement).toBe(dialog)
+  })
+  fireEvent.click(await sheet.findByRole('button', { name: 'Add: Rye bread' }))
+  expect(basket(sheet)).toEqual(['Rye bread · 2 slice · 207 kcal'])
+  // Added, the meal's button has it.
+  expect(document.activeElement).toBe(sheet.getByRole('button', { name: 'Log 1 item · 207 kcal' }))
+  await giveEstimate(sheet, 'Tea')
+  expect(document.activeElement).toBe(sheet.getByRole('button', { name: 'Log 2 items · 208 kcal' }))
 })
 
 test('a time is typed on a 24-hour clock, and one that is none is said', async () => {
@@ -903,7 +1211,8 @@ test.each(['grozde', 'grozdje', 'grozd'])(
     }
     logServer('2026-10-23', {
       'GET /api/v1/foods/list': () => Response.json({ foods: [grapes], total: 1 }),
-      'GET /api/v1/meals/recent': () => Response.json({ meals: [snack, porridge] }),
+      'GET /api/v1/meals/recent': () =>
+        Response.json({ meals: [snack, porridge].map((m) => recent(m)) }),
     })
     renderAt('/')
 
@@ -932,7 +1241,7 @@ test('what the search matched is marked in the names of the foods and the meals'
   logServer('2026-10-23', {
     'GET /api/v1/foods': () =>
       Response.json({ foods: [{ ...bread, brand: 'Ryeland' }], unfound: [] }),
-    'GET /api/v1/meals/recent': () => Response.json({ meals: [toast] }),
+    'GET /api/v1/meals/recent': () => Response.json({ meals: [toast].map((m) => recent(m)) }),
   })
   renderAt('/')
 
@@ -955,7 +1264,7 @@ test("a meal of before is found by its items' brands, which do not name it", asy
     items: [{ ...slices, name: 'Sourdough', brand: 'Ryeland' }],
   }
   logServer('2026-10-23', {
-    'GET /api/v1/meals/recent': () => Response.json({ meals: [branded] }),
+    'GET /api/v1/meals/recent': () => Response.json({ meals: [branded].map((m) => recent(m)) }),
   })
   renderAt('/')
 
@@ -983,7 +1292,8 @@ test('a meal of before is offered once, the latest of the same foods the search 
     items: [{ ...slices, food_id: oats.id, name: oats.name }],
   }
   logServer('2026-10-23', {
-    'GET /api/v1/meals/recent': () => Response.json({ meals: [porridge, more, lunch, toast] }),
+    'GET /api/v1/meals/recent': () =>
+      Response.json({ meals: [porridge, more, lunch, toast].map((m) => recent(m)) }),
   })
   renderAt('/')
 

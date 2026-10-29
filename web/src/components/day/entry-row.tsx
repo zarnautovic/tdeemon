@@ -2,15 +2,11 @@ import { X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 import { AmountField } from '@/components/day/amount-field'
+import { EstimateFields } from '@/components/day/estimate-fields'
 import { inUnit, servingOf, unitsOf, type Entry } from '@/components/day/meal-entries'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import limits from '@/lib/limits.json'
-import { fieldLabel, inputClass } from '@/lib/styles'
-import { cn } from '@/lib/utils'
-
-const values = ['kcal', 'protein', 'carbs', 'fat'] as const
 
 // EntryRow is an item of a meal being logged, to change or remove: a
 // food's amount and unit, or an estimate's name and values. wrong marks
@@ -41,12 +37,6 @@ export function EntryRow({
   }, [focus])
   const brand = entry.kind === 'food' && entry.food.brand ? ` · ${entry.food.brand}` : ''
   const name = entry.kind === 'food' ? entry.food.name + brand : entry.name || t.log.anEstimate
-  // An estimate's value is wrong when the entry is and it holds no
-  // number, or energy past the most an estimate may have.
-  const wrongValue = (v: (typeof values)[number]) => {
-    const n = f.parse(entry.kind === 'estimate' ? entry[v] : '')
-    return n === undefined || (v === 'kcal' && n > limits.meal.maxEstimateKcal)
-  }
   const remove = (
     <Button variant="ghost" size="icon" aria-label={t.log.remove(name)} onClick={onRemove}>
       <X aria-hidden />
@@ -94,42 +84,16 @@ export function EntryRow({
     )
   }
   return (
-    <li className="space-y-2 py-2">
-      <div className="flex items-end gap-2">
-        <label className="flex-1 space-y-1">
-          <span className={cn(fieldLabel, 'block')}>{t.log.estimateName}</span>
-          <input
-            ref={firstField}
-            value={entry.name}
-            autoComplete="off"
-            aria-invalid={wrong && entry.name.trim() === ''}
-            aria-describedby={describedBy}
-            className={inputClass}
-            onChange={(e) => {
-              onChange({ ...entry, name: e.currentTarget.value })
-            }}
-          />
-        </label>
+    <li className="py-2">
+      <EstimateFields
+        nameRef={firstField}
+        entry={entry}
+        wrong={wrong}
+        describedBy={describedBy}
+        onChange={onChange}
+      >
         {remove}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {values.map((v) => (
-          <label key={v} className="space-y-1">
-            <span className={cn(fieldLabel, 'block')}>{t.foods.nutrient[v]}</span>
-            <input
-              value={entry[v]}
-              inputMode="decimal"
-              autoComplete="off"
-              aria-invalid={wrong && wrongValue(v)}
-              aria-describedby={describedBy}
-              className={cn(inputClass, 'tabular-nums')}
-              onChange={(e) => {
-                onChange({ ...entry, [v]: e.currentTarget.value })
-              }}
-            />
-          </label>
-        ))}
-      </div>
+      </EstimateFields>
     </li>
   )
 }

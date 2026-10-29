@@ -7,9 +7,11 @@ import { conflictOf, detailOf, statusOf } from '@/api/errors'
 import { useCreateFood, useSaveFood } from '@/api/foods'
 import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
+import { most as itemMost, tooMuch as tooMuchOf } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { energyOff } from '@/components/foods/energy'
 import { Button } from '@/components/ui/button'
+import { SegmentedControl } from '@/components/ui/segmented'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import limits from '@/lib/limits.json'
@@ -85,11 +87,40 @@ function energyOfDraft(
   return values === undefined ? undefined : { typed: kcal, values }
 }
 
+// A compact form is of a food made in a meal being logged, its next step:
+// what a food needs (its name, what its values are for, the four values)
+// and the amount eaten now, in the unit of what the values are for, its
+// other fields under More. It is sent by the button of its id, outside
+// it, at the sheet's foot; onAdd gets the food saved and the amount.
+interface Compact {
+  id: string
+  // The name to start with: what was searched for.
+  name: string
+  onAdd: (food: Food, amount: number) => void
+}
+
+// The fields a compact form shows outside More.
+const outside = new Set<string>(['name', ...needed, 'mass', 'eaten'])
+
+// unitOf is the unit of a food's amount, of what its values are for.
+function unitOf(basis: Food['basis']): 'g' | 'ml' | 'portion' {
+  return basis === '100ml' ? 'ml' : basis === 'portion' ? 'portion' : 'g'
+}
+
 // FoodForm makes a food, or corrects one: its name and brand, what its
 // values are for and the values, a portion's grams, its servings and
 // other names, where the values come from, and a note. A save replaces
-// the whole food. onSaved gives the food as stored.
-export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food) => void }) {
+// the whole food. onSaved gives the food as stored. A compact one makes
+// a food in a meal being logged (Compact).
+export function FoodForm({
+  food,
+  onSaved,
+  compact,
+}: {
+  food?: Food
+  onSaved?: (food: Food) => void
+  compact?: Compact
+}) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
@@ -103,7 +134,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
   // values as they are.
   const field = (n: number | undefined) => (n === undefined ? '' : f.field(n, 6))
   const [draft, setDraft] = useState<Draft>(() => ({
-    name: food?.name ?? '',
+    name: food?.name ?? compact?.name ?? '',
     brand: food?.brand ?? '',
     basis: food?.basis ?? '100g',
     nutrients: {
@@ -124,6 +155,10 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     source: food?.source ?? 'label',
     note: food?.note ?? '',
   }))
+  // A compact form's amount eaten now, as typed; until it is, 100 g or ml,
+  // or a portion.
+  const [eatenTyped, setEaten] = useState<string | undefined>(undefined)
+  const eaten = eatenTyped ?? (draft.basis === 'portion' ? f.field(1) : f.field(100))
   // The fields that are not what a food can have: needed and empty, or
   // not a number. A field changed since is not said wrong (edited) until
   // the next save, which tells it again; the others stay.
@@ -210,8 +245,9 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     }
   }
 
-  // body is the food the draft says, or the fields that are wrong.
-  function body(): { body: Upsert } | { wrong: ReadonlyMap<string, string> } {
+  // body is the food the draft says, with a compact form's amount eaten
+  // now, or the fields that are wrong.
+  function body(): { body: Upsert; eaten: number } | { wrong: ReadonlyMap<string, string> } {
     const errors = new Map<string, string>()
     const number = (key: string, typed: string, isNeeded: boolean): number | undefined => {
       if (typed.trim() === '') {
@@ -284,6 +320,19 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       aliasNames.add(nameKey(alias))
       return [alias]
     })
+    // A compact form's amount, as an item may hold it (tooMuch).
+    let amount = 0
+    if (compact) {
+      const n = number('eaten', eaten, true)
+      if (
+        n !== undefined &&
+        !errors.has('eaten') &&
+        (n <= 0 || tooMuchOf(undefined, unitOf(draft.basis), n))
+      ) {
+        errors.set('eaten', t.log.amountWrong(itemMost(f.number)))
+      }
+      amount = n ?? 0
+    }
     if (errors.size > 0) {
       return { wrong: errors }
     }
@@ -301,11 +350,16 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       source: draft.source,
       ...(note ? { note } : {}),
     }
-    return { body: fields }
+    return { body: fields, eaten: amount }
   }
 
-  // send saves the draft, or says what in it is wrong.
+  // send saves the draft, or says what in it is wrong. A save on its way
+  // is not sent again, whichever button or key sends it: a compact form's
+  // is outside it.
   function send() {
+    if (save.isPending) {
+      return
+    }
     const made = body()
     setEdited(new Set())
     if ('wrong' in made) {
@@ -320,7 +374,11 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           // Of no day: after the changes of today's still on their way.
           { last: { action: 'food.save', entity: saved.id }, date: 'today' },
         )
-        onSaved?.(saved)
+        if (compact) {
+          compact.onAdd(saved, made.eaten)
+        } else {
+          onSaved?.(saved)
+        }
       },
     }
     if (food) {
@@ -415,50 +473,27 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
     refused = t.foods.refused(detailOf(save.error))
   }
 
-  return (
-    <form ref={form} onSubmit={submit} noValidate className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        {text(
-          'name',
-          t.foods.name,
-          draft.name,
-          (name) => {
-            set({ name })
-          },
-          { maxLength: 200 },
-        )}
-        {text(
-          'brand',
-          t.foods.brand,
-          draft.brand,
-          (brand) => {
-            set({ brand })
-          },
-          { maxLength: 100 },
-        )}
-      </div>
-      <div className="space-y-1">
-        <label htmlFor={`${id}-basis`} className={cn(fieldLabel, 'block')}>
-          {t.foods.basis}
-        </label>
-        <select
-          id={`${id}-basis`}
-          value={draft.basis}
-          className={inputClass}
-          onChange={(e) => {
-            const chosen = bases.find((b) => b === e.currentTarget.value)
-            if (chosen) {
-              set({ basis: chosen })
-            }
-          }}
-        >
-          {bases.map((b) => (
-            <option key={b} value={b}>
-              {t.foods.per[b]}
-            </option>
-          ))}
-        </select>
-      </div>
+  // The form's parts, laid out in full or compact.
+  const nameField = text(
+    'name',
+    t.foods.name,
+    draft.name,
+    (name) => {
+      set({ name })
+    },
+    { maxLength: 200 },
+  )
+  const brandField = text(
+    'brand',
+    t.foods.brand,
+    draft.brand,
+    (brand) => {
+      set({ brand })
+    },
+    { maxLength: 100 },
+  )
+  const values = (
+    <>
       <div className="grid grid-cols-2 gap-3">
         {needed.map((k) => (
           <div key={k}>
@@ -500,133 +535,228 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
           </div>
         )}
       </div>
+    </>
+  )
+  const otherValues = (
+    <div className="grid grid-cols-2 gap-3">
+      {optional.map((k) => (
+        <div key={k}>
+          {text(
+            k,
+            t.foods.nutrient[k],
+            draft.nutrients[k],
+            (v) => {
+              set({ nutrients: { ...draft.nutrients, [k]: v } })
+            },
+            { decimal: true },
+          )}
+        </div>
+      ))}
+    </div>
+  )
+  const portionField =
+    draft.basis === 'portion' &&
+    text(
+      'portionGrams',
+      t.foods.portionGrams,
+      draft.portionGrams,
+      (portionGrams) => {
+        set({ portionGrams })
+      },
+      { decimal: true },
+    )
+  const servingsField = (
+    <fieldset className="space-y-2">
+      <legend className={fieldLabel}>{t.foods.servings}</legend>
+      {draft.servings.map(({ key, value }, i) => (
+        <div key={key} className="flex items-end gap-2">
+          <div className="flex-1">
+            {text(
+              `serving name ${key}`,
+              t.foods.serving(i + 1),
+              value.name,
+              (name) => {
+                set({
+                  servings: draft.servings.map((r) =>
+                    r.key === key ? { key, value: { ...r.value, name } } : r,
+                  ),
+                })
+              },
+              { maxLength: 50 },
+            )}
+          </div>
+          <div className="w-28">
+            {text(
+              `serving ${key}`,
+              t.foods.servingAmount(unit, i + 1),
+              value.amount,
+              (amount) => {
+                set({
+                  servings: draft.servings.map((r) =>
+                    r.key === key ? { key, value: { ...r.value, amount } } : r,
+                  ),
+                })
+              },
+              { decimal: true },
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t.foods.removeServing(value.name)}
+            onClick={() => {
+              set({ servings: draft.servings.filter((r) => r.key !== key) })
+            }}
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        onClick={() => {
+          const next = row({ name: '', amount: '' })
+          set({ servings: [...draft.servings, next] })
+          setAdded(`serving name ${next.key}`)
+        }}
+      >
+        <Plus aria-hidden />
+        {t.foods.addServing}
+      </Button>
+    </fieldset>
+  )
+  const aliasesField = (
+    <fieldset className="space-y-2">
+      <legend className={fieldLabel}>{t.foods.aliases}</legend>
+      {draft.aliases.map(({ key, value }, i) => (
+        <div key={key} className="flex items-end gap-2">
+          <div className="flex-1">
+            {text(
+              `alias ${key}`,
+              t.foods.alias(i + 1),
+              value,
+              (alias) => {
+                set({
+                  aliases: draft.aliases.map((r) => (r.key === key ? { key, value: alias } : r)),
+                })
+              },
+              { maxLength: 100 },
+            )}
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t.foods.removeAlias(value)}
+            onClick={() => {
+              set({ aliases: draft.aliases.filter((r) => r.key !== key) })
+            }}
+          >
+            <X aria-hidden />
+          </Button>
+        </div>
+      ))}
+      <Button
+        variant="outline"
+        onClick={() => {
+          const next = row('')
+          set({ aliases: [...draft.aliases, next] })
+          setAdded(`alias ${next.key}`)
+        }}
+      >
+        <Plus aria-hidden />
+        {t.foods.addAlias}
+      </Button>
+    </fieldset>
+  )
+  const saveStatus = refused ? (
+    <p id={`${id}-refused`} role="alert" className="text-sm text-destructive">
+      {refused}
+    </p>
+  ) : food ? (
+    <SaveStatus change={upsert} onRetry={send} />
+  ) : (
+    <SaveStatus change={create} onRetry={send} />
+  )
+
+  if (compact) {
+    // More opens on a field of its said wrong, or another food's in the
+    // way of.
+    const moreWrong =
+      [...wrong.keys()].some((k) => !outside.has(k)) ||
+      (conflictKey !== undefined && !outside.has(conflictKey))
+    return (
+      <form id={compact.id} ref={form} onSubmit={submit} noValidate className="space-y-4">
+        {nameField}
+        <SegmentedControl
+          legend={t.foods.basis}
+          options={bases.map((b) => ({ value: b, label: t.foods.per[b] }))}
+          value={draft.basis}
+          onChange={(basis) => {
+            set({ basis })
+          }}
+        />
+        {values}
+        <div className="grid grid-cols-2 gap-3">
+          {text(
+            'eaten',
+            t.log.eatenNow[draft.basis],
+            eaten,
+            (typed) => {
+              setEaten(typed)
+            },
+            { decimal: true },
+          )}
+        </div>
+        <details className="rounded-lg border p-3" open={moreWrong}>
+          <summary className="cursor-pointer text-sm">{t.foods.moreFields}</summary>
+          <div className="mt-3 space-y-4">
+            {brandField}
+            {otherValues}
+            {portionField}
+            {servingsField}
+            {aliasesField}
+          </div>
+        </details>
+        {saveStatus}
+      </form>
+    )
+  }
+  return (
+    <form ref={form} onSubmit={submit} noValidate className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        {nameField}
+        {brandField}
+      </div>
+      <div className="space-y-1">
+        <label htmlFor={`${id}-basis`} className={cn(fieldLabel, 'block')}>
+          {t.foods.basis}
+        </label>
+        <select
+          id={`${id}-basis`}
+          value={draft.basis}
+          className={inputClass}
+          onChange={(e) => {
+            const chosen = bases.find((b) => b === e.currentTarget.value)
+            if (chosen) {
+              set({ basis: chosen })
+            }
+          }}
+        >
+          {bases.map((b) => (
+            <option key={b} value={b}>
+              {t.foods.per[b]}
+            </option>
+          ))}
+        </select>
+      </div>
+      {values}
       <details className="rounded-lg border p-3" open={optional.some((k) => wrong.has(k))}>
         <summary className="cursor-pointer text-sm">{t.foods.moreNutrients}</summary>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {optional.map((k) => (
-            <div key={k}>
-              {text(
-                k,
-                t.foods.nutrient[k],
-                draft.nutrients[k],
-                (v) => {
-                  set({ nutrients: { ...draft.nutrients, [k]: v } })
-                },
-                { decimal: true },
-              )}
-            </div>
-          ))}
-        </div>
+        <div className="mt-3">{otherValues}</div>
       </details>
-      {draft.basis === 'portion' &&
-        text(
-          'portionGrams',
-          t.foods.portionGrams,
-          draft.portionGrams,
-          (portionGrams) => {
-            set({ portionGrams })
-          },
-          { decimal: true },
-        )}
-      <fieldset className="space-y-2">
-        <legend className={fieldLabel}>{t.foods.servings}</legend>
-        {draft.servings.map(({ key, value }, i) => (
-          <div key={key} className="flex items-end gap-2">
-            <div className="flex-1">
-              {text(
-                `serving name ${key}`,
-                t.foods.serving(i + 1),
-                value.name,
-                (name) => {
-                  set({
-                    servings: draft.servings.map((r) =>
-                      r.key === key ? { key, value: { ...r.value, name } } : r,
-                    ),
-                  })
-                },
-                { maxLength: 50 },
-              )}
-            </div>
-            <div className="w-28">
-              {text(
-                `serving ${key}`,
-                t.foods.servingAmount(unit, i + 1),
-                value.amount,
-                (amount) => {
-                  set({
-                    servings: draft.servings.map((r) =>
-                      r.key === key ? { key, value: { ...r.value, amount } } : r,
-                    ),
-                  })
-                },
-                { decimal: true },
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t.foods.removeServing(value.name)}
-              onClick={() => {
-                set({ servings: draft.servings.filter((r) => r.key !== key) })
-              }}
-            >
-              <X aria-hidden />
-            </Button>
-          </div>
-        ))}
-        <Button
-          variant="outline"
-          onClick={() => {
-            const next = row({ name: '', amount: '' })
-            set({ servings: [...draft.servings, next] })
-            setAdded(`serving name ${next.key}`)
-          }}
-        >
-          <Plus aria-hidden />
-          {t.foods.addServing}
-        </Button>
-      </fieldset>
-      <fieldset className="space-y-2">
-        <legend className={fieldLabel}>{t.foods.aliases}</legend>
-        {draft.aliases.map(({ key, value }, i) => (
-          <div key={key} className="flex items-end gap-2">
-            <div className="flex-1">
-              {text(
-                `alias ${key}`,
-                t.foods.alias(i + 1),
-                value,
-                (alias) => {
-                  set({
-                    aliases: draft.aliases.map((r) => (r.key === key ? { key, value: alias } : r)),
-                  })
-                },
-                { maxLength: 100 },
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t.foods.removeAlias(value)}
-              onClick={() => {
-                set({ aliases: draft.aliases.filter((r) => r.key !== key) })
-              }}
-            >
-              <X aria-hidden />
-            </Button>
-          </div>
-        ))}
-        <Button
-          variant="outline"
-          onClick={() => {
-            const next = row('')
-            set({ aliases: [...draft.aliases, next] })
-            setAdded(`alias ${next.key}`)
-          }}
-        >
-          <Plus aria-hidden />
-          {t.foods.addAlias}
-        </Button>
-      </fieldset>
+      {portionField}
+      {servingsField}
+      {aliasesField}
       <div className="space-y-1">
         <label htmlFor={`${id}-source`} className={cn(fieldLabel, 'block')}>
           {t.foods.source}
@@ -667,15 +797,7 @@ export function FoodForm({ food, onSaved }: { food?: Food; onSaved?: (food: Food
       <Button type="submit" className="w-full" disabled={save.isPending}>
         {t.foods.save}
       </Button>
-      {refused ? (
-        <p id={`${id}-refused`} role="alert" className="text-sm text-destructive">
-          {refused}
-        </p>
-      ) : food ? (
-        <SaveStatus change={upsert} onRetry={send} />
-      ) : (
-        <SaveStatus change={create} onRetry={send} />
-      )}
+      {saveStatus}
     </form>
   )
 }

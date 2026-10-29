@@ -35,13 +35,14 @@ test('a meal is logged by hand, of a food and an estimate', async ({ page }) => 
   await sheet.getByLabel('Amount: Basmati rice').press('Enter')
   const meal = sheet.getByRole('list', { name: 'In the meal' })
   await expect(meal).toContainText('Basmati rice · 2 cup · 420 kcal')
+  // An estimate is a step of its own, with one button.
   await sheet.getByRole('button', { name: 'An estimate', exact: true }).click()
   await sheet.getByLabel('What it is').fill('Curry')
   await sheet.getByLabel('Energy (kcal)').fill('400')
   await sheet.getByLabel('Protein (g)').fill('20')
   await sheet.getByLabel('Carbs (g)').fill('15')
   await sheet.getByLabel('Fat (g)', { exact: true }).fill('28')
-  await sheet.getByRole('button', { name: 'Add: Curry' }).click()
+  await sheet.getByRole('button', { name: 'Add to meal' }).click()
   await expect(meal).toContainText('Curry · 400 kcal')
   await sheet.getByRole('button', { name: 'Log 2 items · 820 kcal' }).click()
 
