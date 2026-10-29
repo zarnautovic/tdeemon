@@ -1,9 +1,15 @@
-import { useState } from 'react'
+import { Plus } from 'lucide-react'
+import { useRef, useState, type ReactNode, type Ref } from 'react'
+import { flushSync } from 'react-dom'
 
 import { $api } from '@/api/client'
 import type { Metric } from '@/api/types'
 import { DayMetrics } from '@/components/day/day-metrics'
+import type { MetricKind } from '@/components/day/metric-kinds'
+import { useNothingMeasured } from '@/components/day/nothing-measured'
+import { usePreviousWeight } from '@/components/day/previous-weight'
 import { weekOf } from '@/components/day/week'
+import { WeighIn } from '@/components/day/weigh-in'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -16,9 +22,13 @@ import { cn } from '@/lib/utils'
 // summary's; of a day before, the one it had then, from the history of
 // its week, which the week strip has asked for), the night's sleep, the
 // steps and the resting heart rate, each a dash while the day has none.
-// All its measurements, to correct, delete or add, are a sheet away. A
-// day to come takes none (canLog). today is the user's, once the app
-// knows it; another day's is the day's body, not today's.
+// A tile is a tap from changing its measurement: the weight in a field in
+// its place, hinting with the day before's, and the others in the sheet
+// of all the measurements, open at theirs. All of them, to correct,
+// delete or add, are a sheet away too. A day to come takes none (canLog).
+// today is the user's, once the app knows it; another day's is the day's
+// body, not today's. While the user has measured nothing yet, today has
+// no empty tiles, only the way to a first weigh-in.
 export function BodyToday({
   date,
   today,
@@ -32,7 +42,15 @@ export function BodyToday({
 }) {
   const t = useMessages()
   const f = useFormat()
-  const [open, setOpen] = useState(false)
+  // The sheet of the measurements, open at a kind's, or at none.
+  const [sheet, setSheet] = useState<{ at?: MetricKind } | undefined>(undefined)
+  const field = useRef<HTMLInputElement>(null)
+  // The weight's field, in place of its tile, and what gives it the
+  // focus back once it goes.
+  const [weighing, setWeighing] = useState(false)
+  const opener = useRef<HTMLButtonElement>(null)
+  const nothing = useNothingMeasured(date, metrics)
+  const previous = usePreviousWeight(date, weighing)
   const summary = $api.useQuery('get', '/api/v1/summary')
   const before = today !== undefined && date < today
   const history = $api.useQuery(
@@ -53,22 +71,87 @@ export function BodyToday({
   const sleep = value('sleep_h')
   const steps = value('steps')
   const rhr = value('rhr')
-  const tiles = [
+  const tiles: { kind: MetricKind; value: string | undefined; note?: string | undefined }[] = [
     {
-      label: t.day.metric.weight,
+      kind: 'weight',
       value: weight === undefined ? undefined : `${f.number(weight, 1)} kg`,
       note: trend === undefined ? undefined : t.day.body.trend(f.number(trend, 1)),
     },
     {
-      label: t.day.metric.sleep_h,
+      kind: 'sleep_h',
       value: sleep === undefined ? undefined : t.unit.hm(...f.hm(sleep)),
     },
-    { label: t.day.metric.steps, value: steps === undefined ? undefined : f.number(steps) },
-    {
-      label: t.day.metric.rhr,
-      value: rhr === undefined ? undefined : `${f.number(rhr)} bpm`,
-    },
+    { kind: 'steps', value: steps === undefined ? undefined : f.number(steps) },
+    { kind: 'rhr', value: rhr === undefined ? undefined : `${f.number(rhr)} bpm` },
   ]
+
+  // weighed closes the weight's field, and gives the focus to what opened
+  // it.
+  const weighed = () => {
+    flushSync(() => {
+      setWeighing(false)
+    })
+    opener.current?.focus()
+  }
+  const weighIn = (
+    <WeighIn
+      date={date}
+      label={t.day.metric.weight}
+      initial={weight === undefined ? '' : f.field(weight, 1)}
+      placeholder={previous?.weight === undefined ? undefined : f.field(previous.weight.value, 1)}
+      focus
+      onSaved={weighed}
+      onCancel={weighed}
+    />
+  )
+
+  let body: ReactNode
+  if (nothing && canLog) {
+    body = weighing ? (
+      weighIn
+    ) : (
+      <Button
+        ref={opener}
+        variant="outline"
+        className="w-full border-dashed"
+        onClick={() => {
+          setWeighing(true)
+        }}
+      >
+        <Plus aria-hidden />
+        {t.day.body.addWeight}
+      </Button>
+    )
+  } else {
+    body = (
+      <ul className="grid grid-cols-2 gap-2">
+        {weighing && <li className="col-span-2 rounded-md bg-surface-2 p-3">{weighIn}</li>}
+        {tiles.map((tile) =>
+          weighing && tile.kind === 'weight' ? null : (
+            <li key={tile.kind}>
+              <Tile
+                label={t.day.metric[tile.kind]}
+                value={tile.value}
+                note={tile.note}
+                buttonRef={tile.kind === 'weight' ? opener : undefined}
+                onOpen={
+                  canLog
+                    ? () => {
+                        if (tile.kind === 'weight') {
+                          setWeighing(true)
+                        } else {
+                          setSheet({ at: tile.kind })
+                        }
+                      }
+                    : undefined
+                }
+              />
+            </li>
+          ),
+        )}
+      </ul>
+    )
+  }
 
   return (
     <section aria-labelledby="day-body" className="space-y-3 rounded-lg border bg-card p-4">
@@ -76,28 +159,75 @@ export function BodyToday({
         <h2 id="day-body" className="text-h3">
           {date === today ? t.day.body.title : t.day.body.titleOfDay}
         </h2>
-        <Button
-          variant="link"
-          className={cn(linkTarget, 'h-auto p-0 text-small font-semibold')}
-          onClick={() => {
-            setOpen(true)
-          }}
-        >
-          {t.day.body.all}
-        </Button>
+        {!(nothing && canLog) && (
+          <Button
+            variant="link"
+            className={cn(linkTarget, 'h-auto p-0 text-small font-semibold')}
+            onClick={() => {
+              setSheet({})
+            }}
+          >
+            {t.day.body.all}
+          </Button>
+        )}
       </div>
-      <dl className="grid grid-cols-2 gap-2">
-        {tiles.map((tile) => (
-          <div key={tile.label} className="space-y-0.5 rounded-md bg-surface-2 p-3">
-            <dt className="text-caption text-muted-foreground">{tile.label}</dt>
-            <dd className="text-h2">{tile.value ?? t.day.body.none}</dd>
-            {tile.note !== undefined && <dd className="text-caption text-success">{tile.note}</dd>}
-          </div>
-        ))}
-      </dl>
-      <Sheet open={open} onOpenChange={setOpen} title={t.day.measurements}>
-        <DayMetrics date={date} metrics={metrics} canLog={canLog} />
+      {body}
+      <Sheet
+        open={sheet !== undefined}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSheet(undefined)
+          }
+        }}
+        title={t.day.measurements}
+        initialFocus={sheet?.at === undefined ? undefined : field}
+      >
+        <DayMetrics date={date} metrics={metrics} canLog={canLog} at={sheet?.at} field={field} />
       </Sheet>
     </section>
+  )
+}
+
+const tileClass = 'block h-full w-full space-y-0.5 rounded-md bg-surface-2 p-3 text-left'
+
+// Tile is a measurement of the day's in short: its name, its value or a
+// dash, and a note under it (the trend). With onOpen, a button that opens
+// its change.
+function Tile({
+  label,
+  value,
+  note,
+  buttonRef,
+  onOpen,
+}: {
+  label: string
+  value: string | undefined
+  note: string | undefined
+  buttonRef: Ref<HTMLButtonElement> | undefined
+  onOpen: (() => void) | undefined
+}) {
+  const t = useMessages()
+  const content = (
+    <>
+      <span className="block text-caption text-muted-foreground">{label}</span>
+      <span className="block text-h2">{value ?? t.day.body.none}</span>
+      {note !== undefined && <span className="block text-caption text-success">{note}</span>}
+    </>
+  )
+  if (onOpen === undefined) {
+    return <div className={tileClass}>{content}</div>
+  }
+  return (
+    <button
+      ref={buttonRef}
+      type="button"
+      className={cn(
+        tileClass,
+        'outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring',
+      )}
+      onClick={onOpen}
+    >
+      {content}
+    </button>
   )
 }

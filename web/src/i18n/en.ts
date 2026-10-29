@@ -85,6 +85,8 @@ export const en = {
     busy: (seconds: number) => `The server is busy. Try again in ${wait(seconds)}.`,
     failed: 'Signing in failed. Try again.',
     noMethod: 'This server offers no way to sign in. Ask its admin.',
+    // What tdeemon is, under its name.
+    tagline: 'Log what you eat; tdeemon learns what you burn, and your AI coach plans from it.',
   },
   loading: 'Loading…',
   notSaved: (why: string) => `Not saved. ${why}`,
@@ -208,6 +210,11 @@ export const en = {
       overBy: (g: string) => `+${g} g`,
       noTarget: 'A plan gives the day its target.',
       setPlan: 'Set up a plan',
+      // A day before the plan's first target, which says when it starts;
+      // a plan of phases that has no target yet.
+      startsOn: (date: string) => `No target on this day: the plan starts on ${date}.`,
+      noTargetYet: 'The plan gives no target yet.',
+      seePlan: 'See the plan',
       weekOf: (n: number, of: number) => `week ${String(n)} of ${String(of)}`,
       week: (n: number) => `week ${String(n)}`,
       rate: (pct: string) => `${pct}%/wk`,
@@ -280,6 +287,10 @@ export const en = {
       exercise_min: 'Exercise',
     },
     checkIn: 'Check-in',
+    // The check-in in a line, while the user has said nothing yet.
+    checkInAsk: 'How was today?',
+    checkInAdd: 'Add',
+    checkInAddOf: 'Add a check-in',
     savedAsYouGo: 'saved as you go',
     addNote: 'Add a note',
     mood: 'Mood',
@@ -302,6 +313,15 @@ export const en = {
       all: 'All measurements',
       trend: (kg: string) => `trend ${kg} kg`,
       none: '—',
+      // In place of the tiles, while the user has measured nothing yet.
+      addWeight: 'Add a weigh-in',
+    },
+    weighIn: {
+      // The line of today's hero in the morning, while it has no weigh-in.
+      morning: 'Morning weigh-in?',
+      save: 'Save the weigh-in',
+      // The quick add's chip.
+      chip: 'Weigh-in',
     },
     reason: 'Reason',
     // Reasons a tap writes in, the ones a day is left out for most: each
@@ -819,43 +839,105 @@ export const en = {
     noNotes: 'None yet',
     devices: 'Devices and AI coaches',
     devicesHint:
-      'A device or an AI coach signs in with a token of its own: a phone that sends its health data, an AI coach through MCP.',
+      'A device or an AI coach signs in with an access key of its own: a phone that sends its health data, an AI coach through MCP.',
     devicesSummary: (n: number) =>
-      n === 0 ? 'None yet' : `${String(n)} ${plural('en', n, { one: 'token', other: 'tokens' })}`,
-    tokens: 'Tokens',
-    noTokens: 'No device or client yet.',
-    noTokensHint:
-      'Make a token for a phone that sends its health data, or for an AI coach, and give it to them.',
-    newToken: 'New token',
+      n === 0
+        ? 'None yet'
+        : `${String(n)} ${plural('en', n, { one: 'access key', other: 'access keys' })}`,
+    // The access keys, a card each.
+    tokens: 'Connected',
+    noTokens: 'Nothing connected yet.',
+    noTokensHint: 'Connect your AI coach, or a phone that sends its health data.',
+    connect: 'Connect',
     tokenName: 'Name',
-    tokenPlaceholder: 'My phone',
-    coachPlaceholder: 'My AI coach',
+    tokenPlaceholder: 'My device',
     scopes: 'What it may do',
     scope: {
-      ingest: 'Send health data',
-      read: 'Read',
-      tools: 'Read, log and change',
+      ingest: 'Sends health data',
+      read: 'Read only',
+      tools: 'Reads and logs',
     },
-    create: 'Create the token',
-    created: 'The token, shown only now: copy it to the device.',
+    create: 'Create the access key',
+    created: 'The access key, shown only now: copy it.',
     copy: 'Copy',
+    // A button that copies what its label names, among others; and once
+    // it has.
+    copyOf: (what: string) => `Copy: ${what}`,
+    copiedOf: (what: string) => `Copied: ${what}`,
     copied: 'Copied',
-    copyFailed: 'Copying failed: the token is selected, copy it by hand.',
+    copyFailed: 'Copying failed: it is selected, copy it by hand.',
     done: 'Done',
     lastUsed: (when: string) => `Last used ${when}`,
     neverUsed: 'Not used yet',
     revoke: (name: string) => `Revoke: ${name}`,
     confirmRevoke: (name: string) => `Revoke ${name}? It stops working at once.`,
-    revokeAll: 'Revoke all tokens',
+    revokeAll: 'Revoke all access keys',
     confirmRevokeAll:
-      'Revoke every token? Every device and client stops at once, and needs a new one.',
+      'Revoke every access key? Every device and AI coach stops at once, and needs a new one.',
     yesRevoke: 'Revoke',
     keep: 'Keep',
     revoked: (n: number) =>
-      `${String(n)} ${plural('en', n, { one: 'token', other: 'tokens' })} revoked.`,
+      `${String(n)} ${plural('en', n, { one: 'access key', other: 'access keys' })} revoked.`,
     signOut: 'Sign out',
     signedInAs: (name: string, email: string) => `Signed in as ${name} (${email}).`,
     signOutFailed: 'Signing out failed. Try again.',
+  },
+  // Connecting an AI coach or a phone: what it is, its access key, and
+  // the steps to give the key to it.
+  connect: {
+    choose: 'What do you connect?',
+    kinds: { coach: 'AI coach', phone: 'iPhone', other: 'Other' },
+    kindHints: {
+      coach: 'Claude, ChatGPT or another MCP client',
+      phone: 'Health Auto Export sends its health data',
+      other: 'Advanced: you pick what it may do',
+    },
+    // The names a new access key starts with.
+    names: { coach: 'Claude', phone: 'iPhone' },
+    back: 'Back',
+    address: "The server's address (MCP)",
+    key: 'The access key, shown only now',
+    claudeCode: 'Claude Code: run this in a terminal',
+    claudeDesktop:
+      'Claude Desktop: add this to its claude_desktop_config.json, through mcp-remote, and restart it.',
+    chatGpt:
+      'ChatGPT signs in to a server with OAuth, not a key, which tdeemon does not offer yet.',
+    first: 'Then write to your AI coach',
+    message: 'Look at my data and propose a plan.',
+    hae: {
+      intro: 'In Health Auto Export, add an automation of the REST API:',
+      url: 'URL',
+      method: 'Method POST, format JSON',
+      header: 'Header Authorization, with this value',
+      metrics:
+        'Metrics: step count, active energy, basal energy burned, Apple exercise time, sleep analysis, weight, body fat percentage, lean body mass, resting heart rate, heart rate variability and VO2 max',
+      summarize: 'Summarize Data: on, with the time grouping by day',
+    },
+    // An access key of the user's own scopes: how it is sent.
+    header: 'It goes in each request, in the header Authorization: Bearer and the key.',
+    waiting: 'Waiting for the first call…',
+    connected: 'Connected',
+    lastCall: (ago: string) => `last call ${ago}`,
+  },
+  // A new user's first steps to a plan, on today's page.
+  firstSteps: {
+    title: 'First steps',
+    count: (done: number, of: number) => `${String(done)} of ${String(of)}`,
+    // Before a step's words, for a screen reader: whether it is done.
+    done: 'Done:',
+    toDo: 'To do:',
+    profile: 'Complete your profile',
+    profileDone: 'Your profile',
+    weighIn: 'First weigh-in',
+    connect: 'Connect your AI coach or a phone',
+    connectDone: 'Your AI coach or a phone',
+    meal: 'Log your first meal',
+    mealDone: 'Your first meal',
+    ask: 'Ask your AI coach for a plan',
+    write: 'Write this to your AI coach',
+    later: 'Later',
+    // The plan's way to show them again, once put off.
+    show: 'Show the first steps',
   },
   plan: {
     title: 'Plan',

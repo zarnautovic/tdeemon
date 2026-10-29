@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -191,8 +192,10 @@ func TestInfo(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode %s: %v", rec.Body.String(), err)
 	}
-	want := map[string]any{"name": "tdeemon", "version": "v9.9.9"}
-	if len(body) != len(want) || body["name"] != want["name"] || body["version"] != want["version"] {
+	// The instance's public URL too, which the web app gives a client to
+	// connect to.
+	want := map[string]any{"name": "tdeemon", "version": "v9.9.9", "base_url": "http://localhost"}
+	if !maps.Equal(body, want) {
 		t.Errorf("body = %v, want exactly %v (no $schema field)", body, want)
 	}
 }

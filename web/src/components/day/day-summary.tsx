@@ -7,6 +7,7 @@ import { DayPhase } from '@/components/day/day-phase'
 import { EnergyRing } from '@/components/day/energy-ring'
 import { kcalLeft, kcalStanding } from '@/components/day/left'
 import { MacroBar, type Macro } from '@/components/day/macro-bar'
+import { MorningWeighIn } from '@/components/day/morning-weigh-in'
 import { weekOf } from '@/components/day/week'
 import { buttonVariants } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/info-tip'
@@ -67,12 +68,7 @@ export function DaySummary({ day, phase = true }: { day: Day; phase?: boolean })
             <CalibrationRow tdee={calibrating} />
           </dl>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-surface-2 p-3">
-          <p className="text-small">{t.day.summary.noTarget}</p>
-          <Link to="/plan" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-            {t.day.summary.setPlan}
-          </Link>
-        </div>
+        <NoTarget date={day.date} />
       </section>
     )
   }
@@ -103,6 +99,7 @@ export function DaySummary({ day, phase = true }: { day: Day; phase?: boolean })
       <h2 id="day-summary" className="sr-only">
         {s.title}
       </h2>
+      <MorningWeighIn day={day} />
       <div className="flex items-center gap-4 lg:gap-8">
         <EnergyRing eaten={total.kcal} target={target.kcal} past={past} />
         <dl className="grid max-w-72 flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 text-small lg:max-w-none lg:grid-cols-4 lg:items-start lg:gap-x-6">
@@ -161,5 +158,35 @@ export function DaySummary({ day, phase = true }: { day: Day; phase?: boolean })
       </div>
       {phase && <DayPhase date={day.date} />}
     </section>
+  )
+}
+
+// NoTarget says why a day has no target, with the way to the plan: a day
+// before the plan's first target, when the plan starts; a plan of phases
+// without a target yet, that it gives none; else, before a plan, that a
+// plan gives the day one.
+function NoTarget({ date }: { date: string }) {
+  const t = useMessages()
+  const f = useFormat()
+  const s = t.day.summary
+  const plan = $api.useQuery('get', '/api/v1/plan')
+  const first = plan.data?.targets[0]?.effective_from
+  let words = s.noTarget
+  let link = s.setPlan
+  if (first !== undefined && date < first) {
+    words = s.startsOn(f.short(first))
+    link = s.seePlan
+  } else if (first === undefined && (plan.data?.phases.length ?? 0) > 0) {
+    words = s.noTargetYet
+    link = s.seePlan
+  }
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-surface-2 p-3">
+      <p className="text-small">{words}</p>
+      <Link to="/plan" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+        {link}
+      </Link>
+    </div>
   )
 }

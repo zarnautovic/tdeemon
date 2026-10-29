@@ -1050,6 +1050,38 @@
         ],
         "type": "object"
       },
+      "InfoBody": {
+        "additionalProperties": false,
+        "properties": {
+          "base_url": {
+            "description": "The instance's public URL, without a path: MCP is at its /mcp, the API under its /api/v1.",
+            "examples": [
+              "https://tdeemon.example.com"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "description": "Name of the server software.",
+            "examples": [
+              "tdeemon"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "description": "Version of the running server; dev when the build carries no version information.",
+            "examples": [
+              "v0.1.0"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url",
+          "name",
+          "version"
+        ],
+        "type": "object"
+      },
       "IngestBody": {
         "additionalProperties": false,
         "properties": {
@@ -2782,30 +2814,6 @@
         },
         "required": [
           "revoked"
-        ],
-        "type": "object"
-      },
-      "ServerInfo": {
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "description": "Name of the server software.",
-            "examples": [
-              "tdeemon"
-            ],
-            "type": "string"
-          },
-          "version": {
-            "description": "Version of the running server; dev when the build carries no version information.",
-            "examples": [
-              "v0.1.0"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "version"
         ],
         "type": "object"
       },
@@ -5756,14 +5764,14 @@
     },
     "/api/v1/info": {
       "get": {
-        "description": "Name and version of the running server.",
+        "description": "Name and version of the running server, and the instance's public URL, which a client connects to.",
         "operationId": "get-info",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ServerInfo"
+                  "$ref": "#/components/schemas/InfoBody"
                 }
               }
             },

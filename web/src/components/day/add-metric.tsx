@@ -1,5 +1,5 @@
 import { Plus } from 'lucide-react'
-import { useId, useState } from 'react'
+import { useId, useState, type Ref } from 'react'
 
 import { MetricForm } from '@/components/day/metric-form'
 import type { MetricKind } from '@/components/day/metric-kinds'
@@ -9,12 +9,23 @@ import { fieldLabel, inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
 // AddMetric adds a measurement of one of kinds, those the day has none
-// of, to day date.
-export function AddMetric({ date, kinds }: { date: string; kinds: readonly MetricKind[] }) {
+// of, to day date. at starts it open at a kind, its value's field
+// inputRef.
+export function AddMetric({
+  date,
+  kinds,
+  at,
+  inputRef,
+}: {
+  date: string
+  kinds: readonly MetricKind[]
+  at?: MetricKind | undefined
+  inputRef?: Ref<HTMLInputElement> | undefined
+}) {
   const t = useMessages()
   const id = useId()
-  const [open, setOpen] = useState(false)
-  const [picked, setPicked] = useState<MetricKind | undefined>(undefined)
+  const [open, setOpen] = useState(at !== undefined)
+  const [picked, setPicked] = useState<MetricKind | undefined>(at)
   // The kind picked, while the day has none of it yet; else the first.
   const kind = picked !== undefined && kinds.includes(picked) ? picked : kinds[0]
 
@@ -63,6 +74,7 @@ export function AddMetric({ date, kinds }: { date: string; kinds: readonly Metri
         date={date}
         kind={kind}
         label={t.day.value}
+        inputRef={inputRef}
         onSaved={() => {
           setOpen(false)
           setPicked(undefined)

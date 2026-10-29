@@ -285,7 +285,7 @@ export interface paths {
         };
         /**
          * Get server info
-         * @description Name and version of the running server.
+         * @description Name and version of the running server, and the instance's public URL, which a client connects to.
          */
         get: operations["get-info"];
         put?: never;
@@ -1168,6 +1168,23 @@ export interface components {
             /** Format: double */
             weight_kg?: number;
         };
+        InfoBody: {
+            /**
+             * @description The instance's public URL, without a path: MCP is at its /mcp, the API under its /api/v1.
+             * @example https://tdeemon.example.com
+             */
+            base_url: string;
+            /**
+             * @description Name of the server software.
+             * @example tdeemon
+             */
+            name: string;
+            /**
+             * @description Version of the running server; dev when the build carries no version information.
+             * @example v0.1.0
+             */
+            version: string;
+        };
         IngestBody: {
             days: components["schemas"]["IngestDay"][];
             /** @description Metric names tdeemon does not read. */
@@ -1938,18 +1955,6 @@ export interface components {
              * @description How many tokens there were, which no longer work.
              */
             revoked: number;
-        };
-        ServerInfo: {
-            /**
-             * @description Name of the server software.
-             * @example tdeemon
-             */
-            name: string;
-            /**
-             * @description Version of the running server; dev when the build carries no version information.
-             * @example v0.1.0
-             */
-            version: string;
         };
         ServingBody: {
             /**
@@ -3832,7 +3837,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ServerInfo"];
+                    "application/json": components["schemas"]["InfoBody"];
                 };
             };
             /** @description Unauthorized */

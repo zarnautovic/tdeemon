@@ -60,39 +60,46 @@ test('the notes for a coach are saved, and come back', async ({ page }) => {
   await expect(page.getByText('The notes for your AI coach are saved')).toBeVisible()
 })
 
-test('a new token is shown once and copied, and works until all are revoked', async ({ page }) => {
+test('a new access key is shown once and copied, and works until all are revoked', async ({
+  page,
+}) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await signIn(page)
   await toSettings(page)
   await page.getByRole('link', { name: 'Devices and AI coaches' }).click()
 
-  await page.getByRole('button', { name: 'New token' }).click()
-  const sheet = page.getByRole('dialog', { name: 'New token' })
+  await page.getByRole('button', { name: 'Connect' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Connect' })
+  await expect(sheet.getByRole('button', { name: /^AI coach/ })).toBeFocused()
+  await sheet.getByRole('button', { name: /^Other/ }).click()
   const name = sheet.getByLabel('Name')
   await expect(name).toBeFocused()
-  await expect(name).toHaveAttribute('placeholder', 'My phone')
+  await expect(name).toHaveAttribute('placeholder', 'My device')
   await name.fill('Test phone')
-  await sheet.getByRole('button', { name: 'Create the token' }).click()
+  await sheet.getByLabel('Sends health data').check()
+  await sheet.getByRole('button', { name: 'Create the access key' }).click()
   const token = (await sheet.locator('code').textContent()) ?? ''
   expect(token).toMatch(/^tdm_/)
-  await sheet.getByRole('button', { name: 'Copy' }).click()
-  await expect(sheet.getByRole('button', { name: 'Copied' })).toBeVisible()
+  await sheet.getByRole('button', { name: 'Copy: The access key, shown only now' }).click()
+  await expect(
+    sheet.getByRole('button', { name: 'Copied: The access key, shown only now' }),
+  ).toBeVisible()
   // The e2e tests' types have no DOM: the page reads its clipboard.
   expect(await page.evaluate<string>('navigator.clipboard.readText()')).toBe(token)
   // Shown once: closed, it is gone, and the list has its card.
   await sheet.getByRole('button', { name: 'Done' }).click()
   await expect(sheet).toBeHidden()
   await expect(page.getByText(token)).toBeHidden()
-  const tokens = page.getByRole('region', { name: 'Tokens' })
+  const tokens = page.getByRole('region', { name: 'Connected' })
   await expect(tokens.getByRole('heading', { name: 'Test phone' })).toBeVisible()
-  await expect(tokens.getByText('Send health data')).toBeVisible()
+  await expect(tokens.getByText('Sends health data')).toBeVisible()
 
-  // The token works, until all are revoked.
+  // The key works, until all are revoked.
   const who = await page.request.get('/api/v1/auth/whoami', {
     headers: { Authorization: `Bearer ${token}` },
   })
   expect(who.ok()).toBe(true)
-  await tokens.getByRole('button', { name: 'Revoke all tokens' }).click()
+  await tokens.getByRole('button', { name: 'Revoke all access keys' }).click()
   await tokens.getByRole('button', { name: 'Revoke', exact: true }).click()
   await expect(tokens).toContainText('revoked.')
   const after = await page.request.get('/api/v1/auth/whoami', {

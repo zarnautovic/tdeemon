@@ -25,20 +25,25 @@ calibration
 `update_profile_notes`, `propose_changes`, `apply_proposal`,
 `reject_proposal`, `revert_proposal` and `undo_last`, the MCP server
 that serves them at `/mcp`, the API contract and the web app's frame
-(signing in and out, its sections in a bar at the bottom on a phone and
+(signing in, under the product's mark and what it is, and out, its
+sections in a bar at the bottom on a phone and
 a sidebar on a desktop, keyboard shortcuts, a light and a dark theme,
 each change said in a toast whose Undo takes it back, each number of
 calibration's an ⓘ away from what it is, in English and Croatian) with
-the day (what was eaten against the target in a ring and the macros'
+the day (a new user's first steps to a plan in place of its hero,
+ticked one by one; what was eaten against the target in a ring and the macros'
 bars, a day past it by more than 5 % in a warm colour, not an error's,
 with the TDEE, what is left of it (until there is one, calibration's
-counts toward it) and the phase, the week's days, Monday to Sunday, and
-their average against the target, whose sheet says what the days left
-can eat, the day's type, the meals as rows that open to their items, on
-a desktop a table with its total beside the week, the body, the check-in
-and the phase, the check-in with calibration as a switch, the body's
-tiles and all the measurements in a sheet, sleep in hours and minutes, a
-meal's corrections in a sheet that
+counts toward it) and the phase, the morning's weigh-in asked for in a
+line, a day before the plan saying when it starts, the week's days,
+Monday to Sunday, and their average against the target, whose sheet
+says what the days left can eat, the day's type, the meals as rows that
+open to their items, on a desktop a table with its total beside the
+week, the body, the check-in and the phase, the check-in with
+calibration as a switch, a line until the user has measured anything,
+the body's tiles each a tap from its measurement, and all the
+measurements in a sheet, sleep in hours and minutes, a meal's
+corrections in a sheet that
 says its total as it changes, an item's amount with its unit and its
 other ways in a menu, its day picked by name and its time on a 24-hour
 clock, a meal repeated or deleted taken there, a meal logged by hand
@@ -46,7 +51,8 @@ in a sheet of the foods found, eaten lately or most and the meals of
 before, those eaten at the meal of the day lately first and today's
 last, the meals of it as cards above the search, whose keyboard waits
 on a phone for a tap, a new food or an estimate a step of its own with
-one button, and the chips that add yesterday's meal or a food in a tap),
+one button, or a weigh-in from its chip, and the chips that add
+yesterday's meal or a food in a tap),
 the foods (their list by how often they are eaten, grouped by this
 week and earlier, in use, archived or the estimates, searched within
 the list chosen; a food's page with its energy and its split, its
@@ -73,10 +79,12 @@ and, before a plan, how one comes; what it rests on of the user's, each
 a row to its page: the profile, the limits in groups that open, a wrong
 one focused at its field, the notes for a coach) and the settings as a
 list (the theme, the account with a time zone found by its name, the
-devices and AI clients with a token made in a sheet and shown once,
-signing out), each screen checked for access (axe, a finger's targets,
-the focus, less motion) on a phone and a desktop, in both themes and
-languages, exist.
+devices and AI coaches connected in a guided sheet, an access key (a
+token) shown once with the steps to give it (an AI coach's MCP address
+and commands, Health Auto Export's checklist) and its first call seen
+as it comes, signing out), each screen checked for access (axe, a
+finger's targets, the focus, less motion) on a phone and a desktop, in
+both themes and languages, exist.
 
 | Path | What |
 | --- | --- |

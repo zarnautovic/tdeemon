@@ -108,7 +108,7 @@ func NewHandler(cfg Config) (http.Handler, error) {
 		mux.Handle("GET /", cfg.App)
 	}
 	a := newAPI(mux, cfg.Logger)
-	register(a, cfg.Info, s, o)
+	register(a, infoBody{ServerInfo: cfg.Info, BaseURL: cfg.BaseURL.Scheme + "://" + cfg.BaseURL.Host}, s, o)
 	if o != nil {
 		o.register(mux)
 	}
@@ -255,7 +255,7 @@ func Spec() ([]byte, error) {
 // description only: the handlers never run, so they need no database.
 func specAPI() huma.API {
 	a := newAPI(http.NewServeMux(), slog.New(slog.DiscardHandler))
-	register(a, ServerInfo{}, &sessions{}, nil)
+	register(a, infoBody{}, &sessions{}, nil)
 	return a
 }
 
@@ -429,8 +429,8 @@ func logInternalError(r *http.Request, logger *slog.Logger, op *huma.Operation, 
 	logger.Log(r.Context(), level, "an API operation failed", attrs...)
 }
 
-// register adds every API operation to a.
-func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
+// register adds every API operation to a; info is what get-info answers.
+func register(a huma.API, info infoBody, s *sessions, o *oidcLogin) {
 	s.register(a)
 	s.registerTokens(a)
 	s.registerPlan(a)
@@ -445,7 +445,7 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 		Method:      http.MethodGet,
 		Path:        Prefix + "/info",
 		Summary:     "Get server info",
-		Description: "Name and version of the running server.",
+		Description: "Name and version of the running server, and the instance's public URL, which a client connects to.",
 		Tags:        []string{"meta"},
 		// A Bearer request from an address with too many bad tokens.
 		Errors:   []int{http.StatusTooManyRequests},
@@ -456,7 +456,16 @@ func register(a huma.API, info ServerInfo, s *sessions, o *oidcLogin) {
 }
 
 type infoOutput struct {
-	Body ServerInfo
+	Body infoBody
+}
+
+// infoBody is the running server, and the instance's public URL
+// (TDEEMON_BASE_URL), which the web app gives an AI coach or a phone to
+// connect to: the address the browser came by may be another, such as
+// one of the home network.
+type infoBody struct {
+	ServerInfo
+	BaseURL string `json:"base_url" example:"https://tdeemon.example.com" doc:"The instance's public URL, without a path: MCP is at its /mcp, the API under its /api/v1."`
 }
 
 // healthz reports that the process is up and serving HTTP. It checks

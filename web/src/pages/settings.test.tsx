@@ -56,7 +56,12 @@ function settingsServer(over: Record<string, (r: Request) => Response | Promise<
     'GET /api/v1/auth/session': () => Response.json({ ...session(), user }),
     'GET /api/v1/me': () => (meFails ? problem(500) : Response.json({ ...me(), notes })),
     'GET /api/v1/tokens': () => Response.json({ tokens }),
-    'GET /api/v1/info': () => Response.json({ name: 'tdeemon', version: 'v0.9.0' }),
+    'GET /api/v1/info': () =>
+      Response.json({
+        name: 'tdeemon',
+        version: 'v0.9.0',
+        base_url: 'https://tdeemon.example.com',
+      }),
     'PATCH /api/v1/me': async (r) => {
       await keep('PATCH /api/v1/me')(r.clone())
       const body: unknown = await r.json()
@@ -136,9 +141,10 @@ async function pick(field: HTMLElement, search: string, zone: string) {
   fireEvent.click(await screen.findByRole('option', { name: zone }))
 }
 
-// tokensRegion is the devices' page's list of tokens.
+// tokensRegion is the devices' page's list of what is connected, a card
+// per access key.
 async function tokensRegion() {
-  return within(await screen.findByRole('region', { name: 'Tokens' }))
+  return within(await screen.findByRole('region', { name: 'Connected' }))
 }
 
 test('the settings are rows that say their value, each leading to its page and back', async () => {
@@ -153,7 +159,7 @@ test('the settings are rows that say their value, each leading to its page and b
   )
   const devices = screen.getByRole('link', { name: 'Devices and AI coaches' })
   await waitFor(() => {
-    expect(summaryOf(devices)).toBe('2 tokens')
+    expect(summaryOf(devices)).toBe('2 access keys')
   })
   expect(summaryOf(screen.getByRole('button', { name: 'Sign out' }))).toBe(
     'Signed in as Ana (ana@example.com).',
@@ -605,7 +611,7 @@ test("notes the server failed to give again are not the cache's", async () => {
   expect(screen.getByRole('button', { name: 'Try again' })).toBeDefined()
 })
 
-test('the tokens are cards with what each may do and when it was used', async () => {
+test('the access keys are cards with what each may do and when it was used', async () => {
   settingsServer()
   renderAt('/settings/devices')
 
@@ -623,125 +629,158 @@ test('the tokens are cards with what each may do and when it was used', async ()
       .getAllByRole('listitem')
       .map((li) => li.textContent)
   expect(card('iPhone').getByText('Last used Oct 22 11:00 PM')).toBeDefined()
-  expect(scopes('iPhone')).toEqual(['Send health data'])
+  expect(scopes('iPhone')).toEqual(['Sends health data'])
   expect(card('Claude').getByText('Not used yet')).toBeDefined()
-  expect(scopes('Claude')).toEqual(['Read', 'Read, log and change'])
+  expect(scopes('Claude')).toEqual(['Read only', 'Reads and logs'])
 })
 
-test('a new token is made in a sheet, shown once and copied', async () => {
+test('another is connected with the scopes picked, its key shown once and copied', async () => {
   const server = settingsServer()
   const writeText = vi.fn<(s: string) => Promise<void>>(() => Promise.resolve())
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
   renderAt('/settings/devices')
 
   const tokens = await tokensRegion()
-  fireEvent.click(await tokens.findByRole('button', { name: 'New token' }))
-  const sheet = within(await screen.findByRole('dialog', { name: 'New token' }))
+  fireEvent.click(await tokens.findByRole('button', { name: 'Connect' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  // What it connects first, the first of them with the focus.
+  const coach = sheet.getByRole('button', { name: /^AI coach/ })
+  await waitFor(() => {
+    expect(document.activeElement).toBe(coach)
+  })
+  fireEvent.click(sheet.getByRole('button', { name: /^Other/ }))
   const name = sheet.getByLabelText('Name')
-  // The field has the focus, and a placeholder of no token of the user's.
+  // The field has the focus, and a placeholder of no key of the user's.
   await waitFor(() => {
     expect(document.activeElement).toBe(name)
   })
-  expect(name.getAttribute('placeholder')).toBe('My phone')
-  // The region that says the token came is there before it, so it is
-  // said; the token itself is not read out.
+  expect(name.getAttribute('placeholder')).toBe('My device')
+  // The region that says the key came is there before it, so it is
+  // said; the key itself is not read out.
   const live = sheet.getByRole('status')
   expect(live.textContent).toBe('')
   fireEvent.change(name, { target: { value: 'Laptop' } })
-  fireEvent.click(sheet.getByLabelText('Read'))
-  fireEvent.click(sheet.getByRole('button', { name: 'Create the token' }))
+  fireEvent.click(sheet.getByLabelText('Sends health data'))
+  fireEvent.click(sheet.getByLabelText('Read only'))
+  fireEvent.click(sheet.getByRole('button', { name: 'Create the access key' }))
 
   expect(await sheet.findByText('tdm_made_up')).toBeDefined()
-  expect(live.textContent).toBe('The token, shown only now: copy it to the device.')
+  expect(live.textContent).toBe('The access key, shown only now: copy it.')
   expect(server.sent['POST /api/v1/tokens']).toEqual([
     { name: 'Laptop', scopes: ['ingest', 'read'] },
   ])
+  expect(
+    sheet.getByText('It goes in each request, in the header Authorization: Bearer and the key.'),
+  ).toBeDefined()
   // Copy takes the focus, and copies it.
-  const copy = sheet.getByRole('button', { name: 'Copy' })
+  const copy = sheet.getByRole('button', { name: 'Copy: The access key, shown only now' })
   expect(document.activeElement).toBe(copy)
   fireEvent.click(copy)
-  expect(await sheet.findByRole('button', { name: 'Copied' })).toBeDefined()
+  expect(
+    await sheet.findByRole('button', { name: 'Copied: The access key, shown only now' }),
+  ).toBeDefined()
   expect(writeText).toHaveBeenCalledWith('tdm_made_up')
 
   // Done, it is shown no more, anywhere, and the list has it; a new
-  // sheet starts empty.
+  // sheet starts anew.
   fireEvent.click(sheet.getByRole('button', { name: 'Done' }))
   await waitFor(() => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
   expect(screen.queryByText('tdm_made_up')).toBeNull()
   expect(await tokens.findByRole('heading', { name: 'Laptop' })).toBeDefined()
-  fireEvent.click(tokens.getByRole('button', { name: 'New token' }))
-  const again = within(await screen.findByRole('dialog', { name: 'New token' }))
+  fireEvent.click(tokens.getByRole('button', { name: 'Connect' }))
+  const again = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  fireEvent.click(again.getByRole('button', { name: /^Other/ }))
   expect(again.getByLabelText('Name')).toHaveProperty('value', '')
+  expect(again.getByLabelText('Sends health data')).toHaveProperty('checked', false)
   expect(again.queryByText('tdm_made_up')).toBeNull()
   Reflect.deleteProperty(navigator, 'clipboard')
 })
 
 // QA #253: a token made from the plan's Connect an AI coach only sent
 // health data, which MCP refuses.
-test("an AI coach's token, asked for by the plan, may read, log and change", async () => {
+test("an AI coach's key, asked for by the plan, reads and logs, with nothing to pick", async () => {
   const server = settingsServer()
   const router = renderAt('/settings/devices?connect=coach')
 
-  // The sheet opens at once, and the address asks no more.
-  const sheet = within(await screen.findByRole('dialog', { name: 'New token' }))
+  // The sheet opens at once at an AI coach, and the address asks no more.
+  const sheet = within(await screen.findByRole('dialog', { name: 'Connect' }))
   const name = sheet.getByLabelText('Name')
-  expect(name.getAttribute('placeholder')).toBe('My AI coach')
-  expect(sheet.getByLabelText('Read, log and change')).toHaveProperty('checked', true)
-  expect(sheet.getByLabelText('Send health data')).toHaveProperty('checked', false)
+  expect(name).toHaveProperty('value', 'Claude')
+  await waitFor(() => {
+    expect(document.activeElement).toBe(name)
+  })
+  expect(sheet.queryByRole('checkbox')).toBeNull()
+  expect(
+    within(sheet.getByRole('list', { name: 'What it may do' })).getByText('Reads and logs'),
+  ).toBeDefined()
   await waitFor(() => {
     expect(router.state.location.search).toEqual({})
   })
-  expect(screen.getByRole('dialog', { name: 'New token' })).toBeDefined()
+  expect(screen.getByRole('dialog', { name: 'Connect' })).toBeDefined()
 
-  fireEvent.change(name, { target: { value: 'Claude' } })
-  fireEvent.click(sheet.getByRole('button', { name: 'Create the token' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Create the access key' }))
   expect(await sheet.findByText('tdm_made_up')).toBeDefined()
   expect(server.sent['POST /api/v1/tokens']).toEqual([{ name: 'Claude', scopes: ['tools'] }])
 
-  // A token made from the page's button is a device's again.
+  // The page's button opens the choice again.
   fireEvent.click(sheet.getByRole('button', { name: 'Done' }))
   await waitFor(() => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
-  fireEvent.click(await (await tokensRegion()).findByRole('button', { name: 'New token' }))
-  const again = within(await screen.findByRole('dialog', { name: 'New token' }))
-  expect(again.getByLabelText('Send health data')).toHaveProperty('checked', true)
-  expect(again.getByLabelText('Read, log and change')).toHaveProperty('checked', false)
+  fireEvent.click(await (await tokensRegion()).findByRole('button', { name: 'Connect' }))
+  const again = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  expect(again.getByRole('heading', { name: 'What do you connect?' })).toBeDefined()
 })
 
-test('a token the browser cannot copy is selected to copy by hand', async () => {
+test('a key the browser cannot copy is selected to copy by hand', async () => {
   settingsServer()
   // Over plain http there is no clipboard.
   Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
-  renderAt('/settings/devices')
+  renderAt('/settings/devices?connect=phone')
 
-  fireEvent.click(await (await tokensRegion()).findByRole('button', { name: 'New token' }))
-  const sheet = within(await screen.findByRole('dialog', { name: 'New token' }))
-  fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Laptop' } })
-  fireEvent.click(sheet.getByRole('button', { name: 'Create the token' }))
-  fireEvent.click(await sheet.findByRole('button', { name: 'Copy' }))
-  expect((await sheet.findByRole('alert')).textContent).toBe(
-    'Copying failed: the token is selected, copy it by hand.',
+  const sheet = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Create the access key' }))
+  fireEvent.click(
+    await sheet.findByRole('button', { name: 'Copy: Header Authorization, with this value' }),
   )
-  expect(window.getSelection()?.toString()).toBe('tdm_made_up')
+  expect((await sheet.findByRole('alert')).textContent).toBe(
+    'Copying failed: it is selected, copy it by hand.',
+  )
+  expect(window.getSelection()?.toString()).toBe('Bearer tdm_made_up')
   Reflect.deleteProperty(navigator, 'clipboard')
 })
 
-test('a token is not made without a name or anything it may do', async () => {
+test('a key is not made without a name or anything it may do', async () => {
   const server = settingsServer()
-  renderAt('/settings/devices')
+  renderAt('/settings/devices?connect=choose')
 
-  fireEvent.click(await (await tokensRegion()).findByRole('button', { name: 'New token' }))
-  const sheet = within(await screen.findByRole('dialog', { name: 'New token' }))
-  const create = sheet.getByRole('button', { name: 'Create the token' })
+  const sheet = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  fireEvent.click(sheet.getByRole('button', { name: /^Other/ }))
+  const create = sheet.getByRole('button', { name: 'Create the access key' })
   expect(create).toHaveProperty('disabled', true)
   fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Laptop' } })
+  expect(create).toHaveProperty('disabled', true)
+  fireEvent.click(sheet.getByLabelText('Read only'))
   expect(create).toHaveProperty('disabled', false)
-  fireEvent.click(sheet.getByLabelText('Send health data'))
+  fireEvent.click(sheet.getByLabelText('Read only'))
   expect(create).toHaveProperty('disabled', true)
   expect(server.sent['POST /api/v1/tokens']).toBeUndefined()
+})
+
+test('a kind is left for the choice, which gives the focus back to it', async () => {
+  settingsServer()
+  renderAt('/settings/devices?connect=choose')
+
+  const sheet = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  fireEvent.click(sheet.getByRole('button', { name: /^iPhone/ }))
+  expect(sheet.getByLabelText('Name')).toHaveProperty('value', 'iPhone')
+  expect(sheet.getByText('Sends health data')).toBeDefined()
+  fireEvent.click(sheet.getByRole('button', { name: 'Back' }))
+  await waitFor(() => {
+    expect(document.activeElement).toBe(sheet.getByRole('button', { name: /^iPhone/ }))
+  })
 })
 
 test('a token is revoked after it asks, and all of them too', async () => {
@@ -764,14 +803,14 @@ test('a token is revoked after it asks, and all of them too', async () => {
   // What revoking all comes to is said in a region there before it.
   const said = document.querySelector('section[aria-labelledby="settings-tokens"] > output')
   expect(said?.textContent).toBe('')
-  fireEvent.click(tokens.getByRole('button', { name: 'Revoke all tokens' }))
-  expect(tokens.getByText(/Revoke every token\?/)).toBeDefined()
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke all access keys' }))
+  expect(tokens.getByText(/Revoke every access key\?/)).toBeDefined()
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
 
-  expect(await tokens.findByText('1 token revoked.')).toBeDefined()
+  expect(await tokens.findByText('1 access key revoked.')).toBeDefined()
   expect(said?.isConnected).toBe(true)
-  expect(said?.textContent).toBe('1 token revoked.')
-  expect(await tokens.findByText('No device or client yet.')).toBeDefined()
+  expect(said?.textContent).toBe('1 access key revoked.')
+  expect(await tokens.findByText('Nothing connected yet.')).toBeDefined()
 })
 
 test('a question to revoke takes the focus to Keep, and gives it back', async () => {
@@ -789,16 +828,18 @@ test('a question to revoke takes the focus to Keep, and gives it back', async ()
   fireEvent.click(keep)
   expect(document.activeElement).toBe(tokens.getByRole('button', { name: 'Revoke: iPhone' }))
 
-  fireEvent.click(tokens.getByRole('button', { name: 'Revoke all tokens' }))
+  fireEvent.click(tokens.getByRole('button', { name: 'Revoke all access keys' }))
   expect(document.activeElement).toBe(tokens.getByRole('button', { name: 'Keep' }))
   fireEvent.click(tokens.getByRole('button', { name: 'Keep' }))
-  expect(document.activeElement).toBe(tokens.getByRole('button', { name: 'Revoke all tokens' }))
+  expect(document.activeElement).toBe(
+    tokens.getByRole('button', { name: 'Revoke all access keys' }),
+  )
 
   // A token revoked is gone, and the focus goes to the heading.
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke: iPhone' }))
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
   await waitFor(() => {
-    expect(document.activeElement).toBe(tokens.getByRole('heading', { name: 'Tokens' }))
+    expect(document.activeElement).toBe(tokens.getByRole('heading', { name: 'Connected' }))
   })
 })
 
@@ -818,31 +859,31 @@ test('a token revoked elsewhere already is gone, not a failure', async () => {
   expect(tokens.queryByText('Revoke iPhone? It stops working at once.')).toBeNull()
 })
 
-test('a new token after revoking all says no more what that came to', async () => {
+test('a key made after revoking all says no more what that came to', async () => {
   settingsServer()
   renderAt('/settings/devices')
 
   const tokens = await tokensRegion()
-  fireEvent.click(await tokens.findByRole('button', { name: 'Revoke all tokens' }))
+  fireEvent.click(await tokens.findByRole('button', { name: 'Revoke all access keys' }))
   fireEvent.click(tokens.getByRole('button', { name: 'Revoke' }))
-  expect(await tokens.findByText('2 tokens revoked.')).toBeDefined()
+  expect(await tokens.findByText('2 access keys revoked.')).toBeDefined()
 
-  fireEvent.click(tokens.getByRole('button', { name: 'New token' }))
-  const sheet = within(await screen.findByRole('dialog', { name: 'New token' }))
-  fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Laptop' } })
-  fireEvent.click(sheet.getByRole('button', { name: 'Create the token' }))
-  expect(await sheet.findByText('tdm_made_up')).toBeDefined()
-  expect(tokens.queryByText('2 tokens revoked.')).toBeNull()
+  fireEvent.click(tokens.getByRole('button', { name: 'Connect' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'Connect' }))
+  fireEvent.click(sheet.getByRole('button', { name: /^iPhone/ }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Create the access key' }))
+  expect(await sheet.findByText('Bearer tdm_made_up')).toBeDefined()
+  expect(tokens.queryByText('2 access keys revoked.')).toBeNull()
 })
 
-test('no tokens says so, with the way to make one, and offers no revoke of all', async () => {
+test('nothing connected says so, with the way to connect, and offers no revoke of all', async () => {
   settingsServer({ 'GET /api/v1/tokens': () => Response.json({ tokens: [] }) })
   renderAt('/settings/devices')
 
   const tokens = await tokensRegion()
-  expect(await tokens.findByText('No device or client yet.')).toBeDefined()
-  expect(tokens.getAllByRole('button', { name: 'New token' })).toHaveLength(1)
-  expect(tokens.queryByRole('button', { name: 'Revoke all tokens' })).toBeNull()
+  expect(await tokens.findByText('Nothing connected yet.')).toBeDefined()
+  expect(tokens.getAllByRole('button', { name: 'Connect' })).toHaveLength(1)
+  expect(tokens.queryByRole('button', { name: 'Revoke all access keys' })).toBeNull()
 })
 
 test('tokens that did not come say why, and come when asked again', async () => {

@@ -193,11 +193,16 @@ test('the archived foods, and the order of the last use, are in the address', as
       'No foods yet. They appear when your AI coach logs a meal, or add one here.',
     ),
   ).toBeDefined()
-  // The first action of an empty list, beside the header's.
+  // The one action of an empty list: the header has none beside it.
   expect(screen.getByRole('link', { name: 'Add a food' }).getAttribute('href')).toBe('/foods/new')
-  expect(screen.getByRole('link', { name: 'New food' }).getAttribute('href')).toBe('/foods/new')
+  expect(screen.queryByRole('link', { name: 'New food' })).toBeNull()
   fireEvent.click(screen.getByRole('radio', { name: 'Archive' }))
   expect(await screen.findByText('No archived foods.')).toBeDefined()
+  // The archive's list adds none, and the header does.
+  expect(screen.queryByRole('link', { name: 'Add a food' })).toBeNull()
+  expect(screen.getByRole('link', { name: 'New food' }).getAttribute('href')).toMatch(
+    /^\/foods\/new\b/,
+  )
   fireEvent.click(screen.getByRole('button', { name: 'Order: Most eaten' }))
   fireEvent.click(
     within(await screen.findByRole('menu')).getByRole('menuitemradio', {

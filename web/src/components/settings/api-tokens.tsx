@@ -8,7 +8,8 @@ import { statusOf } from '@/api/errors'
 import { sessionQuery } from '@/api/session'
 import { SaveStatus } from '@/components/day/save-status'
 import { LoadError } from '@/components/load-error'
-import { NewToken } from '@/components/settings/new-token'
+import { Connect } from '@/components/settings/connect'
+import type { ConnectKind } from '@/components/settings/connect-kinds'
 import { Sheet } from '@/components/sheet'
 import { Skeleton } from '@/components/skeleton'
 import { Badge } from '@/components/ui/badge'
@@ -18,14 +19,15 @@ import { useMessages } from '@/i18n/messages'
 
 const tokens = ['get', '/api/v1/tokens']
 
-// ApiTokens are the devices and AI clients that sign in with a token of
-// their own, a card each: its name, what it may do, and when it was used
-// last. A new one is made in a sheet, which shows it once; one is
-// revoked, or all at once, as after a password reset. A revoke cannot be
-// taken back, so it asks first: the focus goes to its safe answer, and
-// comes back to what asked it, or to the heading once the token is gone.
-// coach opens the sheet at once, with a token for an AI coach.
-export function ApiTokens({ coach = false }: { coach?: boolean }) {
+// ApiTokens are the devices and AI coaches connected, each signing in
+// with an access key (an API token) of its own, a card each: its name,
+// what it may do, and when it was used last. Another is connected in a
+// sheet (Connect), which shows its key once; one is revoked, or all at
+// once, as after a password reset. A revoke cannot be taken back, so it
+// asks first: the focus goes to its safe answer, and comes back to what
+// asked it, or to the heading once the key is gone. connect opens the
+// sheet at once, at a kind (an AI coach's, a phone's) or at the choice.
+export function ApiTokens({ connect }: { connect?: ConnectKind | 'choose' | undefined }) {
   const t = useMessages()
   const f = useFormat()
   const queryClient = useQueryClient()
@@ -37,20 +39,21 @@ export function ApiTokens({ coach = false }: { coach?: boolean }) {
   // Each token's button that asks to revoke it, and the one for all.
   const openers = useRef(new Map<string, HTMLButtonElement>())
   const all = useRef<HTMLButtonElement>(null)
-  // The button that opened the sheet of a new token, which the focus goes
-  // back to.
+  // The button that opened the sheet, which the focus goes back to; what
+  // the sheet focuses as it opens, at the choice or at a kind's name.
   const adder = useRef<HTMLButtonElement>(null)
-  const first = useRef<HTMLInputElement>(null)
+  const choice = useRef<HTMLButtonElement>(null)
+  const name = useRef<HTMLInputElement>(null)
   const [adding, setAdding] = useState(false)
-  // Whether the sheet makes a coach's token; asked for by the page, the
-  // sheet opens with one, and stays open once the page stops asking.
-  const [forCoach, setForCoach] = useState(false)
-  const [coachAsked, setCoachAsked] = useState(false)
-  if (coach !== coachAsked) {
-    setCoachAsked(coach)
-    if (coach) {
+  // The kind the sheet opens at, if any; asked for by the page, the sheet
+  // opens so, and stays open once the page stops asking.
+  const [start, setStart] = useState<ConnectKind | undefined>(undefined)
+  const [opened, setOpened] = useState<ConnectKind | 'choose' | undefined>(undefined)
+  if (connect !== opened) {
+    setOpened(connect)
+    if (connect !== undefined) {
       setAdding(true)
-      setForCoach(true)
+      setStart(connect === 'choose' ? undefined : connect)
     }
   }
   // The token asked to be revoked, until it is or is kept; all of them.
@@ -96,12 +99,12 @@ export function ApiTokens({ coach = false }: { coach?: boolean }) {
     <Button
       ref={adder}
       onClick={() => {
-        setForCoach(false)
+        setStart(undefined)
         setAdding(true)
       }}
     >
       <Plus aria-hidden />
-      {t.settings.newToken}
+      {t.settings.connect}
     </Button>
   )
   const any = list.isSuccess && list.data.tokens.length > 0
@@ -236,13 +239,14 @@ export function ApiTokens({ coach = false }: { coach?: boolean }) {
       <Sheet
         open={adding}
         onOpenChange={setAdding}
-        title={t.settings.newToken}
-        initialFocus={first}
+        title={t.settings.connect}
+        initialFocus={start === undefined ? choice : name}
         finalFocus={adder}
       >
-        <NewToken
-          first={first}
-          coach={forCoach}
+        <Connect
+          start={start}
+          choice={choice}
+          name={name}
           onCreated={() => {
             revokeAll.reset()
             void asked()
