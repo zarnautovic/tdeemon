@@ -92,7 +92,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
-| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish, later recipe/off), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a food by the piece; one food, never a dish ("Foods" below); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
+| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish/off, later recipe), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a food by the piece; one food, never a dish ("Foods" below); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
 | `food_servings` | food_id, user_id, name, amount | named amounts of a food by weight or volume: "piece" = 60 g of egg, "slice" = 40 g of bread |
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `food_barcodes` | food_id, user_id, code | the product's barcodes, one for each size of its package, a scan of one finding the food; a barcode leads to one food of the user's; an EAN-13, EAN-8 or GTIN-14 by its digits, checked by its check digit, a UPC-A kept as its EAN-13 (a 0 before it) and a GTIN-14 of a 0 first as that EAN-13, so any form a scan reads finds it |
@@ -156,6 +156,25 @@ prefixes: foods whose name holds every word first, then name and
 aliases, then the rest, shorter names first, from the user's own foods
 alone; archived foods stay out of it but keep their history, and are
 found alone in a search of the archived ones (`archived`).
+
+**Barcodes.** A food keeps its product's barcodes, and a barcode leads
+to one food (`food_barcodes`). A barcode looked up
+(`GET /api/v1/barcodes/{code}`) is the user's food of it, archived too;
+without one, the product of [Open Food Facts](https://openfoodfacts.org)
+as a new food, not saved, with its page there: the user sees it, and a
+save of it (`source: off`, the barcode with it) makes it theirs, so the
+next scan finds it without asking. A food of theirs of the product's
+name and brand comes with it, as that food, whose barcodes lack the
+barcode yet: adding it beats saving the product over the food. Only by
+barcode: Open Food Facts' search by name is weak and allows 10 requests
+a minute. Its data are open under the ODbL, so a client says where they
+come from. A product without a name or its four values per 100 g or
+100 ml is no food, and one the user enters from the label keeps the
+barcode as any food does; an optional value or a serving no food has is
+left out. Open Food Facts keeps per 100 g and per 100 ml under one name,
+so a product's values are per 100 ml only for a drink sold by volume
+(an ice cream sold so is labelled per 100 g).
+`TDEEMON_OPEN_FOOD_FACTS_URL=off` sends no request there.
 
 A meal is a meal, not a row in the food DB: its items point at foods.
 The optional nutrients are kept when known (a label) and used when
@@ -924,8 +943,8 @@ the first spec.
   - Docker image with one volume, `/data`.
   - Env, all prefixed `TDEEMON_`: `BASE_URL`, `SECRET_KEY`, `LISTEN`,
     `DATA_DIR`, `BACKUP_KEEP`, `LOG_LEVEL`, `LOG_FORMAT`, the optional
-    `OIDC_*`, `LIMIT_*`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_API_URL`;
-    plus the standard `TZ`. The README has the current table.
+    `OIDC_*`, `LIMIT_*`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_API_URL` and
+    `OPEN_FOOD_FACTS_URL`; plus the standard `TZ`. The README has the current table.
   - Ships a `docker-compose.yml`; the homelab gets its own manifests.
 - **Backup:** a built-in daily `VACUUM INTO` snapshot with retention
   (`TDEEMON_BACKUP_KEEP`, 7 by default; plus one before every migration),

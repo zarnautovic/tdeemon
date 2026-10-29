@@ -14,6 +14,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
+	"github.com/zarnautovic/tdeemon/internal/off"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -43,6 +44,8 @@ type sessions struct {
 	instance limits.Limits
 	// ingestArchive keeps the bodies of the ingest, when not nil.
 	ingestArchive *ingest.Archive
+	// openFoodFacts looks up a barcode, when not nil.
+	openFoodFacts *off.Client
 }
 
 func newSessions(cfg Config) *sessions {
@@ -54,6 +57,7 @@ func newSessions(cfg Config) *sessions {
 		badTokens:       newLimiter(badTokenFailures, badTokenWindow, cfg.Now),
 		instance:        cfg.Limits,
 		ingestArchive:   cfg.IngestArchive,
+		openFoodFacts:   cfg.OpenFoodFacts,
 	}
 }
 

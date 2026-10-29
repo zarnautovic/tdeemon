@@ -1,0 +1,111 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/off"
+	"github.com/zarnautovic/tdeemon/internal/store"
+)
+
+// servingNames are what a serving of a product of Open Food Facts is
+// called, in the user's language: the label's serving.
+var servingNames = map[string]string{"en": "serving", "hr": "porcija"}
+
+type barcodeInput struct {
+	Code string `path:"code" minLength:"8" maxLength:"20" example:"3850000000015" doc:"An EAN-13, EAN-8, UPC-A or GTIN-14: its digits, the check digit last."`
+}
+
+type barcodeOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         struct {
+		Barcode       string             `json:"barcode" doc:"The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it."`
+		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it."`
+		OpenFoodFacts *openFoodFactsBody `json:"open_food_facts,omitempty" doc:"Without a food of yours of the barcode, the product at Open Food Facts."`
+	}
+}
+
+// openFoodFactsBody is a product of Open Food Facts as a new food.
+type openFoodFactsBody struct {
+	Food FoodFields `json:"food" doc:"The product as a new food of the barcode, not saved: what a save of a food, or a meal's new food, takes once you have seen it."`
+	URL  string     `json:"url" format:"uri" doc:"The product's page at Open Food Facts, whose data are open under the ODbL: say where they come from."`
+}
+
+func (s *sessions) registerBarcodes(a huma.API) {
+	huma.Register(a, huma.Operation{
+		OperationID: "lookup-barcode",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/barcodes/{code}",
+		Summary:     "Look up a barcode",
+		Description: "Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, " +
+			"with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. " +
+			"A barcode misread, its check digit wrong, is refused (422). " +
+			"One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
+		Tags:   []string{"foods"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusBadGateway},
+	}, s.lookupBarcode)
+}
+
+// lookupBarcode finds what a barcode is: a food of the user's, or else a
+// product of Open Food Facts, made a new food for the user to see before
+// it is saved, with their food of its name and brand, which the product
+// is (a save of the product would correct it).
+func (s *sessions) lookupBarcode(ctx context.Context, in *barcodeInput) (*barcodeOutput, error) {
+	p, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	code, err := food.Barcode(in.Code)
+	if err != nil {
+		return nil, huma.Error422UnprocessableEntity(err.Error())
+	}
+	out := &barcodeOutput{CacheControl: "no-store"}
+	out.Body.Barcode = code
+	f, err := s.db.FoodByBarcode(ctx, p.User.ID, code)
+	switch {
+	case err == nil:
+		b := newFoodBody(&f)
+		out.Body.Food = &b
+		return out, nil
+	case !errors.Is(err, store.ErrNotFound):
+		return nil, internalError("looking up the barcode failed", err)
+	case s.openFoodFacts == nil:
+		return nil, huma.Error404NotFound("no food of yours has the barcode")
+	}
+	product, err := s.openFoodFacts.Product(ctx, code, p.User.Locale)
+	switch {
+	case errors.Is(err, off.ErrNotFound):
+		return nil, huma.Error404NotFound("no food of yours has the barcode, nor has Open Food Facts a product of it")
+	case err != nil:
+		return nil, huma.Error502BadGateway("no food of yours has the barcode, and Open Food Facts did not answer: try again, or make the food",
+			internalDetail(err))
+	}
+	switch named, err := s.db.FoodByKey(ctx, p.User.ID, product.Name, product.Brand); {
+	case err == nil:
+		b := newFoodBody(&named)
+		out.Body.Food = &b
+	case !errors.Is(err, store.ErrNotFound):
+		return nil, internalError("looking up the barcode failed", err)
+	}
+	serving, ok := servingNames[p.User.Locale]
+	if !ok {
+		serving = servingNames["en"]
+	}
+	nf, err := product.Food(serving)
+	switch {
+	case errors.Is(err, off.ErrIncomplete) && out.Body.Food != nil:
+		return out, nil
+	case errors.Is(err, off.ErrIncomplete):
+		return nil, huma.Error404NotFound(fmt.Sprintf(
+			"no food of yours has the barcode; Open Food Facts has the product (%q) without the values a food needs", product.Name))
+	case err != nil:
+		return nil, internalError("looking up the barcode failed", err)
+	}
+	out.Body.OpenFoodFacts = &openFoodFactsBody{Food: newFoodBody(&nf).FoodFields, URL: product.URL}
+	return out, nil
+}

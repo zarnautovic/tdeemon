@@ -50,7 +50,7 @@ func TestValidate(t *testing.T) {
 		{"a name too long", func(f *Food) { f.Name = strings.Repeat("ž", MaxNameLen+1) }, "at most 200"},
 		{"a brand of spaces", func(f *Food) { f.Brand = "  " }, "brand is only space"},
 		{"not UTF-8", func(f *Food) { f.Note = "\xff" }, "not valid UTF-8"},
-		{"an unknown source", func(f *Food) { f.Source = "off" }, "source"},
+		{"an unknown source", func(f *Food) { f.Source = "recipe" }, "source"},
 		{"an unknown basis", func(f *Food) { f.Basis = "cup" }, "basis"},
 		{"negative protein", func(f *Food) { f.Nutrients.Protein = -1 }, "protein -1"},
 		{"kcal not a number", func(f *Food) { f.Nutrients.Kcal = math.NaN() }, "kcal NaN"},

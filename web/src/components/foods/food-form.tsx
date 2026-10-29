@@ -36,7 +36,7 @@ type Nutrient = (typeof needed)[number] | (typeof optional)[number]
 const mass = ['protein', 'carbs', 'fat', 'alcohol'] as const
 
 const bases = ['100g', '100ml', 'portion'] as const
-const sources = ['label', 'estimate', 'user', 'dish'] as const
+const sources = ['label', 'estimate', 'user', 'dish', 'off'] as const
 
 // A row of a list the form edits (a serving, another name), with a key of
 // its own, as rows come and go.
@@ -796,11 +796,14 @@ export function FoodForm({
             }
           }}
         >
-          {sources.map((s) => (
-            <option key={s} value={s}>
-              {t.foods.sources[s]}
-            </option>
-          ))}
+          {/* Open Food Facts only for a food that came from there. */}
+          {sources
+            .filter((s) => s !== 'off' || food?.source === 'off')
+            .map((s) => (
+              <option key={s} value={s}>
+                {t.foods.sources[s]}
+              </option>
+            ))}
         </select>
       </div>
       <div className="space-y-1">

@@ -582,6 +582,36 @@ func (db *DB) FoodByName(ctx context.Context, userID uuid.UUID, name, brand stri
 	return f, nil
 }
 
+// FoodByBarcode returns userID's food of the barcode code, in its
+// canonical form (food.Barcode), archived or not, or ErrNotFound.
+func (db *DB) FoodByBarcode(ctx context.Context, userID uuid.UUID, code string) (food.Food, error) {
+	var f food.Food
+	err := db.readTx(ctx, func(tx *sql.Tx) error {
+		var id string
+		err := tx.QueryRowContext(ctx, "SELECT food_id FROM food_barcodes WHERE user_id = ? AND code = ?",
+			userID.String(), code).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		fid, err := uuid.Parse(id)
+		if err != nil {
+			return fmt.Errorf("food id %q: %w", id, err)
+		}
+		f, err = foodInTx(ctx, tx, userID, fid)
+		return err
+	})
+	if errors.Is(err, ErrNotFound) {
+		return food.Food{}, err
+	}
+	if err != nil {
+		return food.Food{}, fmt.Errorf("food by barcode: %w", err)
+	}
+	return f, nil
+}
+
 // FoodByID returns userID's food with id, archived or not, or
 // ErrNotFound.
 func (db *DB) FoodByID(ctx context.Context, userID, id uuid.UUID) (food.Food, error) {

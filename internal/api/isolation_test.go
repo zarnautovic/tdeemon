@@ -682,6 +682,17 @@ func isolateGetFood(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateLookupBarcode is lookup-barcode's case: the barcode both have
+// is the other's own food to them, never the owner's.
+func isolateLookupBarcode(t *testing.T, e isolationEnv) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000015", "", []*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), e.other.bread.ID.String()) ||
+		strings.Contains(rec.Body.String(), e.owner.bread.ID.String()) {
+		t.Errorf("the barcode both have: %d %s, want their own bread", rec.Code, rec.Body.String())
+	}
+}
+
 // isolateGetFoodUse is get-food-use's case: the owner's food answers the
 // other as one that does not exist; their own food's meals are theirs
 // alone.
@@ -857,17 +868,18 @@ func isolationCases() map[string]isolationCase {
 		"list-changes": read("/api/v1/changes?limit=50", false, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + "'s lunch", e.other.user.Name + "'s canteen stew"}
 		}),
-		"upsert-food":   isolateUpsertFood,
-		"create-food":   isolateCreateFood,
-		"get-food":      isolateGetFood,
-		"get-food-use":  isolateGetFoodUse,
-		"log-meal":      isolateLogMeal,
-		"update-meal":   isolateMeal(http.MethodPatch, `{"note": "seen"}`),
-		"delete-meal":   isolateMeal(http.MethodDelete, ""),
-		"log-metric":    isolateDay(http.MethodPut, "/metrics/weight", `{"value": 77.3}`),
-		"delete-metric": isolateDay(http.MethodDelete, "/metrics/weight", ""),
-		"check-in":      isolateDay(http.MethodPatch, "", `{"mood": 2, "note": "a quiet day", "training_day": "rest", "excluded_reason": "sick"}`),
-		"undo-last":     isolateUndo,
+		"upsert-food":    isolateUpsertFood,
+		"create-food":    isolateCreateFood,
+		"get-food":       isolateGetFood,
+		"lookup-barcode": isolateLookupBarcode,
+		"get-food-use":   isolateGetFoodUse,
+		"log-meal":       isolateLogMeal,
+		"update-meal":    isolateMeal(http.MethodPatch, `{"note": "seen"}`),
+		"delete-meal":    isolateMeal(http.MethodDelete, ""),
+		"log-metric":     isolateDay(http.MethodPut, "/metrics/weight", `{"value": 77.3}`),
+		"delete-metric":  isolateDay(http.MethodDelete, "/metrics/weight", ""),
+		"check-in":       isolateDay(http.MethodPatch, "", `{"mood": 2, "note": "a quiet day", "training_day": "rest", "excluded_reason": "sick"}`),
+		"undo-last":      isolateUndo,
 		"get-me": read("/api/v1/me", true, func(e isolationEnv) []string {
 			return []string{"Notes of " + e.other.user.Name, fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),

@@ -104,6 +104,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/barcodes/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look up a barcode
+         * @description Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.
+         */
+        get: operations["lookup-barcode"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/changes": {
         parameters: {
             query?: never;
@@ -754,6 +774,14 @@ export interface components {
             /** @description Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused. */
             confirm?: boolean;
         };
+        BarcodeOutputBody: {
+            /** @description The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it. */
+            barcode: string;
+            /** @description Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it. */
+            food?: components["schemas"]["FoodBody"];
+            /** @description Without a food of yours of the barcode, the product at Open Food Facts. */
+            open_food_facts?: components["schemas"]["OpenFoodFactsBody"];
+        };
         ChangeBody: {
             /** @description What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status. */
             action: string;
@@ -1104,7 +1132,7 @@ export interface components {
              * @description Where the values come from; dish is an earlier client's, for no new food.
              * @enum {string}
              */
-            source: "label" | "estimate" | "user" | "dish";
+            source: "label" | "estimate" | "user" | "dish" | "off";
         };
         FoodFields: {
             /** @description Other names search finds. */
@@ -1133,7 +1161,7 @@ export interface components {
              * @description Where the values come from; dish is an earlier client's, for no new food.
              * @enum {string}
              */
-            source: "label" | "estimate" | "user" | "dish";
+            source: "label" | "estimate" | "user" | "dish" | "off";
         };
         FoodListOutputBody: {
             foods: components["schemas"]["FoodBody"][];
@@ -1321,7 +1349,7 @@ export interface components {
             /** @description How much, as it was given. */
             quantity: components["schemas"]["QuantityBody"];
             /** @enum {string} */
-            source: "label" | "estimate" | "user" | "dish";
+            source: "label" | "estimate" | "user" | "dish" | "off";
             /** @enum {string} */
             unit: "g" | "ml" | "portion";
         };
@@ -1628,6 +1656,15 @@ export interface components {
              * @example Authentik
              */
             name: string;
+        };
+        OpenFoodFactsBody: {
+            /** @description The product as a new food of the barcode, not saved: what a save of a food, or a meal's new food, takes once you have seen it. */
+            food: components["schemas"]["FoodFields"];
+            /**
+             * Format: uri
+             * @description The product's page at Open Food Facts, whose data are open under the ODbL: say where they come from.
+             */
+            url: string;
         };
         OutcomeBody: {
             /** Format: int64 */
@@ -2360,7 +2397,7 @@ export interface components {
              * @description Where the values come from; dish is an earlier client's, for no new food.
              * @enum {string}
              */
-            source: "label" | "estimate" | "user" | "dish";
+            source: "label" | "estimate" | "user" | "dish" | "off";
         };
         UserBody: {
             /**
@@ -2903,6 +2940,93 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "lookup-barcode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description An EAN-13, EAN-8, UPC-A or GTIN-14: its digits, the check digit last. */
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BarcodeOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3547,7 +3671,7 @@ export interface operations {
                 /** @description The archived foods instead of the others. */
                 archived?: boolean;
                 /** @description The foods whose values come from it alone, such as the estimates to check. */
-                source?: "label" | "estimate" | "user" | "dish";
+                source?: "label" | "estimate" | "user" | "dish" | "off";
                 /** @description name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use. */
                 order?: "name" | "use" | "frequent";
                 /** @description The most foods of the page. */

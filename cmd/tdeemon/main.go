@@ -22,6 +22,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
+	"github.com/zarnautovic/tdeemon/internal/off"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
@@ -186,6 +187,12 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 		Limits:         cfg.Limits,
 		// The raw bodies devices send, kept for 30 days.
 		IngestArchive: &ingest.Archive{Dir: filepath.Join(cfg.DataDir, "ingest"), Keep: 30 * 24 * time.Hour},
+	}
+	if cfg.OpenFoodFactsURL != "" {
+		apiCfg.OpenFoodFacts = &off.Client{
+			BaseURL:   cfg.OpenFoodFactsURL,
+			UserAgent: "tdeemon/" + serverVersion + " (https://github.com/zarnautovic/tdeemon)",
+		}
 	}
 	handler, err := api.NewHandler(apiCfg)
 	if err != nil {
