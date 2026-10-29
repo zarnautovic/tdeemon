@@ -79,6 +79,9 @@ export function DayPage() {
   // opened it, which the focus goes back to.
   const [adding, setAdding] = useState<{ food?: Food } | undefined>(undefined)
   const opener = useRef<HTMLElement | null>(null)
+  // The meals' heading, which a meal deleted in its editor leaves the
+  // focus to.
+  const mealsHeading = useRef<HTMLHeadingElement>(null)
   // Asked to open by the address: opened, and the address left as today's.
   const [asked, setAsked] = useState(false)
   if ((log === true) !== asked) {
@@ -229,7 +232,7 @@ export function DayPage() {
           )}
           <section aria-labelledby="day-meals" className="space-y-2">
             <div className="flex items-baseline justify-between gap-2">
-              <h2 id="day-meals" className="text-h2">
+              <h2 id="day-meals" ref={mealsHeading} tabIndex={-1} className="text-h2 outline-none">
                 {t.day.meals}
               </h2>
               {day.data.meals.length > 0 && (
@@ -250,6 +253,7 @@ export function DayPage() {
                       today={todayDate ?? day.data.date}
                       timeZone={timeZone}
                       startHour={session.data?.user.day_start_hour ?? 0}
+                      afterDelete={mealsHeading}
                     />
                   </li>
                 ))}

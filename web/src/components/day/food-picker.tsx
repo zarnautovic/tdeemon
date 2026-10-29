@@ -1,7 +1,8 @@
-import { useId, useState } from 'react'
+import { useId, useState, type RefObject } from 'react'
 
 import { useFindFoods } from '@/api/foods'
 import type { Food } from '@/api/types'
+import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { fieldLabel, inputClass } from '@/lib/styles'
@@ -9,15 +10,21 @@ import { cn } from '@/lib/utils'
 
 // FoodPicker finds a food of the user's to add to a meal: what a search
 // finds, each a button that picks it. label names its search, when it is
-// not to add a food; onSearch hears of what is typed in it.
+// not to add a food; onSearch hears of what is typed in it; field is given
+// its search's field, for the focus. onCancel, when given, is a Cancel
+// beside the field, for a search not to go on with.
 export function FoodPicker({
   onPick,
   onSearch,
+  onCancel,
   label,
+  field,
 }: {
   onPick: (food: Food) => void
   onSearch?: () => void
+  onCancel?: () => void
   label?: string
+  field?: RefObject<HTMLInputElement | null>
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -31,29 +38,37 @@ export function FoodPicker({
       <label htmlFor={id} className={cn(fieldLabel, 'block')}>
         {label ?? t.log.find}
       </label>
-      <input
-        id={id}
-        type="search"
-        value={query}
-        placeholder={t.log.findHint}
-        autoComplete="off"
-        className={inputClass}
-        onChange={(event) => {
-          setQuery(event.currentTarget.value)
-          onSearch?.()
-        }}
-        onKeyDown={(event) => {
-          // Enter picks the first food found; it does not send the meal.
-          if (event.key === 'Enter') {
-            event.preventDefault()
-            const firstFound = found.data?.foods[0]
-            if (searching && firstFound) {
-              onPick(firstFound)
-              setQuery('')
+      <div className="flex gap-2">
+        <input
+          ref={field}
+          id={id}
+          type="search"
+          value={query}
+          placeholder={t.log.findHint}
+          autoComplete="off"
+          className={cn(inputClass, 'min-w-0 flex-1')}
+          onChange={(event) => {
+            setQuery(event.currentTarget.value)
+            onSearch?.()
+          }}
+          onKeyDown={(event) => {
+            // Enter picks the first food found; it does not send the meal.
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              const firstFound = found.data?.foods[0]
+              if (searching && firstFound) {
+                onPick(firstFound)
+                setQuery('')
+              }
             }
-          }
-        }}
-      />
+          }}
+        />
+        {onCancel && (
+          <Button variant="ghost" onClick={onCancel}>
+            {t.log.cancel}
+          </Button>
+        )}
+      </div>
       {searching && found.isSuccess && found.data.foods.length === 0 && (
         <p className="text-sm text-muted-foreground">{t.log.noFood}</p>
       )}
