@@ -167,8 +167,17 @@ next scan finds it without asking. A food of theirs of the product's
 name and brand comes with it (`named_food`), whose barcodes lack the
 barcode yet: the product as a meal's new food is that food, unchanged,
 and adds the barcode to it, where a save of the product would correct
-it. Only by barcode: Open Food Facts' search by name is weak and allows
-10 requests a minute; a user looks up 30 barcodes a minute there, so an
+it. The web app's Log a meal scans one with the camera, or takes its
+digits typed: the user's food opens for its amount (the last eaten),
+the product as a new food to check against the label and add, the
+food of its name gets the barcode, and one nobody has opens a new food
+of it, typed off the label. Chrome on Android reads it with its own
+`BarcodeDetector`; Safari has none, and zxing-wasm reads it there
+(`barcode-detector`, MIT), loaded with the camera alone, its WASM the
+app's own, which the content security policy lets compile
+(`'wasm-unsafe-eval'`). Only by barcode: Open Food Facts' search by
+name is weak and allows 10 requests a minute; a user looks up 30
+barcodes a minute there, so an
 agent caught in a loop does not use up the instance's 100. Its names
 are anyone's to write: clipped to a food's, and data to an agent, never
 instructions (the MCP instructions say so). Its data are open under

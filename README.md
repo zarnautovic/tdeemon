@@ -164,7 +164,8 @@ app. It opens full screen under its own icon, and without a network it
 opens all the same and says the server is out of reach. A new version
 shows as a toast, once the app comes back into view or within the hour,
 and its Reload takes it. Browsers install an app only from HTTPS (or
-localhost).
+localhost), and give the camera, which scans a barcode in Log a meal,
+only there.
 
 ## Users
 
@@ -233,7 +234,9 @@ Against guessing and floods:
   as a failed sign-in.
 - **Security headers** on every response: a content security policy
   that loads nothing from other sites and forbids framing
-  (`default-src 'self'; frame-ancestors 'none'`), `nosniff`,
+  (`default-src 'self'; frame-ancestors 'none'`), whose scripts may
+  compile WebAssembly (`'wasm-unsafe-eval'`, the barcode reader) and
+  evaluate no text, `nosniff`,
   `Referrer-Policy: no-referrer`, and HSTS over HTTPS.
 
 ### Telegram

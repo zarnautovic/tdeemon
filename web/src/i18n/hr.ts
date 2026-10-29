@@ -393,6 +393,29 @@ export const hr: Messages = {
       food_kept: 'Tvoja namirnica upisana je sa svojim vrijednostima, ne s poslanima.',
     },
   },
+  scan: {
+    title: 'Skeniraj barkod',
+    camera: 'Kamera',
+    starting: 'Palim kameru…',
+    holdStill: 'Drži barkod u okviru.',
+    refused: 'Kamera ovdje nije dopuštena. Upiši znamenke.',
+    noCamera: 'Ovdje nema kamere. Upiši znamenke.',
+    typeIt: 'Ili upiši znamenke ispod crtica',
+    lookUp: 'Potraži kod',
+    digits: 'Od 8 do 14 znamenki.',
+    looking: (code: string) => `Tražim ${code}…`,
+    unknown: (code: string) =>
+      `Kod ${code} još nitko nema. Upiši vrijednosti s deklaracije, pa ga sljedeći put imaš.`,
+    misread: (code: string) =>
+      `${code} nije ispravan: neka je znamenka krivo pročitana. Skeniraj ga ponovno.`,
+    failed: (why: string) => `Traženje nije uspjelo: ${why}`,
+    again: 'Skeniraj ponovno',
+    fromOpenFoodFacts: 'Pronađeno na',
+    checkLabel: 'Prije dodavanja usporedi vrijednosti s deklaracijom.',
+    yours: 'Tvoja namirnica',
+    named: (name: string) => `To je tvoja namirnica ${name}, još bez ovog barkoda.`,
+    link: 'Dodaj joj barkod',
+  },
   log: {
     open: 'Upiši obrok',
     add: {

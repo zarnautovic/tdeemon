@@ -21,6 +21,8 @@ import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { uuidv7 } from '@/lib/uuid'
 
+type FoodFields = components['schemas']['FoodFields']
+
 type Upsert = components['schemas']['UpsertFoodInputBody']
 type Nutrients = components['schemas']['FoodNutrientsBody']
 
@@ -96,6 +98,9 @@ interface Compact {
   id: string
   // The name to start with: what was searched for.
   name: string
+  // The rest to start with: a product a barcode found, or the barcode
+  // alone.
+  start?: Partial<FoodFields>
   onAdd: (food: Food, amount: number) => void
 }
 
@@ -137,27 +142,29 @@ export function FoodForm({
   // Every decimal a value has, near enough: a save leaves untouched
   // values as they are.
   const field = (n: number | undefined) => (n === undefined ? '' : f.field(n, 6))
+  // What the form starts from: the food, or a compact one's start.
+  const from: Partial<FoodFields> | undefined = food ?? compact?.start
   const [draft, setDraft] = useState<Draft>(() => ({
-    name: food?.name ?? compact?.name ?? '',
-    brand: food?.brand ?? '',
-    basis: food?.basis ?? '100g',
+    name: from?.name ?? compact?.name ?? '',
+    brand: from?.brand ?? '',
+    basis: from?.basis ?? '100g',
     nutrients: {
-      kcal: field(food?.nutrients.kcal),
-      protein: field(food?.nutrients.protein),
-      carbs: field(food?.nutrients.carbs),
-      fat: field(food?.nutrients.fat),
-      fiber: field(food?.nutrients.fiber),
-      saturated_fat: field(food?.nutrients.saturated_fat),
-      sugars: field(food?.nutrients.sugars),
-      salt: field(food?.nutrients.salt),
-      polyols: field(food?.nutrients.polyols),
-      alcohol: field(food?.nutrients.alcohol),
+      kcal: field(from?.nutrients?.kcal),
+      protein: field(from?.nutrients?.protein),
+      carbs: field(from?.nutrients?.carbs),
+      fat: field(from?.nutrients?.fat),
+      fiber: field(from?.nutrients?.fiber),
+      saturated_fat: field(from?.nutrients?.saturated_fat),
+      sugars: field(from?.nutrients?.sugars),
+      salt: field(from?.nutrients?.salt),
+      polyols: field(from?.nutrients?.polyols),
+      alcohol: field(from?.nutrients?.alcohol),
     },
-    portionGrams: field(food?.portion_grams),
-    servings: (food?.servings ?? []).map((s) => row({ name: s.name, amount: field(s.amount) })),
-    aliases: (food?.aliases ?? []).map((a) => row(a)),
-    source: food?.source ?? 'label',
-    note: food?.note ?? '',
+    portionGrams: field(from?.portion_grams),
+    servings: (from?.servings ?? []).map((s) => row({ name: s.name, amount: field(s.amount) })),
+    aliases: (from?.aliases ?? []).map((a) => row(a)),
+    source: from?.source ?? 'label',
+    note: from?.note ?? '',
   }))
   // A compact form's amount eaten now, as typed; until it is, 100 g or ml,
   // or a portion.
@@ -366,8 +373,8 @@ export function FoodForm({
       ...(aliases.length > 0 ? { aliases } : {}),
       // Its barcodes, which a scan adds, not the form: a save replaces
       // the whole food, so they go as they are.
-      ...(food?.barcodes !== undefined && food.barcodes.length > 0
-        ? { barcodes: food.barcodes }
+      ...(from?.barcodes !== undefined && from.barcodes.length > 0
+        ? { barcodes: from.barcodes }
         : {}),
       source: draft.source,
       ...(note ? { note } : {}),
@@ -798,7 +805,7 @@ export function FoodForm({
         >
           {/* Open Food Facts only for a food that came from there. */}
           {sources
-            .filter((s) => s !== 'off' || food?.source === 'off')
+            .filter((s) => s !== 'off' || from?.source === 'off')
             .map((s) => (
               <option key={s} value={s}>
                 {t.foods.sources[s]}

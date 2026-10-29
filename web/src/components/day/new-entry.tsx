@@ -16,8 +16,9 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { uuidv7 } from '@/lib/uuid'
 
-// What the next step of the quick add makes: a food, or an estimate.
-export type Making = 'food' | 'estimate'
+// What the next step of the quick add makes: a food, an estimate, or an
+// entry of a barcode (ScanEntry).
+export type Making = 'food' | 'estimate' | 'scan'
 
 // NewEntry is the quick add's next step, in the search's place: a food of
 // the user's made in short (FoodForm's compact form) and added in the
@@ -31,7 +32,7 @@ export function NewEntry({
   onBack,
   onAdd,
 }: {
-  making: Making
+  making: Exclude<Making, 'scan'>
   name: string
   onBack: () => void
   onAdd: (entry: Entry) => void

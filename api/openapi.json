@@ -37,7 +37,7 @@
           },
           "food": {
             "$ref": "#/components/schemas/FoodBody",
-            "description": "Your food of the barcode, archived too."
+            "description": "Your food of the barcode, archived too, with its last use."
           },
           "named_food": {
             "$ref": "#/components/schemas/FoodBody",

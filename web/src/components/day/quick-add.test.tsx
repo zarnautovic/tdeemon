@@ -1357,3 +1357,177 @@ test('a meal of before is offered once, the latest of the same foods the search 
   fireEvent.change(sheet.getByLabelText('Find a food or a meal'), { target: { value: 'toa' } })
   expect(await offered(sheet)).toEqual(['Repeat: Toast'])
 })
+
+// scanServer is a day whose server makes a new food as it was sent, saves
+// a food so, and says what each barcode of answers is.
+function scanServer(answers: Record<string, () => Response>) {
+  const saved: unknown[] = []
+  const made = newFoodServer({
+    ...Object.fromEntries(
+      Object.entries(answers).map(([code, answer]) => [`GET /api/v1/barcodes/${code}`, answer]),
+    ),
+    'POST /api/v1/foods': async (request) => {
+      const body: unknown = await request.json()
+      saved.push(body)
+      return Response.json(body)
+    },
+  })
+  return { made: made.sent, saved }
+}
+
+// typeCode looks a barcode up by its digits, as a phone without a camera
+// does (jsdom has none).
+async function typeCode(sheet: Sheet, code: string) {
+  fireEvent.click(sheet.getByRole('button', { name: 'Scan a barcode' }))
+  expect(await sheet.findByText('No camera here. Type the digits instead.')).toBeDefined()
+  fireEvent.change(sheet.getByLabelText('Or type the digits under the bars'), {
+    target: { value: code },
+  })
+  fireEvent.click(sheet.getByRole('button', { name: 'Look up the code' }))
+}
+
+// kefir is a product of Open Food Facts as the server makes it a food.
+const kefir = {
+  name: 'Kefir',
+  brand: 'Vindija',
+  basis: '100ml',
+  nutrients: { kcal: 59, protein: 3.3, carbs: 4.1, fat: 2.8 },
+  servings: [{ name: 'serving', amount: 250 }],
+  barcodes: ['4006381333931'],
+  source: 'off',
+} as const
+
+test("a barcode of the user's food opens it for its amount, and goes into the meal", async () => {
+  scanServer({
+    '3850000000015': () => Response.json({ barcode: '3850000000015', food: bread }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  // Typed as printed, in groups.
+  await typeCode(sheet, '3 850000 000015')
+  expect(await sheet.findByText('Your food · 259 kcal per 100 g')).toBeDefined()
+  // In the amount it was eaten in last.
+  expect(sheet.getByLabelText('Amount: Rye bread')).toHaveProperty('value', '2')
+  fireEvent.click(sheet.getByRole('button', { name: 'Add: Rye bread' }))
+  await waitFor(() => {
+    expect(basket(sheet)).toEqual(['Rye bread · 2 slice · 207 kcal'])
+  })
+})
+
+test('a product of Open Food Facts is a new food to check, saved with its barcode and where it came from', async () => {
+  const server = scanServer({
+    '4006381333931': () =>
+      Response.json({
+        barcode: '4006381333931',
+        open_food_facts: {
+          food: kefir,
+          url: 'https://world.openfoodfacts.org/product/4006381333931',
+        },
+      }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  await typeCode(sheet, '4006381333931')
+  expect(await sheet.findByLabelText('Name')).toHaveProperty('value', 'Kefir')
+  expect(sheet.getByLabelText('Energy (kcal)')).toHaveProperty('value', '59')
+  expect(sheet.getByRole('link', { name: 'Open Food Facts' }).getAttribute('href')).toBe(
+    'https://world.openfoodfacts.org/product/4006381333931',
+  )
+  expect(sheet.getByText(/Check the values against the label before you add it\./)).toBeDefined()
+  fireEvent.change(sheet.getByLabelText('Eaten now (ml)'), { target: { value: '250' } })
+  fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
+
+  await waitFor(() => {
+    expect(basket(sheet)).toEqual(['Kefir · 250 ml · 148 kcal'])
+  })
+  expect(server.made).toEqual([kefir])
+})
+
+test("the user's food of a product's name gets the barcode, and opens for its amount", async () => {
+  const server = scanServer({
+    '4006381333931': () =>
+      Response.json({
+        barcode: '4006381333931',
+        named_food: oats,
+        open_food_facts: {
+          food: kefir,
+          url: 'https://world.openfoodfacts.org/product/4006381333931',
+        },
+      }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  await typeCode(sheet, '4006381333931')
+  expect(await sheet.findByText('It is your Rolled oats, without this barcode yet.')).toBeDefined()
+  fireEvent.click(sheet.getByRole('button', { name: 'Add the barcode to it' }))
+
+  expect(await sheet.findByLabelText('Amount: Rolled oats')).toBeDefined()
+  expect(server.saved).toEqual([{ ...oats, barcodes: ['4006381333931'] }])
+  expect(server.made).toEqual([])
+})
+
+test('a barcode nobody has is a new food of it, typed off the label', async () => {
+  const server = scanServer({ '96385074': () => problem(404) })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  await typeCode(sheet, '96385074')
+  expect(
+    await sheet.findByText(
+      'Nobody has 96385074 yet. Type its values off the label, and it is yours next time.',
+    ),
+  ).toBeDefined()
+  expect(sheet.getByLabelText('Name')).toHaveProperty('value', '')
+  fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Chewing gum' } })
+  for (const [label, value] of [
+    ['Energy (kcal)', '160'],
+    ['Protein (g)', '0'],
+    ['Carbs (g)', '64'],
+    ['Fat (g)', '0'],
+  ] as const) {
+    fireEvent.change(sheet.getByLabelText(label), { target: { value } })
+  }
+  fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
+
+  await waitFor(() => {
+    expect(server.made).toHaveLength(1)
+  })
+  expect(server.made[0]).toMatchObject({
+    name: 'Chewing gum',
+    barcodes: ['96385074'],
+    source: 'label',
+  })
+})
+
+test('a barcode misread is said, and read again; digits that are no barcode are said at the field', async () => {
+  const server = scanServer({ '4006381333932': () => problem(422) })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  fireEvent.click(sheet.getByRole('button', { name: 'Scan a barcode' }))
+  fireEvent.change(await sheet.findByLabelText('Or type the digits under the bars'), {
+    target: { value: '1234' },
+  })
+  fireEvent.click(sheet.getByRole('button', { name: 'Look up the code' }))
+  expect(sheet.getByText('From 8 to 14 digits.')).toBeDefined()
+  expect(
+    sheet.getByLabelText('Or type the digits under the bars').getAttribute('aria-invalid'),
+  ).toBe('true')
+
+  fireEvent.change(sheet.getByLabelText('Or type the digits under the bars'), {
+    target: { value: '4006381333932' },
+  })
+  fireEvent.click(sheet.getByRole('button', { name: 'Look up the code' }))
+  expect(
+    await sheet.findByText('4006381333932 does not add up: a digit was misread. Scan it again.'),
+  ).toBeDefined()
+  fireEvent.click(sheet.getByRole('button', { name: 'Scan it again' }))
+  expect(await sheet.findByLabelText('Or type the digits under the bars')).toHaveProperty(
+    'value',
+    '',
+  )
+  expect(server.made).toEqual([])
+})

@@ -63,8 +63,9 @@ language's clock, a meal repeated or deleted taken there, a meal logged by hand
 in a sheet of the foods found, eaten lately or most and the meals of
 before, those eaten at the meal of the day lately first and today's
 last, the meals of it as cards above the search, whose keyboard waits
-on a phone for a tap, a new food or an estimate a step of its own with
-one button, or a weigh-in from its chip, and the chips that add
+on a phone for a tap, a new food, an estimate or a barcode (the
+camera's, or its digits typed) a step of its own with one button, or
+a weigh-in from its chip, and the chips that add
 yesterday's meal or a food in a tap),
 the foods (their list by how often they are eaten, grouped by this
 week and earlier, in use, archived or the estimates, searched within

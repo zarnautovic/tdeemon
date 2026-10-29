@@ -777,7 +777,7 @@ export interface components {
         BarcodeOutputBody: {
             /** @description The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it. */
             barcode: string;
-            /** @description Your food of the barcode, archived too. */
+            /** @description Your food of the barcode, archived too, with its last use. */
             food?: components["schemas"]["FoodBody"];
             /** @description Your food of the product's name and brand, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it. */
             named_food?: components["schemas"]["FoodBody"];

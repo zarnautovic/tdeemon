@@ -1,5 +1,5 @@
 import { Tabs } from '@base-ui/react/tabs'
-import { Check, Plus, Repeat2, Search } from 'lucide-react'
+import { Check, Plus, Repeat2, ScanBarcode, Search } from 'lucide-react'
 import { Fragment, useEffect, useId, useRef, useState, type RefObject } from 'react'
 
 import { $api } from '@/api/client'
@@ -180,32 +180,46 @@ export function Finder({
           </ul>
         </section>
       )}
-      <label className="flex h-12 items-center gap-2.5 rounded-lg border-2 border-input bg-card px-3.5 focus-within:border-ring">
-        <Search aria-hidden className="size-4.5 shrink-0 text-muted-foreground" />
-        <span className="sr-only">{t.log.search}</span>
-        <input
-          ref={search}
-          type="search"
-          value={query}
-          placeholder={t.log.findHint}
-          autoComplete="off"
-          className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
-          onChange={(e) => {
-            onQuery(e.currentTarget.value)
-          }}
-          onKeyDown={(e) => {
-            // Enter opens the first food found, for its amount; it sends
-            // nothing.
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              const first = shown[list].foods[0]
-              if (first !== undefined) {
-                pick(first)
+      {/* The search, and beside it a barcode's: the camera, or its digits. */}
+      <div className="flex h-12 items-center rounded-lg border-2 border-input bg-card pr-0.5 focus-within:border-ring">
+        <label className="flex h-full min-w-0 flex-1 items-center gap-2.5 pl-3.5">
+          <Search aria-hidden className="size-4.5 shrink-0 text-muted-foreground" />
+          <span className="sr-only">{t.log.search}</span>
+          <input
+            ref={search}
+            type="search"
+            value={query}
+            placeholder={t.log.findHint}
+            autoComplete="off"
+            className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
+            onChange={(e) => {
+              onQuery(e.currentTarget.value)
+            }}
+            onKeyDown={(e) => {
+              // Enter opens the first food found, for its amount; it sends
+              // nothing.
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                const first = shown[list].foods[0]
+                if (first !== undefined) {
+                  pick(first)
+                }
               }
-            }
+            }}
+          />
+        </label>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          aria-label={t.scan.title}
+          onClick={(e) => {
+            onMake('scan', e.currentTarget)
           }}
-        />
-      </label>
+        >
+          <ScanBarcode aria-hidden />
+        </Button>
+      </div>
       <Tabs.Root
         value={list}
         onValueChange={(value) => {
@@ -487,7 +501,7 @@ function FoodResult({
 // Amount is a food picked, in an amount to add: typed, in a unit of the
 // food's, which works the amount out anew, or one of its servings in a
 // tap; with what it brings.
-function Amount({
+export function Amount({
   entry,
   wrong,
   onChange,
