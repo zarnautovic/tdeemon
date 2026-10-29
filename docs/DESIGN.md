@@ -159,17 +159,22 @@ found alone in a search of the archived ones (`archived`).
 
 **Barcodes.** A food keeps its product's barcodes, and a barcode leads
 to one food (`food_barcodes`). A barcode looked up
-(`GET /api/v1/barcodes/{code}`) is the user's food of it, archived too;
+(`lookup_barcode`) is the user's food of it, archived too;
 without one, the product of [Open Food Facts](https://openfoodfacts.org)
 as a new food, not saved, with its page there: the user sees it, and a
 save of it (`source: off`, the barcode with it) makes it theirs, so the
 next scan finds it without asking. A food of theirs of the product's
-name and brand comes with it, as that food, whose barcodes lack the
-barcode yet: adding it beats saving the product over the food. Only by
-barcode: Open Food Facts' search by name is weak and allows 10 requests
-a minute. Its data are open under the ODbL, so a client says where they
-come from. A product without a name or its four values per 100 g or
-100 ml is no food, and one the user enters from the label keeps the
+name and brand comes with it (`named_food`), whose barcodes lack the
+barcode yet: the product as a meal's new food is that food, unchanged,
+and adds the barcode to it, where a save of the product would correct
+it. Only by barcode: Open Food Facts' search by name is weak and allows
+10 requests a minute; a user looks up 30 barcodes a minute there, so an
+agent caught in a loop does not use up the instance's 100. Its names
+are anyone's to write: clipped to a food's, and data to an agent, never
+instructions (the MCP instructions say so). Its data are open under
+the ODbL, so a client says where they come from. A product without a
+name or its four values per 100 g or 100 ml is no food, and one the
+user enters from the label keeps the
 barcode as any food does; an optional value or a serving no food has is
 left out. Open Food Facts keeps per 100 g and per 100 ml under one name,
 so a product's values are per 100 ml only for a drink sold by volume
@@ -224,6 +229,7 @@ duplicate food would stay in the list.
 | `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, give an item a note (a note op, which changes nothing else of it), change the time (not to one still to come) and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
 | `delete_meal(id)` / `undo_last(id?)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9; or one the server makes for a client that cannot, whose undo sent again takes back another) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A meal logged or changed with new foods (an estimate saved as a food, too) is one change: its undo takes the foods back with it, whole or not at all. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name, an alias or a barcode, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
 | `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
+| `lookup_barcode(code)` | what a barcode is ("Barcodes" in §4): the user's food of it (`food`), or Open Food Facts' product as a new food, not saved (`open_food_facts`), with the user's food of its name and brand (`named_food`); the instructions say how to log each, and that a code read off a photo by its digits can be misread past its check digit |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name, alias or barcode another food has is refused naming that food; a barcode the user says is a food's goes in its barcodes |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
@@ -283,11 +289,13 @@ takes its `date` as optional, `today` when left out); `get_summary` is
 `GET /api/v1/foods?query=…&query=…`, a query each repeated (MCP sends a
 list of them as the parameter repeated); `get_food` is
 `GET /api/v1/foods/{id}`,
-archived too; and `upsert_food` is `POST /api/v1/foods`, which corrects
+archived too; `lookup_barcode` is `GET /api/v1/barcodes/{code}`; and
+`upsert_food` is `POST /api/v1/foods`, which corrects
 a food by an id it has (404 for another) or by its name and brand, and
-names the food in the way of a name, an alias or a barcode (409), archived or not,
-which a search would not find but `get_food` gives. Beside the tools,
-the web app lists the foods with `GET /api/v1/foods/list`, a web
+names the food in the way of a name, an alias or a barcode (409),
+archived or not, which a search would not find but `get_food` gives.
+Beside the tools, the web app lists the foods with
+`GET /api/v1/foods/list`, a web
 session's only: a page (`limit`, `offset`) of the archived foods or the
 others (`archived`), of a source alone when asked (`source=estimate`,
 the estimates to check), by name, by their last use or by how many of
@@ -399,10 +407,11 @@ server gives codes and names, and the app the words.
        cache. The first log after the cache has expired (five minutes
        with Anthropic's) pays for the tools and instructions once more.
      - **The tools and the instructions are a budget of their own**,
-       which every request carries, cached or not: ~7k tokens, as a
-       client that does not cache pays it in full with each request
-       (~10.5k until October 2026, ~6k then until the rules of a meal's
-       parts, ~6.5k until the coach's history and notes). So a tool's
+       which every request carries, cached or not: ~9.1k tokens as the
+       eval measured them in October 2026, as a client that does not
+       cache pays it in full with each request (~10.5k until October
+       2026, ~6k then until the rules of a meal's parts, ~6.5k until the
+       coach's history and notes, ~7k until the coach's plan). So a tool's
        schema carries what a model needs to call it, not the format of a
        number, examples or bounds, which the operation checks; a schema
        two tools take is said in full in its own tool's (a new food in

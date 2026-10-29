@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * Look up a barcode
-         * @description Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.
+         * @description Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand (named_food) if you have one, which a save of the product would correct: the product as a meal's new food is that food, and adds the barcode to it. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values (with your food of its name, 200). Open Food Facts that does not answer is 502; 30 lookups there a minute, and more are 429.
          */
         get: operations["lookup-barcode"];
         put?: never;
@@ -777,8 +777,10 @@ export interface components {
         BarcodeOutputBody: {
             /** @description The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it. */
             barcode: string;
-            /** @description Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it. */
+            /** @description Your food of the barcode, archived too. */
             food?: components["schemas"]["FoodBody"];
+            /** @description Your food of the product's name and brand, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it. */
+            named_food?: components["schemas"]["FoodBody"];
             /** @description Without a food of yours of the barcode, the product at Open Food Facts. */
             open_food_facts?: components["schemas"]["OpenFoodFactsBody"];
         };

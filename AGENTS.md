@@ -20,7 +20,7 @@ plan, the user's own change of the plan (a proposal applied at once),
 calibration
 (the measured TDEE and the verdict on a phase), the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
-`find_foods`, `get_food`, `upsert_food`, `log_meal`, `update_meal`,
+`find_foods`, `get_food`, `lookup_barcode`, `upsert_food`, `log_meal`, `update_meal`,
 `delete_meal`, `log_metric`, `delete_metric`, `checkin`,
 `update_profile_notes`, `propose_changes`, `apply_proposal`,
 `reject_proposal`, `revert_proposal` and `undo_last`, the MCP server
@@ -115,7 +115,7 @@ both themes and languages, exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the list of foods, a new food, a food's use, a barcode's food (the user's, or Open Food Facts' product), the recent meals and the recent changes (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the list of foods, a new food, a food's use, the recent meals and the recent changes (web session only), the imports (API token only), and the tools, a barcode's food (the user's, or Open Food Facts' product) among them, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |

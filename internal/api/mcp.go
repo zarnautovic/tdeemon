@@ -51,6 +51,9 @@ type mcpTool struct {
 type param struct {
 	in   string
 	list bool
+	// text says it takes a string: a number sent for it is refused, as
+	// one would lose its leading zeros (a barcode's).
+	text bool
 }
 
 // mcpServer serves the tools of the registry over MCP. A call runs the
@@ -292,7 +295,7 @@ func (t *mcpTool) place(in map[string]json.RawMessage) (string, url.Values, map[
 			}
 			continue
 		}
-		v, err := paramValue(raw)
+		v, err := prm.value(raw)
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("%s: %w", name, err)
 		}
@@ -328,6 +331,15 @@ func paramValue(raw json.RawMessage) (string, error) {
 		return strconv.FormatBool(v), nil
 	}
 	return "", errors.New("want a string, a number or a boolean")
+}
+
+// value is the text of prm's value raw, as paramValue makes it; a number
+// for a string is refused.
+func (prm param) value(raw json.RawMessage) (string, error) {
+	if t := bytes.TrimSpace(raw); prm.text && len(t) > 0 && (t[0] == '-' || t[0] >= '0' && t[0] <= '9') {
+		return "", errors.New("want a string, its digits quoted")
+	}
+	return paramValue(raw)
 }
 
 // listInString reports whether raw is a string of a JSON list, and puts
@@ -427,7 +439,7 @@ func (d openAPIDoc) mcpTool(t tool) (mcpTool, error) {
 		Name: t.name, Title: t.op.Summary, Description: t.brief, InputSchema: schema,
 		Annotations: &mcp.ToolAnnotations{
 			Title: t.op.Summary, ReadOnlyHint: readOnly, DestructiveHint: new(t.destructive),
-			IdempotentHint: !t.writesAgain, OpenWorldHint: new(false),
+			IdempotentHint: !t.writesAgain, OpenWorldHint: new(t.opensOut),
 		},
 	}
 	return mt, nil
@@ -478,7 +490,7 @@ func (d openAPIDoc) params(op openAPIOp, mt *mcpTool, props map[string]any) ([]s
 			return nil, err
 		}
 		typ, _ := s.(map[string]any)["type"].(string)
-		mt.params[prm.Name] = param{in: prm.In, list: prm.In == "query" && typ == "array"}
+		mt.params[prm.Name] = param{in: prm.In, list: prm.In == "query" && typ == "array", text: typ == "string"}
 		props[prm.Name] = s
 		// The day of a tool is today when left out.
 		if prm.Required && prm.Name != "date" {

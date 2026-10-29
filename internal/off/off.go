@@ -146,8 +146,11 @@ func product(p map[string]any, code, name, base string) Product {
 	if strings.TrimSpace(out.Name) == "" {
 		out.Name, _ = p["product_name"].(string)
 	}
+	// Anyone may write them: no more of them goes on than a food holds.
+	out.Name = clip(out.Name, food.MaxNameLen)
 	brands, _ := p["brands"].(string)
-	out.Brand, _, _ = strings.Cut(brands, ",")
+	brand, _, _ := strings.Cut(brands, ",")
+	out.Brand = clip(brand, food.MaxBrandLen)
 	unit, _ := p["product_quantity_unit"].(string)
 	categories, _ := p["categories_tags"].([]any)
 	out.PerMilliliter = strings.EqualFold(unit, "ml") && slices.Contains(categories, any("en:beverages"))
@@ -209,8 +212,8 @@ func (p Product) Food(serving string) (food.Food, error) {
 	}
 	f := food.Food{
 		ID:     uuid.NewV7(),
-		Name:   clip(p.Name, food.MaxNameLen),
-		Brand:  clip(p.Brand, food.MaxBrandLen),
+		Name:   p.Name,
+		Brand:  p.Brand,
 		Basis:  food.Per100g,
 		Source: food.OpenFoodFacts,
 		Nutrients: food.Nutrients{

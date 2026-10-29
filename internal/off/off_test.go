@@ -187,8 +187,21 @@ func TestFoodOfAnIncompleteProduct(t *testing.T) {
 			t.Errorf("%s: %+v, %v; want ErrIncomplete", name, f, err)
 		}
 	}
-	long := off.Product{Code: "3850000000015", Name: strings.Repeat("ž", food.MaxNameLen+5), Nutrients: whole}
-	if f, err := long.Food("serving"); err != nil || len([]rune(f.Name)) != food.MaxNameLen {
-		t.Errorf("a long name: %d characters, %v; want it cut", len([]rune(f.Name)), err)
+}
+
+// A product's name and brand, which anyone may write, go on no longer than
+// a food holds them.
+func TestProductOfALongName(t *testing.T) {
+	t.Parallel()
+
+	c := server(t, http.StatusOK, `{"status": 1, "product": {"product_name": "`+strings.Repeat("ž", food.MaxNameLen+5)+`",
+		"brands": "`+strings.Repeat("b", food.MaxBrandLen+5)+`, other",
+		"nutriments": {"energy-kcal_100g": 73, "proteins_100g": 9.5, "carbohydrates_100g": 3.6, "fat_100g": 2}}}`, nil)
+	p, err := c.Product(t.Context(), "3850000000015", "en")
+	if err != nil || len([]rune(p.Name)) != food.MaxNameLen || len(p.Brand) != food.MaxBrandLen {
+		t.Fatalf("the product: %d and %d characters, %v; want them cut", len([]rune(p.Name)), len(p.Brand), err)
+	}
+	if _, err := p.Food("serving"); err != nil {
+		t.Errorf("its food: %v", err)
 	}
 }

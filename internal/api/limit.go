@@ -23,6 +23,12 @@ const (
 	// revoked token that retries every minute stays under it.
 	badTokenFailures = 50
 	badTokenWindow   = 15 * time.Minute
+	// offLookups barcodes a user may look up at Open Food Facts in
+	// offWindow, where none of their foods has them: a person scanning
+	// asks a few, and Open Food Facts allows an instance about 100 a
+	// minute in all, so an agent caught in a loop does not use them up.
+	offLookups = 30
+	offWindow  = time.Minute
 )
 
 // maxLimitKeys bounds the memory of a limiter. Past it, expired keys are
