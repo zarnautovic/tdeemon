@@ -257,6 +257,18 @@ func answerCases() map[string]answerCase {
 			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
 			in.do(t, http.MethodGet, "/api/v1/meals/recent", "", []*http.Cookie{session}, nil)
 		},
+		// None, then each kind of change named, one undone, one next, and
+		// the plan's.
+		"list-changes": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodGet, "/api/v1/changes", "", []*http.Cookie{session}, nil)
+			now := in.clock.Now()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
+			saveIsolationMetrics(t, in.db, in.user, now)
+			saveIsolationPlan(t, in.db, in.user, now)
+			in.do(t, http.MethodPost, "/api/v1/undo", `{"id": "`+clientid.NewAt(now).String()+`"}`, []*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/changes?limit=50", "", []*http.Cookie{session}, nil)
+		},
 		"log-meal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			// With a warning, a new food and a food by id.

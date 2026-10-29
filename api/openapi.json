@@ -28,6 +28,89 @@
         },
         "type": "object"
       },
+      "ChangeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status.",
+            "type": "string"
+          },
+          "archived": {
+            "description": "Of food.archive: true when it archived the food, false when it brought it back in use.",
+            "type": "boolean"
+          },
+          "at": {
+            "description": "When the change was made.",
+            "format": "date-time",
+            "type": "string"
+          },
+          "brand": {
+            "description": "A food's brand, beside its name.",
+            "type": "string"
+          },
+          "client": {
+            "description": "What it came through: web, api, mcp.",
+            "type": "string"
+          },
+          "days": {
+            "description": "The days (YYYY-MM-DD) it was of, as undo's answer says them: a meal's before and after it, a check-in's, a measurement's or a day's; none for a food, the notes or the plan.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "entity": {
+            "description": "What it changed, as undo's last names it: a food's, a meal's or a proposal's id, a day (YYYY-MM-DD), a day and a metric (2026-10-21/weight), profile, limits, plan or notes.",
+            "type": "string"
+          },
+          "id": {
+            "description": "The change's own id, its event's.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "description": "A meal's items by their names, as the change left it (as it was, for a delete); none for anything else.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "metric": {
+            "description": "A measurement's kind, of metric.set and metric.delete.",
+            "type": "string"
+          },
+          "model": {
+            "description": "The AI model that made it for the user, when one said so.",
+            "type": "string"
+          },
+          "name": {
+            "description": "A meal's description, or a food's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back).",
+            "type": "string"
+          },
+          "next": {
+            "description": "Undo takes it back next: POST /api/v1/undo naming it (last) takes it back while it stays the latest. At most one change is next, and none when undo has nothing to take back.",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Of proposal.status: the proposal's status after it (applied, rejected, superseded, reverted).",
+            "type": "string"
+          },
+          "undone": {
+            "description": "An undo took it back.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "entity",
+          "at",
+          "client",
+          "days",
+          "items"
+        ],
+        "type": "object"
+      },
       "ChangePlanBody": {
         "additionalProperties": false,
         "properties": {
@@ -85,6 +168,22 @@
           "phases",
           "targets",
           "limits"
+        ],
+        "type": "object"
+      },
+      "ChangesOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "changes": {
+            "description": "The latest first.",
+            "items": {
+              "$ref": "#/components/schemas/ChangeBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "changes"
         ],
         "type": "object"
       },
@@ -4382,6 +4481,101 @@
         "summary": "Get who the request acts for",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/changes": {
+      "get": {
+        "description": "Needs a web session. Your latest changes, the latest first, made through any client (you in the app, your AI coach, an app with an access key): what each did and to what, when, through what, the names of what it was of, whether an undo took it back, and the one undo takes back next. The undos themselves are not among them, nor an import's writes, which undo leaves.",
+        "operationId": "list-changes",
+        "parameters": [
+          {
+            "description": "The most changes.",
+            "explode": false,
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 10,
+              "description": "The most changes.",
+              "format": "int64",
+              "maximum": 50,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangesOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "List your recent changes",
+        "tags": [
+          "changes"
         ]
       }
     },

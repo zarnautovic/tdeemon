@@ -1,5 +1,5 @@
 import { ChevronDown, Pencil, Repeat2, Trash2 } from 'lucide-react'
-import { useId, useRef, useState, type RefObject } from 'react'
+import { useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react'
 
 import { statusOf } from '@/api/errors'
 import { useDeleteMeal, useLogMeal } from '@/api/meals'
@@ -32,6 +32,28 @@ function together(pairs: readonly string[]): string {
   return pairs.map((pair) => pair.replaceAll(' ', '\u00a0')).join('\u00a0· ')
 }
 
+// A move of the keyboard from a row of a desktop's table of meals to
+// another.
+export type RowMove = 'previous' | 'next' | 'first' | 'last'
+
+// RowKeys are a row's part in the keyboard's way through the table
+// (MealList): one row at a time is Tab's stop, the one the keyboard was
+// on last (tabbable), it says when it has the focus, and an arrow moves
+// it.
+export interface RowKeys {
+  tabbable: boolean
+  onFocus: () => void
+  onMove: (to: RowMove) => void
+}
+
+// The keys that move between the rows.
+const moves: Partial<Record<string, RowMove>> = {
+  ArrowUp: 'previous',
+  ArrowDown: 'next',
+  Home: 'first',
+  End: 'last',
+}
+
 // MealCard is a meal as a row of the day: when it was eaten, its name and
 // kcal (whose unit the day's meals say once, above them), its macros as a
 // bar and in grams, whether a model logged it and whether it holds an
@@ -42,7 +64,11 @@ function together(pairs: readonly string[]): string {
 // editor or from the card, the focus goes to afterDelete, as the card
 // goes with it. In columns, a desktop's table of meals (MealList), the
 // row has its kcal and each macro in a column of its own, under their
-// heads, and the meal's marks beside its name.
+// heads, and the meal's marks beside its name; and, by keys, the keyboard
+// moves between the rows (↑, ↓, Home, End), and on a row Enter opens its
+// editor (a click or Space opens the row to its items, as a tap does), R
+// repeats it today and Delete deletes it. A repeat of today's says its
+// meal's id to onRepeated, whose row takes the focus.
 export function MealCard({
   meal,
   date,
@@ -51,6 +77,8 @@ export function MealCard({
   startHour,
   afterDelete,
   columns = false,
+  keys,
+  onRepeated,
 }: {
   meal: Meal
   date: string
@@ -61,6 +89,8 @@ export function MealCard({
   startHour: number
   afterDelete?: RefObject<HTMLElement | null>
   columns?: boolean
+  keys?: RowKeys | undefined
+  onRepeated?: ((id: string) => void) | undefined
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -84,6 +114,9 @@ export function MealCard({
       },
       { last: { action: 'meal.create', entity: answer.meal.id }, date },
     )
+    if (date === today) {
+      onRepeated?.(answer.meal.id)
+    }
   })
   const remove = useDeleteMeal(date, () => {
     sayChange(
@@ -98,9 +131,38 @@ export function MealCard({
   // Deleted in the editor, which closes on it.
   const [deleted, setDeleted] = useState(false)
   // The button that opens the editor, which takes the focus back when it
-  // closes, and the editor's first field.
+  // closes (the row, when Enter opened it from there), and the editor's
+  // first field.
   const change = useRef<HTMLButtonElement>(null)
+  const row = useRef<HTMLButtonElement>(null)
   const first = useRef<HTMLInputElement>(null)
+
+  // onKey is what a key does on the row, of a desktop's table: moves to
+  // another row, or acts on this one.
+  function onKey(event: KeyboardEvent<HTMLButtonElement>) {
+    if (keys === undefined || event.altKey || event.ctrlKey || event.metaKey) {
+      return
+    }
+    const to = moves[event.key]
+    if (to !== undefined) {
+      keys.onMove(to)
+    } else if (event.key === 'Enter') {
+      setEditing(true)
+      setDeleted(false)
+    } else if (event.key === 'r' || event.key === 'R') {
+      if (!repeat.isPending) {
+        repeat.mutate({ body: repeatOf(meal) })
+      }
+    } else if (event.key === 'Delete' || event.key === 'Backspace') {
+      // A Mac's delete is Backspace.
+      if (!remove.isPending) {
+        remove.mutate({ params: { path: { id: meal.id } } })
+      }
+    } else {
+      return
+    }
+    event.preventDefault()
+  }
 
   // amount is how much of an item, in its unit; of a named serving, as
   // it was given, with that: "2 slices (80 g)", as the editor has it.
@@ -162,9 +224,15 @@ export function MealCard({
     >
       <h3>
         <button
+          ref={row}
           type="button"
+          // The list finds the row of a meal just logged by it.
+          data-meal={meal.id}
           aria-expanded={open}
           aria-controls={`${id}-more`}
+          tabIndex={keys === undefined || keys.tabbable ? undefined : -1}
+          onFocus={keys?.onFocus}
+          onKeyDown={onKey}
           onClick={() => {
             setOpen((o) => !o)
           }}
@@ -309,7 +377,7 @@ export function MealCard({
         onOpenChange={setEditing}
         title={t.meal.editTitle}
         initialFocus={first}
-        finalFocus={deleted && afterDelete ? afterDelete : change}
+        finalFocus={deleted && afterDelete ? afterDelete : open ? change : row}
         tall
         bare
       >

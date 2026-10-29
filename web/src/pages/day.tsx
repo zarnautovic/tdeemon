@@ -7,6 +7,7 @@ import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
 import type { Food } from '@/api/types'
 import { BodyToday } from '@/components/day/body-today'
+import { ChangesButton } from '@/components/day/changes-button'
 import { CheckIn } from '@/components/day/check-in'
 import { DayPhase } from '@/components/day/day-phase'
 import { DaySummary } from '@/components/day/day-summary'
@@ -91,6 +92,10 @@ export function DayPage() {
   // The meals' heading, which a meal deleted in its editor leaves the
   // focus to.
   const mealsHeading = useRef<HTMLHeadingElement>(null)
+  // A meal just logged or repeated, whose row takes the focus once it
+  // shows, and a screen reader says it: at once, or as the quick add's
+  // sheet closes, which gives the focus back to its opener.
+  const [arrived, setArrived] = useState<string | undefined>(undefined)
   // Asked to open by the address: opened, and the address left as today's.
   const [asked, setAsked] = useState(false)
   if ((log === true) !== asked) {
@@ -170,10 +175,12 @@ export function DayPage() {
   ) : (
     noArrow
   )
-  // Of the day shown, not of the one before while it comes.
+  // Of the day shown, not of the one before while it comes; beside it the
+  // recent changes, whose Undo reaches past a toast.
   const dayType = (
-    <div inert={waiting}>
+    <div inert={waiting} className="flex items-center gap-1">
       <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
+      <ChangesButton />
     </div>
   )
 
@@ -311,6 +318,15 @@ export function DayPage() {
                 startHour={session.data?.user.day_start_hour ?? 0}
                 afterDelete={mealsHeading}
                 columns={desktop}
+                arrived={arrived}
+                onArrived={(row) => {
+                  setArrived(undefined)
+                  opener.current = row
+                  if (adding === undefined) {
+                    row.focus()
+                  }
+                }}
+                onRepeated={setArrived}
               />
             )}
             {!future && (
@@ -362,6 +378,9 @@ export function DayPage() {
           }}
           initial={adding?.food}
           opener={opener}
+          onLogged={(meal) => {
+            setArrived(meal.id)
+          }}
           remaining={left}
           date={day.data.date}
           today={isToday}

@@ -47,6 +47,7 @@ interface Start {
   remaining: number | undefined
   // A food the meal starts with.
   initial?: Food | undefined
+  onLogged?: ((meal: Meal) => void) | undefined
 }
 
 // QuickAdd logs a meal of the day by hand, in a sheet: the foods of the
@@ -60,7 +61,8 @@ interface Start {
 // of which can be changed. Each opening is a meal anew. The focus goes to
 // the search, but on a touch screen, whose keyboard would cover the
 // lists, until it is tapped. opener is what opened it, which the focus
-// goes back to.
+// goes back to; onLogged is told the meal logged, before the sheet
+// closes, so the focus may go to the meal's row instead.
 export function QuickAdd({
   open,
   onOpenChange,
@@ -105,6 +107,7 @@ export function QuickAdd({
 function Composer({
   remaining,
   initial,
+  onLogged,
   search,
   onDone,
   date,
@@ -131,6 +134,7 @@ function Composer({
       },
       { last: { action: 'meal.create', entity: answer.meal.id }, date },
     )
+    onLogged?.(answer.meal)
   })
   const [entries, setEntries] = useState<Entry[]>(() =>
     initial === undefined ? [] : [foodEntry(initial, f.field)],

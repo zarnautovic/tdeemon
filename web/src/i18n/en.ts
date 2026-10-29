@@ -32,6 +32,8 @@ export const en = {
     darkTheme: 'Dark theme',
     // Describes the plan's section while a proposal waits there.
     waits: 'A proposal waits',
+    // The keyboard's first stop, past the sections to the page.
+    skip: 'Skip to content',
   },
   toast: {
     close: 'Close',
@@ -64,6 +66,24 @@ export const en = {
     list: 'These shortcuts',
     toasts: 'The notifications',
     close: 'Close',
+    undo: 'Undo the latest change',
+    // A section, a key after G: "G then D".
+    andThen: 'then',
+    sections: {
+      today: 'Today',
+      foods: 'Foods',
+      progress: 'Progress',
+      plan: 'Plan',
+      settings: 'Settings',
+    },
+    // The groups of the list, and the keys of a meal of the day's.
+    anywhere: 'Anywhere',
+    goTo: 'Go to a section',
+    onDay: 'On a day',
+    meals: 'The meal before or after',
+    change: 'Change the meal',
+    repeat: 'Repeat the meal today',
+    remove: 'Delete the meal',
   },
   soon: 'This part is on its way.',
   unreachable: 'The server cannot be reached.',
@@ -518,6 +538,47 @@ export const en = {
       'notes.set': 'the notes for your AI coach',
     } as Record<string, string>,
     change: 'a change',
+  },
+  // The latest changes, made through any client, and the latest's undo.
+  changes: {
+    title: 'Recent changes',
+    // The settings' row of them.
+    summary: 'What you and your AI coach changed lately, and its undo',
+    none: 'No changes yet.',
+    // A meal logged, by its name, as its toast says it but its kcal.
+    logged: (what: string) => `Logged: ${what}`,
+    aFood: 'a food',
+    // A proposal's change, by its status after it.
+    proposal: {
+      applied: 'A proposal applied',
+      rejected: 'A proposal rejected',
+      superseded: 'A proposal replaced by a newer one',
+      reverted: 'A proposal taken back',
+    } as Record<string, string>,
+    // The changes said by what they did alone.
+    actions: {
+      'metrics.merge': 'Measurements imported',
+      'profile.set': 'The profile changed',
+      'limits.set': 'The limits changed',
+      'phase.set': 'A phase set',
+      'phase.delete': 'A phase deleted',
+      'target.set': 'A target set',
+      'target.delete': 'A target deleted',
+      'plan.weekdays': 'The training days changed',
+      'proposal.create': 'A change of the plan proposed',
+    } as Record<string, string>,
+    other: 'A change',
+    // Who made it: the user in the app, their AI coach, or a device with
+    // an access key of its own.
+    you: 'you',
+    coach: 'your AI coach',
+    device: 'a device',
+    // When and by whom: "21:14 · you", "Oct 21, 21:14 · you" of a day
+    // before.
+    by: (when: string, who: string) => `${when} · ${who}`,
+    at: (day: string, time: string) => `${day}, ${time}`,
+    undone: 'Taken back',
+    undoOf: (what: string) => `Undo: ${what}`,
   },
   foods: {
     title: 'Foods',

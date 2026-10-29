@@ -27,18 +27,22 @@ const sectionClass =
 
 // A section's dot says something waits there: on the icon in the bar,
 // after the name in the sidebar; to a screen reader, mark describes the
-// link, whose name stays the section's.
+// link, whose name stays the section's. In the sidebar, the keys that
+// lead there (G, then its letter) show as the pointer or the keyboard's
+// focus is on it; the shortcuts' list says them to a screen reader.
 function Section({
   to,
   icon: Icon,
   exact = false,
   mark,
+  letter,
   children,
 }: {
   to: '/' | '/foods' | '/progress' | '/plan' | '/settings'
   icon: LucideIcon
   exact?: boolean
   mark?: string | undefined
+  letter: string
   children: ReactNode
 }) {
   const markId = useId()
@@ -65,6 +69,12 @@ function Section({
         )}
       </span>
       {children}
+      <kbd
+        aria-hidden
+        className="ml-auto hidden rounded-[5px] border px-1.5 font-mono text-caption text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 lg:inline"
+      >
+        G {letter}
+      </kbd>
       {mark !== undefined && (
         <>
           <span aria-hidden className="ml-auto hidden size-2 rounded-full bg-primary lg:block" />
@@ -128,12 +138,12 @@ export function AppNav() {
       </Link>
       <ul className="grid grid-cols-5 items-center px-1 pt-1 lg:flex lg:flex-col lg:items-stretch lg:gap-1 lg:p-0">
         <li>
-          <Section to="/" icon={CalendarDays} exact>
+          <Section to="/" icon={CalendarDays} exact letter="D">
             {t.nav.today}
           </Section>
         </li>
         <li>
-          <Section to="/foods" icon={Utensils}>
+          <Section to="/foods" icon={Utensils} letter="F">
             {t.nav.foods}
           </Section>
         </li>
@@ -148,19 +158,19 @@ export function AppNav() {
           </Link>
         </li>
         <li>
-          <Section to="/progress" icon={ChartLine}>
+          <Section to="/progress" icon={ChartLine} letter="P">
             {t.nav.progress}
           </Section>
         </li>
         <li>
-          <Section to="/plan" icon={Target} mark={waits ? t.nav.waits : undefined}>
+          <Section to="/plan" icon={Target} mark={waits ? t.nav.waits : undefined} letter="L">
             {t.nav.plan}
           </Section>
         </li>
       </ul>
       {/* On a phone the settings are the plan's, and the theme theirs. */}
       <div className="mt-auto hidden flex-col gap-1 lg:flex">
-        <Section to="/settings" icon={Settings}>
+        <Section to="/settings" icon={Settings} letter="S">
           {t.nav.settings}
         </Section>
         <div className="mt-2 flex items-center gap-2.5 border-t px-3 pt-3">

@@ -24,18 +24,106 @@ test('the sections are linked from one navigation, the current one marked', asyn
   const links = within(await nav()).getAllByRole('link')
   // A phone shows the bar's (Log a meal its middle), a desktop the
   // sidebar's (Log a meal first, the settings at the foot): each hides
-  // the other's.
+  // the other's. The sidebar's sections show their keys, G and a letter,
+  // as the pointer or the focus is on them; their names stay their own.
   expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
     ['Log a mealN', '/?log=true'],
-    ['Today', '/'],
-    ['Foods', '/foods'],
+    ['TodayG D', '/'],
+    ['FoodsG F', '/foods'],
     ['', '/?log=true'],
-    ['Progress', '/progress'],
-    ['Plan', '/plan'],
-    ['Settings', '/settings'],
+    ['ProgressG P', '/progress'],
+    ['PlanG L', '/plan'],
+    ['SettingsG S', '/settings'],
   ])
   expect(links.filter((a) => a.getAttribute('aria-current') === 'page')).toEqual([links[2]])
   expect(within(await nav()).getAllByRole('link', { name: 'Log a meal' })).toHaveLength(2)
+  expect(within(await nav()).getByRole('link', { name: 'Today' })).toBe(links[1])
+})
+
+// The keyboard's first stop skips the sections to the page, which takes
+// the focus, the address as it was.
+test('the first stop of the keyboard skips to the content', async () => {
+  fakeServer(signedIn())
+  const router = renderAt('/foods')
+  await nav()
+
+  const first = document.querySelector<HTMLElement>('a[href], button, input, [tabindex="0"]')
+  expect(first?.textContent).toBe('Skip to content')
+  if (first === null) {
+    throw new Error('nothing to stop at')
+  }
+  fireEvent.click(first)
+
+  expect(document.activeElement).toBe(screen.getByRole('main'))
+  expect(router.state.location.href).toBe('/foods')
+})
+
+test('G, then a letter, goes to a section; the letter alone does not', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods': () => Response.json({ foods: [] }),
+  })
+  const router = renderAt('/')
+  await screen.findByRole('heading', { name: 'Today' })
+
+  fireEvent.keyDown(document.body, { key: 'f' })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(router.state.location.pathname).toBe('/')
+
+  // goes presses G and letter, and waits to be at path.
+  const goes = async (letter: string, path: string) => {
+    fireEvent.keyDown(document.body, { key: 'g' })
+    fireEvent.keyDown(document.body, { key: letter })
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe(path)
+    })
+  }
+  await goes('f', '/foods')
+  await goes('p', '/progress')
+  await goes('l', '/plan')
+  await goes('s', '/settings')
+  await goes('d', '/')
+})
+
+test('⌘Z or Ctrl+Z takes back the latest change, and the toast says which', async () => {
+  const undos: unknown[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods': () => Response.json({ foods: [] }),
+    'POST /api/v1/undo': async (request) => {
+      undos.push(await request.json())
+      return Response.json({
+        undone: {
+          action: 'meal.delete',
+          entity: '0193c3a5-0000-7000-8000-0000000000a1',
+          at: `${today}T16:00:00Z`,
+          client: 'mcp',
+          days: [today],
+        },
+      })
+    },
+  })
+  renderAt('/foods')
+  const search = await screen.findByRole('searchbox', { name: 'Search the foods' })
+
+  // A field's own undo is the field's.
+  fireEvent.keyDown(search, { key: 'z', ctrlKey: true })
+  fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true })
+
+  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  // The latest, whichever it is: no change named, an id of its own. The
+  // day it was of is linked, as the foods are shown.
+  expect(undos).toEqual([{ id: expect.any(String) as unknown }])
+  expect(screen.getByRole('link', { name: 'See it today' })).toBeDefined()
+
+  fireEvent.keyDown(document.body, { key: 'z', metaKey: true })
+  await waitFor(() => {
+    expect(undos).toHaveLength(2)
+  })
+  // Ctrl+Shift+Z is another key: a redo, which the app has none of.
+  fireEvent.keyDown(document.body, { key: 'Z', ctrlKey: true, shiftKey: true })
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(undos).toHaveLength(2)
 })
 
 test('the charts are the progress now, and the plan its own section', async () => {
@@ -149,6 +237,15 @@ test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
   // The toasts' key, which reaches them from a sheet too.
   expect(within(dialog).getByText('The notifications')).toBeDefined()
   expect(within(dialog).getByText('F6')).toBeDefined()
+  // Every other: the undo, the sections and a meal's.
+  const said = (what: string) => within(dialog).getByText(what).nextElementSibling?.textContent
+  expect(said('Undo the latest change')).toBe('Ctrl+Z')
+  expect(said('Foods')).toBe('GthenF')
+  expect(said('Settings')).toBe('GthenS')
+  expect(said('The meal before or after')).toBe('↑↓')
+  expect(said('Change the meal')).toBe('Enter')
+  expect(said('Repeat the meal today')).toBe('R')
+  expect(said('Delete the meal')).toBe('Delete')
 })
 
 test('a shortcut is not taken from a field, nor with a modifier', async () => {
