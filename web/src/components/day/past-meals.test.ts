@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 
-import type { Item, Meal } from '@/api/types'
+import type { Item, RecentMeal } from '@/api/types'
 import { pastMeals } from '@/components/day/past-meals'
 
 const oats = '0193c3a5-0000-7000-8000-0000000000f1'
@@ -22,18 +22,26 @@ function item(food: string | undefined, grams: number, name = 'Food'): Item {
   }
 }
 
-function meal(id: string, description: string, items: Item[]): Meal {
+// meal is a meal of before, of items, eaten at these times (the first
+// by default).
+function meal(
+  id: string,
+  description: string,
+  items: Item[],
+  eaten = ['2026-10-22T07:00:00Z'],
+): RecentMeal {
   return {
     id,
-    eaten_at: '2026-10-22T07:00:00Z',
+    eaten_at: eaten[0] ?? '',
     description,
     client: 'web',
     total: { kcal: 0, protein: 0, carbs: 0, fat: 0 },
     items,
+    eaten: eaten.map((at) => ({ at, day: at.slice(0, 10) })),
   }
 }
 
-const ids = (meals: Meal[]) => meals.map((m) => m.id)
+const ids = (meals: RecentMeal[]) => meals.map((m) => m.id)
 
 test('the meals of the same foods show once, the latest, whatever the amounts and names', () => {
   const meals = [
@@ -60,4 +68,19 @@ test('an estimate is told by its name, whatever its values', () => {
   ]
 
   expect(ids(pastMeals(meals))).toEqual(['pizza', 'stew', 'food'])
+})
+
+test('a meal of the same foods is eaten whenever any of them was, the latest first', () => {
+  const meals = [
+    meal('latest', '', [item(oats, 60)], ['2026-10-22T07:00:00Z', '2026-10-20T07:00:00Z']),
+    meal('more', '', [item(oats, 80)], ['2026-10-21T07:00:00Z']),
+  ]
+
+  const [only] = pastMeals(meals)
+  expect(only?.id).toBe('latest')
+  expect(only?.eaten.map((e) => e.at)).toEqual([
+    '2026-10-22T07:00:00Z',
+    '2026-10-21T07:00:00Z',
+    '2026-10-20T07:00:00Z',
+  ])
 })

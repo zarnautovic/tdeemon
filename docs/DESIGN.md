@@ -280,8 +280,15 @@ name and brand the user has (409, naming the food, archived too) where
 with `GET /api/v1/meals/recent`, a web session's only too: the latest
 meals of the latest 200, each meal eaten again once (the latest, of the
 same items in amounts within 1 %, as the duplicate warning tells them),
-of which the app shows the meals of the same foods once, the latest
-that a search matches, in whatever amounts.
+with when it and each time before were eaten (`eaten`, the instant and
+the day), of which the app shows the meals of the same foods once, the
+latest that a search matches, in whatever amounts. It offers them, and
+the foods, by the meal of the day being logged (breakfast, lunch, a
+snack, dinner, on the user's clock): first those eaten at it in the
+last 14 days, the most often first, then the others, and last those the
+day had already, as the meal logged a minute ago is not the next; with
+nothing searched for, the first meals of it are cards above the search.
+The slot and the order are the app's: the server says only when.
 The charts read
 `GET /api/v1/history?from=&to=&granularity=day|week`, the tool
 `get_history`: every day of a span of at most 366 days up to today (the
@@ -951,7 +958,13 @@ the first spec.
     warned of it and Undo, which takes back that change only (`last`,
     §5); a delete asks nothing first. The toasts are over a sheet too,
     so a change made in one is taken back there, and F6 takes the focus
-    to them from a sheet, which keeps Tab within it.
+    to them from a sheet, which keeps Tab within it. A sheet has one
+    primary button at a time: the quick add's new food (in short, its
+    other fields under More and on its page) and its estimate are a step
+    of their own, in the search's place, with Add to meal alone. The
+    quick add's search takes the focus as it opens, but on a touch screen
+    (`pointer: coarse`), whose keyboard would cover what it lists, only
+    when tapped.
   - The day judges nothing it shows (§8: logging is never judged; the
     plan works on the week's average). It has what was eaten against
     its target in a ring and the macros' bars, beside the TDEE and what

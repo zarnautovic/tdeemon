@@ -64,8 +64,10 @@ type itemBody struct {
 	Note      string        `json:"note,omitempty"`
 }
 
-// mealBody is a meal as stored, with its total.
-type mealBody struct {
+// MealBody is a meal as stored, with its total. It is exported so
+// recentMealBody can embed it: huma describes no field of an unexported
+// embedded struct.
+type MealBody struct {
 	ID          string        `json:"id" format:"uuid"`
 	EatenAt     time.Time     `json:"eaten_at"`
 	Description string        `json:"description"`
@@ -75,8 +77,8 @@ type mealBody struct {
 	Total       nutrientsBody `json:"total"`
 }
 
-func newMealBody(m *meal.Meal) mealBody {
-	b := mealBody{
+func newMealBody(m *meal.Meal) MealBody {
+	b := MealBody{
 		ID: m.ID.String(), EatenAt: m.EatenAt, Description: m.Description, Client: string(m.Client), Note: m.Note,
 		Items: make([]itemBody, 0, len(m.Items)), Total: newNutrientsBody(m.Total()),
 	}
@@ -122,7 +124,7 @@ type DaySummary struct {
 
 type dayBody struct {
 	DaySummary
-	Meals   []mealBody   `json:"meals" nullable:"false" doc:"In the order they were eaten."`
+	Meals   []MealBody   `json:"meals" nullable:"false" doc:"In the order they were eaten."`
 	Metrics []metricBody `json:"metrics" nullable:"false"`
 	Mood    int          `json:"mood,omitempty" minimum:"1" maximum:"5" doc:"The check-in's mood, 1 (low) to 5 (high); absent when not said."`
 	Hunger  int          `json:"hunger,omitempty" minimum:"1" maximum:"5" doc:"The check-in's hunger, 1 (not at all) to 5 (very); absent when not said."`
@@ -188,7 +190,7 @@ func (s *sessions) readDay(ctx context.Context, p auth.Principal, d day.Date, no
 		return dayBody{}, err
 	}
 	userID := p.User.ID
-	b := dayBody{Date: d.String(), Meals: []mealBody{}, Metrics: []metricBody{}}
+	b := dayBody{Date: d.String(), Meals: []MealBody{}, Metrics: []metricBody{}}
 	meals, err := s.db.MealsOfDay(ctx, userID, d)
 	if err != nil {
 		return b, err

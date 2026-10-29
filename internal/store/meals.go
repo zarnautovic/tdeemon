@@ -576,15 +576,17 @@ const (
 )
 
 // RecentMeals returns userID's latest meals, the latest first, each meal
-// eaten again once (meal.Distinct), the latest: at most limit of them, of
-// the latest 200 meals. They are what a meal logged anew may repeat.
-func (db *DB) RecentMeals(ctx context.Context, userID uuid.UUID, limit int) ([]meal.Meal, error) {
+// eaten again once (meal.Distinct), the latest, with the times it was
+// eaten before after it: at most limit of them, of the latest 200 meals.
+// They are what a meal logged anew may repeat, and how often and when
+// each was eaten.
+func (db *DB) RecentMeals(ctx context.Context, userID uuid.UUID, limit int) ([][]meal.Meal, error) {
 	ms, err := db.queryMeals(ctx, userID, latestMeals, recentMealsRead)
 	if err != nil {
 		return nil, fmt.Errorf("recent meals: %w", err)
 	}
-	ms = meal.Distinct(ms)
-	return ms[:min(len(ms), max(limit, 0), MaxRecentMeals)], nil
+	groups := meal.Distinct(ms)
+	return groups[:min(len(groups), max(limit, 0), MaxRecentMeals)], nil
 }
 
 // Intake is a day's meals and the kcal and macronutrients of their items.

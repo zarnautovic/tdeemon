@@ -540,6 +540,25 @@
         ],
         "type": "object"
       },
+      "EatenBody": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "day": {
+            "description": "The meal's logical day: a meal before the day's start hour is of the day before.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "day"
+        ],
+        "type": "object"
+      },
       "ErrorDetail": {
         "additionalProperties": false,
         "properties": {
@@ -2544,13 +2563,70 @@
         },
         "type": "object"
       },
+      "RecentMealBody": {
+        "additionalProperties": false,
+        "properties": {
+          "client": {
+            "description": "What the meal was logged through: api is the API with a token.",
+            "enum": [
+              "mcp",
+              "chat",
+              "web",
+              "telegram",
+              "import",
+              "api"
+            ],
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "eaten": {
+            "description": "When it and each meal of the same items before it were eaten, of your latest 200, the latest first: how often, and at which hours, it is eaten.",
+            "items": {
+              "$ref": "#/components/schemas/EatenBody"
+            },
+            "type": "array"
+          },
+          "eaten_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemBody"
+            },
+            "type": "array"
+          },
+          "note": {
+            "type": "string"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NutrientsBody"
+          }
+        },
+        "required": [
+          "eaten",
+          "id",
+          "eaten_at",
+          "description",
+          "client",
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
       "RecentMealsOutputBody": {
         "additionalProperties": false,
         "properties": {
           "meals": {
             "description": "The latest first.",
             "items": {
-              "$ref": "#/components/schemas/MealBody"
+              "$ref": "#/components/schemas/RecentMealBody"
             },
             "type": "array"
           }
@@ -6694,7 +6770,7 @@
     },
     "/api/v1/meals/recent": {
       "get": {
-        "description": "Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), of your latest 200: what a meal logged anew may repeat.",
+        "description": "Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), of your latest 200, with when it and each time before were eaten: what a meal logged anew may repeat, and how often and when each is eaten.",
         "operationId": "list-recent-meals",
         "parameters": [
           {

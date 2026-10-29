@@ -361,9 +361,25 @@ export const en = {
     mealLine: (when: string, items: string, kcal: string) => `${when} · ${items} · ${kcal}`,
     repeat: 'Repeat',
     repeatOf: (name: string) => `Repeat: ${name}`,
+    // The meals eaten lately at the meal of the day being logged.
+    forSlot: {
+      breakfast: 'For breakfast',
+      lunch: 'For lunch',
+      snack: 'For a snack',
+      dinner: 'For dinner',
+    },
     anEstimateOf: 'An estimate',
     newFood: 'A new food',
-    back: 'Back to the search',
+    back: 'Back to search',
+    addToMeal: 'Add to meal',
+    // The amount of a food made in the meal, eaten now, in its unit.
+    eatenNow: {
+      '100g': 'Eaten now (g)',
+      '100ml': 'Eaten now (ml)',
+      portion: 'Eaten now (portions)',
+    },
+    amountWrong: (most: { amount: string; portions: string }) =>
+      `An amount is more than 0 and at most ${most.amount} g or ml, or ${most.portions} portions.`,
     basket: 'In the meal',
     empty: 'Pick a food, or repeat a meal.',
     after: (kcal: string) => `after: ${kcal} kcal left`,
@@ -502,6 +518,9 @@ export const en = {
       alcohol: 'Alcohol (g)',
     },
     moreNutrients: 'More nutrients',
+    // A food made in a meal being logged: its brand, other nutrients,
+    // servings and other names.
+    moreFields: 'More',
     portionGrams: 'Grams of a portion',
     servings: 'Servings',
     serving: (n: number) => `Serving ${String(n)}`,

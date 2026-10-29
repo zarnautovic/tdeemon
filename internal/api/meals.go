@@ -251,7 +251,7 @@ func newWarningBodies(ws []meal.Warning) []warningBody {
 // stored, with what each item brought, where its day stands now, and
 // warnings to look at.
 type mealAnswerBody struct {
-	Meal     mealBody      `json:"meal"`
+	Meal     MealBody      `json:"meal"`
 	Day      DaySummary    `json:"day" doc:"The meal's day, with the meal."`
 	Warnings []warningBody `json:"warnings" nullable:"false"`
 }
@@ -795,10 +795,23 @@ type recentMealsInput struct {
 	Limit int `query:"limit" default:"20" minimum:"1" maximum:"50" doc:"The most meals."`
 }
 
+// eatenBody is when a meal was eaten, and the day it is of.
+type eatenBody struct {
+	At  time.Time `json:"at"`
+	Day string    `json:"day" format:"date" doc:"The meal's logical day: a meal before the day's start hour is of the day before."`
+}
+
+// recentMealBody is a meal to log again, with when each meal it stands
+// for was eaten.
+type recentMealBody struct {
+	MealBody
+	Eaten []eatenBody `json:"eaten" nullable:"false" doc:"When it and each meal of the same items before it were eaten, of your latest 200, the latest first: how often, and at which hours, it is eaten."`
+}
+
 type recentMealsOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
-		Meals []mealBody `json:"meals" nullable:"false" doc:"The latest first."`
+		Meals []recentMealBody `json:"meals" nullable:"false" doc:"The latest first."`
 	}
 }
 
@@ -807,14 +820,18 @@ func (s *sessions) recentMeals(ctx context.Context, in *recentMealsInput) (*rece
 	if err != nil {
 		return nil, err
 	}
-	ms, err := s.db.RecentMeals(ctx, p.User.ID, in.Limit)
+	groups, err := s.db.RecentMeals(ctx, p.User.ID, in.Limit)
 	if err != nil {
 		return nil, internalError("listing the recent meals failed", err)
 	}
 	out := &recentMealsOutput{CacheControl: "no-store"}
-	out.Body.Meals = make([]mealBody, 0, len(ms))
-	for i := range ms {
-		out.Body.Meals = append(out.Body.Meals, newMealBody(&ms[i]))
+	out.Body.Meals = make([]recentMealBody, 0, len(groups))
+	for _, g := range groups {
+		b := recentMealBody{MealBody: newMealBody(&g[0]), Eaten: make([]eatenBody, 0, len(g))}
+		for i := range g {
+			b.Eaten = append(b.Eaten, eatenBody{At: g[i].EatenAt, Day: g[i].Day.String()})
+		}
+		out.Body.Meals = append(out.Body.Meals, b)
 	}
 	return out, nil
 }
@@ -826,7 +843,8 @@ func (s *sessions) registerMeals(a huma.API) {
 		Path:        Prefix + "/meals/recent",
 		Summary:     "List your recent meals",
 		Description: "Needs a web session. Your latest meals, the latest first, each meal eaten again once (the latest), " +
-			"of your latest 200: what a meal logged anew may repeat.",
+			"of your latest 200, with when it and each time before were eaten: what a meal logged anew may repeat, " +
+			"and how often and when each is eaten.",
 		Tags:   []string{"meals"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden},
 	}, s.recentMeals)

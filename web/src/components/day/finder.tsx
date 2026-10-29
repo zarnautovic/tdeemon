@@ -1,14 +1,13 @@
 import { Tabs } from '@base-ui/react/tabs'
-import { ArrowLeft, Check, Plus, Repeat2, Search } from 'lucide-react'
+import { Check, Plus, Repeat2, Search } from 'lucide-react'
 import { Fragment, useEffect, useId, useRef, useState, type RefObject } from 'react'
 
 import { $api } from '@/api/client'
 import { useFindFoods } from '@/api/foods'
-import type { Food, Meal } from '@/api/types'
-import { EntryRow } from '@/components/day/entry-row'
+import { useRecentMeals } from '@/api/meals'
+import type { Food, Meal, RecentMeal } from '@/api/types'
 import {
   entryValues,
-  estimateEntry,
   foodEntry,
   inUnit,
   itemOf,
@@ -20,11 +19,13 @@ import {
   type FoodEntry,
 } from '@/components/day/meal-entries'
 import { longName, mealName } from '@/components/day/meal-slot'
+import type { Making } from '@/components/day/new-entry'
 import { pastMeals } from '@/components/day/past-meals'
-import { FoodForm } from '@/components/foods/food-form'
+import { suggestFoods, suggestMeals, type Moment } from '@/components/day/suggest'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { useDesktop } from '@/lib/media'
 import { matches, parts } from '@/lib/search'
 import { inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
@@ -43,33 +44,41 @@ const firstMeals = 3
 const firstFoods = 12
 
 // Finder finds what goes in a meal being logged: the foods of the user's
-// a search finds, or those eaten lately or most, and the meals of before;
-// a food picked opens in its row for its amount, in the amount it was
-// eaten in last, and a tap on its + adds it so. A new food is made here
-// too, and an estimate given. onAdd takes an entry, checked; onRepeat a
-// meal to log again. search is the field the sheet's focus goes to.
+// a search (query) finds, or those eaten lately or most, and the meals of
+// before; a food picked opens in its row for its amount, in the amount it
+// was eaten in last, and a tap on its + adds it so. What it offers first
+// is what is eaten at the meal of the day being logged (at, suggestMeals
+// and suggestFoods); with nothing searched for, the meals of it come as
+// cards above the search, repeated in a tap. A new food or an estimate
+// is the sheet's next step (onMake, with the button that asks for it).
+// onAdd takes an entry, checked; onRepeat a meal to log again. search is
+// the field the sheet's focus goes to.
 export function Finder({
   search,
-  timeZone,
+  query,
+  onQuery,
+  at,
   onAdd,
   onRepeat,
+  onMake,
 }: {
   search: RefObject<HTMLInputElement | null>
-  timeZone: string
+  query: string
+  onQuery: (query: string) => void
+  at: Moment
   onAdd: (entry: Entry) => void
   onRepeat: (meal: Meal) => void
+  onMake: (making: Making, button: HTMLElement) => void
 }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const [query, setQuery] = useState('')
   const [list, setList] = useState<List>('all')
   // The food picked, with its amount, which opens in its row.
   const [picked, setPicked] = useState<FoodEntry | undefined>(undefined)
   const [pickedWrong, setPickedWrong] = useState(false)
-  const [making, setMaking] = useState<'estimate' | 'food' | undefined>(undefined)
-  const [estimate, setEstimate] = useState<Entry>(estimateEntry)
-  const [estimateWrong, setEstimateWrong] = useState(false)
+  // Two cards side by side on a phone, three on a desktop's sheet.
+  const cards = useDesktop() ? 3 : 2
   const found = useFindFoods(query)
   const recentFoods = $api.useQuery('get', '/api/v1/foods/list', {
     params: { query: { order: 'use', limit: 50 } },
@@ -80,7 +89,7 @@ export function Finder({
     { params: { query: { order: 'frequent', limit: 50 } } },
     { enabled: list === 'frequent' },
   )
-  const recentMeals = $api.useQuery('get', '/api/v1/meals/recent')
+  const recentMeals = useRecentMeals()
   const q = query.trim()
 
   // eaten are the foods of a list eaten before, that the search matches.
@@ -91,17 +100,28 @@ export function Finder({
     )
   // The meals the search matches, by their words or their items' names
   // and brands, each once: of the meals of the same foods, the latest it
-  // matches.
-  const meals = pastMeals(
-    (recentMeals.data?.meals ?? []).filter((m) =>
-      matches(q, [m.description, ...m.items.flatMap((i) => [i.name, i.brand])]),
+  // matches; those eaten at the meal of the day lately first.
+  const ranked = suggestMeals(
+    pastMeals(
+      (recentMeals.data?.meals ?? []).filter((m) =>
+        matches(q, [m.description, ...m.items.flatMap((i) => [i.name, i.brand])]),
+      ),
     ),
+    at,
   )
+  // Nothing searched for, the first of the meal of the day are cards, which
+  // the lists leave out.
+  const suggested = q === '' ? ranked.meals.slice(0, Math.min(ranked.ofSlot, cards)) : []
+  const meals = ranked.meals.slice(suggested.length)
   const shown: Record<List, { foods: Food[]; meals: Meal[]; pending: boolean }> = {
     all:
       q === ''
         ? {
-            foods: eaten(recentFoods.data?.foods).slice(0, firstFoods),
+            foods: suggestFoods(
+              eaten(recentFoods.data?.foods),
+              recentMeals.data?.meals ?? [],
+              at,
+            ).slice(0, firstFoods),
             meals: meals.slice(0, firstMeals),
             pending: recentFoods.isPending || recentMeals.isPending,
           }
@@ -124,7 +144,7 @@ export function Finder({
     setPickedWrong(false)
   }
 
-  // add adds an entry checked, and goes back to the search for the next.
+  // add adds an entry checked.
   function add(entry: FoodEntry) {
     if (itemOf(entry, f.parse) === undefined) {
       setPicked(entry)
@@ -134,32 +154,6 @@ export function Finder({
     onAdd(entry)
     setPicked(undefined)
     setPickedWrong(false)
-    setQuery('')
-    search.current?.focus()
-  }
-
-  if (making === 'food') {
-    return (
-      <div className="space-y-3">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            setMaking(undefined)
-          }}
-        >
-          <ArrowLeft aria-hidden />
-          {t.log.back}
-        </Button>
-        <h3 className="text-h3">{t.log.newFood}</h3>
-        <FoodForm
-          onSaved={(food) => {
-            setMaking(undefined)
-            pick(food)
-          }}
-        />
-      </div>
-    )
   }
 
   const pickedRow = (food: Food) =>
@@ -177,6 +171,18 @@ export function Finder({
 
   return (
     <div className="space-y-3">
+      {suggested.length > 0 && (
+        <section aria-labelledby={`${id}-suggested`} className="space-y-2">
+          <h3 id={`${id}-suggested`} className="text-small font-semibold text-muted-foreground">
+            {t.log.forSlot[at.slot]}
+          </h3>
+          <ul className={cn('grid gap-2', cards === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+            {suggested.map((meal) => (
+              <Suggestion key={meal.id} meal={meal} onRepeat={onRepeat} />
+            ))}
+          </ul>
+        </section>
+      )}
       <label className="flex h-12 items-center gap-2.5 rounded-lg border-2 border-input bg-card px-3.5 focus-within:border-ring">
         <Search aria-hidden className="size-4.5 shrink-0 text-muted-foreground" />
         <span className="sr-only">{t.log.search}</span>
@@ -188,7 +194,7 @@ export function Finder({
           autoComplete="off"
           className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
           onChange={(e) => {
-            setQuery(e.currentTarget.value)
+            onQuery(e.currentTarget.value)
           }}
           onKeyDown={(e) => {
             // Enter opens the first food found, for its amount; it sends
@@ -203,13 +209,6 @@ export function Finder({
           }}
         />
       </label>
-      {/* A food made here, which no list has yet. */}
-      {picked !== undefined && !shown[list].foods.some((food) => food.id === picked.food.id) && (
-        <div className="rounded-lg border p-3">
-          <p className="font-medium">{picked.food.name}</p>
-          {pickedRow(picked.food)}
-        </div>
-      )}
       <Tabs.Root
         value={list}
         onValueChange={(value) => {
@@ -239,7 +238,9 @@ export function Finder({
             <Results
               {...shown[l]}
               query={q}
-              timeZone={timeZone}
+              timeZone={at.timeZone}
+              // The cards have said what there is.
+              quiet={suggested.length > 0}
               picked={picked?.food.id}
               pickedRow={pickedRow}
               onPick={(food) => {
@@ -257,68 +258,23 @@ export function Finder({
           </Tabs.Panel>
         ))}
       </Tabs.Root>
-      {making === 'estimate' && (
-        <div className="space-y-2 rounded-lg border p-3">
-          <ul>
-            <EntryRow
-              entry={estimate}
-              wrong={estimateWrong}
-              describedBy={estimateWrong ? `${id}-wrong` : undefined}
-              focus
-              onChange={(e) => {
-                setEstimate(e)
-              }}
-              onRemove={() => {
-                setMaking(undefined)
-                setEstimateWrong(false)
-              }}
-            />
-          </ul>
-          {estimateWrong && (
-            <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
-              {t.log.wrong(most(f.number))}
-            </p>
-          )}
-          <Button
-            variant="outline"
-            onClick={() => {
-              if (itemOf(estimate, f.parse) === undefined) {
-                setEstimateWrong(true)
-                return
-              }
-              onAdd(estimate)
-              setEstimate(estimateEntry())
-              setEstimateWrong(false)
-              setMaking(undefined)
-              search.current?.focus()
-            }}
-          >
-            <Check aria-hidden />
-            {t.log.addOf(
-              estimate.kind === 'estimate' ? estimate.name.trim() || t.log.anEstimate : '',
-            )}
-          </Button>
-        </div>
-      )}
       {/* Side by side while they fit, their words wrapped. */}
       <div className="flex flex-wrap gap-2">
-        {making === undefined && (
-          <Button
-            variant="outline"
-            className="h-auto min-h-11 min-w-0 flex-1 basis-40 border-dashed py-2 whitespace-normal"
-            onClick={() => {
-              setMaking('estimate')
-            }}
-          >
-            <Plus aria-hidden />
-            {t.log.anEstimateOf}
-          </Button>
-        )}
         <Button
           variant="outline"
           className="h-auto min-h-11 min-w-0 flex-1 basis-40 border-dashed py-2 whitespace-normal"
-          onClick={() => {
-            setMaking('food')
+          onClick={(e) => {
+            onMake('estimate', e.currentTarget)
+          }}
+        >
+          <Plus aria-hidden />
+          {t.log.anEstimateOf}
+        </Button>
+        <Button
+          variant="outline"
+          className="h-auto min-h-11 min-w-0 flex-1 basis-40 border-dashed py-2 whitespace-normal"
+          onClick={(e) => {
+            onMake('food', e.currentTarget)
           }}
         >
           <Plus aria-hidden />
@@ -329,14 +285,44 @@ export function Finder({
   )
 }
 
+// Suggestion is a meal eaten lately at the meal of the day being logged,
+// as a card: its name, its kcal, and Repeat, which logs it again.
+function Suggestion({ meal, onRepeat }: { meal: RecentMeal; onRepeat: (meal: Meal) => void }) {
+  const t = useMessages()
+  const f = useFormat()
+  const name = mealName(meal, t)
+
+  return (
+    <li className="flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3">
+      <span className="line-clamp-2 font-medium wrap-break-word">{name}</span>
+      <span className="text-caption text-muted-foreground">
+        {t.unit.kcal(f.number(meal.total.kcal))}
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="mt-auto w-full text-primary"
+        aria-label={t.log.repeatOf(name)}
+        onClick={() => {
+          onRepeat(meal)
+        }}
+      >
+        <Repeat2 aria-hidden />
+        {t.log.repeat}
+      </Button>
+    </li>
+  )
+}
+
 // Results are a list's foods and meals, or what there is to say when it
-// has none.
+// has none, unless it is quiet: what there is was said already.
 function Results({
   foods,
   meals,
   pending,
   query,
   timeZone,
+  quiet,
   picked,
   pickedRow,
   onPick,
@@ -349,6 +335,7 @@ function Results({
   // What was searched for, trimmed.
   query: string
   timeZone: string
+  quiet: boolean
   picked: string | undefined
   pickedRow: (food: Food) => React.ReactNode
   onPick: (food: Food) => void
@@ -358,6 +345,9 @@ function Results({
   const t = useMessages()
   const searched = query !== ''
   if (foods.length === 0 && meals.length === 0) {
+    if (quiet && !pending) {
+      return null
+    }
     return (
       <p className="py-2 text-sm text-muted-foreground">
         {pending ? t.loading : searched ? t.log.nothing : t.log.none}

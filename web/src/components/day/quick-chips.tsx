@@ -1,11 +1,12 @@
 import { Repeat2 } from 'lucide-react'
 
 import { $api } from '@/api/client'
-import { useLogMeal } from '@/api/meals'
+import { useLogMeal, useRecentMeals } from '@/api/meals'
 import type { Food } from '@/api/types'
 import { lastAmountOf, repeatOf } from '@/components/day/meal-entries'
 import { mealName, slotAt } from '@/components/day/meal-slot'
 import { RepeatStatus } from '@/components/day/repeat-meal'
+import { suggestFoods } from '@/components/day/suggest'
 import { Button } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -16,8 +17,10 @@ const chipFoods = 4
 
 // QuickChips add to today in a tap: yesterday's meal of the meal of the
 // day it is now (Yesterday's lunch), logged again now, and the foods
-// logged most, each opening the meal to log with it in it, in the amount
-// it was eaten in last (onFood). Nothing to offer, they are not there.
+// logged most, those eaten at that meal of the day lately first, as the
+// quick add offers them (suggestFoods), each opening the meal to log with
+// it in it, in the amount it was eaten in last (onFood). Nothing to
+// offer, they are not there.
 export function QuickChips({
   date,
   timeZone,
@@ -42,6 +45,7 @@ export function QuickChips({
   const frequent = $api.useQuery('get', '/api/v1/foods/list', {
     params: { query: { order: 'frequent', limit: 50 } },
   })
+  const recent = useRecentMeals()
   const repeat = useLogMeal(date, (answer) => {
     sayChange(
       {
@@ -57,9 +61,11 @@ export function QuickChips({
   const meal = yesterday.data?.meals.findLast(
     (m) => slotAt(Date.parse(m.eaten_at), timeZone) === slot,
   )
-  const foods = (frequent.data?.foods ?? [])
-    .filter((food) => food.last_use !== undefined)
-    .slice(0, chipFoods)
+  const foods = suggestFoods(
+    (frequent.data?.foods ?? []).filter((food) => food.last_use !== undefined),
+    recent.data?.meals ?? [],
+    { slot, now, timeZone, date },
+  ).slice(0, chipFoods)
 
   if (meal === undefined && foods.length === 0) {
     return null

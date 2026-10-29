@@ -1186,8 +1186,40 @@ func TestNewFoodServingsWithItsUnit(t *testing.T) {
 	}
 }
 
+// recentMealsSaid is each meal of an answer of list-recent-meals in a
+// line: its description, how many items, and when it was eaten, of which
+// day.
+func recentMealsSaid(t *testing.T, answer []byte) []string {
+	t.Helper()
+	var body struct {
+		Meals []struct {
+			Description string `json:"description"`
+			Items       []struct {
+				Name string `json:"name"`
+			} `json:"items"`
+			Eaten []struct {
+				At  time.Time `json:"at"`
+				Day string    `json:"day"`
+			} `json:"eaten"`
+		} `json:"meals"`
+	}
+	if err := json.Unmarshal(answer, &body); err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, m := range body.Meals {
+		eaten := make([]string, 0, len(m.Eaten))
+		for _, e := range m.Eaten {
+			eaten = append(eaten, e.At.UTC().Format(time.DateTime)+" of "+e.Day)
+		}
+		out = append(out, fmt.Sprintf("%s (%d) %v", m.Description, len(m.Items), eaten))
+	}
+	return out
+}
+
 // list-recent-meals is the user's latest meals, the latest first, a meal
-// eaten again once (the latest), for a web session only.
+// eaten again once (the latest) with when it was eaten each time, for a
+// web session only.
 func TestRecentMeals(t *testing.T) {
 	t.Parallel()
 
@@ -1219,28 +1251,17 @@ func TestRecentMeals(t *testing.T) {
 		if rec.Code != http.StatusOK || rec.Header().Get("Cache-Control") != "no-store" {
 			t.Fatalf("GET /api/v1/meals/recent%s: %d %s", query, rec.Code, rec.Body.String())
 		}
-		var body struct {
-			Meals []struct {
-				Description string `json:"description"`
-				Items       []struct {
-					Name string `json:"name"`
-				} `json:"items"`
-			} `json:"meals"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-			t.Fatal(err)
-		}
-		var out []string
-		for _, m := range body.Meals {
-			out = append(out, fmt.Sprintf("%s (%d)", m.Description, len(m.Items)))
-		}
-		return out
+		return recentMealsSaid(t, rec.Body.Bytes())
 	}
 	name := in.user.Name
-	if got, want := recent(""), []string{name + "'s lunch (2)", name + "'s dinner (1)"}; !slices.Equal(got, want) {
+	// Each with when it was eaten, of its day, and the lunch the day
+	// before too.
+	of := func(t time.Time) string { return t.UTC().Format(time.DateTime) + " of " + day.DateOf(t).String() }
+	lunch := fmt.Sprintf("%s's lunch (2) [%s %s]", name, of(now), of(at))
+	if got, want := recent(""), []string{lunch, fmt.Sprintf("%s's dinner (1) [%s]", name, of(now.AddDate(0, 0, -2)))}; !slices.Equal(got, want) {
 		t.Errorf("recent meals = %v, want %v", got, want)
 	}
-	if got, want := recent("?limit=1"), []string{name + "'s lunch (2)"}; !slices.Equal(got, want) {
+	if got, want := recent("?limit=1"), []string{lunch}; !slices.Equal(got, want) {
 		t.Errorf("recent meals, one = %v, want %v", got, want)
 	}
 	for _, q := range []string{"?limit=0", "?limit=51"} {

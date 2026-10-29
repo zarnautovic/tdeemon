@@ -392,8 +392,27 @@ func TestMealsOfDayAndBetween(t *testing.T) {
 	}
 }
 
+// mealIDs are the ids of meals, in their order.
+func mealIDs(ms []meal.Meal) []uuid.UUID {
+	out := make([]uuid.UUID, len(ms))
+	for i := range ms {
+		out[i] = ms[i].ID
+	}
+	return out
+}
+
+// firstMealIDs are the ids of the first meal of each group.
+func firstMealIDs(groups [][]meal.Meal) []uuid.UUID {
+	out := make([]uuid.UUID, len(groups))
+	for i := range groups {
+		out[i] = groups[i][0].ID
+	}
+	return out
+}
+
 // RecentMeals are the user's latest meals, the latest first, a meal eaten
-// again once, the latest, of the latest 200 meals.
+// again once, the latest, with the times before it, of the latest 200
+// meals.
 func TestRecentMeals(t *testing.T) {
 	t.Parallel()
 
@@ -408,22 +427,18 @@ func TestRecentMeals(t *testing.T) {
 	bite := createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{snack}})
 	again := createMeal(t, db, ana, breakfast(t, bar, t0.Add(24*time.Hour)))
 	createMeal(t, db, ivo, breakfast(t, saveFood(t, db, ivo, bar), t0.Add(48*time.Hour)))
-	ids := func(ms []meal.Meal) []uuid.UUID {
-		out := make([]uuid.UUID, len(ms))
-		for i := range ms {
-			out[i] = ms[i].ID
-		}
-		return out
-	}
 	got, err := db.RecentMeals(t.Context(), ana, 10)
-	if err != nil || !slices.Equal(ids(got), []uuid.UUID{again.ID, bite.ID}) || len(got[0].Items) != 2 {
-		t.Errorf("RecentMeals = %v, %v; want the breakfast eaten again, then the bar, without %v", ids(got), err, old.ID)
+	if err != nil || !slices.Equal(firstMealIDs(got), []uuid.UUID{again.ID, bite.ID}) || len(got[0][0].Items) != 2 {
+		t.Fatalf("RecentMeals = %v, %v; want the breakfast eaten again, then the bar", firstMealIDs(got), err)
 	}
-	if got, _ := db.RecentMeals(t.Context(), ana, 1); !slices.Equal(ids(got), []uuid.UUID{again.ID}) {
-		t.Errorf("RecentMeals of 1 = %v", ids(got))
+	if !slices.Equal(mealIDs(got[0]), []uuid.UUID{again.ID, old.ID}) || !slices.Equal(mealIDs(got[1]), []uuid.UUID{bite.ID}) {
+		t.Errorf("RecentMeals' times = %v and %v; want the breakfast's two, the latest first, and the bar's one", mealIDs(got[0]), mealIDs(got[1]))
+	}
+	if got, _ := db.RecentMeals(t.Context(), ana, 1); !slices.Equal(firstMealIDs(got), []uuid.UUID{again.ID}) {
+		t.Errorf("RecentMeals of 1 = %v", firstMealIDs(got))
 	}
 	if got, _ := db.RecentMeals(t.Context(), ana, 0); len(got) != 0 {
-		t.Errorf("RecentMeals of 0 = %v", ids(got))
+		t.Errorf("RecentMeals of 0 = %v", firstMealIDs(got))
 	}
 
 	// Of the latest 200: a meal before them is not among them.
@@ -431,8 +446,9 @@ func TestRecentMeals(t *testing.T) {
 		at := t0.Add(time.Duration(i+100) * time.Hour)
 		createMeal(t, db, ana, meal.Meal{ID: uuid.NewV7(), EatenAt: at, Day: day.DateOf(at), Client: meal.ClientWeb, Items: []meal.Item{snack}})
 	}
-	if got, _ := db.RecentMeals(t.Context(), ana, store.MaxRecentMeals+1); len(got) != 1 || got[0].ID == bite.ID {
-		t.Errorf("RecentMeals after 201 bars = %v, want the latest bar alone", ids(got))
+	// The bars are one meal, of the latest 200 times.
+	if got, _ := db.RecentMeals(t.Context(), ana, store.MaxRecentMeals+1); len(got) != 1 || len(got[0]) != 200 || slices.Contains(mealIDs(got[0]), bite.ID) {
+		t.Errorf("RecentMeals after 201 bars = %v, want the latest bar alone, of 200 times", firstMealIDs(got))
 	}
 
 	if err := db.Close(); err != nil {

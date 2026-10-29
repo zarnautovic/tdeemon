@@ -28,7 +28,7 @@ func TestMorningText(t *testing.T) {
 		Date: "2026-10-22", Status: "complete", Type: "training",
 		Total:   nutrientsBody{Kcal: 2310.4, Protein: 176.2, Carbs: 210, Fat: 70.4},
 		Target:  &dayTargetBody{Kcal: 2400, Protein: 175, Carbs: 230, Fat: 75},
-		Meals:   []mealBody{{}},
+		Meals:   []MealBody{{}},
 		Metrics: metrics("steps", 6512.0, "active_kcal", 520.4, "exercise_min", 45.0, "sleep_h", 5.0),
 	}
 	onTarget := verdictBody{Rate: "on_target", MeasuredPctWeek: new(-0.62), TargetPctWeek: new(-0.7), Action: "hold"}
@@ -67,7 +67,7 @@ Kalibracija: nema plana (faze i cilja), pa nema tempa za ocijeniti`,
 			td:   dayBody{Metrics: metrics("sleep_h", 0.0)},
 			yd: dayBody{
 				Type: "training", Status: "excluded", Total: nutrientsBody{Kcal: 1800, Protein: 120.5, Carbs: 150, Fat: 60},
-				Meals: []mealBody{{}}, Metrics: metrics("steps", 0.0),
+				Meals: []MealBody{{}}, Metrics: metrics("steps", 0.0),
 			},
 			sum: summaryBody{Trend: &trendBody{Kg: 80, Date: "2026-10-20"}, Verdict: verdictBody{Rate: "none", Reasons: []string{"not_trusted"}}},
 			want: `Jutarnji sažetak, petak 23. 10.
@@ -127,7 +127,7 @@ func TestMorningTextInEnglish(t *testing.T) {
 	td := dayBody{Metrics: metrics("sleep_h", 6.75, "weight", 80.25)}
 	yd := dayBody{
 		Type: "training", Status: "complete", Total: nutrientsBody{Kcal: 2010, Protein: 150.4, Carbs: 200, Fat: 60},
-		Target: &dayTargetBody{Kcal: 2100, Protein: 150, Carbs: 220, Fat: 65}, Meals: []mealBody{{}},
+		Target: &dayTargetBody{Kcal: 2100, Protein: 150, Carbs: 220, Fat: 65}, Meals: []MealBody{{}},
 		Metrics: metrics("steps", 8000.0),
 	}
 	sum := summaryBody{
