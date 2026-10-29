@@ -49,8 +49,9 @@ func (e mealsEnv) lunch(id string) string {
 }
 
 // log_meal stores a meal of each kind of item, under the client's id, at
-// the time of the id, and answers with the meal, where the day stands and
-// any warnings; the same meal sent again is a retry.
+// the time of the id, and answers with the meal (a food's item with its
+// name and brand apart), where the day stands and any warnings; the same
+// meal sent again is a retry.
 func TestLogMeal(t *testing.T) {
 	t.Parallel()
 
@@ -71,7 +72,7 @@ func TestLogMeal(t *testing.T) {
 			"items": [
 				{"id": "*", "food_id": %[3]q, "name": "Ana's rye bread", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g",
 				 "nutrients": {"kcal": 207, "protein": 6.8, "carbs": 38.4, "fat": 2.6, "fiber": 4.8}, "source": "user", "note": "toasted"},
-				{"id": "*", "food_id": %[4]q, "name": "Dukat Greek yoghurt", "quantity": {"amount": 200, "unit": "g"}, "amount": 200, "unit": "g",
+				{"id": "*", "food_id": %[4]q, "name": "Greek yoghurt", "brand": "Dukat", "quantity": {"amount": 200, "unit": "g"}, "amount": 200, "unit": "g",
 				 "nutrients": {"kcal": 146, "protein": 19, "carbs": 7.2, "fat": 4}, "source": "label"},
 				{"id": "*", "name": "Restaurant pasta", "quantity": {"portions": 1}, "amount": 1, "unit": "portion",
 				 "nutrients": {"kcal": 850, "protein": 32, "carbs": 105, "fat": 30}, "source": "estimate"}

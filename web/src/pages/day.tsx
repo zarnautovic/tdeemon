@@ -20,17 +20,27 @@ import { LoadError } from '@/components/load-error'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { useShortcuts } from '@/lib/shortcuts'
 import type { DaySearch } from '@/router'
 
 // DayKeys moves a day back or ahead by the keyboard's arrows, as the
-// page's arrows do: to the day before, and to the day after up to today.
-function DayKeys({ before, after }: { before: DaySearch; after: DaySearch | undefined }) {
+// page's arrows do: to the day before, from the first day on, and to the
+// day after up to today.
+function DayKeys({
+  before,
+  after,
+}: {
+  before: DaySearch | undefined
+  after: DaySearch | undefined
+}) {
   const navigate = useNavigate()
   useShortcuts({
-    ArrowLeft: () => {
-      void navigate({ to: '/', search: before })
-    },
+    ...(before && {
+      ArrowLeft: () => {
+        void navigate({ to: '/', search: before })
+      },
+    }),
     ...(after && {
       ArrowRight: () => {
         void navigate({ to: '/', search: after })
@@ -110,57 +120,90 @@ export function DayPage() {
   const after = addDays(shown, 1)
   // A day's link: today's is / itself.
   const searchOf = (d: string) => (d === todayDate ? {} : { date: d })
+  // The arrows go back to the first day a history is of, which the
+  // router takes a day from, and ahead up to today.
+  const hasBefore = shown > limits.history.since
   const hasNext = todayDate !== undefined && shown < todayDate
   // What the day's target leaves, as its ring says it.
   const left =
     day.data.target === undefined ? undefined : kcalLeft(day.data.total.kcal, day.data.target.kcal)
+  const arrow = buttonVariants({ variant: 'ghost', size: 'icon-sm' })
+  // An arrow there is none of keeps the place of one.
+  const noArrow = <span className="size-11 shrink-0 lg:size-9" />
+  const previous = hasBefore ? (
+    <Link
+      to="/"
+      search={searchOf(before)}
+      // Another day is never the current page: its date must match too,
+      // not be left out.
+      activeOptions={{ exact: true }}
+      aria-label={t.day.previous}
+      className={arrow}
+    >
+      <ChevronLeft aria-hidden />
+    </Link>
+  ) : (
+    noArrow
+  )
+  const next = hasNext ? (
+    <Link
+      to="/"
+      search={searchOf(after)}
+      activeOptions={{ exact: true }}
+      aria-label={t.day.next}
+      className={arrow}
+    >
+      <ChevronRight aria-hidden />
+    </Link>
+  ) : (
+    noArrow
+  )
+  // Of the day shown, not of the one before while it comes.
+  const dayType = (
+    <div inert={waiting}>
+      <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
+    </div>
+  )
 
   return (
     <div className="max-w-3xl space-y-4 lg:max-w-none">
-      <DayKeys before={searchOf(before)} after={hasNext ? searchOf(after) : undefined} />
-      <header className="flex items-center gap-2">
-        <div className="flex shrink-0 items-center">
-          <Link
-            to="/"
-            search={searchOf(before)}
-            // Another day is never the current page: its date must match
-            // too, not be left out.
-            activeOptions={{ exact: true }}
-            aria-label={t.day.previous}
-            className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
-          >
-            <ChevronLeft aria-hidden />
-          </Link>
-          {hasNext ? (
+      <DayKeys
+        before={hasBefore ? searchOf(before) : undefined}
+        after={hasNext ? searchOf(after) : undefined}
+      />
+      {isToday ? (
+        <header className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center">
+            {previous}
+            {next}
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-title">{t.day.today}</h1>
+            <p className="text-small text-muted-foreground">{f.date(shown, todayDate)}</p>
+          </div>
+          {dayType}
+        </header>
+      ) : (
+        // Another day's: its date between the arrows, on a line of its
+        // own, its type under it, and the way back to today right there.
+        <header className="flex items-start gap-2 lg:max-w-md">
+          {previous}
+          <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
+            <h1 className="flex min-h-11 items-center text-h3 text-balance lg:min-h-9 lg:text-h2">
+              {f.date(shown, todayDate)}
+            </h1>
+            {dayType}
             <Link
               to="/"
-              search={searchOf(after)}
               activeOptions={{ exact: true }}
-              aria-label={t.day.next}
-              className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+              className="relative flex h-9 items-center rounded-full bg-primary-soft px-4 text-small font-semibold text-primary outline-none after:absolute after:inset-x-0 after:-inset-y-1 after:content-[''] hover:bg-primary-soft/70 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
-              <ChevronRight aria-hidden />
+              {t.day.toToday}
             </Link>
-          ) : (
-            // Keeps the title where it is.
-            <span className="size-11 lg:size-9" />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          {isToday ? (
-            <>
-              <h1 className="text-title">{t.day.today}</h1>
-              <p className="text-small text-muted-foreground">{f.date(shown, todayDate)}</p>
-            </>
-          ) : (
-            <h1 className="text-h2">{f.date(shown, todayDate)}</h1>
-          )}
-        </div>
-        {/* Of the day shown, not of the one before while it comes. */}
-        <div inert={waiting}>
-          <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
-        </div>
-      </header>
+          </div>
+          {next}
+        </header>
+      )}
       {todayDate !== undefined && <WeekStrip date={shown} today={todayDate} />}
       <div
         aria-busy={waiting}
@@ -263,15 +306,6 @@ export function DayPage() {
           timeZone={timeZone}
           startHour={session.data?.user.day_start_hour ?? 0}
         />
-      )}
-      {!isToday && (
-        <Link
-          to="/"
-          activeOptions={{ exact: true }}
-          className={buttonVariants({ variant: 'outline', className: 'w-full' })}
-        >
-          {t.day.toToday}
-        </Link>
       )}
     </div>
   )

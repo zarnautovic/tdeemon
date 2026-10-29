@@ -13,6 +13,7 @@ import { statusOf } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
 import { isDate } from '@/i18n/format'
 import { setLocale } from '@/i18n/locale'
+import limits from '@/lib/limits.json'
 import { AccountPage } from '@/pages/account'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
@@ -91,8 +92,9 @@ const loginRoute = createRoute({
   component: LoginPage,
 })
 
-// The day's date, YYYY-MM-DD; without it, or with one that is no date
-// (2026-02-31), today. log opens the form to log a meal (the app's Log a
+// The day's date, YYYY-MM-DD; without it, with one that is no date
+// (2026-02-31), or one before the first day a history is of (1900-01-01,
+// limits.json), today. log opens the form to log a meal (the app's Log a
 // meal), which takes it out of the address once open.
 const dayRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -100,7 +102,10 @@ const dayRoute = createRoute({
   // The router keeps the URL's keys a validator leaves out, so a date
   // that is none is set undefined, not left out.
   validateSearch: (search: Record<string, unknown>): DaySearch => ({
-    date: typeof search.date === 'string' && isDate(search.date) ? search.date : undefined,
+    date:
+      typeof search.date === 'string' && isDate(search.date) && search.date >= limits.history.since
+        ? search.date
+        : undefined,
     log: search.log === true || search.log === 'true' ? true : undefined,
   }),
   component: DayPage,

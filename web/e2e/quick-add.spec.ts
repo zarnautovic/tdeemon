@@ -26,7 +26,7 @@ test('a meal of before is logged again in two taps', async ({ page }) => {
     .getByRole('button', { name: 'Repeat: Lentil soup' })
     .click()
 
-  await expect(page.getByText('Logged: Lentil soup · 310 kcal')).toBeVisible()
+  await expect(page.getByText('Repeated: Lentil soup · 310 kcal')).toBeVisible()
   await expect(page.getByRole('dialog', { name: 'A new meal' })).toBeHidden()
   await expect(soups).toHaveCount(2)
 })

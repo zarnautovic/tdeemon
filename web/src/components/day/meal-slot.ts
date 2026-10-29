@@ -1,4 +1,6 @@
 import type { Meal } from '@/api/types'
+import { itemName } from '@/components/day/meal-entries'
+import type { Messages } from '@/i18n/en'
 import { clockAt } from '@/lib/zoned'
 
 export type Slot = 'breakfast' | 'lunch' | 'snack' | 'dinner'
@@ -22,7 +24,7 @@ export function slotAt(instant: number, timeZone: string): Slot {
 
 // The longest description a meal's row takes for its name. A longer one,
 // a model's list of what was eaten, goes under the name, which is then
-// the meal of the day it was eaten at (Lunch).
+// what was in it.
 const nameLength = 40
 
 // longName tells a description too long for a meal's name.
@@ -30,14 +32,27 @@ export function longName(description: string): boolean {
   return description.length > nameLength
 }
 
-// mealName is a meal's name in a row: its description, when it has a
-// short one, or else the meal of the day it was eaten at, in words.
-export function mealName(
-  meal: Pick<Meal, 'description' | 'eaten_at'>,
-  timeZone: string,
-  slots: Record<Slot, string>,
-): string {
+// namedBy is the name of a meal of what these names name, when it has
+// none of its own: the one ("Skyr"), both ("Skyr and banana"), or the
+// first and how many more ("Skyr + 2"). Not the meal of the day it was
+// eaten at: a day of three snacks would have three meals of one name, and
+// its time says when it was.
+export function namedBy(names: readonly string[], t: Messages): string {
+  const [first = '', second] = names
+  if (second === undefined) {
+    return first
+  }
+  return names.length === 2 ? t.meal.both(first, second) : t.meal.andMore(first, names.length - 1)
+}
+
+// mealName is a meal's name in a row or a toast: its description, when it
+// has a short one, or else what was in it (namedBy), each item by its
+// name without its brand.
+export function mealName(meal: Pick<Meal, 'description' | 'items'>, t: Messages): string {
   return meal.description && !longName(meal.description)
     ? meal.description
-    : slots[slotAt(Date.parse(meal.eaten_at), timeZone)]
+    : namedBy(
+        meal.items.map((item) => itemName({ name: item.name }, t)),
+        t,
+      )
 }

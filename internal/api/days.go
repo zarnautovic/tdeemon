@@ -54,6 +54,7 @@ type itemBody struct {
 	ID       string       `json:"id" format:"uuid"`
 	FoodID   *string      `json:"food_id,omitempty" format:"uuid" doc:"The food it came from; absent for a one-off estimate."`
 	Name     string       `json:"name" doc:"The food's name when the item was logged, or the estimate's."`
+	Brand    string       `json:"brand,omitempty" doc:"The food's brand when the item was logged; absent for none, and for an estimate."`
 	Quantity quantityBody `json:"quantity" doc:"How much, as it was given."`
 	Amount   float64      `json:"amount" doc:"How much, in unit: what the nutrients are for."`
 	Unit     string       `json:"unit" enum:"g,ml,portion"`
@@ -82,7 +83,7 @@ func newMealBody(m *meal.Meal) mealBody {
 	for i := range m.Items {
 		it := &m.Items[i]
 		ib := itemBody{
-			ID: it.ID.String(), Name: it.Name, Amount: it.Amount, Unit: it.Unit,
+			ID: it.ID.String(), Name: it.Name, Brand: it.Brand, Amount: it.Amount, Unit: it.Unit,
 			Quantity: quantityBody{
 				Amount: it.Quantity.Amount, Unit: it.Quantity.Unit,
 				Servings: it.Quantity.Servings, Serving: it.Quantity.Serving, Portions: it.Quantity.Portions,

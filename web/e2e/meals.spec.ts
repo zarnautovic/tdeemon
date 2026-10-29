@@ -107,7 +107,7 @@ test('a meal is repeated today in a tap', async ({ page }) => {
   await expect(toast).toHaveCount(1)
   await openMeal(toast)
   await toast.getByRole('button', { name: 'Repeat today: Toast' }).click()
-  await expect(page.getByText('Logged again, today at this time.')).toBeVisible()
+  await expect(page.getByText('Repeated: Toast · 260 kcal')).toBeVisible()
   await expect(toast).toHaveCount(2)
 })
 

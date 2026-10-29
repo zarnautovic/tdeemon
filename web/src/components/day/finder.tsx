@@ -89,11 +89,12 @@ export function Finder({
       (food) =>
         food.last_use !== undefined && matches(q, [food.name, food.brand, ...(food.aliases ?? [])]),
     )
-  // The meals the search matches, each once: of the meals of the same
-  // foods, the latest it matches.
+  // The meals the search matches, by their words or their items' names
+  // and brands, each once: of the meals of the same foods, the latest it
+  // matches.
   const meals = pastMeals(
     (recentMeals.data?.meals ?? []).filter((m) =>
-      matches(q, [m.description, ...m.items.map((i) => i.name)]),
+      matches(q, [m.description, ...m.items.flatMap((i) => [i.name, i.brand])]),
     ),
   )
   const shown: Record<List, { foods: Food[]; meals: Meal[]; pending: boolean }> = {
@@ -624,7 +625,7 @@ function MealResult({
 }) {
   const t = useMessages()
   const f = useFormat()
-  const name = mealName(meal, timeZone, t.meal.slots)
+  const name = mealName(meal, t)
 
   return (
     <li className="flex min-h-14 items-center gap-3 px-2 py-2">
@@ -636,8 +637,7 @@ function MealResult({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium">
-          {/* The meal of the day it was eaten at is no text searched. */}
-          {name === meal.description ? <Marked text={name} query={query} /> : name}
+          <Marked text={name} query={query} />
         </span>
         {longName(meal.description) && (
           <span className="block truncate text-caption text-muted-foreground">

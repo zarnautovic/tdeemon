@@ -1145,6 +1145,10 @@
             "format": "double",
             "type": "number"
           },
+          "brand": {
+            "description": "The food's brand when the item was logged; absent for none, and for an estimate.",
+            "type": "string"
+          },
           "food_id": {
             "description": "The food it came from; absent for a one-off estimate.",
             "format": "uuid",

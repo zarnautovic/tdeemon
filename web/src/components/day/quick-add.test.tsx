@@ -223,6 +223,58 @@ test("a meal is logged of a food of the user's and an estimate, each with what i
   ])
 })
 
+test('a meal without a name is named by what is in it, as its field and its toast say', async () => {
+  const sent: unknown[] = []
+  const coffee: Item = {
+    id: '0193c3a5-0000-7000-8000-0000000000c2',
+    name: 'Coffee',
+    quantity: { portions: 1 },
+    amount: 1,
+    unit: 'portion',
+    nutrients: { kcal: 50, protein: 1, carbs: 1, fat: 1 },
+    source: 'estimate',
+  }
+  logServer('2026-10-23', {
+    'POST /api/v1/meals': async (request) => {
+      sent.push(await request.json())
+      return Response.json(
+        {
+          meal: {
+            ...porridge,
+            id: '0193c3a5-0000-7000-8000-0000000000a1',
+            description: '',
+            items: [slices, coffee],
+            total: { kcal: 257, protein: 7.8, carbs: 39.4, fat: 3.6 },
+          },
+          day: { date: '2026-10-23', status: 'open', type: 'rest', total: day().total },
+          warnings: [],
+        },
+        { status: 201 },
+      )
+    },
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  fireEvent.click(sheet.getByRole('button', { name: 'Change the name and time' }))
+  const name = sheet.getByLabelText('What it was')
+  await findRye(sheet)
+  fireEvent.click(sheet.getByRole('button', { name: 'Add: Rye bread' }))
+  expect(name).toHaveProperty('placeholder', 'Rye bread')
+  await giveEstimate(sheet, 'Coffee', '50')
+  expect(name).toHaveProperty('placeholder', 'Rye bread and Coffee')
+  await giveEstimate(sheet, 'Jam', '40')
+  expect(name).toHaveProperty('placeholder', 'Rye bread + 2')
+  fireEvent.click(sheet.getByRole('button', { name: 'Remove: Jam' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'Log 2 items · 257 kcal' }))
+
+  // Not by the hour's meal: what it was, and its kcal.
+  expect(await screen.findByText(/^Logged: Rye bread and Coffee · 257 kcal/)).toBeDefined()
+  // Its name is the app's, not sent.
+  expect(sent).toHaveLength(1)
+  expect(sent[0]).not.toHaveProperty('description')
+})
+
 test('a meal of before is logged again in two taps', async () => {
   const server = logServer()
   renderAt('/')
@@ -230,7 +282,8 @@ test('a meal of before is logged again in two taps', async () => {
   const sheet = await openSheet()
   fireEvent.click(await sheet.findByRole('button', { name: 'Repeat: Porridge' }))
 
-  expect(await screen.findByText(/^Logged: Breakfast · 207 kcal/)).toBeDefined()
+  // Its toast says it is one of before, which and its kcal.
+  expect(await screen.findByText(/^Repeated: Breakfast · 207 kcal/)).toBeDefined()
   await waitFor(() => {
     expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
   })
@@ -406,8 +459,9 @@ test("the server's warnings of a logged meal are said", async () => {
   const sheet = await openSheet()
   fireEvent.click(await sheet.findByRole('button', { name: 'Repeat: Porridge' }))
 
-  // Without a description, the meal is named by the hour it was eaten.
-  expect(await screen.findByText(/^Logged: Breakfast · 207 kcal/)).toBeDefined()
+  // Without a description, the meal is named by what was in it, not by
+  // the hour it was eaten.
+  expect(await screen.findByText(/^Repeated: Rye bread · 207 kcal/)).toBeDefined()
   expect(
     await screen.findByText(
       'A meal with the same items was logged just before: if this one was sent twice, delete it.',
@@ -783,7 +837,7 @@ test("today's chips log yesterday's meal of the hour again, and open the meal wi
 
   const chips = within(await screen.findByRole('region', { name: 'Quick add' }))
   fireEvent.click(await chips.findByRole('button', { name: "Yesterday's lunch" }))
-  expect(await screen.findByText('Logged again, today at this time.')).toBeDefined()
+  expect(await screen.findByText('Repeated: Breakfast · 207 kcal')).toBeDefined()
   expect(server.sent).toEqual([
     {
       id: expect.any(String) as unknown,
@@ -889,9 +943,27 @@ test('what the search matched is marked in the names of the foods and the meals'
     'Rye',
     'Rye',
   ])
-  // A long description goes under the meal's name, the meal of the day,
-  // which is no text searched.
-  expect(marks(sheet.getByRole('button', { name: 'Repeat: Breakfast' }))).toEqual(['Rye'])
+  // A long description goes under the meal's name, what was in it, which
+  // the search matches too.
+  expect(marks(sheet.getByRole('button', { name: 'Repeat: Rye bread' }))).toEqual(['Rye', 'Rye'])
+})
+
+test("a meal of before is found by its items' brands, which do not name it", async () => {
+  const branded: Meal = {
+    ...porridge,
+    description: '',
+    items: [{ ...slices, name: 'Sourdough', brand: 'Ryeland' }],
+  }
+  logServer('2026-10-23', {
+    'GET /api/v1/meals/recent': () => Response.json({ meals: [branded] }),
+  })
+  renderAt('/')
+
+  const sheet = await openSheet()
+  fireEvent.change(sheet.getByLabelText('Find a food or a meal'), {
+    target: { value: 'ryeland' },
+  })
+  expect(await sheet.findByRole('button', { name: 'Repeat: Sourdough' })).toBeDefined()
 })
 
 test('a meal of before is offered once, the latest of the same foods the search matches', async () => {

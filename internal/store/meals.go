@@ -45,7 +45,7 @@ const (
 
 const itemColumns = `i.id, i.food_id, i.name, i.quantity_amount, i.quantity_unit, i.quantity_servings,
 	i.quantity_serving, i.quantity_portions, i.amount, i.unit, i.kcal, i.protein, i.carbs, i.fat,
-	i.fiber, i.saturated_fat, i.sugars, i.salt, i.polyols, i.alcohol, i.source, i.note, i.sent_food`
+	i.fiber, i.saturated_fat, i.sugars, i.salt, i.polyols, i.alcohol, i.source, i.note, i.sent_food, i.brand`
 
 // CreateMeal stores m, a new meal of userID's, and returns it as stored,
 // each item under the id it carries (a client's UUIDv7) or a new one.
@@ -494,12 +494,13 @@ func insertItems(ctx context.Context, tx *sql.Tx, userID uuid.UUID, m meal.Meal,
 		q := it.Quantity
 		if _, err := tx.ExecContext(ctx, `INSERT INTO meal_items (id, meal_id, user_id, position, food_id, name,
 			quantity_amount, quantity_unit, quantity_servings, quantity_serving, quantity_portions, amount, unit,
-			kcal, protein, carbs, fat, fiber, saturated_fat, sugars, salt, polyols, alcohol, source, note, sent_food)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			kcal, protein, carbs, fat, fiber, saturated_fat, sugars, salt, polyols, alcohol, source, note, sent_food,
+			brand)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id.String(), m.ID.String(), userID.String(), i, foodID, it.Name,
 			q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Amount, it.Unit,
 			n.Kcal, n.Protein, n.Carbs, n.Fat, nullable(*o[0]), nullable(*o[1]), nullable(*o[2]), nullable(*o[3]),
-			nullable(*o[4]), nullable(*o[5]), string(it.Source), it.Note, sentFood); err != nil {
+			nullable(*o[4]), nullable(*o[5]), string(it.Source), it.Note, sentFood, it.Brand); err != nil {
 			return err
 		}
 	}
@@ -725,7 +726,7 @@ func scanItem(rows *sql.Rows) (meal.Item, error) {
 	q, n := &it.Quantity, &it.Nutrients
 	if err := rows.Scan(&id, &foodID, &it.Name, &q.Amount, &q.Unit, &q.Servings, &q.Serving, &q.Portions,
 		&it.Amount, &it.Unit, &n.Kcal, &n.Protein, &n.Carbs, &n.Fat,
-		&opt[0], &opt[1], &opt[2], &opt[3], &opt[4], &opt[5], &source, &it.Note, &sentFood); err != nil {
+		&opt[0], &opt[1], &opt[2], &opt[3], &opt[4], &opt[5], &source, &it.Note, &sentFood, &it.Brand); err != nil {
 		return meal.Item{}, err
 	}
 	var err error
