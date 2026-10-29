@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -55,14 +56,17 @@ type Client struct {
 
 // Product is what Open Food Facts has of a product that a food takes.
 type Product struct {
-	// Code is the barcode as Open Food Facts keeps it.
+	// Code is the barcode looked up, which the food keeps: Open Food Facts
+	// may answer under another form of it, or a product it merged.
 	Code string
 	// Name is the product's name in the language asked for, or else in
 	// its main one.
 	Name string
 	// Brand is the first of its brands.
 	Brand string
-	// PerMilliliter says its values are per 100 ml, a drink's.
+	// PerMilliliter says its values are per 100 ml: a drink's, sold by
+	// volume. Open Food Facts keeps values per 100 g or 100 ml under one
+	// name, and a label gives an ice cream sold by volume per 100 g.
 	PerMilliliter bool
 	// Nutrients per 100 g or 100 ml: those Open Food Facts has, by its
 	// names (proteins, carbohydrates, saturated-fat…), and the energy in
@@ -78,7 +82,7 @@ type Product struct {
 // fields are the product's fields a lookup asks for, besides its name in
 // the language asked for.
 var fields = []string{
-	"code", "product_name", "brands", "nutriments", "product_quantity_unit", "serving_quantity", "serving_quantity_unit",
+	"product_name", "brands", "categories_tags", "nutriments", "product_quantity_unit", "serving_quantity", "serving_quantity_unit",
 }
 
 // nutrientNames are the nutrients a food keeps, by their names at Open
@@ -120,15 +124,13 @@ func (c *Client) Product(ctx context.Context, code, language string) (Product, e
 	if err != nil {
 		return Product{}, fmt.Errorf("open food facts: %w", err)
 	}
-	// It answers a product it does not have 404, with a status of 0.
-	if resp.StatusCode == http.StatusNotFound {
-		return Product{}, ErrNotFound
-	}
-	if resp.StatusCode != http.StatusOK {
+	// It answers a product it does not have 404, with a status of 0; a
+	// 404 of another body is no answer of its (a wrong URL).
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
 		return Product{}, fmt.Errorf("open food facts: %s", resp.Status)
 	}
 	if err := json.Unmarshal(body, &answer); err != nil {
-		return Product{}, fmt.Errorf("open food facts: the answer: %w", err)
+		return Product{}, fmt.Errorf("open food facts: %s, the answer: %w", resp.Status, err)
 	}
 	if answer.Status != 1 || answer.Product == nil {
 		return Product{}, ErrNotFound
@@ -140,9 +142,6 @@ func (c *Client) Product(ctx context.Context, code, language string) (Product, e
 // language asked for under name.
 func product(p map[string]any, code, name, base string) Product {
 	out := Product{Code: code, Nutrients: map[string]float64{}, URL: base + "/product/" + url.PathEscape(code)}
-	if c, ok := p["code"].(string); ok && c != "" {
-		out.Code = c
-	}
 	out.Name, _ = p[name].(string)
 	if strings.TrimSpace(out.Name) == "" {
 		out.Name, _ = p["product_name"].(string)
@@ -150,7 +149,8 @@ func product(p map[string]any, code, name, base string) Product {
 	brands, _ := p["brands"].(string)
 	out.Brand, _, _ = strings.Cut(brands, ",")
 	unit, _ := p["product_quantity_unit"].(string)
-	out.PerMilliliter = strings.EqualFold(unit, "ml")
+	categories, _ := p["categories_tags"].([]any)
+	out.PerMilliliter = strings.EqualFold(unit, "ml") && slices.Contains(categories, any("en:beverages"))
 	if v, ok := number(p["serving_quantity"]); ok && v > 0 {
 		servingUnit, _ := p["serving_quantity_unit"].(string)
 		if servingUnit == "" || strings.EqualFold(servingUnit, unitOf(out.PerMilliliter)) {
@@ -196,8 +196,9 @@ func number(v any) (float64, bool) {
 // Food returns a new food of p, not saved: its name and brand, its values
 // per 100 g or 100 ml, a serving named serving when Open Food Facts knows
 // its amount, the barcode, and Open Food Facts as its source. A product
-// without a name or the four values a food needs, or whose values break
-// a food's rules, is ErrIncomplete.
+// without a name or the four values a food needs, or whose four values
+// break a food's rules, is ErrIncomplete; an optional value or the
+// serving that breaks them (salt in mg, a typo) is left out.
 func (p Product) Food(serving string) (food.Food, error) {
 	need := func(name string) float64 {
 		v, ok := p.Nutrients[name]
@@ -219,17 +220,6 @@ func (p Product) Food(serving string) (food.Food, error) {
 	if p.PerMilliliter {
 		f.Basis = food.Per100ml
 	}
-	for name, at := range map[string]**float64{
-		"fiber": &f.Nutrients.Fiber, "saturated-fat": &f.Nutrients.SaturatedFat, "sugars": &f.Nutrients.Sugars,
-		"salt": &f.Nutrients.Salt, "polyols": &f.Nutrients.Polyols,
-	} {
-		if v, ok := p.Nutrients[name]; ok {
-			*at = &v
-		}
-	}
-	if p.Serving > 0 {
-		f.Servings = []food.Serving{{Name: serving, Amount: p.Serving}}
-	}
 	if code, err := food.Barcode(p.Code); err == nil {
 		f.Barcodes = []string{code}
 	}
@@ -238,6 +228,31 @@ func (p Product) Food(serving string) (food.Food, error) {
 	}
 	if err := f.Validate(); err != nil {
 		return food.Food{}, fmt.Errorf("%w: %w", ErrIncomplete, err)
+	}
+	// Each of the rest is kept when the food holds with it.
+	keep := func(add func(*food.Food)) {
+		with := f
+		add(&with)
+		if with.Validate() == nil {
+			f = with
+		}
+	}
+	if p.Serving > 0 {
+		keep(func(f *food.Food) { f.Servings = []food.Serving{{Name: serving, Amount: p.Serving}} })
+	}
+	for _, o := range []struct {
+		name string
+		at   func(*food.Nutrients) **float64
+	}{
+		{"fiber", func(n *food.Nutrients) **float64 { return &n.Fiber }},
+		{"saturated-fat", func(n *food.Nutrients) **float64 { return &n.SaturatedFat }},
+		{"sugars", func(n *food.Nutrients) **float64 { return &n.Sugars }},
+		{"salt", func(n *food.Nutrients) **float64 { return &n.Salt }},
+		{"polyols", func(n *food.Nutrients) **float64 { return &n.Polyols }},
+	} {
+		if v, ok := p.Nutrients[o.name]; ok {
+			keep(func(f *food.Food) { *o.at(&f.Nutrients) = &v })
+		}
 	}
 	return f, nil
 }

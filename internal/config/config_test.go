@@ -300,7 +300,7 @@ func TestLoadOpenFoodFactsURL(t *testing.T) {
 			t.Errorf("%q: %q, %v; want %q", raw, cfg.OpenFoodFactsURL, err, want)
 		}
 	}
-	for _, bad := range []string{"ftp://off.local", "https://", "https://off.local/?a=1", "no"} {
+	for _, bad := range []string{"ftp://off.local", "https://", "https://off.local/?a=1", "https://off.local/?", "https://me:secret@off.local", "no"} {
 		vars["TDEEMON_OPEN_FOOD_FACTS_URL"] = bad
 		if _, err := config.Load(env(vars)); err == nil || !strings.Contains(err.Error(), "TDEEMON_OPEN_FOOD_FACTS_URL") {
 			t.Errorf("%q: %v", bad, err)

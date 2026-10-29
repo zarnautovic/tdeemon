@@ -16,6 +16,7 @@ import (
 	_ "time/tzdata" // TZ must resolve even in images without system tzdata.
 
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/off"
 )
 
 // Prefix is prepended to the name of every variable Load reads, except TZ.
@@ -191,12 +192,14 @@ func loadTelegramAPIURL(get func(name, fallback string) string) (string, error) 
 // loadOpenFoodFactsURL reads the Open Food Facts server to look barcodes
 // up at, the world's unless set, or none for off.
 func loadOpenFoodFactsURL(get func(name, fallback string) string) (string, error) {
-	raw := get("OPEN_FOOD_FACTS_URL", "https://world.openfoodfacts.org")
+	raw := get("OPEN_FOOD_FACTS_URL", off.DefaultBaseURL)
 	if raw == "off" {
 		return "", nil
 	}
+	// No user and password either, which the log would show.
 	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.ForceQuery ||
+		u.Fragment != "" || u.User != nil {
 		return "", fmt.Errorf("%sOPEN_FOOD_FACTS_URL %q: want an http or https URL of an Open Food Facts server, or off", Prefix, raw)
 	}
 	return strings.TrimSuffix(raw, "/"), nil

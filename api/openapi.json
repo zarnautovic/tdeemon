@@ -37,11 +37,11 @@
           },
           "food": {
             "$ref": "#/components/schemas/FoodBody",
-            "description": "Your food of the barcode, archived too."
+            "description": "Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it."
           },
           "open_food_facts": {
             "$ref": "#/components/schemas/OpenFoodFactsBody",
-            "description": "Without a food of yours, the product at Open Food Facts."
+            "description": "Without a food of yours of the barcode, the product at Open Food Facts."
           }
         },
         "required": [
@@ -4551,7 +4551,7 @@
     },
     "/api/v1/barcodes/{code}": {
       "get": {
-        "description": "Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
+        "description": "Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
         "operationId": "lookup-barcode",
         "parameters": [
           {

@@ -92,6 +92,7 @@ func TestProductOfADrinkInKJ(t *testing.T) {
 
 	c := server(t, http.StatusOK, `{"status": 1, "product": {"code": "96385074", "product_name": "Orange juice",
 		"product_quantity_unit": "ml", "serving_quantity": 250, "serving_quantity_unit": "ml",
+		"categories_tags": ["en:plant-based-foods-and-beverages", "en:beverages", "en:fruit-juices"],
 		"nutriments": {"energy_100g": 188, "proteins_100g": 0.7, "carbohydrates_100g": 10, "fat_100g": 0}}}`, nil)
 	p, err := c.Product(t.Context(), "96385074", "en")
 	if err != nil {
@@ -104,6 +105,37 @@ func TestProductOfADrinkInKJ(t *testing.T) {
 	if f.Name != "Orange juice" || f.Basis != food.Per100ml || f.Nutrients.Kcal != 44.9 ||
 		!reflect.DeepEqual(f.Servings, []food.Serving{{Name: "serving", Amount: 250}}) {
 		t.Errorf("the juice: %+v", f)
+	}
+}
+
+// An ice cream sold by volume is labelled per 100 g: its values are per
+// 100 g, and its serving in ml is no serving of grams. The food keeps the
+// barcode looked up, whatever form Open Food Facts answers under; a value
+// or a serving no food has is left out, and the rest kept.
+func TestProductOfAnIceCream(t *testing.T) {
+	t.Parallel()
+
+	c := server(t, http.StatusOK, `{"status": 1, "product": {"code": "36000291452", "product_name": "Vanilla ice cream",
+		"product_quantity_unit": "ml", "serving_quantity": 125, "serving_quantity_unit": "ml",
+		"categories_tags": ["en:frozen-foods", "en:desserts", "en:ice-creams"],
+		"nutriments": {"energy-kcal_100g": 207, "proteins_100g": 3.5, "carbohydrates_100g": 24, "fat_100g": 11,
+			"sugars_100g": 21, "salt_100g": 120}}}`, nil)
+	p, err := c.Product(t.Context(), "0036000291452", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := p.Food("serving")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.Basis != food.Per100g || len(f.Servings) != 0 || !reflect.DeepEqual(f.Barcodes, []string{"0036000291452"}) ||
+		f.Nutrients.Salt != nil || f.Nutrients.Sugars == nil || *f.Nutrients.Sugars != 21 {
+		t.Errorf("the ice cream: %+v", f)
+	}
+	// A serving no food has, of grams.
+	p.PerMilliliter, p.Serving = false, 20000
+	if f, err := p.Food("serving"); err != nil || len(f.Servings) != 0 {
+		t.Errorf("a serving of 20 kg: %+v, %v; want the food without it", f.Servings, err)
 	}
 }
 
@@ -122,6 +154,7 @@ func TestProductNotFound(t *testing.T) {
 	for name, c := range map[string]*off.Client{
 		"an error":       server(t, http.StatusServiceUnavailable, `busy`, nil),
 		"broken answers": server(t, http.StatusOK, `{"status": 1, "product": `, nil),
+		"a wrong URL":    server(t, http.StatusNotFound, `<html>404 page not found</html>`, nil),
 	} {
 		if _, err := c.Product(t.Context(), "4006381333931", "en"); err == nil || errors.Is(err, off.ErrNotFound) {
 			t.Errorf("%s: %v, want an error other than ErrNotFound", name, err)

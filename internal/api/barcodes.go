@@ -25,8 +25,8 @@ type barcodeOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
 		Barcode       string             `json:"barcode" doc:"The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it."`
-		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too."`
-		OpenFoodFacts *openFoodFactsBody `json:"open_food_facts,omitempty" doc:"Without a food of yours, the product at Open Food Facts."`
+		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it."`
+		OpenFoodFacts *openFoodFactsBody `json:"open_food_facts,omitempty" doc:"Without a food of yours of the barcode, the product at Open Food Facts."`
 	}
 }
 
@@ -43,7 +43,8 @@ func (s *sessions) registerBarcodes(a huma.API) {
 		Path:        Prefix + "/barcodes/{code}",
 		Summary:     "Look up a barcode",
 		Description: "Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, " +
-			"with its page there. A barcode misread, its check digit wrong, is refused (422). " +
+			"with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. " +
+			"A barcode misread, its check digit wrong, is refused (422). " +
 			"One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
 		Tags:   []string{"foods"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusBadGateway},
@@ -52,7 +53,8 @@ func (s *sessions) registerBarcodes(a huma.API) {
 
 // lookupBarcode finds what a barcode is: a food of the user's, or else a
 // product of Open Food Facts, made a new food for the user to see before
-// it is saved.
+// it is saved, with their food of its name and brand, which the product
+// is (a save of the product would correct it).
 func (s *sessions) lookupBarcode(ctx context.Context, in *barcodeInput) (*barcodeOutput, error) {
 	p, err := requireUser(ctx)
 	if err != nil {
@@ -83,16 +85,25 @@ func (s *sessions) lookupBarcode(ctx context.Context, in *barcodeInput) (*barcod
 		return nil, huma.Error502BadGateway("no food of yours has the barcode, and Open Food Facts did not answer: try again, or make the food",
 			internalDetail(err))
 	}
+	switch named, err := s.db.FoodByKey(ctx, p.User.ID, product.Name, product.Brand); {
+	case err == nil:
+		b := newFoodBody(&named)
+		out.Body.Food = &b
+	case !errors.Is(err, store.ErrNotFound):
+		return nil, internalError("looking up the barcode failed", err)
+	}
 	serving, ok := servingNames[p.User.Locale]
 	if !ok {
 		serving = servingNames["en"]
 	}
 	nf, err := product.Food(serving)
-	if errors.Is(err, off.ErrIncomplete) {
+	switch {
+	case errors.Is(err, off.ErrIncomplete) && out.Body.Food != nil:
+		return out, nil
+	case errors.Is(err, off.ErrIncomplete):
 		return nil, huma.Error404NotFound(fmt.Sprintf(
 			"no food of yours has the barcode; Open Food Facts has the product (%q) without the values a food needs", product.Name))
-	}
-	if err != nil {
+	case err != nil:
 		return nil, internalError("looking up the barcode failed", err)
 	}
 	out.Body.OpenFoodFacts = &openFoodFactsBody{Food: newFoodBody(&nf).FoodFields, URL: product.URL}

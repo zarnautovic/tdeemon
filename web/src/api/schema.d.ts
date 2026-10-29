@@ -113,7 +113,7 @@ export interface paths {
         };
         /**
          * Look up a barcode
-         * @description Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.
+         * @description Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.
          */
         get: operations["lookup-barcode"];
         put?: never;
@@ -777,9 +777,9 @@ export interface components {
         BarcodeOutputBody: {
             /** @description The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it. */
             barcode: string;
-            /** @description Your food of the barcode, archived too. */
+            /** @description Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it. */
             food?: components["schemas"]["FoodBody"];
-            /** @description Without a food of yours, the product at Open Food Facts. */
+            /** @description Without a food of yours of the barcode, the product at Open Food Facts. */
             open_food_facts?: components["schemas"]["OpenFoodFactsBody"];
         };
         ChangeBody: {

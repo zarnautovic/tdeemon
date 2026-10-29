@@ -47,6 +47,7 @@ func withOpenFoodFacts(t *testing.T, in *instance, status int, answer string) op
 // A kefir as Open Food Facts has it, of a code none of Ana's foods has.
 const kefir = `{"status": 1, "product": {"code": "4006381333931", "product_name": "Kefir", "product_name_hr": "Kefir 2,8 %",
 	"brands": "Vindija", "product_quantity_unit": "ml", "serving_quantity": 250, "serving_quantity_unit": "ml",
+	"categories_tags": ["en:dairies", "en:beverages", "en:dairy-drinks", "en:kefirs"],
 	"nutriments": {"energy-kcal_100g": 59, "proteins_100g": 3.3, "carbohydrates_100g": 4.1, "fat_100g": 2.8, "salt_100g": 0.1}}}`
 
 // A barcode is the user's food when one of theirs has it, in any form a
@@ -112,6 +113,39 @@ func TestLookupBarcodeAtOpenFoodFacts(t *testing.T) {
 	rec = in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil)
 	if !strings.Contains(rec.Body.String(), `"food":{"id":`) || strings.Contains(rec.Body.String(), "open_food_facts") {
 		t.Errorf("the barcode once saved: %d %s, want the food of the user's", rec.Code, rec.Body.String())
+	}
+}
+
+// A product of the name and brand of a food of the user's is that food,
+// whose barcodes lack the barcode yet: the answer gives the food with the
+// product, and the food alone when the product lacks its values.
+func TestLookupBarcodeOfAProductYouHaveByName(t *testing.T) {
+	t.Parallel()
+
+	for name, answer := range map[string]string{
+		"a whole product":           kefir,
+		"a product without a value": strings.Replace(kefir, `"fat_100g": 2.8, `, "", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := newInstance(t, "http://localhost", "")
+			session := []*http.Cookie{sessionOf(t, in)}
+			withOpenFoodFacts(t, in, http.StatusOK, answer)
+			rec := in.do(t, http.MethodPost, "/api/v1/foods/new", `{"name": "kefir 2,8 %", "brand": "VINDIJA", "basis": "100ml", "source": "user",
+				"nutrients": {"kcal": 60, "protein": 3.2, "carbs": 4, "fat": 2.8}, "aliases": ["my kefir"]}`, session, nil)
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("the user's kefir: %d %s", rec.Code, rec.Body.String())
+			}
+			mine := decodeJSON[struct {
+				ID string `json:"id"`
+			}](t, rec.Body.Bytes())
+			rec = in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil)
+			body := rec.Body.String()
+			if rec.Code != http.StatusOK || !strings.Contains(body, `"food":{"id":"`+mine.ID+`"`) ||
+				strings.Contains(body, "open_food_facts") != (answer == kefir) {
+				t.Errorf("%d %s, want the user's kefir", rec.Code, body)
+			}
+		})
 	}
 }
 

@@ -163,11 +163,17 @@ to one food (`food_barcodes`). A barcode looked up
 without one, the product of [Open Food Facts](https://openfoodfacts.org)
 as a new food, not saved, with its page there: the user sees it, and a
 save of it (`source: off`, the barcode with it) makes it theirs, so the
-next scan finds it without asking. Only by barcode: Open Food Facts'
-search by name is weak and allows 10 requests a minute. Its data are
-open under the ODbL, so a client says where they come from. A product
-without a name or its four values per 100 g or 100 ml is no food, and
-one the user enters from the label keeps the barcode as any food does.
+next scan finds it without asking. A food of theirs of the product's
+name and brand comes with it, as that food, whose barcodes lack the
+barcode yet: adding it beats saving the product over the food. Only by
+barcode: Open Food Facts' search by name is weak and allows 10 requests
+a minute. Its data are open under the ODbL, so a client says where they
+come from. A product without a name or its four values per 100 g or
+100 ml is no food, and one the user enters from the label keeps the
+barcode as any food does; an optional value or a serving no food has is
+left out. Open Food Facts keeps per 100 g and per 100 ml under one name,
+so a product's values are per 100 ml only for a drink sold by volume
+(an ice cream sold so is labelled per 100 g).
 `TDEEMON_OPEN_FOOD_FACTS_URL=off` sends no request there.
 
 A meal is a meal, not a row in the food DB: its items point at foods.
