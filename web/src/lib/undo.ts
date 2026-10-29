@@ -40,36 +40,39 @@ export function useShownDay(): string | undefined {
 // in the toast of changes: what it took back, linking the day it was of
 // when another is shown, or why it took nothing back. Each undo is sent
 // under an id of its own; one the server refuses (made by a clock far
-// from its own) goes again without, and the server makes one.
+// from its own) goes again without, and the server makes one. It says so
+// though what asked for it is gone by then (the list's row of the change,
+// gone as the list follows): mutate's own callbacks would be dropped with
+// it, the promise is not.
 export function useUndoLatest() {
   const t = useMessages()
   const shown = useShownDay()
   const run = useUndo(shown ?? 'today')
 
-  function send(last: Change | undefined, id: string | undefined) {
-    run.mutate(
-      { body: { ...(id !== undefined && { id }), ...(last !== undefined && { last }) } },
-      {
-        onSuccess: ({ undone }) => {
-          sayUndone({
-            title: t.undo.done(t.undo.actions[undone.action] ?? t.undo.change),
-            to: undone.days.find((d) => d !== shown),
-          })
-        },
-        onError: (error) => {
-          if (statusOf(error) === 422 && id !== undefined) {
-            send(last, undefined)
-            return
-          }
-          sayUndone({ title: undoRefused(t, error) })
-        },
-      },
-    )
+  async function send(last: Change | undefined, id: string | undefined) {
+    let answer
+    try {
+      answer = await run.mutateAsync({
+        body: { ...(id !== undefined && { id }), ...(last !== undefined && { last }) },
+      })
+    } catch (error) {
+      if (statusOf(error) === 422 && id !== undefined) {
+        await send(last, undefined)
+        return
+      }
+      sayUndone({ title: undoRefused(t, error) })
+      return
+    }
+    const { undone } = answer
+    sayUndone({
+      title: t.undo.done(t.undo.actions[undone.action] ?? t.undo.change),
+      to: undone.days.find((d) => d !== shown),
+    })
   }
 
   return {
     undo: (last?: Change) => {
-      send(last, uuidv7())
+      void send(last, uuidv7())
     },
     pending: run.isPending,
   }

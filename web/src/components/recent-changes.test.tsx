@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, problem, renderAt, signedIn, today, type Handler } from '@/test/app'
+import { fakeServer, me, problem, renderAt, signedIn, today, type Handler } from '@/test/app'
 
 type Change = components['schemas']['ChangeBody']
 
@@ -143,6 +143,58 @@ test('the next change is taken back from the list, after its toast is gone, and 
       'Deleted: Skyr bowl1:14 PM · youTaken back',
     )
   })
+})
+
+// The list may follow before the rest of the page came again: the row
+// whose Undo was tapped is gone by then, and the toast says the undo all
+// the same.
+test('an undo is said though its row went before the page came again', async () => {
+  let undone = false
+  // What the page asks again after the undo waits until the list followed.
+  const waiting: (() => void)[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/me': async () => {
+      if (undone) {
+        await new Promise<void>((resolve) => {
+          waiting.push(resolve)
+        })
+      }
+      return Response.json(me())
+    },
+    'GET /api/v1/changes': () =>
+      Response.json({
+        changes: undone
+          ? [
+              { ...deletion, undone: true, next: false },
+              { ...logged, next: true },
+            ]
+          : latest,
+      }),
+    'POST /api/v1/undo': () => {
+      undone = true
+      return Response.json({
+        undone: {
+          action: 'meal.delete',
+          entity: deleted,
+          at: `${today}T20:14:00Z`,
+          client: 'web',
+          days: [today],
+        },
+      })
+    },
+  })
+  renderAt('/settings')
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Recent changes' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'Recent changes' }))
+  fireEvent.click(await sheet.findByRole('button', { name: 'Undo: Deleted: Skyr bowl' }))
+  expect(await sheet.findByRole('button', { name: 'Undo: Logged: Oats + 2' })).toBeDefined()
+  for (const release of waiting) {
+    release()
+  }
+
+  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
 })
 
 test('an undo another change came before says so, in Croatian too', async () => {
