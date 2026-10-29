@@ -393,6 +393,40 @@ func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 	return p, nil
 }
 
+// ChangePlan makes d userID's proposal, a's, and applies it at once, as
+// the user's own change of the plan, today being the user's day now, and
+// returns it, applied: a revision as any other, which the history shows
+// and a revert takes back. The changes keep their rules and the limits as
+// CreateProposal holds them (ErrInvalidProposal, or check's error), in
+// the one transaction that applies them, so nothing comes between the
+// check and the write. It supersedes the user's pending proposals, as
+// any change of the plan does.
+func (db *DB) ChangePlan(ctx context.Context, userID uuid.UUID, a event.Actor, d proposal.Draft, today day.Date, now time.Time,
+	check ProposalCheck,
+) (proposal.Proposal, error) {
+	if err := checkDraft(a, d, today); err != nil {
+		return proposal.Proposal{}, err
+	}
+	var p proposal.Proposal
+	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
+		c, err := planBefore(ctx, tx, userID, d.Changes)
+		if err != nil {
+			return err
+		}
+		if p, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now, check); err != nil {
+			return err
+		}
+		// check held the changes to the limits a moment ago, in this
+		// transaction: nothing has changed since.
+		p, err = applyIn(ctx, tx, userID, a, p, now, nil)
+		return err
+	})
+	if err != nil {
+		return proposal.Proposal{}, proposalError("change plan", err)
+	}
+	return p, nil
+}
+
 // RevertProposal makes the proposal that takes userID's applied proposal
 // id back, a's, with why, today being the user's day now, and returns
 // it, pending as any other: each change of id put back as it was before

@@ -623,6 +623,18 @@ func isolateProposeChanges(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateChangePlan is change-plan's case: the other changes their own
+// phase, in a web session; the owner's plan stays as it was, and so does
+// the owner's proposal that waits.
+func isolateChangePlan(t *testing.T, e isolationEnv) {
+	t.Helper()
+	today := day.DateOf(e.in.clock.Now())
+	body := fmt.Sprintf(`{"phases": [{"start": %q, "type": "cut", "rate_pct_week": -0.4, "goal_weight": 70}]}`, today)
+	if rec := e.in.do(t, http.MethodPost, "/api/v1/plan/changes", body, []*http.Cookie{e.other.session}, nil); rec.Code != http.StatusOK {
+		t.Errorf("their own change: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // isolateProposal is the case of an operation on a proposal by its id
 // (apply, reject, revert, with body): the owner's proposal answers the
 // other as one that does not exist; their own answers ok.
@@ -814,6 +826,7 @@ func isolationCases() map[string]isolationCase {
 		"set-notes":       isolateSetNotes,
 		"revoke-tokens":   isolateRevokeTokens,
 		"propose-changes": isolateProposeChanges,
+		"change-plan":     isolateChangePlan,
 		"apply-proposal":  isolateProposal("apply", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
 		"reject-proposal": isolateProposal("reject", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
 		"revert-proposal": isolateProposal("revert", `{"rationale": "Back."}`, func(p party) uuid.UUID { return p.applied }, http.StatusCreated),

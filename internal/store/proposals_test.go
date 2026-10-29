@@ -506,6 +506,87 @@ func TestApplyProposalRecordsEachChange(t *testing.T) {
 	}
 }
 
+// The user's own change is a proposal applied as it is made: a revision,
+// in place of the proposal that waited, each write the user's.
+func TestChangePlan(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	waits := propose(t, db, ana, coachDraft(t), t0)
+	d := breakDraft(t)
+	d.Rationale, d.Window = proposal.ChangedInTheApp, nil
+	later := t0.Add(time.Minute)
+	n := countRows(t, db, "events")
+	changed, err := db.ChangePlan(t.Context(), ana, testActor, d, day.DateOf(later), later, nil)
+	if err != nil {
+		t.Fatalf("ChangePlan: %v", err)
+	}
+	if changed.Status != proposal.Applied || changed.By != testActor || changed.DecidedBy != testActor ||
+		changed.Rationale != proposal.ChangedInTheApp || !changed.DecidedAt.Equal(later) || changed.Changes.Phases[0].Before == nil {
+		t.Errorf("ChangePlan = %+v", changed)
+	}
+	if got := getProposal(t, db, ana, changed.ID, later); !reflect.DeepEqual(got, changed) {
+		t.Errorf("Proposal = %+v, want %+v", got, changed)
+	}
+	wantSuperseded(t, db, ana, waits.ID, testActor, later)
+	brk, faster := *d.Changes.Phases[0].After, *d.Changes.Phases[1].After
+	if got, _ := db.Phases(t.Context(), ana); !reflect.DeepEqual(got, []plan.Phase{faster, brk}) {
+		t.Errorf("Phases = %+v, want %+v", got, []plan.Phase{faster, brk})
+	}
+	// Made, the one that waited superseded, applied, and each change.
+	want := []event.Action{
+		event.WeekdaysSet, event.TargetSet, event.PhaseSet, event.PhaseSet,
+		event.ProposalStatus, event.ProposalCreate, event.ProposalStatus,
+	}
+	if got := eventActions(t, db, ana, len(want)); !reflect.DeepEqual(got, want) || countRows(t, db, "events") != n+len(want) {
+		t.Errorf("the events = %v, want %v", got, want)
+	}
+	// A revert takes it back, as any revision.
+	revert := revertOf(t, db, ana, changed.ID, later)
+	apply(t, db, ana, revert.ID, later)
+	wantStatus(t, db, ana, changed.ID, later, proposal.Reverted)
+	ph, _ := planValues(t)
+	if got, _ := db.Phases(t.Context(), ana); !reflect.DeepEqual(got, []plan.Phase{ph}) {
+		t.Errorf("Phases after the revert = %+v, want them as before", got)
+	}
+}
+
+// A change the limits or its own rules refuse writes nothing, and the
+// proposal that waited still waits.
+func TestChangePlanRefuses(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withPlans(t)
+	waits := propose(t, db, ana, coachDraft(t), t0)
+	n := countRows(t, db, "events")
+	refuse := func(proposal.Changes) error { return errRefused }
+	d := breakDraft(t)
+	d.Rationale = proposal.ChangedInTheApp
+	if _, err := db.ChangePlan(t.Context(), ana, testActor, d, day.DateOf(t0), t0, refuse); !errors.Is(err, errRefused) {
+		t.Errorf("ChangePlan refused by the limits = %v", err)
+	}
+	yesterday := day.DateOf(t0).AddDays(-1)
+	past := proposal.Draft{Rationale: proposal.ChangedInTheApp, Changes: proposal.Changes{Targets: []proposal.TargetChange{{
+		From: yesterday, After: &plan.Target{EffectiveFrom: yesterday, Training: dayTarget(2000, 150, 60), Rest: dayTarget(2000, 150, 60)},
+	}}}}
+	if _, err := db.ChangePlan(t.Context(), ana, testActor, past, day.DateOf(t0), t0, nil); !errors.Is(err, store.ErrInvalidProposal) {
+		t.Errorf("ChangePlan of the past = %v, want ErrInvalidProposal", err)
+	}
+	if _, err := db.ChangePlan(t.Context(), ana, testActor, proposal.Draft{Changes: d.Changes}, day.DateOf(t0), t0, nil); !errors.Is(err, store.ErrInvalidProposal) {
+		t.Errorf("ChangePlan without a rationale = %v, want ErrInvalidProposal", err)
+	}
+	if countRows(t, db, "events") != n {
+		t.Error("a refused change recorded an event")
+	}
+	wantStatus(t, db, ana, waits.ID, t0, proposal.Pending)
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ChangePlan(t.Context(), ana, testActor, d, day.DateOf(t0), t0, nil); err == nil {
+		t.Error("ChangePlan on a closed database = nil")
+	}
+}
+
 // Applied again, as a retry would, a proposal is as it was.
 func TestApplyProposalAgain(t *testing.T) {
 	t.Parallel()

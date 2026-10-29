@@ -394,7 +394,8 @@ check-in; `PUT /api/v1/me/notes`, the notes for a coach;
 other
 operation is closed to tokens (403), so a token can never create, list
 or revoke tokens, read the session or change a setting (the name,
-language, time zone, day's start, profile or limits), nor apply a
+language, time zone, day's start, profile or limits), nor change the
+plan as the app does (`POST /api/v1/plan/changes`), nor apply a
 proposal that changes the limits. Only
 `Authorization: Bearer tdm_…` carries a token (an empty Bearer is a bad
 one): another header, such as a reverse proxy's Basic credentials or the

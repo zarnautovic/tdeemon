@@ -43,14 +43,21 @@ test('a proposed change is accepted in the app, and taken back from its history'
 }) => {
   await signIn(page)
   const rationale = await propose(page)
-  await page
+  // The day says it waits, and so does the plan's section.
+  await page.reload()
+  await expect(
+    page.getByRole('link', { name: /^Your AI coach suggests: new target/ }),
+  ).toBeVisible()
+  const plan = page
     .getByRole('navigation', { name: 'Sections' })
     .getByRole('link', { name: 'Plan' })
-    .click()
+  await expect(plan).toHaveAccessibleDescription('A proposal waits')
+  await plan.click()
 
   const card = page.getByRole('region', { name: 'A proposed change' })
   await expect(card.getByText(rationale)).toBeVisible()
-  await expect(card.getByText('Proposed by claude-opus-5-5')).toBeVisible()
+  await expect(card.getByText(/^Proposed by Claude \(claude-opus-5-5\) · /)).toBeVisible()
+  await expect(card.getByText('expires in 7 days')).toBeVisible()
   await expect(card.getByText(/^New target from/)).toBeVisible()
   await card.getByRole('button', { name: 'Accept' }).click()
   await expect(card).toBeHidden()
@@ -67,6 +74,8 @@ test('a proposed change is accepted in the app, and taken back from its history'
   await revision.getByRole('button', { name: 'Take back' }).click()
   await revision.getByRole('button', { name: 'Take back' }).click()
   await expect(revision.getByText(/Taken back$/)).toBeVisible()
+  // The revision that took it back says so in the app's words.
+  await expect(history.getByText('Taken back in the app.').first()).toBeVisible()
   await expect(page.getByRole('region', { name: 'No plan yet' })).toBeVisible()
 
   // What the plan needed cleared again, for the other tests.
@@ -93,7 +102,7 @@ test('a proposed change of the limits is accepted in the app, once the user loos
 
   const card = page.getByRole('region', { name: 'A proposed change' })
   await expect(card.getByText('Limit: Fastest loss in a cut, BMI under 30')).toBeVisible()
-  await expect(card.getByText('1% a week, loosened')).toBeVisible()
+  await expect(card.getByText('0.7% a week → 1% a week, loosened')).toBeVisible()
   await card.getByRole('button', { name: 'Accept' }).click()
   await card.getByRole('button', { name: 'Loosen' }).click()
   await expect(card).toBeHidden()

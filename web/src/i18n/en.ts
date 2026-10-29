@@ -30,6 +30,8 @@ export const en = {
     settings: 'Settings',
     logMeal: 'Log a meal',
     darkTheme: 'Dark theme',
+    // Describes the plan's section while a proposal waits there.
+    waits: 'A proposal waits',
   },
   toast: {
     close: 'Close',
@@ -894,8 +896,34 @@ export const en = {
     pending: {
       title: 'A proposed change',
       by: (who: string) => `Proposed by ${who}`,
+      // A proposal of the user's own that waits: a revision taken back
+      // that the limits refused then.
+      byYou: 'Your own proposal',
+      // Who proposed it: the model's maker, or the AI coach, and the
+      // model.
+      who: (name: string, model: string) => `${name} (${model})`,
+      coach: 'your AI coach',
       window: (from: string, to: string) => `Drawn from the days ${from} to ${to}.`,
-      expires: (date: string) => `It waits for your answer until ${date}.`,
+      expiresIn: (days: number) =>
+        `expires in ${String(days)} ${plural('en', days, { one: 'day', other: 'days' })}`,
+      data: {
+        title: 'What the data say',
+        rate: {
+          on_target: (pct: string, from: string, to: string) =>
+            `Calibration measures ${pct} a week, within the phase's range (${from} to ${to}).`,
+          below: (pct: string, from: string, to: string) =>
+            `Calibration measures ${pct} a week, below the phase's range (${from} to ${to}).`,
+          above: (pct: string, from: string, to: string) =>
+            `Calibration measures ${pct} a week, above the phase's range (${from} to ${to}).`,
+        },
+        noVerdict: 'Calibration has no verdict on the phase yet.',
+        trusted: (kcal: string, pm: string) => `Its TDEE, ${kcal} ± ${pm} kcal, is reliable.`,
+        notTrusted: (kcal: string) => `Its TDEE, about ${kcal} kcal, is not reliable yet.`,
+        noTdee: 'No TDEE measured yet.',
+        inRange: "The pace is in range: the data alone don't ask for this change.",
+        more: 'The data point the other way: they ask for more kcal, not fewer.',
+        fewer: 'The data point the other way: they ask for fewer kcal, not more.',
+      },
       accept: 'Accept',
       reject: 'Reject',
       sending: 'Sending…',
@@ -931,6 +959,74 @@ export const en = {
       limit: (name: string) => `Limit: ${name}`,
       loosened: 'loosened',
       tightened: 'tightened',
+      // A change of a value, from what it was to what it is to be.
+      to: (from: string, to: string) => `${from} → ${to}`,
+      // The days a change of a target is of, as a line starts or within
+      // one.
+      days: { training: 'training days', rest: 'rest days', every: 'every day' },
+      kcal: (from: string, to: string) => `${from} → ${to} kcal`,
+      grams: (name: string, from: string, to: string) => `${name} ${from} → ${to} g`,
+      // A phase with no planned end, until the next one.
+      open: 'no end',
+    },
+    // The rationales of the changes made in the app, by their codes, which
+    // the server stores (proposal.ChangedInTheApp).
+    rationales: {
+      'changed in the app': 'Changed in the app.',
+      'taken back in the app': 'Taken back in the app.',
+    },
+    // The user, as who changed the plan.
+    byUser: 'you',
+    // The line on the day that a proposal waits.
+    nudge: {
+      coach: (what: string) => `Your AI coach suggests: ${what}`,
+      yours: (what: string) => `A change waits for your answer: ${what}`,
+      review: 'Review',
+    },
+    edit: {
+      phase: 'Edit phase',
+      next: 'Next phase',
+      targets: 'Edit',
+      targetsLabel: 'Edit targets',
+      targetsTitle: 'Targets by type of day',
+      type: 'Type',
+      start: 'Starts on',
+      end: 'Ends on',
+      endHint: 'Empty: until the next phase starts.',
+      since: (type: string, date: string) => `${type}, since ${date}`,
+      loss: 'Loss (% a week)',
+      gain: 'Gain (% a week)',
+      rate: 'Rate (% a week, a minus is a loss)',
+      goal: 'Goal weight, kg',
+      milestone: 'Milestone weight, kg',
+      kcal: 'kcal',
+      protein: 'Protein, g',
+      fat: 'Fat, g',
+      carbs: (g: string) => `Carbs follow: ${g} g`,
+      fromToday: 'From today on, until a change.',
+      save: 'Save',
+      saving: 'Saving…',
+      problem: {
+        number: 'Not a number.',
+        positive: 'More than 0.',
+        most: (n: string) => `At most ${n}.`,
+        range: (min: string, max: string) => `From ${min} to ${max}.`,
+        over: 'Protein and fat give more kcal than the day has.',
+        endBefore: 'Before the phase starts.',
+        endPast: 'Before today: the days gone stay as they were.',
+        startAfter: (date: string) => `After ${date}.`,
+        startPast: 'Today or later.',
+      },
+      atLeast: (value: string) => `At least ${value}`,
+      atMost: (value: string) => `At most ${value}`,
+      levels: {
+        user: 'your limit',
+        instance: "the instance's limit",
+        code: 'a limit nothing changes',
+      },
+      refused: 'The limits do not allow it.',
+      loosen: 'Loosen it in your limits',
+      saved: { phase: 'Phase changed', next: 'Next phase planned', targets: 'Targets changed' },
     },
     revisions: {
       title: 'History of the plan',
@@ -943,7 +1039,6 @@ export const en = {
         `Taking it back loosens ${names}, which allows a plan the limit refused.`,
       yes: 'Take back',
       no: 'Keep it',
-      reason: 'Taken back in the app.',
       cannot:
         'This change cannot be taken back any more: it took effect, or the plan changed since. Ask for a new change instead.',
     },
@@ -975,12 +1070,15 @@ export const en = {
     },
     proposedLimit: (proposed: string, limit: string, level: string) =>
       `${proposed} proposed, the limit ${limit}: ${level}`,
+    // What a warning of the limits means, in plain words: the value, what
+    // is advised, and why it matters.
     warnings: {
       below_bmr: (value: string, threshold: string) =>
-        `${value} kcal, under the estimated BMR of ${threshold}`,
+        `Below your resting burn (${value} kcal, your BMR is about ${threshold}): fine for a while, hard to keep up for long.`,
       low_energy_availability: (value: string, threshold: string) =>
-        `energy availability of ${value} kcal a kg of lean mass, under ${threshold}`,
-      low_carbs: (value: string, threshold: string) => `${value} g of carbs, under ${threshold}`,
+        `Low energy for your lean mass (${value} kcal/kg, at least ${threshold} advised): over time it can tire you and slow recovery.`,
+      low_carbs: (value: string, threshold: string) =>
+        `Few carbs (${value} g, at least ${threshold} g advised): fine if you choose it, but training may feel harder.`,
     },
   },
   notFound: {

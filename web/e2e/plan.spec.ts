@@ -88,3 +88,130 @@ test('a wrong limit takes the focus, in view, and says why at its field', async 
     ).ok(),
   ).toBe(true)
 })
+
+// cutFromToday gives the signed-in user what a plan needs (a profile and
+// a weigh-in) and a cut from today, as the app makes one; it returns
+// today.
+async function cutFromToday(page: Page): Promise<string> {
+  const api = page.request
+  expect(
+    (
+      await api.put('/api/v1/profile', {
+        data: { sex: 'male', birth_date: '1990-06-15', height_cm: 180 },
+      })
+    ).ok(),
+  ).toBe(true)
+  expect((await api.put('/api/v1/days/today/metrics/weight', { data: { value: 85 } })).ok()).toBe(
+    true,
+  )
+  const me: unknown = await (await api.get('/api/v1/me')).json()
+  const today = typeof me === 'object' && me !== null && 'today' in me ? String(me.today) : ''
+  const made = await api.post('/api/v1/plan/changes', {
+    data: { phases: [{ start: today, type: 'cut', rate_pct_week: -0.5 }] },
+  })
+  expect(made.ok()).toBe(true)
+  return today
+}
+
+test('the plan is changed in the app, each change a revision taken back', async ({ page }) => {
+  await signIn(page)
+  const today = await cutFromToday(page)
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('link', { name: 'Plan' })
+    .click()
+
+  // A first target, by type of day.
+  const targets = page.getByRole('region', { name: 'Targets by type of day' })
+  const sheet = page.getByRole('dialog', { name: 'Targets by type of day', exact: true })
+  await targets.getByRole('button', { name: 'Edit targets' }).click()
+  const training = sheet.getByRole('group', { name: 'Training' })
+  await training.getByRole('textbox', { name: 'kcal' }).fill('2300')
+  await training.getByRole('textbox', { name: 'Protein, g' }).fill('160')
+  await training.getByRole('textbox', { name: 'Fat, g' }).fill('65')
+  const rest = sheet.getByRole('group', { name: 'Rest' })
+  await rest.getByRole('textbox', { name: 'kcal' }).fill('2000')
+  await rest.getByRole('textbox', { name: 'Protein, g' }).fill('160')
+  await rest.getByRole('textbox', { name: 'Fat, g' }).fill('65')
+  await expect(rest.getByText('Carbs follow: 194 g')).toBeVisible()
+  await sheet.getByRole('button', { name: 'Save' }).click()
+  await expect(sheet).toBeHidden()
+  await expect(targets.getByText('2,000 kcal', { exact: true })).toBeVisible()
+
+  // Past the user's floor of kcal, the field says so; within it, saved.
+  await targets.getByRole('button', { name: 'Edit targets' }).click()
+  await rest.getByRole('textbox', { name: 'kcal' }).fill('1300')
+  await sheet.getByRole('button', { name: 'Save' }).click()
+  await expect(rest.getByText('At least 1500 kcal: your limit.')).toBeVisible()
+  await expect(sheet.getByRole('link', { name: 'Loosen it in your limits' })).toBeVisible()
+  await rest.getByRole('textbox', { name: 'kcal' }).fill('1900')
+  await sheet.getByRole('button', { name: 'Save' }).click()
+  await expect(sheet).toBeHidden()
+  await expect(targets.getByText('1,900 kcal', { exact: true })).toBeVisible()
+
+  // The phase, faster.
+  const hero = page.getByRole('region', { name: 'Cut' })
+  await hero.getByRole('button', { name: 'Edit phase' }).click()
+  const phase = page.getByRole('dialog', { name: 'Edit phase', exact: true })
+  await phase.getByRole('textbox', { name: 'Loss (% a week)' }).fill('0.6')
+  await phase.getByRole('button', { name: 'Save' }).click()
+  await expect(phase).toBeHidden()
+  await expect(hero.getByText('-0.6% a week', { exact: true })).toBeVisible()
+
+  // The history says each, the latest first, and takes it back.
+  const history = page.getByRole('region', { name: 'History of the plan' })
+  const latest = history.getByRole('listitem').first()
+  await expect(latest.getByText('Changed in the app.')).toBeVisible()
+  await expect(latest.getByText(/, by you$/)).toBeVisible()
+  await expect(latest.getByText('-0.5% → -0.6% a week')).toBeVisible()
+  await expect(history.getByText('Rest days: 2,000 → 1,900 kcal · C 194 → 169 g')).toBeVisible()
+  await latest.getByRole('button', { name: 'Take back' }).click()
+  await latest.getByRole('button', { name: 'Take back' }).click()
+  await expect(
+    history.getByRole('listitem').first().getByText('Taken back in the app.'),
+  ).toBeVisible()
+  await expect(hero.getByText('-0.5% a week', { exact: true })).toBeVisible()
+
+  // No plan again, and nothing it needed, for the other tests.
+  const cleared = await page.request.post('/api/v1/plan/changes', {
+    data: { phases: [{ start: today, delete: true }], targets: [{ from: today, delete: true }] },
+  })
+  expect(cleared.ok()).toBe(true)
+  expect((await page.request.put('/api/v1/profile', { data: {} })).ok()).toBe(true)
+  expect((await page.request.delete('/api/v1/days/today/metrics/weight')).ok()).toBe(true)
+})
+
+test('the next phase is planned in the app', async ({ page }) => {
+  await signIn(page)
+  const today = await cutFromToday(page)
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('link', { name: 'Plan' })
+    .click()
+
+  const hero = page.getByRole('region', { name: 'Cut' })
+  await hero.getByRole('button', { name: 'Next phase' }).click()
+  const sheet = page.getByRole('dialog', { name: 'Next phase', exact: true })
+  await sheet.getByRole('combobox', { name: 'Type' }).selectOption('maintain')
+  await sheet.getByRole('button', { name: 'Save' }).click()
+  await expect(sheet).toBeHidden()
+  // On the timeline, after the cut.
+  await expect(
+    hero.getByRole('list', { name: 'Phases' }).getByRole('listitem').filter({ hasText: 'Planned' }),
+  ).toContainText('Maintenance')
+
+  // No plan again, and nothing it needed, for the other tests.
+  const tomorrow = new Date(`${today}T00:00:00Z`)
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
+  const cleared = await page.request.post('/api/v1/plan/changes', {
+    data: {
+      phases: [
+        { start: today, delete: true },
+        { start: tomorrow.toISOString().slice(0, 10), delete: true },
+      ],
+    },
+  })
+  expect(cleared.ok()).toBe(true)
+  expect((await page.request.put('/api/v1/profile', { data: {} })).ok()).toBe(true)
+  expect((await page.request.delete('/api/v1/days/today/metrics/weight')).ok()).toBe(true)
+})

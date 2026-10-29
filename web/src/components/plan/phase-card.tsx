@@ -2,6 +2,7 @@ import { useId } from 'react'
 
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
+import { EditPhase } from '@/components/plan/edit-phase'
 import { PhaseTimeline } from '@/components/plan/phase-timeline'
 import { spansOf, type Span } from '@/components/plan/phases'
 import { useDate } from '@/components/plan/proposal-text'
@@ -25,7 +26,8 @@ const dots: Record<Verdict['rate'], string> = {
 // target rate with the range calibration holds it to and what that is in
 // kg, the rate measured, its week, how far it has come to its planned end
 // and to its goal; then the phases on a timeline, past, today's and to
-// come. Without a phase today, the next one.
+// come. Without a phase today, the next one. The user edits the phase it
+// shows, and plans the next.
 export function PhaseCard({ plan }: { plan: Plan }) {
   const t = useMessages()
   const date = useDate()
@@ -34,6 +36,8 @@ export function PhaseCard({ plan }: { plan: Plan }) {
   const spans = spansOf(plan.phases, plan.today)
   const now = spans.find((s) => s.state === 'now')
   const next = spans.find((s) => s.state === 'planned')
+  // The phase the card shows, which the user edits.
+  const shown = now ?? next
 
   return (
     <section
@@ -55,6 +59,10 @@ export function PhaseCard({ plan }: { plan: Plan }) {
         <Now span={now} today={plan.today} titleId={id} />
       )}
       {(now === undefined || spans.length > 1) && <PhaseTimeline spans={spans} />}
+      <div className="flex flex-wrap gap-2">
+        {shown !== undefined && <EditPhase plan={plan} phase={shown.phase} />}
+        <EditPhase plan={plan} />
+      </div>
     </section>
   )
 }

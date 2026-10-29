@@ -585,7 +585,8 @@ test('the phase of the day, its week, and the rate against the phase', async () 
 
   renderAt('/')
 
-  const phase = await screen.findByRole('link', { name: /^Cut/ })
+  // The plan may come before the summary: the rate follows it.
+  const phase = await screen.findByRole('link', { name: /^Cut.*in range$/ })
   expect(phase.textContent).toBe('Cut · week 8 of 12 · -0.6%/wk, in range')
   expect(phase.getAttribute('href')).toBe('/progress')
 })

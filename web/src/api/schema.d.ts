@@ -508,6 +508,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/plan/changes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change your plan
+         * @description Needs a web session: the user's own change of the phases and the targets, in the app. It is a proposal of the user's, made and applied at once: a revision of the plan, which the history shows and a revert takes back, its rationale the code `changed in the app`. The limits hold it as they hold any proposal: one past them is refused (422), each violation an error detail as propose_changes gives it, and so is a change of the past or of nothing. It supersedes the proposal that waits, as any change of the plan does. The answer holds the revision, and what the limits checked, with their warnings.
+         */
+        post: operations["change-plan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/profile": {
         parameters: {
             query?: never;
@@ -713,6 +733,10 @@ export interface components {
         ApplyBody: {
             /** @description Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused. */
             confirm?: boolean;
+        };
+        ChangePlanBody: {
+            phases?: components["schemas"]["PhaseChangeIn"][] | null;
+            targets?: components["schemas"]["TargetChangeIn"][] | null;
         };
         ChangesBody: {
             /** @description The user's limits it changes, by name: a proposal with one applies only in the app. */
@@ -1746,7 +1770,7 @@ export interface components {
             expires_at: string;
             /** Format: uuid */
             id: string;
-            /** @description Why it was proposed. */
+            /** @description Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there). */
             rationale: string;
             /**
              * Format: uuid
@@ -4955,6 +4979,111 @@ export interface operations {
             };
             /** @description Forbidden */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "change-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePlanBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProposedBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -196,6 +196,13 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodPost, "/api/v1/proposals", stepBody(today.AddDays(1), 1300), []*http.Cookie{session}, nil)
 			in.do(t, http.MethodPost, "/api/v1/proposals", stepBody(today.AddDays(1), 1900), []*http.Cookie{session}, nil)
 		},
+		"change-plan": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			today := saveCoach(t, in)
+			// A refusal of the limits too, with its violations.
+			in.do(t, http.MethodPost, "/api/v1/plan/changes", changeBody(today, 1300), []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPost, "/api/v1/plan/changes", changeBody(today, 1950), []*http.Cookie{session}, nil)
+		},
 		"apply-proposal": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			p := proposeStep(t, in, session, saveCoach(t, in), 1900)

@@ -9,8 +9,9 @@ import {
   Utensils,
   type LucideIcon,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 
+import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { buttonVariants } from '@/components/ui/button'
@@ -23,31 +24,54 @@ import { cn } from '@/lib/utils'
 const sectionClass =
   'group flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-md text-caption text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=page]:font-semibold aria-[current=page]:text-primary lg:h-10 lg:min-h-0 lg:flex-row lg:justify-start lg:gap-2.5 lg:px-3 lg:text-sm lg:font-medium lg:text-foreground lg:hover:bg-muted lg:aria-[current=page]:bg-primary-soft lg:aria-[current=page]:text-primary'
 
+// A section's dot says something waits there: on the icon in the bar,
+// after the name in the sidebar; to a screen reader, mark describes the
+// link, whose name stays the section's.
 function Section({
   to,
   icon: Icon,
   exact = false,
+  mark,
   children,
 }: {
   to: '/' | '/foods' | '/progress' | '/plan' | '/settings'
   icon: LucideIcon
   exact?: boolean
+  mark?: string | undefined
   children: ReactNode
 }) {
+  const markId = useId()
   return (
     <Link
       to={to}
       // The day is current on any day's page, /?date=… too, and only
       // there, not on every path under /.
       activeOptions={exact ? { exact: true, includeSearch: false } : {}}
+      aria-describedby={mark === undefined ? undefined : markId}
       className={sectionClass}
     >
-      <Icon
-        aria-hidden
-        strokeWidth={1.75}
-        className="size-5.5 lg:size-4.5 lg:text-muted-foreground lg:group-aria-[current=page]:text-primary"
-      />
+      <span className="relative flex shrink-0">
+        <Icon
+          aria-hidden
+          strokeWidth={1.75}
+          className="size-5.5 lg:size-4.5 lg:text-muted-foreground lg:group-aria-[current=page]:text-primary"
+        />
+        {mark !== undefined && (
+          <span
+            aria-hidden
+            className="absolute -top-0.5 -right-1 size-2.5 rounded-full bg-primary ring-2 ring-card lg:hidden"
+          />
+        )}
+      </span>
       {children}
+      {mark !== undefined && (
+        <>
+          <span aria-hidden className="ml-auto hidden size-2 rounded-full bg-primary lg:block" />
+          <span id={markId} hidden>
+            {mark}
+          </span>
+        </>
+      )}
     </Link>
   )
 }
@@ -67,11 +91,13 @@ function initials(name: string): string {
 // width. On a phone it is a bar at the bottom, in reach of a thumb, with
 // Log a meal in its middle; from 1024 px it is a sidebar, with Log a meal
 // first, and the settings, the user and the theme at its foot. Each hides
-// what is the other's.
+// what is the other's. The plan's section has a dot while a proposal
+// waits there for the user's answer.
 export function AppNav() {
   const t = useMessages()
   const session = useQuery(sessionQuery)
   const name = session.data?.user.name ?? ''
+  const waits = $api.useQuery('get', '/api/v1/plan').data?.pending !== undefined
 
   return (
     <nav
@@ -135,7 +161,7 @@ export function AppNav() {
           </Section>
         </li>
         <li>
-          <Section to="/plan" icon={Target}>
+          <Section to="/plan" icon={Target} mark={waits ? t.nav.waits : undefined}>
             {t.nav.plan}
           </Section>
         </li>

@@ -101,7 +101,7 @@ store layer and covered by tests that run every query as the wrong user.
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
 | `days` | user_id, day, excluded_reason?, training_day?, mood?, hunger?, note? | check-in (mood and hunger 1–5); open and complete follow from the clock, only an exclusion is stored, with its reason; `excluded` drops a day from calibration (restaurant, sick, forgot to log); `training_day` is the check-in's toggle of the day's type, NULL when the plan decides (§7) |
 | `targets` | user_id, effective_from, for training days and for rest days: kcal, protein, fat; proposal_id? | effective-dated rows; the why lives in the proposal; an unsplit target has the same for both; carbs are what the kcal leave after protein and fat, so a kcal step moves the carbs and keeps the grams of protein and fat |
-| `proposals` | id, user_id, client + model, status (pending/applied/rejected/superseded/reverted), rationale, window?, changes (JSON: each change with the state before and after), reverts?, created_at, expires_at, decided_at + who decided, reverted_by? | every plan change (§8); applied ones are the revision log; a pending one past expires_at is expired, which follows from the time and is not stored |
+| `proposals` | id, user_id, client + model, status (pending/applied/rejected/superseded/reverted), rationale (a coach's words, or the app's code), window?, changes (JSON: each change with the state before and after), reverts?, created_at, expires_at, decided_at + who decided, reverted_by? | every plan change (§8); applied ones are the revision log; a pending one past expires_at is expired, which follows from the time and is not stored |
 | `plan_settings` | user_id, training_weekdays, limits?; later autonomy (propose/autopilot) and check-in weekday | the training weekdays give each day its type ahead of time (§7); the user's limits are a JSON object of their names ([limits.md](limits.md)) holding only those off their defaults, so a limit at its default follows a later release's default, and change only from a web session, never through tools (§8) |
 | `phases` | user_id, start, type (cut/maintain/bulk/recomp), end_day?, rate_pct_week (signed), goal_weight?, milestone_weight? | the user's goal timeline, one phase per start, none overlapping another; a phase without an end lasts until the next starts; a phase start anchors the water/glycogen window; a diet break or a deload maintenance week is just a short `maintain` phase; goal and milestone may sit above or below the current weight |
 | `profile_notes` | user_id, notes | free-text preferences and guidance (e.g. food dislikes, schedule constraints) handed to the AI as context; one text per user |
@@ -612,16 +612,19 @@ The replacement:
 
 ## 8. Coaching: the AI changes the plan
 
-Users never tune numbers by hand. They say what they want ("start a
+Users need not tune numbers by hand. They say what they want ("start a
 lean bulk in January", "I've plateaued, what now?", "make weekends
 easier") and the AI changes phases, goals and targets, like a private
 coach or nutritionist. For a one-off session like that, the right tool
 is a strong model through MCP, paid for by the user's own
-Claude/ChatGPT subscription.
+Claude/ChatGPT subscription. The user may still change the plan in the
+app (decided on 29 October 2026): edit the phase, plan the next one, and
+set the targets by type of day, each change a proposal of the user's
+own, applied at once (below).
 
 | layer | who | how often | may change |
 | --- | --- | --- | --- |
-| **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot) | on request, e.g. monthly | phase timeline, target rate, goal/milestone weight, protein g/kg, day-type split, profile notes, later the training program; a change of the user's limits only as a proposal a web session applies (the profile the user sets) |
+| **Plan** | coach session: the user + a strong model (MCP, or the built-in `smart` slot); or the user alone, in the app | on request, e.g. monthly | phase timeline, target rate, goal/milestone weight, protein g/kg, day-type split, profile notes, later the training program; a change of the user's limits only as a proposal a web session applies (the profile the user sets) |
 | **Autopilot** | server, deterministic | weekly check-in | kcal within the user's limits of step and drift, from the calibration verdict (§7) |
 | **Logging** | any client, `fast` model | many times a day | meals, metrics, check-ins — never the plan |
 
@@ -640,12 +643,25 @@ Claude/ChatGPT subscription.
 2. **Consent.** The user agrees in plain language ("može", "yes") and the
    AI calls `apply_proposal`. Mostly a chat ends so; a proposal it left
    undecided waits, shows in the web app's plan (its section) with
-   what it changes, its preview by the data now, Accept and Reject, so a
-   proposal made in Claude can be accepted in the app, and the morning
+   only what it changes, each value from what it was to what it is to
+   be, who made it and when, how long it waits, what the data say
+   beside it (the pace calibration measures against the phase's range,
+   how far its TDEE is trusted, and whether they ask for the change),
+   its preview by the data now, Accept and Reject, so a proposal made
+   in Claude can be accepted in the app; while it waits, the plan's
+   section has a dot and the day a line of its gist, and the morning
    summary says it waits. One that changes the user's limits is
    accepted there alone, after the user's yes in the chat too, and one
    that loosens a limit asks first, as the limits' form does; taking
    back a limit a revision tightened says that it loosens it.
+   **The user's own change** in the app (`POST /api/v1/plan/changes`,
+   a web session's alone) is a proposal of the user's, made and applied
+   in one transaction: the same rules and limits hold it, a violation
+   said at its field and one of the user's own limits loosened in their
+   form, and it is a revision as any other, which the history shows and
+   a revert takes back. Its rationale is a code, `changed in the app`,
+   which the app says in the user's language, as it takes a revision
+   back with `taken back in the app`: no one types why.
 3. **History.** Applied proposals are the revision history: who (user,
    model name, client), when, why, before → after. `revert` creates the
    inverse proposal, each change put back as it was before; applied, it

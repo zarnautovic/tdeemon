@@ -44,10 +44,13 @@ export function PlanPage() {
             key={pending.id}
             proposal={pending}
             preview={plan.data.pending_preview}
+            plan={plan.data}
           />
         )}
-        {(targets.length > 0 || days.length > 0) && <TargetsCard plan={plan.data} />}
-        {revisions.length > 0 && <Revisions revisions={revisions} />}
+        {(targets.length > 0 || days.length > 0 || phases.length > 0) && (
+          <TargetsCard plan={plan.data} />
+        )}
+        {revisions.length > 0 && <Revisions revisions={revisions} targets={targets} />}
       </>
     )
   }

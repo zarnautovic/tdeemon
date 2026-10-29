@@ -17,6 +17,7 @@ import { QuickAdd } from '@/components/day/quick-add'
 import { QuickChips } from '@/components/day/quick-chips'
 import { WeekStrip } from '@/components/day/week-strip'
 import { LoadError } from '@/components/load-error'
+import { ProposalNudge } from '@/components/plan/proposal-nudge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -219,6 +220,8 @@ export function DayPage() {
             after the other. */}
         <div className="space-y-4 lg:col-span-8">
           <DaySummary day={day.data} />
+          {/* A proposal that waits, under the day's hero. */}
+          {isToday && <ProposalNudge />}
           {isToday && (
             <QuickChips
               date={day.data.date}

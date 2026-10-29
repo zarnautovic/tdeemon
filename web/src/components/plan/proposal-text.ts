@@ -139,7 +139,7 @@ export function usePlanWords() {
   const weekdayName = (name: string) =>
     weekday.format(Date.UTC(2026, 9, 25 + weekdays.indexOf(name)))
   const day = (d: DayTarget) =>
-    c.day(f.number(d.kcal), f.number(d.protein, 1), f.number(d.carbs, 1), f.number(d.fat, 1))
+    c.day(f.number(d.kcal), f.grams(d.protein), f.grams(d.carbs), f.grams(d.fat))
   return {
     phase: (p: Phase) =>
       [

@@ -158,13 +158,13 @@ test('a proposal that waits says why, what it changes and what it comes to, and 
   const { sent } = coachServer({ pending: step, pending_preview: preview })
   renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
-  card.getByText('Proposed by claude-opus-5-5')
+  card.getByText('Proposed by Claude (claude-opus-5-5) · 8 hr. ago')
   card.getByText("The loss is under the cut's rate.")
   card.getByText('Drawn from the days Sep 25 to Oct 22.')
   card.getByText('New target from Oct 24')
   card.getByText('1,900 kcal · P 160 g · C 220 g · F 60 g')
   card.getByText('From Oct 24: 1,900 kcal a day on average, -0.53% a week (-0.44 kg)')
-  card.getByText('It waits for your answer until Oct 30.')
+  card.getByText('expires in 7 days')
 
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   await waitFor(() => {
@@ -216,8 +216,7 @@ test('the history shows a revision, which is taken back in a step', async () => 
   const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
   history.getByText('Train on Sundays too.')
   history.getByText('Training days')
-  history.getByText('Sun, Mon')
-  history.getByText('was Mon')
+  history.getByText('Mon → Sun, Mon')
 
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   history.getByText('Take this change back, from now on?')
@@ -337,8 +336,7 @@ test("a change's date of another year says its year", async () => {
   coachServer({ pending: longer })
   renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
-  card.getByText('Cut, -0.5% a week, until Dec 31, 2027')
-  expect(card.getByText('was Cut, -0.5% a week, until Dec 31')).toBeTruthy()
+  expect(card.getByText('until Dec 31 → Dec 31, 2027')).toBeTruthy()
 })
 
 type Summary = components['schemas']['SummaryBody']
@@ -669,11 +667,9 @@ test('a proposal of the limits shows each, loosened or tightened, and asks befor
   renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   card.getByText('Limit: Fastest loss in a cut, BMI under 30')
-  card.getByText('1% a week, loosened')
-  card.getByText('was 0.7% a week')
+  card.getByText('0.7% a week → 1% a week, loosened')
   card.getByText('Limit: Least protein')
-  card.getByText('1.8 g/kg, tightened')
-  card.getByText('was 1.6 g/kg')
+  card.getByText('1.6 g/kg → 1.8 g/kg, tightened')
   card.getByText(
     'A change of your limits is accepted only here, in the app, never by your AI coach.',
   )
@@ -800,7 +796,7 @@ test('taking back a tightened limit says it loosens it, and confirms it', async 
   const { applied } = takeBackServer(tightened, back)
   renderAt('/plan')
   const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
-  history.getByText('1.8 g/kg, tightened')
+  history.getByText('1.6 g/kg → 1.8 g/kg, tightened')
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   history.getByText('Taking it back loosens Least protein, which allows a plan the limit refused.')
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
@@ -831,5 +827,238 @@ test('a take-back that loosens what the question did not say is not confirmed', 
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   await waitFor(() => {
     expect(applied).toEqual([''])
+  })
+})
+
+// splitTarget is a plan's target from before the proposals, split: rest
+// days of 1,950 kcal, and carbs with a decimal, which none shows.
+const splitTarget: Plan['targets'][number] = {
+  effective_from: '2026-09-07',
+  training: { kcal: 2250, protein: 165, carbs: 251.3, fat: 65 },
+  rest: { kcal: 1950, protein: 160, carbs: 197, fat: 58 },
+}
+
+// fewerOnRest proposes 100 kcal fewer on rest days, from tomorrow.
+const fewerOnRest: Proposal = {
+  ...step,
+  changes: {
+    phases: [],
+    targets: [
+      {
+        from: '2026-10-24',
+        after: {
+          training: splitTarget.training,
+          rest: { ...splitTarget.rest, kcal: 1850, carbs: 172 },
+        },
+      },
+    ],
+    limits: [],
+  },
+}
+
+test('a proposal says only what it changes, from what it was to what it is to be', async () => {
+  planPage({ targets: [splitTarget], training_weekdays: ['monday'], pending: fewerOnRest })
+  renderAt('/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  card.getByText('Target from Oct 24')
+  expect(card.getByText('Rest days: 1,950 → 1,850 kcal · C 197 → 172 g')).toBeTruthy()
+  expect(card.queryByText(/^Training days/)).toBeNull()
+  expect(card.queryByText(/251/)).toBeNull()
+})
+
+test('a change of a phase says each value it changes', async () => {
+  const later: Proposal = {
+    ...step,
+    changes: {
+      phases: [
+        {
+          start: '2026-09-07',
+          before: { type: 'cut', start: '2026-09-07', rate_pct_week: -0.5, goal_weight: 80 },
+          after: {
+            type: 'cut',
+            start: '2026-09-07',
+            end: '2026-12-13',
+            rate_pct_week: -0.7,
+            goal_weight: 78,
+          },
+        },
+      ],
+      targets: [],
+      limits: [],
+    },
+  }
+  coachServer({ pending: later })
+  renderAt('/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  card.getByText('Phase from Sep 7')
+  expect(
+    card.getByText('-0.5% → -0.7% a week · no end → until Dec 13 · goal 80 → 78 kg'),
+  ).toBeTruthy()
+})
+
+test('what the data say stands beside the proposal, and says when they ask for no change', async () => {
+  planPage(
+    { targets: [splitTarget], training_weekdays: ['monday'], pending: fewerOnRest },
+    summaryOf({
+      tdee: {
+        ...summaryOf().tdee,
+        measured: true,
+        trusted: true,
+        kcal: 2400,
+        half_width: 40,
+        doubts: [],
+      },
+      verdict: {
+        ...summaryOf().verdict,
+        rate: 'on_target',
+        measured_pct_week: -0.55,
+        target_pct_week: -0.5,
+        tolerance_pct_week: 0.1,
+      },
+    }),
+  )
+  renderAt('/plan')
+  const data = within(await screen.findByRole('region', { name: 'What the data say' }))
+  data.getByText("Calibration measures -0.55% a week, within the phase's range (-0.6% to -0.4%).")
+  data.getByText('Its TDEE, 2,400 ± 40 kcal, is reliable.')
+  expect(
+    data.getByText("The pace is in range: the data alone don't ask for this change."),
+  ).toBeTruthy()
+})
+
+test('the data that ask the other way say so, and a TDEE not trusted is about so much', async () => {
+  planPage(
+    { targets: [splitTarget], training_weekdays: ['monday'], pending: fewerOnRest },
+    summaryOf({
+      tdee: { ...summaryOf().tdee, measured: true, kcal: 2400 },
+      verdict: {
+        ...summaryOf().verdict,
+        rate: 'below',
+        measured_pct_week: -0.8,
+        target_pct_week: -0.5,
+        tolerance_pct_week: 0.1,
+        action: 'raise_kcal',
+        gap_kcal: 150,
+      },
+    }),
+  )
+  renderAt('/plan')
+  const data = within(await screen.findByRole('region', { name: 'What the data say' }))
+  data.getByText("Calibration measures -0.8% a week, below the phase's range (-0.6% to -0.4%).")
+  data.getByText('Its TDEE, about 2,400 kcal, is not reliable yet.')
+  expect(
+    data.getByText('The data point the other way: they ask for more kcal, not fewer.'),
+  ).toBeTruthy()
+})
+
+test("a limit's warning is said in plain words, with why it matters", async () => {
+  planPage({
+    pending: step,
+    pending_preview: {
+      checks: [
+        {
+          of: 'target',
+          day: '2026-10-24',
+          weekly_kcal: 1900,
+          warnings: [
+            { rule: 'low_energy_availability', day_type: 'rest', value: 27, threshold: 30 },
+          ],
+          violations: [],
+        },
+      ],
+    },
+  })
+  renderAt('/plan')
+  const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
+  expect(
+    card.getByText(
+      'Rest days: low energy for your lean mass (27 kcal/kg, at least 30 advised): over time it can tire you and slow recovery.',
+    ),
+  ).toBeTruthy()
+})
+
+test('a proposal that waits marks the plan in the sections, and none does not', async () => {
+  coachServer({ pending: step })
+  renderAt('/plan')
+  const nav = within(await screen.findByRole('navigation', { name: 'Sections' }))
+  expect(
+    await nav.findByRole('link', { name: 'Plan', description: 'A proposal waits' }),
+  ).toBeTruthy()
+  cleanup()
+  coachServer({})
+  renderAt('/plan')
+  await screen.findByRole('region', { name: 'No plan yet' })
+  const plan = within(screen.getByRole('navigation', { name: 'Sections' })).getByRole('link', {
+    name: 'Plan',
+  })
+  expect(plan.getAttribute('aria-describedby')).toBeNull()
+})
+
+test('today says that a proposal waits, its gist, and leads to it', async () => {
+  planPage({ targets: [splitTarget], training_weekdays: ['monday'], pending: fewerOnRest })
+  const router = renderAt('/')
+  const line = await screen.findByRole('link', { name: /^Your AI coach suggests/ })
+  expect(line.textContent).toBe('Your AI coach suggests: rest days 1,950 → 1,850 kcalReview')
+  fireEvent.click(line)
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/plan')
+  })
+})
+
+test('in Croatian the proposal says who made it, when, and how long it waits', async () => {
+  fakeServer({
+    ...signedIn('hr'),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () =>
+      Response.json(
+        planBody({ targets: [splitTarget], training_weekdays: ['monday'], pending: fewerOnRest }),
+      ),
+  })
+  renderAt('/plan')
+  const card = within(await screen.findByRole('region', { name: 'Prijedlog promjene' }))
+  card.getByText('Predložio Claude (claude-opus-5-5) · prije 8 h')
+  card.getByText('istječe za 7 dana')
+  expect(card.getByText('Dani odmora: 1.950 → 1.850 kcal · UH 197 → 172 g')).toBeTruthy()
+})
+
+// The app's own changes have a code for their rationale, said in the
+// language of whoever reads them; one stored in a language before the
+// codes is said in the language too.
+test("a revision made or taken back in the app is said in the reader's language", async () => {
+  const edited: Proposal = {
+    ...sundays,
+    id: '0193c3a5-0000-7000-8000-0000000000b2',
+    rationale: 'changed in the app',
+    by: { client: 'web' },
+  }
+  const before: Proposal = { ...sundays, status: 'reverted', rationale: 'Vraćeno u aplikaciji.' }
+  coachServer({ revisions: [edited, before] })
+  renderAt('/plan')
+  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  history.getByText('Changed in the app.')
+  history.getByText('Oct 20, by you')
+  history.getByText('Taken back in the app.')
+  expect(history.queryByText('Vraćeno u aplikaciji.')).toBeNull()
+})
+
+test('a revision is taken back with a code, in any language', async () => {
+  let sent: unknown
+  fakeServer({
+    ...signedIn('hr'),
+    'GET /api/v1/limits': () => Response.json(limitsBody()),
+    'GET /api/v1/plan': () => Response.json(planBody({ revisions: [sundays] })),
+    [`POST /api/v1/proposals/${sundays.id}/revert`]: async (r) => {
+      sent = await r.json()
+      return Response.json({ proposal: { ...step, reverts: sundays.id }, preview }, { status: 201 })
+    },
+    [`POST /api/v1/proposals/${step.id}/apply`]: () =>
+      Response.json({ proposal: { ...step, status: 'applied' } }),
+  })
+  renderAt('/plan')
+  const history = within(await screen.findByRole('region', { name: 'Povijest plana' }))
+  fireEvent.click(history.getByRole('button', { name: 'Vrati' }))
+  fireEvent.click(history.getByRole('button', { name: 'Vrati' }))
+  await waitFor(() => {
+    expect(sent).toEqual({ rationale: 'taken back in the app' })
   })
 })

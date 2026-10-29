@@ -11,6 +11,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 )
@@ -49,6 +50,9 @@ type webLimits struct {
 	History struct {
 		Since string `json:"since"`
 	} `json:"history"`
+	Plan struct {
+		MaxKcal float64 `json:"maxKcal"`
+	} `json:"plan"`
 }
 
 // bounds are the least and the most a value may be.
@@ -71,6 +75,7 @@ func newWebLimits() webLimits {
 	l.Profile.MinHeightCm, l.Profile.MaxHeightCm, l.Profile.MaxAge = profile.MinHeightCm, profile.MaxHeightCm, profile.MaxAge
 	l.User.MaxNameLen = user.MaxNameLen
 	l.History.Since = api.HistorySince.String()
+	l.Plan.MaxKcal = plan.MaxKcal
 	return l
 }
 

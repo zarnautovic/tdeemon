@@ -183,5 +183,30 @@ export function useFormat() {
     // of another year than now's on the user's clock, with it.
     calendarDay: (date: string, timeZone: string, now: number = Date.now()) =>
       shortDay(locale, calendarDate(date), 'UTC', now, timeZone),
+    // ago is how long before now an instant was, short, in minutes, hours
+    // or days: "2 hr. ago" in English, "prije 2 h" in Croatian.
+    ago: (instant: string, now: number = Date.now()) => {
+      const minutes = Math.max(0, Math.round((now - new Date(instant).getTime()) / 60_000))
+      const format = relativeFormat(locale)
+      if (minutes < 60) {
+        return format.format(-minutes, 'minute')
+      }
+      return minutes < 24 * 60
+        ? format.format(-Math.round(minutes / 60), 'hour')
+        : format.format(-Math.round(minutes / (24 * 60)), 'day')
+    },
   }
+}
+
+// relativeFormats keeps each language's formatter of how long ago, short,
+// once made.
+const relativeFormats = new Map<string, Intl.RelativeTimeFormat>()
+
+function relativeFormat(locale: string): Intl.RelativeTimeFormat {
+  let f = relativeFormats.get(locale)
+  if (f === undefined) {
+    f = new Intl.RelativeTimeFormat(locale, { style: 'short', numeric: 'auto' })
+    relativeFormats.set(locale, f)
+  }
+  return f
 }
