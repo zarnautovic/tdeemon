@@ -251,9 +251,10 @@ test("the app's Log a meal logs today's over another page, which stays, its toas
   const server = logServer()
   const router = renderAt('/progress?days=30')
 
-  // The bar's, a phone's.
+  // The bar's, a phone's. The progress' module loads with its route, the
+  // first time a while.
   const [, bar] = await within(
-    await screen.findByRole('navigation', { name: 'Sections' }),
+    await screen.findByRole('navigation', { name: 'Sections' }, { timeout: 10_000 }),
   ).findAllByRole('button', { name: 'Log a meal' })
   if (bar === undefined) {
     throw new Error('no Log a meal in the bar')
