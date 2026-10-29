@@ -181,9 +181,8 @@ the change. The floors fail `make test`, and so CI.
   - 90 % for the domain and the boundaries where input enters, with
     their subpackages: `internal/domain`, `internal/tools`,
     `internal/api`, `internal/mcp`, `internal/config`, `internal/auth`
-    (credentials), `internal/ingest` (what devices send) and
-    `internal/history` (the predecessor's history). A new boundary, such
-    as the chat, joins the list;
+    (credentials) and `internal/ingest` (what devices send). A new
+    boundary, such as the chat, joins the list;
   - the `storetest` helper is excluded, as the tests that use it exercise
     it.
 - **The web app** (Vitest, `web/vite.config.ts`):

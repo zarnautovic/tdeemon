@@ -458,8 +458,9 @@ export function lastAmountOf(food: Food, t: Messages, f: Format): string | undef
     : t.unit[last.unit](f.number(last.amount))
 }
 
-// splitRest is the name the import of a user's history gives the item of
-// the rest of a meal's total (history.SplitRestName).
+// splitRest is the name the one-off import of the maintainer's history
+// gave the item of the rest of a meal's total (DESIGN.md §10), which the
+// meals of before still hold.
 const splitRest = 'Rest of the meal (history split)'
 
 // itemName is an item's name as the app shows it: the one the import of

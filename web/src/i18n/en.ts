@@ -437,7 +437,7 @@ export const en = {
     was: (kcal: string) => `was ${kcal}`,
     // A time typed that is none, and how one is: 7:30 PM, or 19:30.
     timeFormat: (example: string) => `Type the time as ${example}.`,
-    // The item an import of history gives the rest of a meal's total.
+    // The item the one-off import of history gave the rest of a meal's total.
     restOfMeal: 'Rest of the meal',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'C (g)', fat: 'F (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
