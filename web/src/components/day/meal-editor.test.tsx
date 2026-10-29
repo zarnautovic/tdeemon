@@ -1129,10 +1129,14 @@ test("a meal's description, time and note are changed, the time within its day",
 
   await edit()
   expect(meal().getByLabelText('What it was')).toHaveProperty('value', 'Breakfast')
-  // 15:45 UTC is 08:45 in Los Angeles, the user's time zone.
-  expect(meal().getByLabelText('Time')).toHaveProperty('value', '08:45')
+  // 15:45 UTC is 08:45 in Los Angeles, the user's time zone, on an
+  // English clock, which a time is typed on too.
+  expect(meal().getByLabelText('Time')).toHaveProperty('value', '8:45 AM')
+  expect(meal().getByLabelText('Time').getAttribute('placeholder')).toBe('7:30 PM')
   fireEvent.change(meal().getByLabelText('What it was'), { target: { value: ' Brunch ' } })
-  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '10:15' } })
+  fireEvent.change(meal().getByLabelText('Time'), { target: { value: '10:15am' } })
+  fireEvent.blur(meal().getByLabelText('Time'))
+  expect(meal().getByLabelText('Time')).toHaveProperty('value', '10:15 AM')
   fireEvent.click(meal().getByRole('button', { name: 'Add a note' }))
   fireEvent.change(meal().getByLabelText('Note'), { target: { value: 'after the gym\n' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
@@ -1153,7 +1157,7 @@ test("a time before the day's start is of the night after it", async () => {
   // The user's day starts at 4: 02:30 is the night after the 23rd.
   expect(meal().queryByText(/the night after this day/)).toBeNull()
   fireEvent.change(meal().getByLabelText('Time'), { target: { value: '02:30' } })
-  expect(meal().getByText('02:30 is the night after this day.')).toBeDefined()
+  expect(meal().getByText('2:30 AM is the night after this day.')).toBeDefined()
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   await waitFor(() => {
@@ -1942,6 +1946,8 @@ test('another food taken back leaves the item as it was', async () => {
   )
   fireEvent.click(meal().getByRole('button', { name: 'Remove: Rye bread' }))
   expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '90')
+  // The item's menu has the focus the other food's Remove had.
+  expect(document.activeElement).toBe(meal().getByRole('button', { name: 'More: Oats' }))
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   await waitFor(() => {
@@ -2685,7 +2691,8 @@ test('in Croatian, the day is named in words and the time is on a 24-hour clock'
     expect(screen.queryByRole('listbox')).toBeNull()
   })
   // 15:45 UTC is 08:45 in Los Angeles: no AM or PM.
-  expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '08:45')
+  expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '8:45')
+  expect(editor.getByLabelText('Vrijeme').getAttribute('placeholder')).toBe('19:30')
 
   fireEvent.change(editor.getByLabelText('Vrijeme'), { target: { value: '25:00' } })
   fireEvent.click(editor.getByRole('button', { name: 'Spremi obrok' }))
@@ -2697,7 +2704,7 @@ test('in Croatian, the day is named in words and the time is on a 24-hour clock'
   fireEvent.change(editor.getByLabelText('Vrijeme'), { target: { value: '0930' } })
   expect(editor.queryByRole('alert')).toBeNull()
   fireEvent.blur(editor.getByLabelText('Vrijeme'))
-  expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '09:30')
+  expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '9:30')
   await pickDay('Jučer', editor)
   fireEvent.click(editor.getByRole('button', { name: 'Spremi obrok' }))
   await waitFor(() => {

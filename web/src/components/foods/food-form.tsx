@@ -287,8 +287,12 @@ export function FoodForm({
       draft.basis === 'portion' ? number('portionGrams', draft.portionGrams, false) : undefined
     tooMuch(nutrients, portionGrams, errors)
     // The names of the servings, and the other names, as the server tells
-    // them apart (food.Key): one given twice is refused.
+    // them apart (food.Key): one given twice is refused. A food has so
+    // many of each (limits.json): the first past them is said, whatever
+    // else is wrong with it.
+    const { maxServings, maxAliases } = limits.food
     const servingNames = new Set<string>()
+    let servingsGiven = 0
     const servings = draft.servings.flatMap(({ key, value }) => {
       if (value.name.trim() === '' && value.amount.trim() === '') {
         return []
@@ -306,9 +310,17 @@ export function FoodForm({
         errors.set(`serving name ${key}`, t.foods.servingTwice)
       }
       servingNames.add(nameKey(named))
+      servingsGiven += 1
+      if (servingsGiven === maxServings + 1) {
+        errors.set(
+          `serving name ${key}`,
+          t.foods.tooManyServings(f.number(maxServings), maxServings),
+        )
+      }
       return amount === undefined ? [] : [{ name: named, amount }]
     })
     const aliasNames = new Set<string>()
+    let aliasesGiven = 0
     const aliases = draft.aliases.flatMap(({ key, value }) => {
       const alias = value.trim()
       if (alias === '') {
@@ -318,6 +330,10 @@ export function FoodForm({
         errors.set(`alias ${key}`, t.foods.aliasTwice)
       }
       aliasNames.add(nameKey(alias))
+      aliasesGiven += 1
+      if (aliasesGiven === maxAliases + 1) {
+        errors.set(`alias ${key}`, t.foods.tooManyAliases(f.number(maxAliases), maxAliases))
+      }
       return [alias]
     })
     // A compact form's amount, as an item may hold it (tooMuch).

@@ -202,6 +202,15 @@ export function useFormat() {
       dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(
         new Date(instant),
       ),
+    // clock is a time of day (HH:MM) as time says one, to be read and
+    // typed again (parseClock): 7:30 PM in English, 19:30 in Croatian,
+    // its spaces plain where Intl puts a narrow one before PM.
+    clock: (time: string) => {
+      const [hour = 0, minute = 0] = time.split(':').map(Number)
+      return dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone: 'UTC' })
+        .format(Date.UTC(1970, 0, 1, hour, minute))
+        .replaceAll(/\s/g, ' ')
+    },
     // hour12 tells a time on a 12-hour clock, 8:45 AM in English, which a
     // column of times takes more room for than 8:45 in Croatian.
     hour12:
@@ -232,18 +241,47 @@ export function useFormat() {
         ? format.format(-Math.round(minutes / 60), 'hour')
         : format.format(-Math.round(minutes / (24 * 60)), 'day')
     },
+    // daysAgo is how long ago a day was, days before today, in words: in
+    // days under two weeks, in weeks under two months, in months under a
+    // year, and then in years, each the nearest whole one: "9 days ago",
+    // "6 weeks ago" of 45 days, "prije 3 mjeseca" of 90.
+    daysAgo: (days: number) => {
+      const format = relativeFormat(locale, 'long')
+      if (days < 14) {
+        return format.format(-days, 'day')
+      }
+      if (days < 60) {
+        return format.format(-Math.round(days / 7), 'week')
+      }
+      return days < 365
+        ? format.format(-Math.round(days / daysInMonth), 'month')
+        : format.format(-Math.round(days / daysInYear), 'year')
+    },
   }
 }
 
-// relativeFormats keeps each language's formatter of how long ago, short,
-// once made.
+// The days of a year, and of a month, on average.
+const daysInYear = 365.25
+const daysInMonth = daysInYear / 12
+
+// relativeFormats keeps each language's formatter of how long ago, short
+// (5 sec. ago, yesterday) or long (5 days ago), once made.
 const relativeFormats = new Map<string, Intl.RelativeTimeFormat>()
 
-function relativeFormat(locale: string): Intl.RelativeTimeFormat {
-  let f = relativeFormats.get(locale)
+function relativeFormat(
+  locale: string,
+  style: 'short' | 'long' = 'short',
+): Intl.RelativeTimeFormat {
+  const key = `${locale}|${style}`
+  let f = relativeFormats.get(key)
   if (f === undefined) {
-    f = new Intl.RelativeTimeFormat(locale, { style: 'short', numeric: 'auto' })
-    relativeFormats.set(locale, f)
+    // Long, always in numbers: a year before is "1 year ago", not "last
+    // year", which is a year of the calendar.
+    f = new Intl.RelativeTimeFormat(locale, {
+      style,
+      numeric: style === 'short' ? 'auto' : 'always',
+    })
+    relativeFormats.set(key, f)
   }
   return f
 }

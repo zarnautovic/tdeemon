@@ -461,8 +461,11 @@ in `web/`.
   before and after, which undo puts back, but for the changes of the
   plan: those undo leaves are listed in `undoLeaves`, and have no way
   back. A write that changes nothing (a
-  retry, a merge of nothing new) records nothing. A new kind of write
-  adds its `event.Action`, the operation to the `events` table's CHECK,
+  retry, a merge of nothing new) records nothing. A write made as a part
+  of another's change, such as the new foods a meal brings, is marked
+  part of its event (`markParts`): undo takes it back with that change,
+  newest first, whole or not at all, and never on its own. A new kind
+  of write adds its `event.Action`, the operation to the `events` table's CHECK,
   and its way back to `takeBack` and the reading of its state to
   `stateNow` (what undo compares with the state the change left), or,
   for a change of the plan, its place in `undoLeaves` and in their empty

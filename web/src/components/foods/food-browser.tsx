@@ -85,7 +85,13 @@ export function FoodBrowser() {
         {/* Without a food in use, the list's own button is the one way to
             add one. */}
         {!(filter === 'inUse' && total === 0) && (
-          <Link to="/foods/new" search={from} className={buttonVariants({ size: 'sm' })}>
+          <Link
+            to="/foods/new"
+            search={from}
+            // Short to the eye, whole to a screen reader.
+            aria-label={t.foods.newSaid}
+            className={buttonVariants({ size: 'sm' })}
+          >
             <Plus aria-hidden />
             {t.foods.new}
           </Link>

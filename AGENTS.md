@@ -45,8 +45,8 @@ the body's tiles each a tap from its measurement, and all the
 measurements in a sheet, sleep in hours and minutes, a meal's
 corrections in a sheet that
 says its total as it changes, an item's amount with its unit and its
-other ways in a menu, its day picked by name and its time on a 24-hour
-clock, a meal repeated or deleted taken there, a meal logged by hand
+other ways in a menu, its day picked by name and its time on the
+language's clock, a meal repeated or deleted taken there, a meal logged by hand
 in a sheet of the foods found, eaten lately or most and the meals of
 before, those eaten at the meal of the day lately first and today's
 last, the meals of it as cards above the search, whose keyboard waits

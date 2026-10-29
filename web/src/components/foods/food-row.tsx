@@ -63,7 +63,7 @@ export function FoodRow({
             <span className="truncate">
               {t.day.short.protein} {f.grams(n.protein)} · {t.day.short.carbs} {f.grams(n.carbs)} ·{' '}
               {t.day.short.fat} {f.grams(n.fat)}
-              {!recent && days !== undefined && ` · ${t.foods.eatenAgo(f.number(days), days)}`}
+              {!recent && days !== undefined && ` · ${f.daysAgo(days)}`}
             </span>
           </span>
         </span>

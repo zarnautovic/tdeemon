@@ -320,11 +320,11 @@ test("another day's meal is at noon, and one past midnight is of the night after
   const sheet = await openSheet()
   expect(sheet.getByText('Lunch · Oct 21 at 12:00 PM')).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'Change the name and time' }))
-  expect(sheet.getByLabelText('Time')).toHaveProperty('value', '12:00')
+  expect(sheet.getByLabelText('Time')).toHaveProperty('value', '12:00 PM')
   await giveEstimate(sheet, 'Snack')
   // The day starts at 04:00: 01:30 is the night after the 21st.
   fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '01:30' } })
-  expect(sheet.getByText('01:30 is the night after this day.')).toBeDefined()
+  expect(sheet.getByText('1:30 AM is the night after this day.')).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
 
   await waitFor(() => {
@@ -556,7 +556,7 @@ test('a time still to come is not sent, and one of the night after says so', asy
   await giveEstimate(sheet, 'Tea')
   fireEvent.click(sheet.getByRole('button', { name: 'Change the name and time' }))
   fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '02:30' } })
-  expect(sheet.getByText('02:30 is the night after this day.')).toBeDefined()
+  expect(sheet.getByText('2:30 AM is the night after this day.')).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
 
   expect((await sheet.findByRole('alert')).textContent).toBe(
@@ -1160,23 +1160,27 @@ test('on a touch screen the keyboard waits for a tap on the search, and does not
   expect(document.activeElement).toBe(sheet.getByRole('button', { name: 'Log 2 items · 208 kcal' }))
 })
 
-test('a time is typed on a 24-hour clock, and one that is none is said', async () => {
+test("a time is typed on the language's clock, or a 24-hour one, and one that is none is said", async () => {
   const server = logServer('2026-10-21')
   renderAt('/?date=2026-10-21')
 
   const sheet = await openSheet()
   await giveEstimate(sheet, 'Tea')
   fireEvent.click(sheet.getByRole('button', { name: 'Change the name and time' }))
-  fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '7 pm' } })
+  fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '19 pm' } })
   fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
-  expect(sheet.getByRole('alert').textContent).toBe('Type the time as 19:30.')
+  expect(sheet.getByRole('alert').textContent).toBe('Type the time as 7:30 PM.')
   expect(sheet.getByLabelText('Time').getAttribute('aria-invalid')).toBe('true')
   expect(server.sent).toEqual([])
 
-  // 1930 is 19:30, so it reads once the field is left.
+  // 7 pm is 7:00 PM once the field is left, and 1930 is 7:30 PM.
+  fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '7 pm' } })
+  fireEvent.blur(sheet.getByLabelText('Time'))
+  expect(sheet.getByLabelText('Time')).toHaveProperty('value', '7:00 PM')
+  expect(sheet.getByText('Dinner · Oct 21 at 7:00 PM')).toBeDefined()
   fireEvent.change(sheet.getByLabelText('Time'), { target: { value: '1930' } })
   fireEvent.blur(sheet.getByLabelText('Time'))
-  expect(sheet.getByLabelText('Time')).toHaveProperty('value', '19:30')
+  expect(sheet.getByLabelText('Time')).toHaveProperty('value', '7:30 PM')
   expect(sheet.getByText('Dinner · Oct 21 at 7:30 PM')).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
   await waitFor(() => {

@@ -173,6 +173,14 @@ test("a meal's item is given in another unit, and an estimate saved as a food", 
   await expect(lunch).toContainText('Canteen soup')
   const found = await page.request.get('/api/v1/foods?query=Canteen%20soup')
   expect(JSON.stringify(await found.json())).toContain('"basis":"portion"')
+
+  // The toast's Undo takes back the whole change, the food saved with it.
+  const toasts = page.getByRole('region', { name: 'Notifications' })
+  await toasts.getByRole('button', { name: 'Undo' }).click()
+  await expect(toasts).toContainText('Taken back: a meal changed.')
+  await expect(lunch).toContainText('45 g')
+  const gone = await page.request.get('/api/v1/foods?query=Canteen%20soup')
+  expect(JSON.stringify(await gone.json())).not.toContain('"name":"Canteen soup"')
 })
 
 test.describe('on a phone 390 px wide', () => {
@@ -199,6 +207,16 @@ test.describe('on a phone 390 px wide', () => {
       typeof saved === 'object' && saved !== null && 'id' in saved && typeof saved.id === 'string'
         ? saved.id
         : ''
+    // Another food, to take the tuna's place.
+    const rice = await page.request.post('/api/v1/foods', {
+      data: {
+        name: 'Brown rice',
+        basis: '100g',
+        source: 'label',
+        nutrients: { kcal: 360, protein: 8, carbs: 76, fat: 3 },
+      },
+    })
+    expect(rice.ok()).toBe(true)
     const logged = await page.request.post('/api/v1/meals', {
       data: {
         description: 'Tuna plate',
@@ -243,6 +261,15 @@ test.describe('on a phone 390 px wide', () => {
     await editor.getByLabel(`Unit: ${tuna}`).selectOption({ label: 'can' })
     await expect(editor.getByLabel(`Amount: ${tuna}`)).toHaveValue('2')
 
+    // The time is on the English clock, as the rest of the app's times,
+    // and its widest fits its field.
+    const time = editor.getByLabel('Time', { exact: true })
+    await expect(time).toHaveValue(/^\d{1,2}:\d{2} [AP]M$/)
+    await time.fill('12:58 pm')
+    await time.blur()
+    await expect(time).toHaveValue('12:58 PM')
+    expect(await time.evaluate((el) => el.scrollWidth - el.clientWidth)).toBe(0)
+
     // Another food chosen, by a tap or the keyboard, its search has the
     // focus, and takes what is typed; Cancel gives the focus back.
     const more = editor.getByRole('button', { name: `More: ${tuna}` })
@@ -261,6 +288,13 @@ test.describe('on a phone 390 px wide', () => {
     ).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(search).toBeFocused()
+    // Another food chosen, then taken back with its ×: the item is as it
+    // was, and its menu has the focus.
+    await page.keyboard.type('brown')
+    await editor.getByRole('button', { name: /^Brown rice/ }).click()
+    await expect(editor.getByLabel('Amount: Brown rice')).toBeFocused()
+    await editor.getByRole('button', { name: 'Remove: Brown rice' }).click()
+    await expect(more).toBeFocused()
 
     // Removed, the item's Keep has the focus; kept, its menu.
     await editor.getByRole('button', { name: `More: ${chard}` }).click()

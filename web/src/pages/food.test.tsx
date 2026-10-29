@@ -568,6 +568,49 @@ test('a serving of no amount, or of more than the server takes, is not sent', as
   expect(server.sent).toEqual([])
 })
 
+test('a serving or another name past the most a food has is said there, and not sent', async () => {
+  const server = foodServer(undefined, 'en', {
+    ...oats,
+    servings: Array.from({ length: 20 }, (_, i) => ({ name: `cup ${String(i + 1)}`, amount: 80 })),
+    aliases: Array.from({ length: 20 }, (_, i) => `oats ${String(i + 1)}`),
+  })
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add a serving' }))
+  fireEvent.change(screen.getByLabelText('Serving 21'), { target: { value: 'bowl' } })
+  fireEvent.change(screen.getByLabelText('Amount 21 (g)'), { target: { value: '120' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add another name' }))
+  fireEvent.change(screen.getByLabelText('Other name 21'), { target: { value: 'muesli base' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+
+  const serving = screen.getByLabelText('Serving 21')
+  expect(serving.getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByText('A food has at most 20 servings.').id).toBe(
+    serving.getAttribute('aria-describedby'),
+  )
+  expect(document.activeElement).toBe(serving)
+  const alias = screen.getByLabelText('Other name 21')
+  expect(alias.getAttribute('aria-invalid')).toBe('true')
+  expect(screen.getByText('A food has at most 20 other names.').id).toBe(
+    alias.getAttribute('aria-describedby'),
+  )
+  expect(screen.getByLabelText('Serving 20').getAttribute('aria-invalid')).toBe('false')
+  expect(screen.getByLabelText('Other name 20').getAttribute('aria-invalid')).toBe('false')
+  expect(server.sent).toEqual([])
+
+  // One of each taken out, the rest are sent.
+  fireEvent.click(screen.getByRole('button', { name: 'Remove the serving: cup 1' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Remove the name: oats 1' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({
+    servings: expect.arrayContaining([{ name: 'bowl', amount: 120 }]) as unknown,
+    aliases: expect.arrayContaining(['muesli base']) as unknown,
+  })
+})
+
 test('energy far from what the macros make is warned of, with theirs to take, and saved all the same', async () => {
   const server = foodServer()
   const router = renderAt('/foods/new')

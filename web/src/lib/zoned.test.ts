@@ -94,10 +94,33 @@ test.each([
   [' 08:15 ', '08:15'],
   ['0', '00:00'],
   ['123', '01:23'],
+  // On a 12-hour clock, as English writes it, and as it is typed.
+  ['7:30 PM', '19:30'],
+  ['7:30 PM', '19:30'],
+  ['7.30pm', '19:30'],
+  ['7 p.m.', '19:00'],
+  ['11:59 PM', '23:59'],
+  ['12 PM', '12:00'],
+  ['12 AM', '00:00'],
+  ['12:15 am', '00:15'],
+  ['9:05 a.m.', '09:05'],
 ])('%j is the time %s', (typed, time) => {
   expect(parseClock(typed)).toBe(time)
 })
 
-test.each(['', '24:00', '19:60', '7:5', 'noon', '19:30:00', '12345'])('%j is no time', (typed) => {
+test.each([
+  '',
+  '24:00',
+  '19:60',
+  '7:5',
+  'noon',
+  '19:30:00',
+  '12345',
+  '13 PM',
+  '19:30 PM',
+  '0 AM',
+  '7:30 XM',
+  'PM',
+])('%j is no time', (typed) => {
   expect(parseClock(typed)).toBeUndefined()
 })

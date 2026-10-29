@@ -474,9 +474,9 @@ test('a day on its target has nothing left, and nothing over', async () => {
   expect(macroOf(summary, 'Fat')).toBe('Fat80 / 80 g · 0 to go')
 })
 
-// The server rounds what remains once, of the values unrounded (2400 less
-// 1079.5 is 1320.5, so 1321), and the total on its own (1080): what is
-// left is the target shown less what was eaten shown, in every place.
+// What is left is the target shown less what was eaten shown, in every
+// place, worked out here: a remaining of the server's that said otherwise
+// (1321, as it once gave of 2400 less 1079.5) is not what is shown.
 test('what is left is the target less what was eaten, as both are shown, in every place', async () => {
   fakeServer({
     ...signedIn(),

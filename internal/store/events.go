@@ -322,7 +322,8 @@ func undoAnswer(undone event.Event, again, nothing bool, conflict *UndoConflictE
 }
 
 // lastToUndo returns userID's latest change that undo can take back, or
-// ErrNothingToUndo.
+// ErrNothingToUndo. A write that is part of another's change is not one:
+// it goes back with that change (partsOf).
 func lastToUndo(ctx context.Context, tx *sql.Tx, userID uuid.UUID) (event.Event, error) {
 	args := []any{userID.String()}
 	for _, a := range undoLeaves() {
@@ -330,7 +331,7 @@ func lastToUndo(ctx context.Context, tx *sql.Tx, userID uuid.UUID) (event.Event,
 	}
 	e, err := scanEvent(tx.QueryRowContext(ctx, "SELECT "+eventColumns+` FROM events
 		WHERE user_id = ? AND actor = 'user' AND operation NOT IN (?`+strings.Repeat(", ?", len(args)-2)+`)
-			AND undone_by IS NULL AND stale = 0
+			AND undone_by IS NULL AND stale = 0 AND part_of IS NULL
 		ORDER BY rowid DESC LIMIT 1`, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return event.Event{}, ErrNothingToUndo
@@ -399,58 +400,65 @@ func undoInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, 
 	if err != nil {
 		return event.Event{}, nil, err
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE events SET undone_by = ? WHERE user_id = ? AND id = ?",
-		undoID.String(), userID.String(), e.ID.String()); err != nil {
+	// The change, and the writes that are parts of it.
+	if _, err := tx.ExecContext(ctx, "UPDATE events SET undone_by = ? WHERE user_id = ? AND (id = ? OR part_of = ?)",
+		undoID.String(), userID.String(), e.ID.String(), e.ID.String()); err != nil {
 		return event.Event{}, nil, err
 	}
 	e.UndoneBy = undoID
 	return e, nil, nil
 }
 
-// takeBackChecked puts e's entity back when it is as e left it, and
-// returns the state the undo left. When it is not, or the change cannot
-// be read or put back, it changes nothing but the event, which it marks
-// stale, and returns the conflict: one change that cannot be taken back
-// must not keep undo from the ones before it. A failure of the database
-// or of ctx is not the change's, and it returns it as an error.
+// takeBackChecked puts e's entity back when it is as e left it, and with
+// it the entities of the writes that are parts of e's change (the new
+// foods a meal brought), each when it is as its write left it; and
+// returns the state the undo left of e's. When one is not, or the change
+// cannot be read or put back, it changes nothing but the event, which it
+// marks stale, and returns the conflict: one change that cannot be taken
+// back must not keep undo from the ones before it. A failure of the
+// database or of ctx is not the change's, and it returns it as an error.
 func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) (any, *UndoConflictError, error) {
 	passOver := func(reason UndoReason, cause error) (any, *UndoConflictError, error) {
 		_, err := tx.ExecContext(ctx, "UPDATE events SET stale = 1 WHERE user_id = ? AND id = ?", userID.String(), e.ID.String())
 		return nil, &UndoConflictError{Event: e, Reason: reason, Err: cause}, err
 	}
-	current, err := stateNow(ctx, tx, userID, e)
+	parts, err := partsOf(ctx, tx, userID, e)
 	if err != nil {
-		if !belongsToChange(err) {
-			return nil, nil, fmt.Errorf("state of %s: %w", e.Entity, err)
-		}
-		return passOver(UndoUnreadable, err)
+		return nil, nil, fmt.Errorf("parts of %s: %w", e.Entity, err)
 	}
-	if c, err := stateJSON(current); err != nil {
-		return nil, nil, err
-	} else if want, _ := stateJSON(e.After); c != want {
-		return passOver(UndoChanged, nil)
+	// The change's writes, newest first: e was recorded after its parts.
+	writes := append([]event.Event{e}, parts...)
+	for i := range writes {
+		w := &writes[i]
+		current, err := stateNow(ctx, tx, userID, *w)
+		if err != nil {
+			if !belongsToChange(err) {
+				return nil, nil, fmt.Errorf("state of %s: %w", w.Entity, err)
+			}
+			return passOver(UndoUnreadable, err)
+		}
+		if c, err := stateJSON(current); err != nil {
+			return nil, nil, err
+		} else if want, _ := stateJSON(w.After); c != want {
+			return passOver(UndoChanged, nil)
+		}
 	}
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT take_back"); err != nil {
 		return nil, nil, err
 	}
-	if err := takeBack(ctx, tx, userID, e, now); err != nil {
-		err = fmt.Errorf("take back %s of %s: %w", e.Action, e.Entity, err)
-		if !belongsToChange(err) {
-			return nil, nil, err
+	for i := range writes {
+		w := &writes[i]
+		if err := takeBack(ctx, tx, userID, *w, now); err != nil {
+			err = fmt.Errorf("take back %s of %s: %w", w.Action, w.Entity, err)
+			if !belongsToChange(err) {
+				return nil, nil, err
+			}
+			// What the change's writes before put back goes too.
+			if rerr := rollBack(ctx, tx); rerr != nil {
+				return nil, nil, errors.Join(err, rerr)
+			}
+			return passOver(reasonOf(err), err)
 		}
-		if _, rerr := tx.ExecContext(ctx, "ROLLBACK TO take_back"); rerr != nil {
-			return nil, nil, errors.Join(err, rerr)
-		}
-		if _, rerr := tx.ExecContext(ctx, "RELEASE take_back"); rerr != nil {
-			return nil, nil, errors.Join(err, rerr)
-		}
-		reason := UndoStuck
-		if c, ok := errors.AsType[clash](err); ok {
-			reason = c.reason
-		} else if errors.Is(err, errUnreadable) {
-			reason = UndoUnreadable
-		}
-		return passOver(reason, err)
 	}
 	if _, err := tx.ExecContext(ctx, "RELEASE take_back"); err != nil {
 		return nil, nil, err
@@ -459,6 +467,48 @@ func takeBackChecked(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.
 	// archived rather than gone).
 	after, err := stateNow(ctx, tx, userID, e)
 	return after, nil, err
+}
+
+// rollBack undoes what was written since the savepoint take_back, and
+// releases it.
+func rollBack(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, "ROLLBACK TO take_back"); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "RELEASE take_back")
+	return err
+}
+
+// reasonOf is why err, which belongs to a change (belongsToChange), keeps
+// it from being taken back.
+func reasonOf(err error) UndoReason {
+	if c, ok := errors.AsType[clash](err); ok {
+		return c.reason
+	}
+	if errors.Is(err, errUnreadable) {
+		return UndoUnreadable
+	}
+	return UndoStuck
+}
+
+// partsOf returns the writes that are parts of e's change (markParts),
+// newest first, as undo takes them back.
+func partsOf(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) ([]event.Event, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT "+eventColumns+" FROM events WHERE user_id = ? AND part_of = ? ORDER BY rowid DESC",
+		userID.String(), e.ID.String())
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []event.Event
+	for rows.Next() {
+		p, err := scanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // belongsToChange reports whether err, from reading a change's entity or

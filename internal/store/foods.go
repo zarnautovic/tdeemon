@@ -178,7 +178,7 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 	var stored food.Food
 	err := db.WriteTx(ctx, func(tx *sql.Tx) error {
 		var err error
-		stored, err = saveFoodInTx(ctx, tx, userID, a, f, mode, now)
+		stored, _, err = saveFoodInTx(ctx, tx, userID, a, f, mode, now)
 		return err
 	})
 	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) {
@@ -191,39 +191,50 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 }
 
 // saveFoodInTx saves f in tx as saveFood does in mode, and returns it as
-// stored. f and a are valid.
-func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, f food.Food, mode saveMode, now time.Time) (food.Food, error) {
+// stored, with the id of the save's event (uuid.Nil when it recorded
+// none). f and a are valid.
+func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, f food.Food, mode saveMode, now time.Time) (food.Food, uuid.UUID, error) {
 	nameKey, brandKey := food.Key(f.Name), food.Key(f.Brand)
 	target, exists, err := saveTarget(ctx, tx, userID, f.ID, nameKey, brandKey, mode)
 	if err != nil {
-		return food.Food{}, err
+		return food.Food{}, uuid.Nil(), err
 	}
 	f.ID = target
 	if err := checkAliases(ctx, tx, userID, f); err != nil {
-		return food.Food{}, err
+		return food.Food{}, uuid.Nil(), err
 	}
 	var before *food.Food
 	if exists {
 		old, err := foodInTx(ctx, tx, userID, f.ID)
 		if err != nil {
-			return food.Food{}, err
+			return food.Food{}, uuid.Nil(), err
 		}
 		before = &old
 		if err := updateFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
-			return food.Food{}, err
+			return food.Food{}, uuid.Nil(), err
 		}
 	} else if err := insertFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
-		return food.Food{}, err
+		return food.Food{}, uuid.Nil(), err
 	}
 	if err := replaceFoodChildren(ctx, tx, userID, f); err != nil {
-		return food.Food{}, err
+		return food.Food{}, uuid.Nil(), err
 	}
 	stored, err := foodInTx(ctx, tx, userID, f.ID)
 	if err != nil {
-		return food.Food{}, err
+		return food.Food{}, uuid.Nil(), err
 	}
-	_, err = record(ctx, tx, userID, a, event.FoodSave, f.ID.String(), before, stored, now)
-	return stored, err
+	id, err := record(ctx, tx, userID, a, event.FoodSave, f.ID.String(), before, stored, now)
+	return stored, id, err
+}
+
+// newFoods is what saveNewFoods made of the new foods a meal brings: the
+// id each is stored under, by the id it came with; the user's foods it
+// kept instead, by their id; and the events it recorded, which are parts
+// of the meal's change (markParts).
+type newFoods struct {
+	ids   map[uuid.UUID]uuid.UUID
+	kept  map[uuid.UUID]food.Food
+	parts []uuid.UUID
 }
 
 // saveNewFoods saves the foods of foods that items name in tx, each as
@@ -234,13 +245,12 @@ func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 // A food no item names (one of an op found done already) is not saved.
 func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item,
 	now time.Time,
-) (ids map[uuid.UUID]uuid.UUID, kept map[uuid.UUID]food.Food, err error) {
+) (newFoods, error) {
 	named := make(map[uuid.UUID]bool, len(items))
 	for i := range items {
 		named[items[i].FoodID] = true
 	}
-	ids = make(map[uuid.UUID]uuid.UUID, len(foods))
-	kept = map[uuid.UUID]food.Food{}
+	out := newFoods{ids: make(map[uuid.UUID]uuid.UUID, len(foods)), kept: map[uuid.UUID]food.Food{}}
 	for i := range foods {
 		f := &foods[i]
 		if !named[f.ID] {
@@ -248,41 +258,47 @@ func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 		}
 		target, exists, err := saveTarget(ctx, tx, userID, f.ID, food.Key(f.Name), food.Key(f.Brand), saveOrCorrect)
 		if err != nil {
-			return nil, nil, err
+			return newFoods{}, err
 		}
+		var write uuid.UUID
 		if exists {
-			had, err := keptFood(ctx, tx, userID, a, target, now)
+			had, brought, err := keptFood(ctx, tx, userID, a, target, now)
 			if err != nil {
-				return nil, nil, err
+				return newFoods{}, err
 			}
-			ids[f.ID], kept[target] = target, had
-			continue
+			out.ids[f.ID], out.kept[target], write = target, had, brought
+		} else {
+			stored, saved, err := saveFoodInTx(ctx, tx, userID, a, *f, saveOrCorrect, now)
+			if err != nil {
+				return newFoods{}, err
+			}
+			out.ids[f.ID], write = stored.ID, saved
 		}
-		stored, err := saveFoodInTx(ctx, tx, userID, a, *f, saveOrCorrect, now)
-		if err != nil {
-			return nil, nil, err
+		if write != uuid.Nil() {
+			out.parts = append(out.parts, write)
 		}
-		ids[f.ID] = stored.ID
 	}
-	return ids, kept, nil
+	return out, nil
 }
 
 // keptFood returns userID's food id, which a new food of its name and
 // brand is, brought back if it was archived: the user eats it again, and
-// a search must find it next time. Bringing it back is a's event.
-func keptFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, id uuid.UUID, now time.Time) (food.Food, error) {
+// a search must find it next time. Bringing it back is a's event, whose
+// id it returns too (uuid.Nil when the food was in use already).
+func keptFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, id uuid.UUID, now time.Time) (food.Food, uuid.UUID, error) {
 	had, err := foodInTx(ctx, tx, userID, id)
 	if err != nil || !had.Archived {
-		return had, err
+		return had, uuid.Nil(), err
 	}
 	if err := setArchived(ctx, tx, userID, id, false, now); err != nil {
-		return food.Food{}, err
+		return food.Food{}, uuid.Nil(), err
 	}
-	if _, err := record(ctx, tx, userID, a, event.FoodArchive, id.String(), archivedState{true}, archivedState{false}, now); err != nil {
-		return food.Food{}, err
+	brought, err := record(ctx, tx, userID, a, event.FoodArchive, id.String(), archivedState{true}, archivedState{false}, now)
+	if err != nil {
+		return food.Food{}, uuid.Nil(), err
 	}
 	had.Archived = false
-	return had, nil
+	return had, brought, nil
 }
 
 // FoodByKey returns userID's food of name and brand, compared as SaveFood

@@ -1029,3 +1029,176 @@ func TestUndoWithARealClock(t *testing.T) {
 		}
 	}
 }
+
+// itemOf is an item of f, of q.
+func itemOf(t *testing.T, f food.Food, q meal.Quantity) meal.Item {
+	t.Helper()
+	it, err := meal.FromFood(f, q, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return it
+}
+
+// kefir is a new food a meal brings.
+func kefir() food.Food {
+	return food.Food{
+		ID: uuid.NewV7(), Name: "Kefir", Basis: food.Per100ml, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 50, Protein: 3.4, Carbs: 4.7, Fat: 1.5},
+	}
+}
+
+// foodGone fails t while userID's food id is there.
+func foodGone(t *testing.T, db *store.DB, userID, id uuid.UUID) {
+	t.Helper()
+	if got, err := db.FoodByID(t.Context(), userID, id); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the food after the undo = %+v, %v; want it gone with the meal's change", got, err)
+	}
+}
+
+// The new foods a meal brings are part of its change: one undo takes the
+// meal back and them with it. Their writes are no changes of their own:
+// they are undone with the meal's, and the next undo goes to the change
+// before it.
+func TestUndoMealWithItsNewFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	k := kefir()
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{itemOf(t, k, meal.Quantity{Amount: 250, Unit: "ml"})}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{k}, t0); err != nil {
+		t.Fatalf("CreateMealWithFoods: %v", err)
+	}
+	stored, err := foodNamed(t, db, ana, "Kefir")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if e := undo(t, db, ana); e.Action != event.MealCreate || e.Entity != m.ID.String() {
+		t.Fatalf("undone %s of %s, want the meal's create", e.Action, e.Entity)
+	}
+	if _, err := db.MealByID(t.Context(), ana, m.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the meal after the undo: %v, want it gone", err)
+	}
+	foodGone(t, db, ana, stored.ID)
+	es, err := db.Events(t.Context(), ana, store.MaxEvents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range es {
+		if e.Entity == stored.ID.String() && e.UndoneBy == uuid.Nil() {
+			t.Errorf("the kefir's %s is not marked undone", e.Action)
+		}
+	}
+	if e := undo(t, db, ana); e.Action != event.FoodSave || e.Entity != b.ID.String() {
+		t.Errorf("the next undo took back %s of %s, want the bar's save", e.Action, e.Entity)
+	}
+}
+
+// A food a meal brought back from the archive, by its name, goes back
+// there with the meal's undo; the next undo is of the user's archive.
+func TestUndoMealThatBroughtBackAFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, b.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	again := b
+	again.ID = uuid.NewV7()
+	m := breakfast(t, b, t0)
+	m.Items = []meal.Item{itemOf(t, again, meal.Quantity{Servings: 1, Serving: "bar"})}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{again}, t0); err != nil {
+		t.Fatalf("CreateMealWithFoods: %v", err)
+	}
+	if got, err := db.FoodByID(t.Context(), ana, b.ID); err != nil || got.Archived {
+		t.Fatalf("the bar after the meal = %+v, %v; want it brought back", got, err)
+	}
+
+	if e := undo(t, db, ana); e.Action != event.MealCreate {
+		t.Fatalf("undone %s, want the meal's create", e.Action)
+	}
+	if got, err := db.FoodByID(t.Context(), ana, b.ID); err != nil || !got.Archived {
+		t.Errorf("the bar after the undo = %+v, %v; want it archived again", got, err)
+	}
+	if e := undo(t, db, ana); e.Action != event.FoodArchive || e.Entity != b.ID.String() {
+		t.Errorf("the next undo took back %s of %s, want the bar's archive", e.Action, e.Entity)
+	}
+}
+
+// An estimate saved as a food in a meal's change (the web's Save as a
+// food): the change's undo takes the food back with it.
+func TestUndoMealChangeWithItsNewFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	soup, err := meal.Estimate("Canteen soup", food.Nutrients{Kcal: 180, Protein: 6, Carbs: 20, Fat: 8}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lunch := breakfast(t, bar(), t0)
+	lunch.Items = []meal.Item{soup}
+	before := createMeal(t, db, ana, lunch)
+	asFood := food.Food{ID: uuid.NewV7(), Name: "Canteen soup", Basis: food.PerPortion, Source: food.Estimate, Nutrients: soup.Nutrients}
+	if _, err := db.UpdateMeal(t.Context(), ana, testActor, lunch.ID, []food.Food{asFood}, func(m meal.Meal) (meal.Meal, error) {
+		it := itemOf(t, asFood, meal.Quantity{Portions: 1})
+		it.ID = m.Items[0].ID
+		m.Items[0] = it
+		return m, nil
+	}, t0); err != nil {
+		t.Fatalf("UpdateMeal: %v", err)
+	}
+	saved, err := foodNamed(t, db, ana, "Canteen soup")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if e := undo(t, db, ana); e.Action != event.MealReplace {
+		t.Fatalf("undone %s, want the meal's change", e.Action)
+	}
+	if got, _ := db.MealByID(t.Context(), ana, lunch.ID); !reflect.DeepEqual(got, before) {
+		t.Errorf("the meal after the undo = %+v, want %+v", got, before)
+	}
+	foodGone(t, db, ana, saved.ID)
+}
+
+// A meal's change goes back whole or not at all: a new food it brought
+// that an import wrote since keeps the meal from its undo, with the food.
+func TestUndoMealWhoseNewFoodChangedSince(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	k := kefir()
+	m := breakfast(t, bar(), t0)
+	m.Items = []meal.Item{itemOf(t, k, meal.Quantity{Amount: 250, Unit: "ml"})}
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{k}, t0); err != nil {
+		t.Fatalf("CreateMealWithFoods: %v", err)
+	}
+	stored, err := foodNamed(t, db, ana, "Kefir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported := stored
+	imported.Nutrients.Kcal = 55
+	if _, err := db.SaveFood(t.Context(), ana, importer, imported, t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.As(err, &conflict) ||
+		conflict.Event.Action != event.MealCreate || conflict.Reason != store.UndoChanged {
+		t.Fatalf("undo = %v, want the meal's create changed since", err)
+	}
+	if _, err := db.MealByID(t.Context(), ana, m.ID); err != nil {
+		t.Errorf("the meal after the undo passed over: %v, want it kept", err)
+	}
+	if got, err := db.FoodByID(t.Context(), ana, stored.ID); err != nil || got.Nutrients.Kcal != 55 {
+		t.Errorf("the kefir after the undo passed over = %+v, %v; want the import's", got, err)
+	}
+	// Nothing else was the user's: the food's save is no change of its own.
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.Is(err, store.ErrNothingToUndo) {
+		t.Errorf("the next undo = %v, want nothing to undo", err)
+	}
+}

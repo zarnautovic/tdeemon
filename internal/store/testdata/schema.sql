@@ -62,13 +62,18 @@ CREATE TABLE "events" (
     stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
     -- The id a client made for an undo, on the change that undo settled,
     -- or on the undo's own event when it found nothing to undo.
-    undo_request TEXT CHECK (undo_request IS NULL OR length(undo_request) = 36),
+    undo_request TEXT CHECK (undo_request IS NULL OR length(undo_request) = 36), part_of TEXT CHECK (
+    part_of IS NULL OR length(part_of) = 36
+),
     PRIMARY KEY (user_id, id)
 ) STRICT;
 
 CREATE INDEX events_user ON events (user_id);
 
 CREATE INDEX events_user_entity ON events (user_id, entity);
+
+CREATE INDEX events_user_part_of ON events (user_id, part_of)
+WHERE part_of IS NOT NULL;
 
 CREATE UNIQUE INDEX events_user_undo_request ON events (user_id, undo_request)
 WHERE undo_request IS NOT NULL;

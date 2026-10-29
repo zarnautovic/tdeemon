@@ -635,11 +635,11 @@ export function MealEditor({
               </Select.Positioner>
             </Select.Portal>
           </Select.Root>
-          <label className="w-24 space-y-1">
+          <label className={cn(f.hour12 ? 'w-28' : 'w-24', 'space-y-1')}>
             <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
             <TimeInput
               name="time"
-              defaultValue={openedWith.time}
+              defaultValue={f.clock(openedWith.time)}
               aria-invalid={ahead || badTime}
               aria-describedby={
                 [ahead || badTime ? `${id}-time` : '', night ? `${id}-night` : '']
@@ -656,16 +656,18 @@ export function MealEditor({
                 setAhead(false)
               }}
               onBlur={(e) => {
-                // As the time it reads, 19:30 for 1930.
+                // As the time it reads, on the language's clock: 7:30 PM,
+                // or 19:30, for 1930.
                 const typed = e.currentTarget.value
-                e.currentTarget.value = parseClock(typed) ?? typed
+                const time = parseClock(typed)
+                e.currentTarget.value = time === undefined ? typed : f.clock(time)
               }}
             />
           </label>
         </div>
         {night && (
           <p id={`${id}-night`} className="text-xs text-muted-foreground">
-            {t.log.nightAfter(clock)}
+            {t.log.nightAfter(f.clock(clock))}
           </p>
         )}
         {/* The meal as it would be saved, said as it changes. */}
@@ -1000,8 +1002,13 @@ export function MealEditor({
                         setSwaps((ss) => ({ ...ss, [item.id]: other }))
                       }}
                       onRemove={() => {
+                        // Taken back, the item is as it was, and its menu
+                        // takes the focus where the other food was.
                         const { [item.id]: _gone, ...rest } = swaps
-                        setSwaps(rest)
+                        flushSync(() => {
+                          setSwaps(rest)
+                        })
+                        menus.current.get(item.id)?.focus()
                       }}
                     />
                   </>
@@ -1089,7 +1096,7 @@ export function MealEditor({
         )}
         {(ahead || badTime) && (
           <p id={`${id}-time`} role="alert" className="text-xs text-destructive">
-            {badTime ? t.meal.timeFormat : t.meal.timeToCome}
+            {badTime ? t.meal.timeFormat(f.clock('19:30')) : t.meal.timeToCome}
           </p>
         )}
         {none && <p className="text-xs text-muted-foreground">{t.meal.oneItem}</p>}

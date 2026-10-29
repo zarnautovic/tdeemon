@@ -1,19 +1,23 @@
 import type { ComponentProps } from 'react'
 
+import { useFormat } from '@/i18n/format'
 import { inputClass } from '@/lib/styles'
 import { cn } from '@/lib/utils'
 
-// TimeInput is a field for a time of day on a 24-hour clock, typed as
-// 19:30 (parseClock reads it): the same in every language and browser,
-// where a browser's own field may show 12 hours, in its own language,
-// cut short.
+// TimeInput is a field for a time of day on the language's clock, as the
+// rest of the app shows times (useFormat's clock): 7:30 PM in English,
+// 19:30 in Croatian, either typed (parseClock reads both, and 1930) and
+// the same in every browser, where a browser's own field may show
+// another clock, in its own language, cut short.
 export function TimeInput({ className, ...props }: ComponentProps<'input'>) {
+  const f = useFormat()
   return (
     <input
-      inputMode="decimal"
+      inputMode={f.hour12 ? 'text' : 'decimal'}
       autoComplete="off"
-      maxLength={5}
-      placeholder="19:30"
+      // 12:30 p.m. on a 12-hour clock, 19:30 on a 24-hour one.
+      maxLength={f.hour12 ? 10 : 5}
+      placeholder={f.clock('19:30')}
       className={cn(inputClass, 'tabular-nums', className)}
       {...props}
     />

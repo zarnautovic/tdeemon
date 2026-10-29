@@ -2,8 +2,10 @@ package api_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
+	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
 // undo sends an undo under id, and reads what it took back.
@@ -288,5 +291,43 @@ func TestUndoOfTheLatest(t *testing.T) {
 	last := map[string]any{"action": "meal.create", "entity": first}
 	if text, isErr := callTool(t, cs, "undo_last", map[string]any{"last": last}); !isErr || !strings.Contains(text, `no argument "last"`) {
 		t.Errorf("undo through MCP, naming its change: %s", text)
+	}
+}
+
+// An estimate saved as a food in a meal's change (the web's Save as a
+// food) is one change with it: its undo, named as the web's toast names
+// it, takes the food back too, and leaves no undo of the food alone.
+func TestUndoOfAMealChangeTakesBackItsNewFood(t *testing.T) {
+	t.Parallel()
+
+	e := newMealsEnv(t)
+	id, soup := meal.NewIDAt(e.now).String(), meal.NewIDAt(e.now).String()
+	e.logged(t, fmt.Sprintf(`{"id": %q, "items": [{"id": %q, "name": "Canteen soup", "nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}]}`, id, soup))
+	before := e.mealOf(t, id)
+	asFood := fmt.Sprintf(`{"ops": [{"op": "replace", "item_id": %q, "item": {"food": {"name": "Canteen soup", "basis": "portion", "source": "estimate",
+		"nutrients": {"kcal": 180, "protein": 6, "carbs": 20, "fat": 8}}, "portions": 1}}]}`, soup)
+	if rec := e.patch(t, id, asFood); rec.Code != http.StatusOK {
+		t.Fatalf("save the estimate as a food: %d %s", rec.Code, rec.Body.String())
+	}
+	saved, err := foodNamed(t, e.in.db, e.in.user.ID, "Canteen soup", "")
+	if err != nil {
+		t.Fatalf("the food saved: %v", err)
+	}
+
+	rec := e.in.do(t, http.MethodPost, "/api/v1/undo",
+		fmt.Sprintf(`{"id": %q, "last": {"action": "meal.replace", "entity": %q}}`, clientid.NewAt(e.now), id), e.session, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"action":"meal.replace"`) {
+		t.Fatalf("undo of the change: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := e.mealOf(t, id); !reflect.DeepEqual(got, before) {
+		t.Errorf("the meal after the undo = %+v, want it as before, %+v", got, before)
+	}
+	if f, err := e.in.db.FoodByID(t.Context(), e.in.user.ID, saved.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the food after the undo = %+v, %v; want it gone with the change", f, err)
+	}
+	// The next undo takes back the meal's log: the food's save is no
+	// change of its own.
+	if code, got, body := undo(t, e, clientid.NewAt(e.now)); code != http.StatusOK || got != "meal.create "+id+" web" {
+		t.Errorf("the next undo: %d %s, want the meal's log", code, body)
 	}
 }

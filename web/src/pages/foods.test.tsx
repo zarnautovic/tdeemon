@@ -154,7 +154,9 @@ test('the list chosen says how many foods it has, its order is a menu, in Croati
   const foods = [
     oats,
     food(2, { name: 'Basmati riža', last_use: lastUse('2026-10-14') }),
-    ...Array.from({ length: 1200 }, (_, i) => food(i + 3)),
+    // 45 days before today.
+    food(3, { name: 'Ječmena kaša', last_use: lastUse('2026-09-08') }),
+    ...Array.from({ length: 1199 }, (_, i) => food(i + 4)),
   ]
   const fetch = fakeServer({ ...signedIn('hr'), 'GET /api/v1/foods/list': listOf(foods) })
   const router = renderAt('/foods')
@@ -163,10 +165,17 @@ test('the list chosen says how many foods it has, its order is a menu, in Croati
     'checked',
     true,
   )
-  expect(screen.getByRole('link', { name: 'Nova' }).getAttribute('href')).toBe('/foods/new')
+  // Short to the eye, whole to a screen reader.
+  const added = screen.getByRole('link', { name: 'Nova namirnica' })
+  expect(added.getAttribute('href')).toBe('/foods/new')
+  expect(added.textContent).toBe('Nova')
   const earlier = screen.getByRole('list', { name: 'U upotrebi: Ranije' })
   expect(within(earlier).getByRole('link', { name: /^Basmati riža/ }).textContent).toContain(
     'M 3 · prije 9 dana',
+  )
+  // Past two weeks, in weeks.
+  expect(within(earlier).getByRole('link', { name: /^Ječmena kaša/ }).textContent).toContain(
+    'M 3 · prije 6 tjedana',
   )
 
   fireEvent.click(screen.getByRole('button', { name: 'Redoslijed: Najčešće' }))
