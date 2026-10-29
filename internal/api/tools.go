@@ -41,6 +41,8 @@ type tool struct {
 	// writesAgain says the tool sent again may write again: a meal sent
 	// without an id is another.
 	writesAgain bool
+	// opensOut says the tool asks a service outside the instance.
+	opensOut bool
 	// brief is the tool's description as MCP gives it, which a model is
 	// sent with each request: what it does and answers, the policy of
 	// logging being the instructions'. The operation's description, in
@@ -60,6 +62,12 @@ func (t tool) briefly(d string) tool {
 // mayWriteAgain is t, which sent again may write again.
 func (t tool) mayWriteAgain() tool {
 	t.writesAgain = true
+	return t
+}
+
+// asksOutside is t, which asks a service outside the instance.
+func (t tool) asksOutside() tool {
+	t.opensOut = true
 	return t
 }
 
@@ -312,14 +320,15 @@ func (s *sessions) tools() []tool {
 			Path:        Prefix + "/barcodes/{code}",
 			Summary:     "Look up a barcode",
 			Description: "Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, " +
-				"with its page there, and your food of its name and brand, if you have one, which a save of the product would correct: add the barcode to it instead. " +
+				"with its page there, and your food of its name and brand (named_food) if you have one, which a save of the product would correct: " +
+				"the product as a meal's new food is that food, and adds the barcode to it. " +
 				"A barcode misread, its check digit wrong, is refused (422). " +
-				"One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
-			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusBadGateway},
+				"One neither has is 404, which names the product when Open Food Facts has it without its values (with your food of its name, 200). " +
+				"Open Food Facts that does not answer is 502; 30 lookups there a minute, and more are 429.",
+			Errors: []int{http.StatusUnauthorized, http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusTooManyRequests, http.StatusBadGateway},
 		}, s.lookupBarcode).
-			briefly("What a barcode is, read off a photo by the digits under its bars (a misread one fails its check digit, 422): the user's food of it, " +
-				"or else Open Food Facts' product as a new food, not saved, to log as an item's food; with it may come the user's food of its name and brand, " +
-				"to add the barcode to instead. 404: nobody has it."),
+			briefly("What a barcode is: the user's food of it (food), or else Open Food Facts' product as a new food, not saved (open_food_facts), " +
+				"with the user's food of its name and brand (named_food). An error says why: a code misread, or none has it.").asksOutside(),
 		newTool("upsert_food", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID: "upsert-food",
 			Method:      http.MethodPost,

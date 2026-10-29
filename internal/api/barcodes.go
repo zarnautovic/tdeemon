@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
+	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/off"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -24,8 +26,9 @@ type barcodeOutput struct {
 	CacheControl string `header:"Cache-Control"`
 	Body         struct {
 		Barcode       string             `json:"barcode" doc:"The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it."`
-		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too; or, when none has it, yours of the product's name and brand at Open Food Facts, whose barcodes lack it yet: added to them, the next scan finds it."`
+		Food          *foodBody          `json:"food,omitempty" doc:"Your food of the barcode, archived too."`
 		OpenFoodFacts *openFoodFactsBody `json:"open_food_facts,omitempty" doc:"Without a food of yours of the barcode, the product at Open Food Facts."`
+		NamedFood     *foodBody          `json:"named_food,omitempty" doc:"Your food of the product's name and brand, whose barcodes lack the barcode yet: the product as a meal's new food is it, and adds the barcode to it."`
 	}
 }
 
@@ -61,7 +64,17 @@ func (s *sessions) lookupBarcode(ctx context.Context, in *barcodeInput) (*barcod
 	case s.openFoodFacts == nil:
 		return nil, huma.Error404NotFound("no food of yours has the barcode")
 	}
-	product, err := s.openFoodFacts.Product(ctx, code, p.User.Locale)
+	return s.atOpenFoodFacts(ctx, p.User, code, out)
+}
+
+// atOpenFoodFacts answers out with Open Food Facts' product of code, as
+// a new food in u's language, and u's food of its name and brand.
+func (s *sessions) atOpenFoodFacts(ctx context.Context, u user.User, code string, out *barcodeOutput) (*barcodeOutput, error) {
+	if _, wait, ok := s.offLookups.take(u.ID.String()); !ok {
+		return nil, huma.ErrorWithHeaders(huma.NewError(http.StatusTooManyRequests,
+			"too many barcodes looked up at Open Food Facts; try again in a minute"), retryAfter(wait))
+	}
+	product, err := s.openFoodFacts.Product(ctx, code, u.Locale)
 	switch {
 	case errors.Is(err, off.ErrNotFound):
 		return nil, huma.Error404NotFound("no food of yours has the barcode, nor has Open Food Facts a product of it")
@@ -69,20 +82,20 @@ func (s *sessions) lookupBarcode(ctx context.Context, in *barcodeInput) (*barcod
 		return nil, huma.Error502BadGateway("no food of yours has the barcode, and Open Food Facts did not answer: try again, or make the food",
 			internalDetail(err))
 	}
-	switch named, err := s.db.FoodByKey(ctx, p.User.ID, product.Name, product.Brand); {
+	switch named, err := s.db.FoodByKey(ctx, u.ID, product.Name, product.Brand); {
 	case err == nil:
 		b := newFoodBody(&named)
-		out.Body.Food = &b
+		out.Body.NamedFood = &b
 	case !errors.Is(err, store.ErrNotFound):
 		return nil, internalError("looking up the barcode failed", err)
 	}
-	serving, ok := servingNames[p.User.Locale]
+	serving, ok := servingNames[u.Locale]
 	if !ok {
 		serving = servingNames["en"]
 	}
 	nf, err := product.Food(serving)
 	switch {
-	case errors.Is(err, off.ErrIncomplete) && out.Body.Food != nil:
+	case errors.Is(err, off.ErrIncomplete) && out.Body.NamedFood != nil:
 		return out, nil
 	case errors.Is(err, off.ErrIncomplete):
 		return nil, huma.Error404NotFound(fmt.Sprintf(

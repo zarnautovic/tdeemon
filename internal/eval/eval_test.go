@@ -23,11 +23,13 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -44,6 +46,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/off"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
@@ -103,6 +106,9 @@ type expect struct {
 	// Barcodes are barcodes the user's foods have after the case, by a
 	// word of the food's name.
 	Barcodes map[string]string `json:"barcodes,omitempty"`
+	// UnchangedFoods says the foods the user starts with are as they
+	// were, but for barcodes added: a save of one whole keeps the rest.
+	UnchangedFoods bool `json:"unchanged_foods,omitempty"`
 }
 
 // systemPrompt is all the client says of itself: the policy comes from
@@ -170,8 +176,10 @@ type instance struct {
 	cal   day.Calendar
 	url   string
 	token string
-	// foods are the user's foods the instance starts with.
-	foods []uuid.UUID
+	// foods are the user's foods the instance starts with; seeded, those
+	// foods as saved.
+	foods  []uuid.UUID
+	seeded []food.Food
 }
 
 var actor = event.Actor{Kind: event.User, Client: "eval"}
@@ -230,11 +238,13 @@ func newInstance(t *testing.T, c evalCase) instance {
 		},
 	}
 	var ids []uuid.UUID
+	var seeded []food.Food
 	for i := range foods {
-		if _, err := db.SaveFood(ctx, u.ID, actor, foods[i], now); err != nil {
+		saved, err := db.SaveFood(ctx, u.ID, actor, foods[i], now)
+		if err != nil {
 			t.Fatal(err)
 		}
-		ids = append(ids, foods[i].ID)
+		ids, seeded = append(ids, foods[i].ID), append(seeded, saved)
 	}
 	if c.Notes != "" {
 		must(db.SetProfileNotes(ctx, u.ID, actor, c.Notes, now))
@@ -273,12 +283,37 @@ func newInstance(t *testing.T, c evalCase) instance {
 	must(err)
 	h, err := api.NewHandler(api.Config{
 		Info: api.ServerInfo{Name: "tdeemon", Version: "eval"}, DB: db, BaseURL: base,
-		Logger: slog.New(slog.DiscardHandler),
+		Logger: slog.New(slog.DiscardHandler), OpenFoodFacts: openFoodFacts(t, lang, n[2]),
 	})
 	must(err)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return instance{db: db, user: u, cal: cal, url: srv.URL + api.MCPPath, token: token, foods: ids}
+	return instance{db: db, user: u, cal: cal, url: srv.URL + api.MCPPath, token: token, foods: ids, seeded: seeded}
+}
+
+// openFoodFacts is an Open Food Facts of two products: a kefir the user
+// lacks, and the user's Greek yoghurt under a barcode their food lacks,
+// named yoghurt in lang.
+func openFoodFacts(t *testing.T, lang, yoghurt string) *off.Client {
+	t.Helper()
+	products := map[string]string{
+		"96385074": `{"product_name": "Kefir", "brands": "Vindija", "product_quantity_unit": "ml", "categories_tags": ["en:beverages"],
+			"serving_quantity": 250, "serving_quantity_unit": "ml",
+			"nutriments": {"energy-kcal_100g": 59, "proteins_100g": 3.3, "carbohydrates_100g": 4.1, "fat_100g": 2.8}}`,
+		"0036000291452": fmt.Sprintf(`{"product_name": "Greek yoghurt", "product_name_%s": %q, "brands": "Dukat",
+			"nutriments": {"energy-kcal_100g": 73, "proteins_100g": 9.5, "carbohydrates_100g": 3.6, "fat_100g": 2}}`, lang, yoghurt),
+	}
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p, ok := products[strings.TrimPrefix(r.URL.Path, "/api/v2/product/")]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"status": 0}`))
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"status": 1, "product": %s}`, p)
+	}))
+	t.Cleanup(s.Close)
+	return &off.Client{BaseURL: s.URL, UserAgent: "tdeemon/eval"}
 }
 
 // turn is what the client did for one message: its rounds of tool calls,
@@ -712,6 +747,20 @@ func checkFoods(t *testing.T, in instance, e expect, foodsBefore []string) {
 		f, err := in.db.FoodByBarcode(t.Context(), in.user.ID, code)
 		if err != nil || !strings.Contains(strings.ToLower(f.Name), strings.ToLower(w)) {
 			t.Errorf("the food of barcode %s: %q, %v; want one of %q", code, f.Name, err, w)
+		}
+	}
+	if !e.UnchangedFoods {
+		return
+	}
+	for i := range in.seeded {
+		was := &in.seeded[i]
+		now, err := in.db.FoodByID(t.Context(), in.user.ID, was.ID)
+		now.Barcodes = slices.DeleteFunc(now.Barcodes, func(code string) bool { return !slices.Contains(was.Barcodes, code) })
+		if len(now.Barcodes) == 0 {
+			now.Barcodes = nil
+		}
+		if err != nil || !reflect.DeepEqual(now, *was) {
+			t.Errorf("the food %q: %+v, %v; want it as it was, %+v", was.Name, now, err, *was)
 		}
 	}
 }

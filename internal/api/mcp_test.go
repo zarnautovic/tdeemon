@@ -95,7 +95,10 @@ func TestMCPListsTheTools(t *testing.T) {
 			}
 			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "find_foods", "get_food", "lookup_barcode"}, tl.Name)
 			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last", "update_profile_notes", "apply_proposal"}, tl.Name)
-			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive || tl.Description == "" {
+			// lookup_barcode asks Open Food Facts.
+			outside := tl.Name == "lookup_barcode"
+			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive ||
+				a.OpenWorldHint == nil || *a.OpenWorldHint != outside || tl.Description == "" {
 				t.Errorf("%s: annotations %+v, description %q", tl.Name, tl.Annotations, tl.Description)
 			}
 		}
@@ -252,7 +255,7 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 }
 
 // TestMCPFitsItsBudget holds the tools and the instructions, which a
-// model is sent with each request, to a budget in bytes: ~7k tokens, as
+// model is sent with each request, to a budget in bytes: ~9.1k tokens, as
 // the eval measures them (DESIGN.md §6). A change that grows them past it
 // needs a reason, and the eval run again. 13,500 bytes until October
 // 2026, raised for the rules of a meal's parts, then for the coach's
@@ -262,7 +265,7 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 21600
+	const budget = 22200
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
@@ -396,6 +399,8 @@ func TestMCPToolErrors(t *testing.T) {
 		{"get_food", map[string]any{"id": ""}, "get_food needs id"},
 		{"delete_metric", map[string]any{"date": "today"}, "delete_metric needs kind"},
 		{"get_food", map[string]any{"id": []any{1}}, "id: want a string"},
+		// A barcode as a number has lost its leading zeros.
+		{"lookup_barcode", map[string]any{"code": 36000291452}, "code: want a string, its digits quoted"},
 		{"get_day", map[string]any{"date": "yesterday"}, "date"},
 		// A list for a parameter of one value, and a list of what no
 		// query holds.

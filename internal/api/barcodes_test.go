@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/off"
@@ -117,8 +118,9 @@ func TestLookupBarcodeAtOpenFoodFacts(t *testing.T) {
 }
 
 // A product of the name and brand of a food of the user's is that food,
-// whose barcodes lack the barcode yet: the answer gives the food with the
-// product, and the food alone when the product lacks its values.
+// whose barcodes lack the barcode yet: the answer gives it as named_food,
+// never as the barcode's food, with the product, or alone when the
+// product lacks its values.
 func TestLookupBarcodeOfAProductYouHaveByName(t *testing.T) {
 	t.Parallel()
 
@@ -141,11 +143,39 @@ func TestLookupBarcodeOfAProductYouHaveByName(t *testing.T) {
 			}](t, rec.Body.Bytes())
 			rec = in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil)
 			body := rec.Body.String()
-			if rec.Code != http.StatusOK || !strings.Contains(body, `"food":{"id":"`+mine.ID+`"`) ||
-				strings.Contains(body, "open_food_facts") != (answer == kefir) {
+			if rec.Code != http.StatusOK || !strings.Contains(body, `"named_food":{"id":"`+mine.ID+`"`) ||
+				strings.Contains(body, `"food":{"id"`) || strings.Contains(body, "open_food_facts") != (answer == kefir) {
 				t.Errorf("%d %s, want the user's kefir", rec.Code, body)
 			}
 		})
+	}
+}
+
+// A user looks up so many barcodes at Open Food Facts a minute; then 429,
+// saying when to try again, while their own foods' barcodes still answer.
+func TestLookupBarcodeAtOpenFoodFactsIsLimited(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	server := withOpenFoodFacts(t, in, http.StatusOK, kefir)
+	saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	for range 30 {
+		if rec := in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil); rec.Code != http.StatusOK {
+			t.Fatalf("a lookup: %d %s", rec.Code, rec.Body.String())
+		}
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" || server.asked.Load() != 30 {
+		t.Errorf("the 31st lookup: %d %s, Retry-After %q; Open Food Facts asked %d times",
+			rec.Code, rec.Body.String(), rec.Header().Get("Retry-After"), server.asked.Load())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000015", "", session, nil); rec.Code != http.StatusOK {
+		t.Errorf("their own food's barcode: %d %s", rec.Code, rec.Body.String())
+	}
+	in.clock.Set(in.clock.Now().Add(time.Minute))
+	if rec := in.do(t, http.MethodGet, "/api/v1/barcodes/4006381333931", "", session, nil); rec.Code != http.StatusOK {
+		t.Errorf("a minute later: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

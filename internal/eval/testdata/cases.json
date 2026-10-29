@@ -713,7 +713,62 @@
       "barcodes": {
         "kruh": "4006381333931"
       },
-      "max_rounds": 3
+      "max_rounds": 3,
+      "unchanged_foods": true
+    }
+  },
+  {
+    "name": "a product the user lacks, by its barcode",
+    "lang": "hr",
+    "say": [
+      "Popio sam 250 ml ovoga: 96385074"
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "kcal": [
+        130,
+        160
+      ],
+      "new_foods": [
+        "kefir"
+      ],
+      "barcodes": {
+        "kefir": "96385074"
+      },
+      "tools": [
+        "lookup_barcode"
+      ],
+      "not_tools": [
+        "get_day"
+      ]
+    }
+  },
+  {
+    "name": "a food the user has, by a new barcode",
+    "lang": "en",
+    "say": [
+      "I had 200 g of this one: 036000291452"
+    ],
+    "expect": {
+      "meals": 1,
+      "items": 1,
+      "known_items": 1,
+      "kcal": [
+        140,
+        155
+      ],
+      "no_new_foods": true,
+      "barcodes": {
+        "yoghurt": "0036000291452"
+      },
+      "unchanged_foods": true,
+      "tools": [
+        "lookup_barcode"
+      ],
+      "not_tools": [
+        "get_day"
+      ]
     }
   }
 ]

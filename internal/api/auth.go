@@ -44,8 +44,10 @@ type sessions struct {
 	instance limits.Limits
 	// ingestArchive keeps the bodies of the ingest, when not nil.
 	ingestArchive *ingest.Archive
-	// openFoodFacts looks up a barcode, when not nil.
+	// openFoodFacts looks up a barcode, when not nil, so many a user in a
+	// window (offLookups).
 	openFoodFacts *off.Client
+	offLookups    *limiter
 }
 
 func newSessions(cfg Config) *sessions {
@@ -58,6 +60,7 @@ func newSessions(cfg Config) *sessions {
 		instance:        cfg.Limits,
 		ingestArchive:   cfg.IngestArchive,
 		openFoodFacts:   cfg.OpenFoodFacts,
+		offLookups:      newLimiter(offLookups, offWindow, cfg.Now),
 	}
 }
 
