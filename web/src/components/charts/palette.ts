@@ -38,11 +38,12 @@ export const tokens: Record<keyof ChartColors, string> = {
   bad: '--destructive',
 }
 
-// palette is the charts' colours in the dark theme, health-api's validated
-// palette (design/tokens), which the dark theme's tokens in index.css were
-// made from and keep to (palette.test.ts). Blue and violet never come as
-// series next to each other: they read as one colour to many eyes. A page
-// without the stylesheet (a test's) draws with these.
+// palette is the charts' colours in the dark theme, which the dark
+// theme's tokens in index.css keep to (palette.test.ts): its series and
+// surfaces health-api's validated palette (design/tokens), its warning
+// and destructive moved off the macros' amber and pink. Blue and violet
+// never come as series next to each other: they read as one colour to
+// many eyes. A page without the stylesheet (a test's) draws with these.
 export const palette: ChartColors = {
   text: '#e8ecf4',
   surface: '#121722',
@@ -53,8 +54,8 @@ export const palette: ChartColors = {
   amber: '#f0b45c',
   pink: '#f07fa0',
   neutral: '#8b95ab',
-  warning: '#f0b45c',
-  bad: '#f07178',
+  warning: '#efe360',
+  bad: '#f85a48',
 }
 
 // chartColors are the colours of the theme the page is in now, as its

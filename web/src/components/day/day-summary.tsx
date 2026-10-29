@@ -5,8 +5,11 @@ import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
 import type { Day } from '@/api/types'
 import { EnergyRing } from '@/components/day/energy-ring'
+import { kcalLeft, kcalStanding } from '@/components/day/left'
 import { MacroBar, type Macro } from '@/components/day/macro-bar'
+import { weekOf } from '@/components/day/week'
 import { buttonVariants } from '@/components/ui/button'
+import { InfoTip } from '@/components/ui/info-tip'
 import { daysBetween, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { cn } from '@/lib/utils'
@@ -25,15 +28,29 @@ const dots: Record<Verdict['rate'], string> = {
 }
 
 // DaySummary is the day at a glance: what is left of its target in a ring,
-// with what was eaten, the target, the TDEE calibration measures and the
-// deficit (or surplus) the target makes of it; each macro against its
-// target; and the phase the day is in, which leads to the progress. A day
-// before any target shows what was eaten, and the way to a plan.
+// with what was eaten, the target, the TDEE calibration measures and what
+// is left of it after what was eaten, live through the day (or, of a day
+// before, how far under it the day stayed), each an ⓘ away from what it
+// is; each macro against its target; and the phase the day is in, which
+// leads to the progress. A day before that went over its target says it
+// in a sentence beside the TDEE, not in an error's colour. A day before
+// any target shows what was eaten, and the way to a plan.
 export function DaySummary({ day }: { day: Day }) {
   const t = useMessages()
   const f = useFormat()
   const { total, target } = day
   const summary = $api.useQuery('get', '/api/v1/summary')
+  const me = $api.useQuery('get', '/api/v1/me')
+  const today = me.data?.today
+  const past = today !== undefined && day.date < today
+  // A day before's TDEE is the one it had then, from the history of its
+  // week, which the week strip has asked for; today's, the summary's.
+  const history = $api.useQuery(
+    'get',
+    '/api/v1/history',
+    { params: { query: weekOf(day.date, today ?? day.date) } },
+    { enabled: past },
+  )
 
   if (target === undefined) {
     return (
@@ -55,38 +72,67 @@ export function DaySummary({ day }: { day: Day }) {
     )
   }
 
-  const tdee = summary.data?.tdee
-  const measured = tdee?.measured === true ? tdee.kcal : undefined
-  const balance = measured === undefined ? undefined : target.kcal - measured
+  const s = t.day.summary
+  const tdee = past
+    ? history.data?.days.find((d) => d.date === day.date)?.tdee
+    : summary.data?.tdee.measured === true
+      ? summary.data.tdee
+      : undefined
+  const measured = tdee?.kcal
+  // What the TDEE leaves after what was eaten, both as shown; below 0
+  // past it.
+  const left = measured === undefined ? undefined : kcalLeft(total.kcal, measured)
+  const over = -kcalLeft(total.kcal, target.kcal)
+  let leftTerm = s.leftToTdee
+  if (left !== undefined && left < 0) {
+    leftTerm = s.overTdee
+  } else if (past) {
+    leftTerm = s.underTdee
+  }
 
   return (
     <section aria-labelledby="day-summary" className="space-y-4 rounded-lg border bg-card p-4">
       <h2 id="day-summary" className="sr-only">
-        {t.day.summary.title}
+        {s.title}
       </h2>
       <div className="flex items-center gap-4">
-        <EnergyRing eaten={total.kcal} target={target.kcal} />
-        <dl className="grid max-w-72 flex-1 grid-cols-[1fr_auto] gap-x-3 gap-y-2 text-small">
+        <EnergyRing eaten={total.kcal} target={target.kcal} past={past} />
+        <dl className="grid max-w-72 flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 text-small">
           <dt className="text-muted-foreground">{t.day.eaten}</dt>
           <dd className="text-right font-semibold">{f.number(total.kcal)}</dd>
-          <dt className="text-muted-foreground">{t.day.summary.target}</dt>
+          <dt className="text-muted-foreground">{s.target}</dt>
           <dd className="text-right font-semibold">{f.number(target.kcal)}</dd>
-          {measured !== undefined && balance !== undefined && (
+          {measured !== undefined && left !== undefined && (
             <>
-              <dt className="text-muted-foreground">{t.day.summary.tdee}</dt>
+              <dt className="flex items-center gap-1 text-muted-foreground">
+                {s.tdee}
+                <InfoTip label={t.info.tdee.label} title={t.info.tdee.title}>
+                  {t.info.tdee.text}
+                </InfoTip>
+              </dt>
               <dd className="text-right font-semibold">
                 {/* A TDEE calibration does not trust yet is about so much. */}
                 {tdee?.trusted === true ? '' : '≈'}
                 {f.number(measured)}
               </dd>
-              <dt className="text-muted-foreground">
-                {balance > 0 ? t.day.summary.surplus : t.day.summary.deficit}
+              <dt className="flex items-center gap-1 text-muted-foreground">
+                {leftTerm}
+                <InfoTip label={t.info.left.label} title={t.info.left.title}>
+                  {t.info.left.text}
+                </InfoTip>
               </dt>
-              <dd className="text-right font-semibold">{f.signed(balance)}</dd>
+              <dd className="text-right font-semibold">{f.number(Math.abs(left))}</dd>
             </>
           )}
         </dl>
       </div>
+      {past && left !== undefined && kcalStanding(total.kcal, target.kcal) === 'over' && (
+        <p className="text-small">
+          {left < 0
+            ? s.overOverTdee(f.number(over), f.number(-left))
+            : s.overUnderTdee(f.number(over), f.number(left))}
+        </p>
+      )}
       <div className="space-y-3">
         {macros.map((m) => (
           <MacroBar key={m} macro={m} eaten={total[m]} target={target[m]} />

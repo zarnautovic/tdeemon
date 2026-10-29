@@ -920,7 +920,10 @@ the first spec.
   - Tailwind + shadcn/ui on Base UI (components owned in-repo). The
     look is design tokens in `web/src/index.css`: a light and a dark
     theme, the system's or one chosen in the browser
-    (`web/src/lib/theme.ts`), the macros' own colours, and Geist,
+    (`web/src/lib/theme.ts`), the macros' own colours, which no colour
+    that means something (the brand's, a warning's, a destructive's, a
+    day's over its target) is near in either theme
+    (`web/src/tokens.test.ts`), and Geist,
     self-hosted (Fontsource). The sections (today, the foods, the
     progress, the plan) are a bar at the bottom on a phone, with Log a
     meal in its middle, and a sidebar from 1024 px, with the settings at
@@ -933,11 +936,29 @@ the first spec.
     §5); a delete asks nothing first. The toasts are over a sheet too,
     so a change made in one is taken back there, and F6 takes the focus
     to them from a sheet, which keeps Tab within it.
+  - The day judges nothing it shows (§8: logging is never judged; the
+    plan works on the week's average). It has what was eaten against
+    its target in a ring and the macros' bars, beside the TDEE and what
+    is left of it after what was eaten, live through the day (a day
+    before: how far under or over it). Within 5 % of the kcal target
+    either way, and 100 kcal at least, a day is on it, in the brand's
+    colour; past that, the ring, and the week's mini rings and bars
+    above the target's line, run on in a warm neutral (`--over`),
+    thinner, so it shows without the colour too, with the words "+180
+    over target": red is for errors and deletes. Protein's target is a
+    floor, said reached; carbs and fat past theirs say only how far. A
+    day before over its target says it in a sentence beside its TDEE
+    ("680 over target, still 500 under TDEE"). The plan says the deficit
+    or surplus its targets plan in words, never beside a negative
+    number. The TDEE and its ±, how far it is trusted, the trend weight,
+    the deficit and the verdict are each an ⓘ (`InfoTip`) away from what
+    they are, in two or three plain sentences drawn from §7.
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the progress's page (a chunk of its own), not
     with the app. A chart's colours are the theme's tokens, read from the
     page (`getComputedStyle`) and again when the theme changes; the dark
-    theme's are health-api's validated palette (`palette.ts`). A chart has
+    theme's series are health-api's validated palette (`palette.ts`), its
+    warning and destructive moved off the macros' amber and pink. A chart has
     one axis of values and a legend of its card's; to a screen reader it
     is an image with a summary, and the weeks' table says the charts in
     text.

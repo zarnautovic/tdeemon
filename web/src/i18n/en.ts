@@ -93,6 +93,41 @@ export const en = {
     g: (n: string) => `${n} g`,
     ml: (n: string) => `${n} ml`,
   },
+  // What a number is, an ⓘ beside it away (InfoTip): the ⓘ's name, the
+  // number's, and two or three sentences, from DESIGN.md §7 in plain
+  // words.
+  info: {
+    tdee: {
+      label: 'What TDEE is',
+      title: 'TDEE',
+      text: 'TDEE is how much energy you burn a day. It is measured from what you log and how your trend weight moved over the last 6 weeks. ± says how sure that is: with 80% probability, your real TDEE is within that range.',
+    },
+    trusted: {
+      label: 'What reliable means',
+      title: 'Reliable',
+      text: 'Reliable means the ± is 200 kcal or less, with data enough behind it: 4 logged days and 3 weigh-ins in every week, the last one too. Until then TDEE is a first estimate, and the phase gets no verdict.',
+    },
+    trend: {
+      label: 'What trend weight is',
+      title: 'Trend weight',
+      text: 'Trend weight is your weight without the day-to-day swings of water and salt. Each weigh-in moves it a tenth of the way, so it follows the direction, not a single day. It lags the scale by about 9 days.',
+    },
+    left: {
+      label: 'What left to TDEE is',
+      title: 'Left to TDEE',
+      text: 'TDEE less what was eaten that day: how much more you can eat without eating more than you burn. Past it, the day is a surplus. The plan works on the weekly average, so one day over changes little.',
+    },
+    deficit: {
+      label: 'What the planned deficit is',
+      title: 'Planned deficit',
+      text: 'How far the weekly average of your targets is under your TDEE. The bigger it is, the faster your weight goes down; a surplus, the average over TDEE, makes it go up. A deficit of about 500 kcal a day is about half a kilo a week.',
+    },
+    verdict: {
+      label: 'How the phase is judged',
+      title: 'The verdict',
+      text: "The verdict compares how fast your trend weight really changes with the phase's range. It comes only once TDEE is reliable and measured from the phase's own days, and only then proposes a change of the target.",
+    },
+  },
   day: {
     today: 'Today',
     previous: 'The day before',
@@ -106,18 +141,36 @@ export const en = {
     summary: {
       title: 'Energy and macros',
       left: 'kcal left',
-      over: 'kcal over',
+      // Past the target by more than the week takes in its stride; on
+      // it, within that either way; under it, of a day that is over.
+      over: 'over target',
+      on: 'on target',
+      under: 'under target',
       ring: (eaten: string, target: string) => `Eaten ${eaten} of ${target} kcal`,
       ringLeft: (kcal: string) => `${kcal} left`,
-      ringOver: (kcal: string) => `${kcal} over`,
+      ringOver: (kcal: string) => `${kcal} over target`,
+      // How far from it, signed: on target (+60).
+      ringOn: (signed: string) => `on target (${signed})`,
+      ringUnder: (kcal: string) => `${kcal} under target`,
       target: 'Target',
       tdee: 'TDEE',
-      deficit: 'Deficit',
-      surplus: 'Surplus',
+      // The TDEE less what was eaten: what is left of it today, how far a
+      // day before stayed under it, or how far either went over it.
+      leftToTdee: 'Left to TDEE',
+      underTdee: 'Under TDEE',
+      overTdee: 'Over TDEE',
+      // A day before that went over its target, said beside the TDEE.
+      overUnderTdee: (over: string, under: string) =>
+        `${over} over target, still ${under} under TDEE.`,
+      overOverTdee: (over: string, tdee: string) => `${over} over target and ${tdee} over TDEE.`,
       // After the grams eaten, which are shown bolder: 112 / 160 g.
       ofTarget: (target: string) => `/ ${target} g`,
       toGo: (g: string) => `${g} to go`,
-      overBy: (g: string) => `${g} over`,
+      // Protein's target is a floor: reached, and by how much past it.
+      reached: 'reached',
+      reachedBy: (g: string) => `reached · +${g} g`,
+      // Carbs or fat past their target: how far, nothing more.
+      overBy: (g: string) => `+${g} g`,
       noTarget: 'A plan gives the day its target.',
       setPlan: 'Set up a plan',
       weekOf: (n: number, of: number) => `week ${String(n)} of ${String(of)}`,
@@ -825,9 +878,12 @@ export const en = {
       perDay: (kcal: string) => `${kcal} kcal a day`,
       tdee: 'TDEE',
       noTdee: 'not measured yet',
-      deficit: 'Deficit',
-      surplus: 'Surplus',
-      even: 'Balance',
+      // The weekly average against the TDEE, said in words, so the number
+      // beside them is never below 0.
+      deficit: 'Planned deficit',
+      surplus: 'Planned surplus',
+      even: 'Planned balance',
+      balance: (kcal: string) => `${kcal} kcal a day, weekly average`,
     },
     empty: {
       title: 'No plan yet',
