@@ -358,8 +358,9 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 	rest := `{"kcal": 1801, "protein": 150, "fat": 60, "carbs": 165.1}`
 	// Tuesday's fry-up goes past the rest day's target: what remains is
 	// below 0 there.
-	// What remains comes from the values as they are, rounded once:
-	// 1800.6 - 1900.4 is -100, where the rounded 1801 - 1900 would be -99.
+	// What remains is the target less the total as both are given:
+	// 1801 - 1900 is -99, where the values unrounded, 1800.6 - 1900.4,
+	// would leave -100.
 	fryUp, err := meal.Estimate("Fry-up", food.Nutrients{Kcal: 1900.4, Protein: 50, Carbs: 150, Fat: 120}, "")
 	if err != nil {
 		t.Fatal(err)
@@ -376,7 +377,7 @@ func TestToolsTakeTheTargetOfTheDaysType(t *testing.T) {
 		toggle, meals          string
 	}{
 		{today.AddDays(-2), "training", training, training, "", none}, // Monday
-		{tuesday, "rest", rest, `{"kcal": -100, "protein": 100, "fat": -60, "carbs": 15.1}`, "", `"meals": "*",
+		{tuesday, "rest", rest, `{"kcal": -99, "protein": 100, "fat": -60, "carbs": 15.1}`, "", `"meals": "*",
 			"total": {"kcal": 1900, "protein": 50, "carbs": 150, "fat": 120}`},
 		{today, "rest", rest, rest, `"training_toggle": false,`, none},
 		{today.AddDays(1), "training", training, training, `"training_toggle": true,`, none},

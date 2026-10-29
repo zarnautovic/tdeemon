@@ -142,8 +142,9 @@ function Composer({
   // open a while.
   const [time, setTime] = useState(() => (today ? clockAt(Date.now(), timeZone) : '12:00'))
   const [timeSet, setTimeSet] = useState(false)
-  // The time as typed, and whether it is none (parseClock).
-  const [timeText, setTimeText] = useState(time)
+  // The time as typed, on the language's clock, and whether it is none
+  // (parseClock).
+  const [timeText, setTimeText] = useState(() => f.clock(time))
   const [badTime, setBadTime] = useState(false)
   // A time still to come, which the server refuses: a meal is logged once
   // eaten.
@@ -316,15 +317,19 @@ function Composer({
                       }
                     }}
                     onBlur={() => {
-                      // As the time it reads, 19:30 for 1930.
-                      setTimeText((typed) => parseClock(typed) ?? typed)
+                      // As the time it reads, on the language's clock:
+                      // 7:30 PM, or 19:30, for 1930.
+                      setTimeText((typed) => {
+                        const clock = parseClock(typed)
+                        return clock === undefined ? typed : f.clock(clock)
+                      })
                     }}
                   />
                 </label>
               </div>
               {night && (
                 <p id={`${id}-night`} className="text-xs text-muted-foreground">
-                  {t.log.nightAfter(time)}
+                  {t.log.nightAfter(f.clock(time))}
                 </p>
               )}
             </div>
@@ -391,7 +396,7 @@ function Composer({
           )}
           {(later || badTime) && (
             <p role="alert" className="text-sm text-destructive">
-              {badTime ? t.meal.timeFormat : t.meal.timeToCome}
+              {badTime ? t.meal.timeFormat(f.clock('19:30')) : t.meal.timeToCome}
             </p>
           )}
           {refused ? (

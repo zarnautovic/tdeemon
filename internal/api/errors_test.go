@@ -326,6 +326,21 @@ func TestDayTargetBodyHasNoNegativeCarbs(t *testing.T) {
 	}
 }
 
+// What remains is the target less the total as both are given, so a model
+// reads what the app shows: 2400 kcal less 1079.5, given as 1080, leave
+// 1320, not the 1321 of the values unrounded; 160 g of protein, given of
+// 160.04, less 112.4, of 112.36, leave 47.6, not 47.7.
+func TestRemainingIsOfTheValuesGiven(t *testing.T) {
+	t.Parallel()
+
+	tg := plan.DayTarget{Kcal: 2400, Protein: 160.04, Fat: 60}
+	total := food.Nutrients{Kcal: 1079.5, Protein: 112.36, Carbs: 145.64, Fat: 58.66}
+	want := remainingBody{Kcal: 1320, Protein: 47.6, Fat: 1.3, Carbs: 159.4}
+	if got := newRemainingBody(tg, total); got != want {
+		t.Errorf("remaining = %+v, want %+v", got, want)
+	}
+}
+
 // What remains is never -0, which a client would show as "-0": a total a
 // hair past its target remains 0.
 func TestRemainingHasNoNegativeZero(t *testing.T) {

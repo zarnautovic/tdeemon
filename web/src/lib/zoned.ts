@@ -79,15 +79,24 @@ export function clockAt(instant: number, timeZone: string): string {
   return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
 
-// parseClock is a time of day as typed, on a 24-hour clock, as HH:MM:
+// parseClock is a time of day as typed, as HH:MM: on a 24-hour clock,
 // 19:30, 19.30, 19,30 (a phone's keys for decimals), 1930, 7:05, 123
-// (01:23) or 7; undefined for what is none.
+// (01:23) or 7; on a 12-hour clock, with its AM or PM, as English writes
+// it, 7:30 PM, 7.30pm, 7 p.m. or 12 AM (00:00); undefined for what is
+// none.
 export function parseClock(typed: string): string | undefined {
-  const m = /^(\d{1,2})(?:[:.,h]?(\d{2}))?$/.exec(typed.trim())
-  const hour = Number(m?.[1])
+  const m = /^(\d{1,2})(?:[:.,h]?(\d{2}))?(?:\s*([ap])\.?\s?m\.?)?$/i.exec(typed.trim())
+  let hour = Number(m?.[1])
   const minute = Number(m?.[2] ?? '0')
-  if (m === null || hour > 23 || minute > 59) {
+  const half = m?.[3]?.toLowerCase()
+  if (m === null || minute > 59 || hour > (half === undefined ? 23 : 12)) {
     return undefined
+  }
+  if (half !== undefined) {
+    if (hour === 0) {
+      return undefined
+    }
+    hour = (hour % 12) + (half === 'p' ? 12 : 0)
   }
   return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
 }

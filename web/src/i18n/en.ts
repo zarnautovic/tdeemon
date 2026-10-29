@@ -392,7 +392,8 @@ export const en = {
     // The meal's total as changed: "+42 from the changes".
     fromChanges: (kcal: string) => `${kcal} kcal from the changes`,
     was: (kcal: string) => `was ${kcal}`,
-    timeFormat: 'Type the time as 19:30.',
+    // A time typed that is none, and how one is: 7:30 PM, or 19:30.
+    timeFormat: (example: string) => `Type the time as ${example}.`,
     // The item an import of history gives the rest of a meal's total.
     restOfMeal: 'Rest of the meal',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'C (g)', fat: 'F (g)' },
@@ -534,9 +535,6 @@ export const en = {
     // The groups of the foods by how many meals had them lately.
     thisWeek: 'This week',
     earlier: 'Earlier',
-    // A food in a list not eaten this week: 9 days ago.
-    eatenAgo: (days: string, n: number) =>
-      `${days} ${plural('en', n, { one: 'day', other: 'days' })} ago`,
     none: 'No foods yet. They appear when your AI coach logs a meal, or add one here.',
     noneArchived: 'No archived foods.',
     noneEstimates: 'No estimates: the values of every food in use are from a label or you.',
@@ -545,7 +543,10 @@ export const en = {
     more: 'Show more',
     shown: (shown: number, total: number) => `${String(shown)} of ${String(total)}`,
     add: 'Add a food',
+    // The list's button of a new food: short where a language needs it
+    // to fit beside the title, whole for a screen reader.
     new: 'New food',
+    newSaid: 'New food',
     per: { '100g': 'per 100 g', '100ml': 'per 100 ml', portion: 'per portion' },
     // A food's basis beside its kcal in a list: 370 kcal /100 g.
     perShort: { '100g': '/100 g', '100ml': '/100 ml', portion: '/portion' },
@@ -631,6 +632,11 @@ export const en = {
     // their case.
     servingTwice: 'Another serving has this name.',
     aliasTwice: 'This other name is given already.',
+    // Said at the first serving, or other name, past the most a food has.
+    tooManyServings: (most: string, n: number) =>
+      `A food has at most ${most} ${plural('en', n, { one: 'serving', other: 'servings' })}.`,
+    tooManyAliases: (most: string, n: number) =>
+      `A food has at most ${most} other ${plural('en', n, { one: 'name', other: 'names' })}.`,
     kcalPer100: (most: string, unit: string) =>
       `At most ${most} kcal per 100 ${unit}, the energy of pure fat.`,
     massPer100: (most: string, unit: string) =>

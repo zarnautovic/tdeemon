@@ -276,6 +276,7 @@ func (s *sessions) tools() []tool {
 				"Each undo takes a new UUIDv7 id: the same id sent again (a retry) answers as before, marked repeated, and takes back nothing more; " +
 				"without an id, from a client that cannot make one, the server makes it, and the undo sent again takes back another change; " +
 				"undo under a new id to go further back. Nothing is redone. Changes of the plan and an import's writes are left. " +
+				"A meal logged or changed with new foods is one change: its undo takes the foods back too, whole or not at all. " +
 				"A change that cannot be taken back (an import wrote over it, or what came since clashes with it) is a conflict (409) that says why, " +
 				"and is passed over, so the next undo takes back the change before it. The answer says what was taken back and the days it was of; get_day shows each after it. " +
 				"The web app's undo of a change it just made names that change (last), and takes it back only while it is the latest: after another, nothing (412).",

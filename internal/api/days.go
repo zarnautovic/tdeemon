@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"math"
 	"time"
 	"uuid"
 
@@ -134,18 +133,23 @@ type dayBody struct {
 // remainingBody is what a day's target leaves after its total, each part
 // on its own: below 0 past it.
 type remainingBody struct {
-	Kcal    float64 `json:"kcal" doc:"The target's kcal less the total's."`
-	Protein float64 `json:"protein" doc:"The target's grams of protein less the total's."`
-	Fat     float64 `json:"fat" doc:"The target's grams of fat less the total's."`
-	Carbs   float64 `json:"carbs" doc:"The target's grams of carbs less the total's (not what the remaining kcal leave)."`
+	Kcal    float64 `json:"kcal" doc:"The target's kcal less the total's, as both are given here."`
+	Protein float64 `json:"protein" doc:"The target's grams of protein less the total's, as both are given here."`
+	Fat     float64 `json:"fat" doc:"The target's grams of fat less the total's, as both are given here."`
+	Carbs   float64 `json:"carbs" doc:"The target's grams of carbs less the total's, as both are given here (not what the remaining kcal leave)."`
 }
 
-// newRemainingBody is what t leaves after total: from the values as they
-// are, rounded once, and never -0, which a client would show as "-0".
+// newRemainingBody is what t leaves after total: the target as it is
+// given (newDayTargetBody) less the total as it is given
+// (newNutrientsBody), so the three add up as a client shows them (2400
+// less 1079.5 kcal, given as 1080, leave 1320, not 1321); the grams to
+// a tenth, as 60 less 58.7 is not quite 1.3 in floating point. Never -0,
+// which a client would show as "-0".
 func newRemainingBody(t plan.DayTarget, total food.Nutrients) remainingBody {
+	target, eaten := newDayTargetBody(t), total.Rounded()
 	return remainingBody{
-		Kcal: noNegativeZero(math.Round(t.Kcal - total.Kcal)), Protein: noNegativeZero(roundGrams(t.Protein - total.Protein)),
-		Fat: noNegativeZero(roundGrams(t.Fat - total.Fat)), Carbs: noNegativeZero(roundGrams(max(t.Carbs(), 0) - total.Carbs)),
+		Kcal: noNegativeZero(target.Kcal - eaten.Kcal), Protein: noNegativeZero(roundGrams(target.Protein - eaten.Protein)),
+		Fat: noNegativeZero(roundGrams(target.Fat - eaten.Fat)), Carbs: noNegativeZero(roundGrams(target.Carbs - eaten.Carbs)),
 	}
 }
 

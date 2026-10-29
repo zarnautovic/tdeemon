@@ -115,3 +115,44 @@ test.each([
 ])('from %s to %s is %d days', (from, to, n) => {
   expect(daysBetween(from, to)).toBe(n)
 })
+
+// How long ago a day was is in days, then weeks, months and years, each
+// the nearest whole one, as each language says it.
+test.each([
+  [9, 'en', '9 days ago'],
+  [13, 'en', '13 days ago'],
+  [14, 'en', '2 weeks ago'],
+  [45, 'en', '6 weeks ago'],
+  [59, 'en', '8 weeks ago'],
+  [60, 'en', '2 months ago'],
+  [365, 'en', '1 year ago'],
+  [800, 'en', '2 years ago'],
+  [9, 'hr', 'prije 9 dana'],
+  [21, 'hr', 'prije 3 tjedna'],
+  [45, 'hr', 'prije 6 tjedana'],
+  [90, 'hr', 'prije 3 mjeseca'],
+  [200, 'hr', 'prije 7 mjeseci'],
+  [1200, 'hr', 'prije 3 godine'],
+] as const)('%d days before today in %s are %s', (days, locale, said) => {
+  act(() => {
+    setLocale(locale)
+  })
+  const { result } = renderHook(() => useFormat())
+  expect(result.current.daysAgo(days)).toBe(said)
+})
+
+// A time of day is on the language's clock, its spaces plain, so it is
+// typed again as it is shown.
+test.each([
+  ['19:30', 'en', '7:30 PM'],
+  ['00:15', 'en', '12:15 AM'],
+  ['12:00', 'en', '12:00 PM'],
+  ['19:30', 'hr', '19:30'],
+  ['08:05', 'hr', '8:05'],
+] as const)('%s in %s is %s', (time, locale, shown) => {
+  act(() => {
+    setLocale(locale)
+  })
+  const { result } = renderHook(() => useFormat())
+  expect(result.current.clock(time)).toBe(shown)
+})

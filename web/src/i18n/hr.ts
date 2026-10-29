@@ -340,7 +340,7 @@ export const hr: Messages = {
     itemsTitle: 'Stavke',
     fromChanges: (kcal: string) => `${kcal} kcal od izmjena`,
     was: (kcal: string) => `bilo ${kcal}`,
-    timeFormat: 'Upiši vrijeme kao 19:30.',
+    timeFormat: (example: string) => `Upiši vrijeme kao ${example}.`,
     restOfMeal: 'Ostatak obroka',
     estimateValue: { kcal: 'kcal', protein: 'P (g)', carbs: 'UH (g)', fat: 'M (g)' },
     value: (what: string, name: string) => `${what}: ${name}`,
@@ -469,8 +469,6 @@ export const hr: Messages = {
     orders: { frequent: 'Prvo najčešće jedene', use: 'Prvo nedavno jedene', name: 'Po nazivu' },
     thisWeek: 'Ovaj tjedan',
     earlier: 'Ranije',
-    eatenAgo: (days: string, n: number) =>
-      `prije ${days} ${plural('hr', n, { one: 'dan', few: 'dana', other: 'dana' })}`,
     none: 'Još nema namirnica. Nastaju same kad AI trener upiše obrok, a možeš ih dodati i ovdje.',
     noneArchived: 'Nema arhiviranih namirnica.',
     noneEstimates:
@@ -481,6 +479,7 @@ export const hr: Messages = {
     shown: (shown: number, total: number) => `${String(shown)} od ${String(total)}`,
     add: 'Dodaj namirnicu',
     new: 'Nova',
+    newSaid: 'Nova namirnica',
     per: { '100g': 'na 100 g', '100ml': 'na 100 ml', portion: 'po porciji' },
     perShort: { '100g': '/100 g', '100ml': '/100 ml', portion: '/porcija' },
     pick: 'Odaberi namirnicu da vidiš što donosi ili dodaj novu.',
@@ -560,6 +559,10 @@ export const hr: Messages = {
     negative: 'Ne može biti manje od 0.',
     servingTwice: 'Mjera tog naziva već postoji.',
     aliasTwice: 'Taj drugi naziv je već upisan.',
+    tooManyServings: (most: string, n: number) =>
+      `Namirnica ima najviše ${most} ${plural('hr', n, { one: 'mjeru', few: 'mjere', other: 'mjera' })}.`,
+    tooManyAliases: (most: string, n: number) =>
+      `Namirnica ima najviše ${most} ${plural('hr', n, { one: 'drugi naziv', few: 'druga naziva', other: 'drugih naziva' })}.`,
     kcalPer100: (most: string, unit: string) =>
       `Najviše ${most} kcal na 100 ${unit}, energija čiste masti.`,
     massPer100: (most: string, unit: string) =>

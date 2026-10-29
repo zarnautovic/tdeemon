@@ -106,16 +106,17 @@ func (db *DB) CreateMealWithFoods(ctx context.Context, userID uuid.UUID, a event
 }
 
 // insertNewMeal inserts m, a meal under an id no meal has had, with the
-// new foods it brings, and records it as a's event.
+// new foods it brings, and records it as a's event, the foods' writes
+// parts of it.
 func insertNewMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, m meal.Meal, foods []food.Food, now time.Time) (meal.Meal, error) {
 	if err := checkNotDeleted(ctx, tx, userID, m.ID); err != nil {
 		return meal.Meal{}, err
 	}
-	ids, kept, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
+	brought, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
 	if err != nil {
 		return meal.Meal{}, err
 	}
-	if m.Items, err = itemsOf(m.Items, ids, kept); err != nil {
+	if m.Items, err = itemsOf(m.Items, brought.ids, brought.kept); err != nil {
 		return meal.Meal{}, err
 	}
 	// The time stored, to the second, so the state recorded is the state
@@ -127,8 +128,28 @@ func insertNewMeal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Ac
 	if s.Meal, err = mealInTx(ctx, tx, userID, m.ID); err != nil {
 		return meal.Meal{}, err
 	}
-	_, err = record(ctx, tx, userID, a, event.MealCreate, m.ID.String(), nil, s, now)
-	return s.Meal, err
+	created, err := record(ctx, tx, userID, a, event.MealCreate, m.ID.String(), nil, s, now)
+	if err != nil {
+		return meal.Meal{}, err
+	}
+	return s.Meal, markParts(ctx, tx, userID, created, brought.parts)
+}
+
+// markParts marks parts, the events of writes made in the same
+// transaction before the event change, as parts of change's: undo takes
+// them back with it, and never on their own. A change that recorded no
+// event (uuid.Nil) has none.
+func markParts(ctx context.Context, tx *sql.Tx, userID, change uuid.UUID, parts []uuid.UUID) error {
+	if change == uuid.Nil() {
+		return nil
+	}
+	for _, p := range parts {
+		if _, err := tx.ExecContext(ctx, "UPDATE events SET part_of = ? WHERE user_id = ? AND id = ?",
+			change.String(), userID.String(), p.String()); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // mealState is a meal as an event records it: with the fingerprint and
@@ -247,7 +268,7 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, a event.Actor, 
 		if err != nil {
 			return err
 		}
-		stored, err = replaceInTx(ctx, tx, userID, a, before, m, now)
+		stored, err = replaceInTx(ctx, tx, userID, a, before, m, nil, now)
 		return err
 	})
 	if errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) {
@@ -264,7 +285,8 @@ func (db *DB) ReplaceMeal(ctx context.Context, userID uuid.UUID, a event.Actor, 
 // it is in the transaction that stores its answer, so changes made at
 // once (an agent's calls in parallel) are each made to the other's
 // result and none is lost. The foods the result names of foods are saved
-// with it, as CreateMealWithFoods saves them. An error of change stores
+// with it, as CreateMealWithFoods saves them, as parts of the meal's
+// change, which one undo takes back. An error of change stores
 // nothing, and is returned as it is; a meal the user does not have is
 // ErrNotFound.
 func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, id uuid.UUID, foods []food.Food,
@@ -291,11 +313,11 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 			changeErr = err
 			return err
 		}
-		ids, kept, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
+		brought, err := saveNewFoods(ctx, tx, userID, a, foods, m.Items, now)
 		if err != nil {
 			return err
 		}
-		if m.Items, err = itemsOf(m.Items, ids, kept); err != nil {
+		if m.Items, err = itemsOf(m.Items, brought.ids, brought.kept); err != nil {
 			return err
 		}
 		m.ID = id
@@ -303,7 +325,7 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 			changeErr = fmt.Errorf("invalid meal: %w", err)
 			return changeErr
 		}
-		stored, err = replaceInTx(ctx, tx, userID, a, before, m, now)
+		stored, err = replaceInTx(ctx, tx, userID, a, before, m, brought.parts, now)
 		return err
 	})
 	switch {
@@ -366,8 +388,10 @@ func (e *FoodItemError) Error() string {
 func (e *FoodItemError) Unwrap() error { return e.Err }
 
 // replaceInTx writes m in place of the meal of before, and records it as
-// a's event.
-func replaceInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, before mealState, m meal.Meal, now time.Time) (meal.Meal, error) {
+// a's event, the events parts (the new foods m brings) parts of it.
+func replaceInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, before mealState, m meal.Meal, parts []uuid.UUID,
+	now time.Time,
+) (meal.Meal, error) {
 	{
 		res, err := tx.ExecContext(ctx, `UPDATE meals SET eaten_at = ?, day = ?, description = ?, note = ?,
 			updated_at = ? WHERE id = ? AND user_id = ?`,
@@ -396,8 +420,11 @@ func replaceInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Acto
 	if err != nil {
 		return meal.Meal{}, err
 	}
-	_, err = record(ctx, tx, userID, a, event.MealReplace, m.ID.String(), before, after, now)
-	return after.Meal, err
+	replaced, err := record(ctx, tx, userID, a, event.MealReplace, m.ID.String(), before, after, now)
+	if err != nil {
+		return meal.Meal{}, err
+	}
+	return after.Meal, markParts(ctx, tx, userID, replaced, parts)
 }
 
 // RetryMeal returns userID's meal with id when fingerprint is the
