@@ -691,6 +691,19 @@ the API's `locale`); English is the base.
   percentage is written as `Intl` writes it: the sign right after the
   number in English (17.3%), after a space in Croatian (17,3 %), which
   `src/i18n/messages.test.ts` holds the messages to.
+- **Words: one name for each thing**, the same on every screen, in a
+  toast and in what an undo says, which `src/i18n/messages.test.ts`
+  holds the messages to:
+  - the coach is "your AI coach" in English and "AI trener" in
+    Croatian, never "a coach", "a model" or "an AI client" ("model"
+    only where a proposal names the one that made it);
+  - the body's mass is "weight" and "kilaža" ("težina" is not used);
+  - hunger goes up one kind of word: "full · a bit hungry · hungry ·
+    very hungry · starving", "sit · malo gladan · gladan · jako gladan
+    · stalno gladan".
+
+  A text is short and warm: a sentence of about 15 words at most, a
+  button a verb and its object ("Log the meal", "Upiši obrok").
 - **Telegram's texts** (the morning summary, the alarms, the bot's
   commands, the hello of `user set-telegram`) are written on the
   server, in a map of each language (`morningWords`, `botWords`, the

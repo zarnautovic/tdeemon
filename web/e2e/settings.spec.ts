@@ -39,32 +39,32 @@ test("the account's name and time zone are saved, and come back", async ({ page 
 test('the notes for a coach are saved, and come back', async ({ page }) => {
   await signIn(page)
   await toSettings(page)
-  await page.getByRole('link', { name: 'Notes for a coach' }).click()
+  await page.getByRole('link', { name: 'Notes for your AI coach' }).click()
 
-  const notes = page.getByRole('textbox', { name: 'Notes for a coach' })
+  const notes = page.getByRole('textbox', { name: 'Notes for your AI coach' })
   await notes.fill('Knees: no running.')
   await page
-    .getByRole('form', { name: 'Notes for a coach' })
+    .getByRole('form', { name: 'Notes for your AI coach' })
     .getByRole('button', { name: 'Save' })
     .click()
-  await expect(page.getByText('The notes for a coach are saved')).toBeVisible()
+  await expect(page.getByText('The notes for your AI coach are saved')).toBeVisible()
   await page.reload()
   await expect(notes).toHaveValue('Knees: no running.')
 
   // Cleared, for the other tests.
   await notes.fill('')
   await page
-    .getByRole('form', { name: 'Notes for a coach' })
+    .getByRole('form', { name: 'Notes for your AI coach' })
     .getByRole('button', { name: 'Save' })
     .click()
-  await expect(page.getByText('The notes for a coach are saved')).toBeVisible()
+  await expect(page.getByText('The notes for your AI coach are saved')).toBeVisible()
 })
 
 test('a new token is shown once and copied, and works until all are revoked', async ({ page }) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await signIn(page)
   await toSettings(page)
-  await page.getByRole('link', { name: 'Devices and AI clients' }).click()
+  await page.getByRole('link', { name: 'Devices and AI coaches' }).click()
 
   await page.getByRole('button', { name: 'New token' }).click()
   const sheet = page.getByRole('dialog', { name: 'New token' })

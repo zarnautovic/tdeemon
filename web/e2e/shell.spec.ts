@@ -55,7 +55,7 @@ test('the addresses of before lead where their pages are now', async ({ page }) 
   // the plan on a phone.
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Settings', level: 1 })).toBeVisible()
-  await page.getByRole('link', { name: 'Devices and AI clients' }).click()
+  await page.getByRole('link', { name: 'Devices and AI coaches' }).click()
   await expect(page).toHaveURL('/settings/devices')
   await page.getByRole('main').getByRole('link', { name: 'Plan' }).click()
   await expect(page).toHaveURL('/plan')

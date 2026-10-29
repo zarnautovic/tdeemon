@@ -36,3 +36,15 @@ test('no Croatian message puts a number right before %', () => {
   expect(tight).toEqual([])
   expect(textsOf(hr).filter(([, text]) => /\d %/.test(text)).length).toBeGreaterThan(0)
 })
+
+// astray are the keys of the texts that say one of words.
+function astray(texts: [string, string][], words: RegExp): string[] {
+  return texts.filter(([, text]) => words.test(text)).map(([key]) => key)
+}
+
+// The glossary (docs/conventions.md, "Words"): one name for the AI coach
+// and one for the weight, in each language.
+test("the messages call the coach the AI coach, and the weight the weight's word", () => {
+  expect(astray(textsOf(en), /\b(a coach|the coach|models?|AI clients?)\b/i)).toEqual([])
+  expect(astray(textsOf(hr), /\b(coach\w*|model\w*|AI klijent\w*|težin\w*)/i)).toEqual([])
+})

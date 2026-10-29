@@ -190,7 +190,7 @@ test('the archived foods, and the order of the last use, are in the address', as
 
   expect(
     await screen.findByText(
-      'No foods yet: a meal logged through a model saves its foods, or add one.',
+      'No foods yet. They appear when your AI coach logs a meal, or add one here.',
     ),
   ).toBeDefined()
   // The first action of an empty list, beside the header's.
