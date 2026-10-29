@@ -57,7 +57,8 @@
     "maxGramsPer100ml": 150,
     "maxKcalPerPortion": 10000,
     "maxServings": 20,
-    "maxAliases": 20
+    "maxAliases": 20,
+    "maxBarcodes": 10
   },
   "profile": {
     "minHeightCm": 50,

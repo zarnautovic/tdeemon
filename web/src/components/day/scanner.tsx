@@ -28,9 +28,16 @@ function stop(stream: MediaStream | undefined) {
 
 // Scanner reads a barcode off the camera, the back one of a phone, or
 // takes its digits typed: onCode gets the first read or typed, once, as
-// the server keeps it (barcodeOf). The camera stops when the scanner
-// goes, or when its reader fails, which says to type the digits.
-export function Scanner({ onCode }: { onCode: (code: string) => void }) {
+// the server keeps it (barcodeOf); sendWith is what its button says, Look
+// up the code unless given. The camera stops when the scanner goes, or
+// when its reader fails, which says to type the digits.
+export function Scanner({
+  onCode,
+  sendWith,
+}: {
+  onCode: (code: string) => void
+  sendWith?: string
+}) {
   const t = useMessages()
   const id = useId()
   const video = useRef<HTMLVideoElement>(null)
@@ -203,7 +210,7 @@ export function Scanner({ onCode }: { onCode: (code: string) => void }) {
             }}
           />
           <Button type="button" variant="outline" onClick={send}>
-            {t.scan.lookUp}
+            {sendWith ?? t.scan.lookUp}
           </Button>
         </div>
         {wrong && (

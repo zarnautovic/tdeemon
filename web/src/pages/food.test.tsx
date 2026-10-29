@@ -669,6 +669,57 @@ test("a food's barcodes, which a scan adds, go with it when the form saves it", 
   expect(server.sent[0]).toMatchObject({ id, barcodes: ['3850000000015', '96385074'] })
 })
 
+test('a barcode is removed, and another added by its digits, in the form, and saved so', async () => {
+  const server = foodServer(undefined, 'en', { ...oats, barcodes: ['3850000000015'] })
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove the barcode: 3850000000015' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Add a barcode' }))
+  // jsdom has no camera: the digits are typed.
+  expect(await screen.findByText('No camera here. Type the digits instead.')).toBeDefined()
+  fireEvent.change(screen.getByLabelText('Or type the digits under the bars'), {
+    target: { value: '9638 5074' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Add the code' }))
+  expect(screen.getByRole('button', { name: 'Remove the barcode: 96385074' })).toBeDefined()
+  expect(screen.queryByText('No camera here. Type the digits instead.')).toBeNull()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ barcodes: ['96385074'] })
+})
+
+test('a barcode the food has, in another form, is not added again', async () => {
+  const server = foodServer(undefined, 'en', { ...oats, barcodes: ['0036000291452'] })
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Add a barcode' }))
+  // Its UPC-A, which the server keeps as the EAN-13.
+  fireEvent.change(await screen.findByLabelText('Or type the digits under the bars'), {
+    target: { value: '036000291452' },
+  })
+  fireEvent.click(screen.getByRole('button', { name: 'Add the code' }))
+  expect(screen.getAllByRole('button', { name: /^Remove the barcode/ })).toHaveLength(1)
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ barcodes: ['0036000291452'] })
+})
+
+test('a food of as many barcodes as one has takes no more', async () => {
+  const barcodes = Array.from({ length: 10 }, (_, i) => `385000000${String(1000 + i)}`)
+  foodServer(undefined, 'en', { ...oats, barcodes })
+  renderAt(`/foods/${id}?edit=true`)
+
+  expect(await screen.findByRole('button', { name: 'Add a barcode' })).toHaveProperty(
+    'disabled',
+    true,
+  )
+})
+
 test('a food from Open Food Facts keeps it as its source when saved; one typed in is not offered it', async () => {
   const server = foodServer(undefined, 'en', {
     ...oats,
