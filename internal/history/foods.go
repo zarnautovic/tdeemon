@@ -186,14 +186,18 @@ const ServingName = "portion"
 // toFood returns row as a food: per 100 g or 100 ml, with the row's portion
 // as a serving, when the portion is a weight or a volume and the food per
 // 100 makes sense; else per portion, the portion in its note, and whether
-// it fell back so from a weight or a volume. Its source is a label when
-// its note names a declaration, else an estimate.
+// it fell back so from a weight or a volume. A combination is a plate, per
+// portion whatever its portion. Its source is a label when its note names
+// a declaration, else an estimate.
 func toFood(row FoodRow, name string) (food.Food, bool, error) {
 	f := food.Food{ID: uuid.NewV7(), Name: name, Source: food.Estimate, Note: cutNote(row.Note)}
 	if note := strings.ToLower(row.Note); strings.Contains(note, "deklaracij") && !strings.Contains(note, "bez deklaracij") {
 		f.Source = food.Label
 	}
 	m := portionAmount.FindStringSubmatch(row.Portion)
+	if combination(&row) {
+		m = nil
+	}
 	if m != nil {
 		amount, _ := strconv.ParseFloat(strings.Replace(m[1], ",", ".", 1), 64)
 		u := portionUnits[strings.ToLower(m[2])]
@@ -238,43 +242,54 @@ type FoodReport struct {
 	PerPortion []string
 	// Skipped are the rows no food could be made of, each with why.
 	Skipped []string
-	// Combinations are the rows of several foods eaten together, a plus
-	// in their name or portion, left out: a food is one food, a meal of
-	// several is a meal.
+	// Combinations are the foods made of rows of several foods eaten
+	// together, a plus in their name or portion: plates, per portion,
+	// logged in a tap as they were eaten.
 	Combinations []string
 }
 
-// namesOf counts the rows of each name, the combinations, which are no
-// foods, left out.
-func namesOf(rows []FoodRow) map[string]int {
-	count := map[string]int{}
+// foodNames names the foods of rows: a row by its name, or, when other
+// rows have its name too, with its portion after it; a combination gives
+// way to a food of one, which keeps its name. Each name is cut to the
+// longest a food may have, and says whether it was.
+type foodNames struct {
+	// plain counts the rows of each name that are no combination, all
+	// every row of it.
+	plain, all map[string]int
+}
+
+func namesOf(rows []FoodRow) foodNames {
+	n := foodNames{plain: map[string]int{}, all: map[string]int{}}
 	for i := range rows {
+		key := food.Key(rows[i].Name)
+		n.all[key]++
 		if !combination(&rows[i]) {
-			count[food.Key(rows[i].Name)]++
+			n.plain[key]++
 		}
 	}
-	return count
+	return n
+}
+
+func (n foodNames) of(row *FoodRow) (string, bool) {
+	key := food.Key(row.Name)
+	name := row.Name
+	if combination(row) && (n.plain[key] > 0 || n.all[key] > 1) || !combination(row) && n.plain[key] > 1 {
+		name += " (" + row.Portion + ")"
+	}
+	return fitName(name, food.MaxNameLen, "")
 }
 
 // ImportFoods adds the foods of rows to u's food database, or with dryRun
-// only counts them, the combinations left out. A food whose name u has already (from a run before, or
-// their own) stays as it is, so a run again changes nothing. A name
-// several rows share takes each row's portion.
+// only counts them. A food whose name u has already (from a run before,
+// or their own) stays as it is, so a run again changes nothing. A name
+// several rows share takes each row's portion (foodNames).
 func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow, now time.Time, dryRun bool) (FoodReport, error) {
 	var r FoodReport
-	count := namesOf(rows)
+	names := namesOf(rows)
 	seen := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
-		if combination(row) {
-			r.Combinations = append(r.Combinations, fmt.Sprintf("line %d, %s", row.Line, row.Name))
-			continue
-		}
-		name := row.Name
-		if count[food.Key(name)] > 1 {
-			name += " (" + row.Portion + ")"
-		}
-		fitted, cut := fitName(name, food.MaxNameLen, "")
+		fitted, cut := names.of(row)
 		if fitted == "" {
 			r.Skipped = append(r.Skipped, fmt.Sprintf("line %d: %q is no name", row.Line, row.Name))
 			continue
@@ -303,6 +318,9 @@ func ImportFoods(ctx context.Context, db *store.DB, u user.User, rows []FoodRow,
 			}
 		}
 		r.Created++
+		if combination(row) {
+			r.Combinations = append(r.Combinations, fmt.Sprintf("line %d, %s", row.Line, fitted))
+		}
 		if cut || fitted != row.Name {
 			r.Renamed = append(r.Renamed, fitted)
 		}
