@@ -1,6 +1,7 @@
 import { Toast, type ToastObject } from '@base-ui/react/toast'
 import { Link } from '@tanstack/react-router'
 import { X } from 'lucide-react'
+import type { ComponentProps } from 'react'
 
 import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
@@ -68,14 +69,7 @@ function Item({ toast }: { toast: ToastObject<Said> }) {
       </Toast.Content>
       {said?.undo !== undefined && <UndoAction undo={said.undo} />}
       {said?.action !== undefined && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="font-semibold text-primary"
-          onClick={said.action.run}
-        >
-          {said.action.label}
-        </Button>
+        <ToastButton onClick={said.action.run}>{said.action.label}</ToastButton>
       )}
       <Toast.Close
         aria-label={t.toast.close}
@@ -149,10 +143,7 @@ function UndoAction({ undo }: { undo: NonNullable<Said['undo']> }) {
   }
 
   return (
-    <Button
-      variant="ghost"
-      size="sm"
-      className="font-semibold text-primary"
+    <ToastButton
       disabled={run.isPending}
       onClick={() => {
         // The toast stays while the undo is on its way.
@@ -161,6 +152,12 @@ function UndoAction({ undo }: { undo: NonNullable<Said['undo']> }) {
       }}
     >
       {t.toast.undo}
-    </Button>
+    </ToastButton>
   )
+}
+
+// ToastButton is what a toast does beside closing: Undo, or a new
+// version's Reload.
+function ToastButton(props: Omit<ComponentProps<typeof Button>, 'variant' | 'size' | 'className'>) {
+  return <Button variant="ghost" size="sm" className="font-semibold text-primary" {...props} />
 }

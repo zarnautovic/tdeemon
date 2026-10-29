@@ -49,7 +49,7 @@ export const hr: Messages = {
   },
   update: {
     ready: 'Nova verzija je spremna',
-    reload: 'Osvježi',
+    reload: 'Osvježi aplikaciju',
   },
   shortcuts: {
     title: 'Prečaci tipkovnice',

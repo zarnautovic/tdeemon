@@ -51,7 +51,10 @@ func New() (http.Handler, bool, error) {
 //     installed app) with revalidation on every use, so a new service
 //     worker is found at once;
 //   - index.html for every other path, so the app's client-side router can
-//     own it, never cached, so a deploy takes effect on the next page load;
+//     own it, never cached, so a deploy takes effect on the next page load
+//     of a browser without the app's service worker; with it, the worker
+//     answers a navigation from its precache, and its new version waits
+//     for the user's Reload;
 //   - 404 instead for a missing file under assets/, so a tab still open
 //     from the previous build gets an error for its old script, not HTML,
 //     and for a missing path with an extension that a page asks for (a

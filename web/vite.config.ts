@@ -18,7 +18,8 @@ export default defineConfig({
     // service worker that keeps the app's shell (its page, scripts,
     // styles, fonts and icons) to open without a network. The data are
     // never kept there: the API, MCP and the health check go to the
-    // server, and a sign-in's redirects with them. A new version waits
+    // server, and a sign-in's redirects with them. The app registers the
+    // worker itself (src/lib/service-worker.ts), and a new version waits
     // for the user's Reload (UpdatePrompt), not reloading the page under
     // them. web/icons/generate.sh draws the icons.
     VitePWA({
@@ -28,8 +29,6 @@ export default defineConfig({
         id: '/',
         name: 'tdeemon',
         short_name: 'tdeemon',
-        description: 'A nutrition tracker with an adaptive TDEE',
-        lang: 'en',
         start_url: '/',
         scope: '/',
         display: 'standalone',
@@ -43,9 +42,13 @@ export default defineConfig({
           { src: '/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
+      // The icons are among the PNGs below.
+      includeManifestIcons: false,
       workbox: {
         globPatterns: ['**/*.{html,js,css,woff2,svg,png}'],
-        // The charts' chunk, ECharts with it, is the largest.
+        // A file over it is left out of the precache with only a warning,
+        // and the app would not open without a network: the main chunk,
+        // about 1.2 MB, is near Workbox's 2 MiB.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/mcp/, /^\/healthz/],

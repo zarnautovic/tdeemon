@@ -161,8 +161,9 @@ The web app installs as an app (a PWA): on an iPhone open it in Safari,
 then Share → Add to Home Screen; on Android, Chrome's menu → Install
 app. It opens full screen under its own icon, and without a network it
 opens all the same and says the server is out of reach. A new version
-shows as a toast whose Reload takes it. Browsers install an app only
-from HTTPS (or localhost).
+shows as a toast, once the app comes back into view or within the hour,
+and its Reload takes it. Browsers install an app only from HTTPS (or
+localhost).
 
 ## Users
 

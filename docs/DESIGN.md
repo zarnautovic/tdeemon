@@ -1128,11 +1128,16 @@ the first spec.
     precaches the shell (the page, scripts, styles, fonts and icons) and
     answers a navigation with it, so the app opens without a network.
     It keeps no data: the API, `/mcp` and `/healthz` go past it, and a
-    sign-in's redirects with them. A new version does not reload the
-    page under the user: a toast says it is ready, and its Reload takes
-    it (`UpdatePrompt`). The server serves the manifest as
-    `application/manifest+json` and the worker revalidated, so a new one
-    is found at once. Web push comes with it later.
+    sign-in's redirects with them. The app registers the worker itself
+    (`web/src/lib/service-worker.ts`), once the page has loaded, and asks
+    for a new one each time it comes into view and every hour, as an app
+    on a phone brought back has no page load to make the browser ask. A
+    new version does not reload the page under the user: a toast says it
+    is ready, and its Reload takes it and loads that page alone
+    (`UpdatePrompt`); another tab keeps its page, and its own toast. The
+    server serves the manifest as `application/manifest+json` and the
+    worker revalidated, so a check finds a new one at once. Web push
+    comes with it later.
   - Later, Capacitor wraps the same app for iOS with a HealthKit plugin.
 - **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals, their
   items and later sets, and writes are idempotent on that ID: the same

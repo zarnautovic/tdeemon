@@ -61,7 +61,7 @@ export const en = {
   update: {
     // A toast when a new version of the app is ready, and its button.
     ready: 'New version ready',
-    reload: 'Reload',
+    reload: 'Reload the app',
   },
   shortcuts: {
     title: 'Keyboard shortcuts',
