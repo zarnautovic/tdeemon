@@ -1172,35 +1172,29 @@ the first spec.
 
 ## 10. Migration from the predecessor
 
-1. **A one-off import of the history** (`tdeemon import-history`):
-   - the predecessor's database, an index of the vault's daily notes →
-     `days`, `metrics` and `meals` (each historic meal split into the
-     user's foods where its text tells them, see below, else one
-     estimate, and a day whose total is more than its meals gets the
-     rest as one estimate more); a day with a remark, or without intake
-     logged, is excluded, as the predecessor's calibration left it out,
-     and the daily notes' mood, hunger and status are left out;
-   - the vault's food table note → `foods`;
-   - the vault's goals note, which is prose, through a plan file (JSON)
-     the user writes from it and reviews → the profile, the training
-     weekdays, `phases`, the `targets` history (from its revision log)
-     and `profile_notes`; the current phase and target, and the ones
-     after them, are held to the limits, the history before them is
-     written as it was.
+Done at the cut-over, on 2026-10-29.
 
+1. **A one-off import of the history**, at the cut-over:
+   - the predecessor's database, an index of the vault's daily notes →
+     `days`, `metrics` and `meals`: each historic meal split into the
+     user's foods where its text told them (a part with an amount and a
+     food of the user's became an item of that food, the rest of the
+     meal an estimate of its own, so the meal kept its total), else one
+     estimate; a day whose total was more than its meals got the rest
+     as one estimate more; a day with a remark, or without intake
+     logged, excluded, as the predecessor's calibration left it out;
+   - the vault's food table note → `foods`, a row of several foods
+     eaten together as a plate, per portion;
+   - a plan file written from the vault's goals note → the profile, the
+     training weekdays, `phases`, the `targets` history and
+     `profile_notes`.
+
+   The import (`tdeemon import-history`, `internal/history`) served the
+   maintainer's history alone and was removed after the cut-over; git
+   history has it. The app still says the name it gave the rest of a
+   meal ("Rest of the meal (history split)") in the user's language.
    Nothing is read from the predecessor or the vault after it: there is
    no shadow mode and no nightly re-import.
-
-   The predecessor kept a meal as a line of text, and a food of its
-   table at times as several eaten together. The import splits both
-   (`import-history --split-report` shows the split before): a part with
-   an amount and a food of the user's becomes an item of that food, the
-   rest of the meal an estimate of its own, so the meal keeps its total,
-   and a meal whose parts would pass it stays one estimate; a
-   combination is imported as a plate, a food per portion, which no
-   part of a meal is split as. The split is
-   the maintainer's own history's, and goes with the import once the
-   cut-over is done.
 2. **New inputs for what the predecessor took in:** Health Auto Export
    directly (§9), the agent through `/mcp`, and Strong's CSV export
    (§9), whose days of workouts make the training days until P3 reads

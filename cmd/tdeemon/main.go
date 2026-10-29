@@ -42,8 +42,6 @@ const usage = `Usage:
   tdeemon user set-telegram [flags] set the Telegram chat a user's
                                     notifications go to
   tdeemon user set-locale [flags]   set a user's language
-  tdeemon import-history [flags]    import a user's history from the
-                                    predecessor, once
   tdeemon help                      show this help
 
 Flags of user create:
@@ -74,34 +72,11 @@ Flags of user set-locale:
   --locale LANG      en or hr (required): the language of the app, the
                      morning summary and the alerts
 
-Flags of import-history (--health-db, --foods, --plan, or more):
-  --email ADDRESS    the user's address (required)
-  --health-db PATH   the predecessor's database, health.db, which is only
-                     read: the days' metrics and meals
-  --foods PATH       the predecessor's food table, Baza-hrane.md: the
-                     foods, each one the user has no food of its name
-  --plan PATH        a plan file (JSON) written from the predecessor's
-                     goals note: the profile, training weekdays, phases,
-                     targets and notes, each the user has not got; the
-                     limits hold the current phase and target, and the
-                     ones after them, to the weigh-ins
-  --dry-run          say what it would import, and write nothing
-  --split-report PATH
-                     write the split of the meals of --health-db and the
-                     combinations of --foods to PATH, a JSON file to look
-                     at: the parts of each, with their amounts and the
-                     foods of the table they read as. It imports nothing,
-                     so it takes no --email, --plan or --dry-run
+The user commands work on the database of a server that has started at
+least once, which creates and migrates it; the server may be running.
 
-An import runs again without changing what it imported: a value merges
-as before, and a meal keeps its id and what it held.
-
-The user and import commands work on the database of a server that has
-started at least once, which creates and migrates it; the server may be
-running.
-
-Configure tdeemon with TDEEMON_* environment variables; the user and import
-commands read the same ones as the server. See
+Configure tdeemon with TDEEMON_* environment variables; the user commands
+read the same ones as the server. See
 https://github.com/zarnautovic/tdeemon#configuration
 `
 
@@ -147,8 +122,6 @@ func run(ctx context.Context, args []string, lookup config.LookupFunc, in io.Rea
 		return err
 	case "user":
 		return userCommand(ctx, args[1:], lookup, in, out)
-	case "import-history":
-		return importHistory(ctx, args[1:], lookup, out)
 	}
 	return fmt.Errorf("%w: unknown command %q", errUsage, args[0])
 }
