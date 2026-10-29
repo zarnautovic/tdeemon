@@ -291,6 +291,58 @@ func foodNamed(t *testing.T, db *store.DB, user uuid.UUID, name string) (food.Fo
 }
 
 // A new food a meal brings of the name and brand of a food the user has
+// adds its barcodes to that food, as a scan of it is the food: a part of
+// the meal's change, which its undo takes back. A barcode another food has
+// refuses the meal, as it does a new food's.
+func TestMealOfAFoodTheUserHasLinksItsBarcode(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	b := saveFood(t, db, ana, bar())
+	wafer := saveFood(t, db, ana, withBarcode(food.Food{
+		ID: uuid.NewV7(), Name: "Caramel wafer", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 500, Protein: 6, Carbs: 60, Fat: 25},
+	}, "4006381333931"))
+	scanned := func(code string) (meal.Meal, food.Food) {
+		f := withBarcode(food.Food{
+			ID: uuid.NewV7(), Name: b.Name, Brand: b.Brand, Basis: food.Per100g, Source: food.Label,
+			Nutrients: food.Nutrients{Kcal: 360, Protein: 29, Carbs: 31, Fat: 16},
+		}, code)
+		it, err := meal.FromFood(f, meal.Quantity{Amount: 55, Unit: "g"}, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := breakfast(t, b, t0)
+		m.Items = []meal.Item{it}
+		return m, f
+	}
+
+	m, f := scanned("96385074")
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{f}, t0); err != nil {
+		t.Fatal(err)
+	}
+	want := b
+	want.Barcodes = []string{"96385074"}
+	if after, err := db.FoodByID(t.Context(), ana, b.ID); err != nil || !reflect.DeepEqual(after, want) {
+		t.Errorf("the bar after a meal of it scanned = %+v, %v; want its values, and the barcode", after, err)
+	}
+	if e := undo(t, db, ana); e.Action != event.MealCreate {
+		t.Errorf("the undo took back %s, want the meal", e.Action)
+	}
+	if after, err := db.FoodByID(t.Context(), ana, b.ID); err != nil || !reflect.DeepEqual(after, b) {
+		t.Errorf("the bar after the meal's undo = %+v, %v; want it without the barcode", after, err)
+	}
+
+	m, f = scanned(wafer.Barcodes[0])
+	if _, _, err := db.CreateMealWithFoods(t.Context(), ana, testActor, m, []food.Food{f}, t0); !errors.Is(err, store.ErrBarcodeTaken) {
+		t.Errorf("a meal of the bar by the wafer's barcode = %v, want ErrBarcodeTaken", err)
+	}
+	if _, err := db.MealByID(t.Context(), ana, m.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the meal refused: %v, want none", err)
+	}
+}
+
+// A new food a meal brings of the name and brand of a food the user has
 // is that food as the user has it: it is not changed, and the item comes
 // from its values. A quantity that food does not take is refused.
 func TestMealOfAFoodTheUserHas(t *testing.T) {

@@ -1,9 +1,11 @@
 package food
 
 import (
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
+	"uuid"
 )
 
 func TestBarcode(t *testing.T) {
@@ -18,6 +20,11 @@ func TestBarcode(t *testing.T) {
 		"10036000291459":    "10036000291459",
 		"0036000291452":     "0036000291452",
 		" 3850000000015   ": "3850000000015",
+		// A UPC-E, of the UPC-A 042100005264; its digits are no EAN-8.
+		"04252614": "0042100005264",
+		// An EAN-8 padded to 13 and to 14 digits.
+		"0000096385074":  "96385074",
+		"00000096385074": "96385074",
 	} {
 		if got, err := Barcode(in); err != nil || got != want {
 			t.Errorf("Barcode(%q) = %q, %v; want %q", in, got, err, want)
@@ -25,6 +32,8 @@ func TestBarcode(t *testing.T) {
 	}
 	for in, want := range map[string]string{
 		"4006381333932":  "check digit",
+		"04252615":       "check digit",
+		"24252615":       "check digit",
 		"4006381333391":  "check digit",
 		"400638133393":   "check digit",
 		"1234567":        "8, 12, 13 or 14 digits",
@@ -83,5 +92,31 @@ func TestValidateBarcodes(t *testing.T) {
 				t.Errorf("Validate = %v, want an error of %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// A food without barcodes is the JSON it was before foods had them, as
+// main wrote it then: undo compares the state an event recorded with the
+// food now, as JSON, and an event of before would be "changed since".
+func TestFoodJSONWithoutBarcodes(t *testing.T) {
+	t.Parallel()
+
+	f := egg()
+	f.ID = uuid.MustParse("0199f0a0-0000-7000-8000-0000000000e9")
+	f.Aliases = []string{"hen's egg"}
+	f.Nutrients.Salt = new(0.3)
+	got, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const before = `{"ID":"0199f0a0-0000-7000-8000-0000000000e9","Name":"Egg","Brand":"","Basis":"100g",` +
+		`"Nutrients":{"Kcal":143,"Protein":12.6,"Carbs":0.7,"Fat":9.5,"Fiber":null,"SaturatedFat":null,"Sugars":null,"Salt":0.3,"Polyols":null,"Alcohol":null},` +
+		`"PortionGrams":0,"Servings":[{"Name":"piece","Amount":60}],"Aliases":["hen's egg"],"Source":"estimate","Note":"","Archived":false}`
+	if string(got) != before {
+		t.Errorf("the JSON of a food without barcodes:\n%s\nwant it as before them:\n%s", got, before)
+	}
+	f.Barcodes = []string{"96385074"}
+	if got, err := json.Marshal(f); err != nil || !strings.Contains(string(got), `"Barcodes":["96385074"]`) {
+		t.Errorf("the JSON of a food with a barcode: %s, %v", got, err)
 	}
 }

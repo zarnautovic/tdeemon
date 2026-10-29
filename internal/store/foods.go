@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -255,9 +256,11 @@ type newFoods struct {
 // saveNewFoods saves the foods of foods that items name in tx, each as
 // SaveFood does, and returns the id each is stored under by the id it came
 // with. A food of the same name and brand as one the user has is that
-// food, as the user has it: it is not changed (upsert_food corrects a
-// food), and kept holds it, by its id, for its items to be worked out of.
-// A food no item names (one of an op found done already) is not saved.
+// food, as the user has it: its values are not changed (upsert_food
+// corrects a food), but the barcodes it came with are added to it, as a
+// scan of it is the food; kept holds it, by its id, for its items to be
+// worked out of. A food no item names (one of an op found done already)
+// is not saved.
 func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, foods []food.Food, items []meal.Item,
 	now time.Time,
 ) (newFoods, error) {
@@ -280,6 +283,13 @@ func saveNewFoods(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 			had, brought, err := keptFood(ctx, tx, userID, a, target, now)
 			if err != nil {
 				return newFoods{}, err
+			}
+			had, linked, err := linkBarcodes(ctx, tx, userID, a, had, f.Barcodes, now)
+			if err != nil {
+				return newFoods{}, err
+			}
+			if linked != uuid.Nil() {
+				out.parts = append(out.parts, linked)
 			}
 			out.ids[f.ID], out.kept[target], write = target, had, brought
 		} else {
@@ -314,6 +324,27 @@ func keptFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, 
 	}
 	had.Archived = false
 	return had, brought, nil
+}
+
+// linkBarcodes adds to userID's food had the barcodes of codes it lacks,
+// as a's save of it, whose event's id it returns (uuid.Nil when it has
+// them all). A barcode another food has is refused (ErrBarcodeTaken), as
+// it is for a new food; past food.MaxBarcodes, the rest are left out.
+func linkBarcodes(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, had food.Food, codes []string,
+	now time.Time,
+) (food.Food, uuid.UUID, error) {
+	more := slices.Clone(had.Barcodes)
+	for _, code := range codes {
+		if !slices.Contains(more, code) && len(more) < food.MaxBarcodes {
+			more = append(more, code)
+		}
+	}
+	if len(more) == len(had.Barcodes) {
+		return had, uuid.Nil(), nil
+	}
+	linked := had
+	linked.Barcodes = more
+	return saveFoodInTx(ctx, tx, userID, a, linked, saveOrCorrect, now)
 }
 
 // FoodByKey returns userID's food of name and brand, compared as SaveFood

@@ -317,6 +317,25 @@ test('an other name another food has says which food, under it, in Croatian', as
   expect(screen.getByLabelText('Drugi naziv 1').getAttribute('aria-invalid')).toBe('true')
 })
 
+test('a barcode another food took meanwhile says which food, under the save, marking no field', async () => {
+  const wafer = { ...otherOats, name: 'Caramel wafer', brand: '' }
+  foodServer(
+    () => conflict('body.barcodes[0]', wafer.id),
+    'en',
+    { ...oats, barcodes: ['96385074'] },
+    [wafer],
+  )
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
+
+  await screen.findByRole('link', { name: 'Caramel wafer' })
+  expect(screen.getByRole('alert').textContent).toBe(
+    'Another food of yours has one of its barcodes: Caramel wafer',
+  )
+  expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBe('false')
+})
+
 test('a conflict of an other name removed while the save was on its way marks no field', async () => {
   let answer: ((r: Response) => void) | undefined
   const withTwo = { ...oats, aliases: ['porridge oats', 'muesli'] }

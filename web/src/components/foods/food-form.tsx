@@ -177,7 +177,7 @@ export function FoodForm({
   const conflict = conflictOf(save.error)
   const sent = save.variables?.body
   let conflictKey: string | undefined
-  if (conflict && sent && conflict.alias === undefined) {
+  if (conflict && sent && conflict.alias === undefined && conflict.barcode === undefined) {
     conflictKey =
       sent.name === draft.name.trim() && (sent.brand ?? '') === draft.brand.trim()
         ? 'name'
@@ -488,7 +488,9 @@ export function FoodForm({
   const status = statusOf(save.error)
   let refused: ReactNode
   if (conflict) {
-    refused = <TakenBy foodId={conflict.foodId} alias={conflict.alias !== undefined} />
+    const by =
+      conflict.alias === undefined ? (conflict.barcode === undefined ? 'name' : 'barcode') : 'alias'
+    refused = <TakenBy foodId={conflict.foodId} by={by} />
   } else if (save.isError && status === 409) {
     refused = t.foods.conflict(detailOf(save.error))
   } else if (save.isError && status === 422) {
@@ -826,7 +828,7 @@ export function FoodForm({
 
 // TakenBy says that another food of the user's has a name and brand, or
 // an other name, and which, with a link to it.
-function TakenBy({ foodId, alias }: { foodId: string; alias: boolean }) {
+function TakenBy({ foodId, by }: { foodId: string; by: 'name' | 'alias' | 'barcode' }) {
   const t = useMessages()
   const other = $api.useQuery('get', '/api/v1/foods/{id}', { params: { path: { id: foodId } } })
   const name = other.data
@@ -834,7 +836,7 @@ function TakenBy({ foodId, alias }: { foodId: string; alias: boolean }) {
     : t.foods.thatFood
   return (
     <>
-      {alias ? t.foods.aliasTaken : t.foods.nameTaken}{' '}
+      {{ name: t.foods.nameTaken, alias: t.foods.aliasTaken, barcode: t.foods.barcodeTaken }[by]}{' '}
       <Link to="/foods/$id" params={{ id: foodId }} className="underline underline-offset-2">
         {name}
       </Link>

@@ -98,8 +98,10 @@ type Food struct {
 	Aliases []string
 	// Barcodes are the product's barcodes, each in its canonical form
 	// (Barcode), one for each size of its package: a scan of one finds the
-	// food.
-	Barcodes []string
+	// food. Left out of a food's JSON without any, so a food is the JSON
+	// it was before foods had them: undo compares the state an event
+	// recorded with the food now, as JSON.
+	Barcodes []string `json:",omitempty"`
 	Source   Source
 	Note     string
 	Archived bool

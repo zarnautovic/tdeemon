@@ -652,6 +652,7 @@ export const hr: Messages = {
     conflict: (detail: string) => `Taj naziv ili drugi naziv već ima druga namirnica: ${detail}`,
     nameTaken: 'Ovaj naziv i marku već ima tvoja namirnica:',
     aliasTaken: 'Ovaj drugi naziv već ima tvoja namirnica:',
+    barcodeTaken: 'Jedan od ovih barkodova već ima tvoja namirnica:',
     thatFood: 'ta namirnica',
     refused: (detail: string) => `Server nije prihvatio ovu namirnicu: ${detail}`,
   },
