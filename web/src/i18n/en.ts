@@ -58,6 +58,11 @@ export const en = {
     inUse: (food: string) => `In use again: ${food}`,
     notes: 'Notes for your AI coach saved',
   },
+  update: {
+    // A toast when a new version of the app is ready, and its button.
+    ready: 'New version ready',
+    reload: 'Reload the app',
+  },
   shortcuts: {
     title: 'Keyboard shortcuts',
     logMeal: 'Log a meal',

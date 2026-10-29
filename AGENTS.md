@@ -25,7 +25,9 @@ calibration
 `update_profile_notes`, `propose_changes`, `apply_proposal`,
 `reject_proposal`, `revert_proposal` and `undo_last`, the MCP server
 that serves them at `/mcp`, the API contract and the web app's frame
-(signing in, under the product's mark and what it is, and out, its
+(installed as an app, a PWA whose shell opens without a network and
+whose new version a toast offers; signing in, under the product's mark
+and what it is, and out, its
 sections in a bar at the bottom on a phone and
 a sidebar on a desktop, Log a meal over the screen shown, sheets with a
 handle, dragged down to close, keyboard shortcuts (a skip to the

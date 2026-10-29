@@ -47,6 +47,10 @@ export const hr: Messages = {
     inUse: (food: string) => `Opet u upotrebi: ${food}`,
     notes: 'Bilješke za AI trenera spremljene',
   },
+  update: {
+    ready: 'Nova verzija je spremna',
+    reload: 'Osvježi aplikaciju',
+  },
   shortcuts: {
     title: 'Prečaci tipkovnice',
     logMeal: 'Upiši obrok',

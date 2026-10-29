@@ -22,6 +22,9 @@ export interface Said {
   // again after no answer it takes back no other change; after the
   // changes of its day (date) still on their way.
   undo?: { last: Change; date: string; id: string } | undefined
+  // A button of the toast's own, other than Undo: its words and what it
+  // does.
+  action?: { label: string; run: () => void } | undefined
 }
 
 // toasts is the app's toast manager: what any code adds, the Toasts
@@ -51,4 +54,11 @@ export function sayChange(said: Omit<Said, 'undo'>, undo?: { last: Change; date:
 // sayUndone shows how an undo of the latest change went, in its toast.
 export function sayUndone(said: Omit<Said, 'undo'>) {
   toasts.add({ id: changeToast, title: said.title, timeout: 6000, data: said })
+}
+
+// sayUpdate says a new version of the app is ready, in a toast of its own
+// apart from the changes', which stays until the user takes it (action)
+// or closes it.
+export function sayUpdate(title: string, action: { label: string; run: () => void }) {
+  toasts.add({ id: 'update', title, timeout: 0, data: { title, action } })
 }

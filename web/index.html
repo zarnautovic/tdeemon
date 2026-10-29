@@ -19,6 +19,15 @@
       media="(prefers-color-scheme: dark)"
       content="#0A0E15"
     />
+    <!--
+      The app installed (vite.config.ts writes its manifest, whose display
+      opens it full screen): its icons, and for iOS, which takes its own
+      tags before the manifest's, the home screen's icon and title.
+    -->
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-title" content="tdeemon" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>tdeemon</title>
   </head>
   <body>

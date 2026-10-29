@@ -63,7 +63,9 @@ npm run lint    # oxlint; npm run format for Prettier
 ```
 
 The end-to-end tests run the app in Chromium against the binary built
-with it: `make e2e-browser` once, then `make e2e`.
+with it: `make e2e-browser` once, then `make e2e`. The app's service
+worker runs only in a build, not under `npm run dev`; the end-to-end
+tests block it but in `e2e/pwa.spec.ts`.
 
 A binary with the app inside:
 
@@ -152,6 +154,16 @@ docker run --read-only --stop-timeout 20 -v tdeemon-data:/data \
   usage and exits without touching the database.
 - The build runs `go vet` and the tests against the web app it embeds.
   Podman builds the same file.
+
+## On a phone
+
+The web app installs as an app (a PWA): on an iPhone open it in Safari,
+then Share → Add to Home Screen; on Android, Chrome's menu → Install
+app. It opens full screen under its own icon, and without a network it
+opens all the same and says the server is out of reach. A new version
+shows as a toast, once the app comes back into view or within the hour,
+and its Reload takes it. Browsers install an app only from HTTPS (or
+localhost).
 
 ## Users
 

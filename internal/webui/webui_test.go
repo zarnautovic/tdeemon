@@ -13,6 +13,8 @@ var app = fstest.MapFS{
 	"assets/index-B7Vj6WSe.js":  {Data: []byte("console.log(1)")},
 	"assets/index-CMUHlmXG.css": {Data: []byte("body{}")},
 	"favicon.svg":               {Data: []byte("<svg/>")},
+	"manifest.webmanifest":      {Data: []byte(`{"name":"tdeemon"}`)},
+	"sw.js":                     {Data: []byte("self.skipWaiting()")},
 }
 
 func get(t *testing.T, h http.Handler, method, path string, header ...string) *httptest.ResponseRecorder {
@@ -58,6 +60,11 @@ func TestHandler(t *testing.T) {
 		{name: "hashed script", method: http.MethodGet, path: "/assets/index-B7Vj6WSe.js", wantStatus: 200, wantType: "text/javascript; charset=utf-8", wantCache: immutable, wantBody: "console.log(1)"},
 		{name: "hashed stylesheet", method: http.MethodGet, path: "/assets/index-CMUHlmXG.css", wantStatus: 200, wantType: "text/css; charset=utf-8", wantCache: immutable},
 		{name: "unhashed file", method: http.MethodGet, path: "/favicon.svg", wantStatus: 200, wantType: "image/svg+xml", wantCache: "no-cache"},
+		// The installed app's manifest, as its type, which no mime.types
+		// of a minimal image gives; and its service worker, revalidated,
+		// so a new version is found at once.
+		{name: "manifest", method: http.MethodGet, path: "/manifest.webmanifest", wantStatus: 200, wantType: "application/manifest+json", wantCache: "no-cache"},
+		{name: "service worker", method: http.MethodGet, path: "/sw.js", wantStatus: 200, wantType: "text/javascript; charset=utf-8", wantCache: "no-cache"},
 		{name: "script of an old build", method: http.MethodGet, path: "/assets/index-OLD.js", wantStatus: 404, wantNoBodyOf: index},
 		{name: "missing file", method: http.MethodGet, path: "/robots.txt", wantStatus: 404, wantNoBodyOf: index},
 		{name: "HEAD", method: http.MethodHead, path: "/", wantStatus: 200, wantCache: "no-store"},

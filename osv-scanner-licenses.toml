@@ -9,3 +9,43 @@ vulnerability.ignore = true
 [[PackageOverrides]]
 ecosystem = "npm"
 vulnerability.ignore = true
+
+# Babel 7, which workbox-build (the PWA's build, a devDependency) takes:
+# these versions have no licence in deps.dev, where osv-scanner reads it,
+# but each one's package.json says MIT, as all of Babel is. By version,
+# so a new one is looked at again.
+
+[[PackageOverrides]]
+name = "@babel/generator"
+version = "7.29.12"
+ecosystem = "npm"
+license.override = ["MIT"]
+reason = "MIT in its package.json; deps.dev has no licence for this version"
+
+[[PackageOverrides]]
+name = "@babel/helper-create-class-features-plugin"
+version = "7.29.12"
+ecosystem = "npm"
+license.override = ["MIT"]
+reason = "MIT in its package.json; deps.dev has no licence for this version"
+
+[[PackageOverrides]]
+name = "@babel/parser"
+version = "7.29.12"
+ecosystem = "npm"
+license.override = ["MIT"]
+reason = "MIT in its package.json; deps.dev has no licence for this version"
+
+[[PackageOverrides]]
+name = "@babel/plugin-transform-block-scoping"
+version = "7.29.12"
+ecosystem = "npm"
+license.override = ["MIT"]
+reason = "MIT in its package.json; deps.dev has no licence for this version"
+
+[[PackageOverrides]]
+name = "@babel/traverse"
+version = "7.29.12"
+ecosystem = "npm"
+license.override = ["MIT"]
+reason = "MIT in its package.json; deps.dev has no licence for this version"
