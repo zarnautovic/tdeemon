@@ -1,10 +1,11 @@
 import { defineConfig, devices } from '@playwright/test'
 
-import { user } from './e2e/user.ts'
+import { newUser, user } from './e2e/user.ts'
 
 // The end-to-end tests run the app in Chromium as a phone sees it, against
 // the real server: the binary built with the web app (make e2e builds
-// it), over a fresh database with one user (scripts/e2e-server.sh).
+// it), over a fresh database with the tests' user, and a new one for the
+// first steps (scripts/e2e-server.sh).
 const port = 18_080
 
 export default defineConfig({
@@ -22,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: `../scripts/e2e-server.sh ../.e2e/tdeemon ${String(port)} ../.e2e/data`,
     url: `http://127.0.0.1:${String(port)}/healthz`,
-    env: { E2E_EMAIL: user.email, E2E_PASSWORD: user.password },
+    env: { E2E_EMAIL: user.email, E2E_PASSWORD: user.password, E2E_NEW_EMAIL: newUser.email },
     reuseExistingServer: false,
   },
 })

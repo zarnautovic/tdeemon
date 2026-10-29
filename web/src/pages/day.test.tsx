@@ -15,6 +15,7 @@ import {
   today,
 } from '@/test/app'
 import { dayServer } from '@/test/day-server'
+import { planBody } from '@/test/plan'
 
 afterEach(() => {
   cleanup()
@@ -188,7 +189,8 @@ test("the body's tiles: the weight with its trend, the night's sleep, a dash for
   renderAt('/')
 
   const body = await screen.findByRole('region', { name: 'Body today' })
-  const tile = (label: string) => within(body).getByText(label).closest('div')?.textContent ?? null
+  const tile = (label: string) =>
+    within(body).getByText(label).closest('button')?.textContent ?? null
   await waitFor(() => {
     expect(tile('Weight')).toBe('Weight86.4 kgtrend 86.1 kg')
   })
@@ -231,7 +233,8 @@ test("a day before's body is the day's: the weight's trend of that day, which a 
   renderAt(`/?date=${date}`)
 
   const body = await screen.findByRole('region', { name: 'Body' })
-  const tile = (label: string) => within(body).getByText(label).closest('div')?.textContent ?? null
+  const tile = (label: string) =>
+    within(body).getByText(label).closest('button')?.textContent ?? null
   await waitFor(() => {
     expect(tile('Weight')).toBe('Weight85.9 kgtrend 86.4 kg')
   })
@@ -701,6 +704,60 @@ test('a day before the first target says it has none, and still adds up', async 
   expect(within(eaten).getByRole('link', { name: 'Set up a plan' }).getAttribute('href')).toBe(
     '/plan',
   )
+})
+
+// QA round 2: a day before the first phase said "Set up a plan", though a
+// plan was there.
+test("a day before the plan's first target says when the plan starts, not to set one up", async () => {
+  const date = '2026-10-20'
+  const { target: _target, remaining: _remaining, ...before } = day({ date, status: 'complete' })
+  fakeServer({
+    ...signedIn(),
+    [`GET /api/v1/days/${date}`]: () => Response.json(before),
+    'GET /api/v1/plan': () =>
+      Response.json(
+        planBody({
+          phases: [{ start: '2026-10-21', type: 'cut', rate_pct_week: -0.5 }],
+          targets: [
+            {
+              effective_from: '2026-10-21',
+              training: { kcal: 2300, protein: 160, carbs: 250, fat: 70 },
+              rest: { kcal: 2000, protein: 160, carbs: 190, fat: 65 },
+            },
+          ],
+        }),
+      ),
+  })
+
+  renderAt(`/?date=${date}`)
+
+  const eaten = await screen.findByRole('region', { name: 'Eaten' })
+  expect(
+    await within(eaten).findByText('No target on this day: the plan starts on Oct 21.'),
+  ).toBeDefined()
+  expect(within(eaten).getByRole('link', { name: 'See the plan' }).getAttribute('href')).toBe(
+    '/plan',
+  )
+  expect(within(eaten).queryByText('Set up a plan')).toBeNull()
+})
+
+test('a plan of phases without a target says it gives none yet', async () => {
+  const date = '2026-10-20'
+  const { target: _target, remaining: _remaining, ...before } = day({ date, status: 'complete' })
+  fakeServer({
+    ...signedIn('hr'),
+    [`GET /api/v1/days/${date}`]: () => Response.json(before),
+    'GET /api/v1/plan': () =>
+      Response.json(
+        planBody({ phases: [{ start: '2026-10-01', type: 'maintain', rate_pct_week: 0 }] }),
+      ),
+  })
+
+  renderAt(`/?date=${date}`)
+
+  const eaten = await screen.findByRole('region', { name: 'Pojedeno' })
+  expect(await within(eaten).findByText('Plan još ne daje cilj.')).toBeDefined()
+  expect(within(eaten).getByRole('link', { name: 'Otvori plan' })).toBeDefined()
 })
 
 test('the days move back and ahead, up to today', async () => {

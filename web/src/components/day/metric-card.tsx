@@ -1,5 +1,5 @@
 import { Pencil } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type Ref } from 'react'
 
 import { useDeleteMetric } from '@/api/day'
 import type { Metric } from '@/api/types'
@@ -13,22 +13,27 @@ import { sayChange } from '@/lib/toast'
 
 // MetricCard is a measurement of the day in its unit, which can be
 // corrected or deleted, but on a day to come (canLog false); a toast says
-// so, with Undo, and no question before. onDeleted is told once it is
-// deleted, as its card goes with the focus in it.
+// so, with Undo, and no question before. open starts it corrected, its
+// field inputRef. onDeleted is told once it is deleted, as its card goes
+// with the focus in it.
 export function MetricCard({
   date,
   metric,
   canLog = true,
+  open = false,
+  inputRef,
   onDeleted,
 }: {
   date: string
   metric: Metric
   canLog?: boolean
+  open?: boolean
+  inputRef?: Ref<HTMLInputElement> | undefined
   onDeleted?: () => void
 }) {
   const t = useMessages()
   const f = useFormat()
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(open)
   const label = t.day.metric[metric.kind]
   const remove = useDeleteMetric(date, () => {
     sayChange(
@@ -47,6 +52,7 @@ export function MetricCard({
           label={label}
           // As the card shows it: steps whole, a weight to 0.1.
           initial={f.field(metric.value, digits[metric.kind] ?? 0)}
+          inputRef={inputRef}
           onSaved={() => {
             setEditing(false)
           }}

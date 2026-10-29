@@ -82,10 +82,14 @@ export function FoodBrowser() {
         <h1 id={`${id}-title`} className="text-title">
           {t.foods.title}
         </h1>
-        <Link to="/foods/new" search={from} className={buttonVariants({ size: 'sm' })}>
-          <Plus aria-hidden />
-          {t.foods.new}
-        </Link>
+        {/* Without a food in use, the list's own button is the one way to
+            add one. */}
+        {!(filter === 'inUse' && total === 0) && (
+          <Link to="/foods/new" search={from} className={buttonVariants({ size: 'sm' })}>
+            <Plus aria-hidden />
+            {t.foods.new}
+          </Link>
+        )}
       </header>
       <label className="flex h-12 items-center gap-2.5 rounded-lg border-2 border-input bg-card px-3.5 focus-within:border-ring">
         <Search aria-hidden className="size-4.5 shrink-0 text-muted-foreground" />

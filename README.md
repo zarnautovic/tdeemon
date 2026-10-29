@@ -401,8 +401,12 @@ proposal that changes the limits. Only
 one): another header, such as a reverse proxy's Basic credentials or the
 ID token an authenticating proxy passes on as a Bearer, leaves the
 request to its session cookie.
-The web app's settings make, list and revoke them too, the token shown
-once, when it is made.
+The web app's settings list and revoke them too, and connect another
+(Devices and AI coaches → Connect, where a token is an access key): an
+AI coach, with `tools`; an iPhone with Health Auto Export, with
+`ingest`; or another, of the scopes picked. The token is shown once,
+when it is made, with the steps to give it to the client below, and the
+sheet says when the client first calls with it.
 
 ### MCP
 
@@ -418,6 +422,13 @@ skill, if any, shrinks to a few lines. Claude Code, for one:
 claude mcp add --transport http tdeemon https://tdeemon.example.com/mcp \
   --header "Authorization: Bearer tdm_…"
 ```
+
+The app's Connect gives this command with the token in it, the address
+being the instance's (`TDEEMON_BASE_URL`, which `GET /api/v1/info` says
+as `base_url`), and Claude Desktop's configuration, through
+[mcp-remote](https://www.npmjs.com/package/mcp-remote), which passes the
+header on. ChatGPT's connectors sign in with OAuth rather than a
+header, which tdeemon does not offer yet.
 
 ### Import from Apple Health
 
@@ -438,6 +449,9 @@ metrics to tdeemon:
   from a whole day): a day's total is then whole, and only grows from
   sync to sync. Sleep comes as nights; a sleep stage of an export that
   is not summarized is left out, and the answer says to turn it on.
+
+The app's Connect, for an iPhone, makes the token and gives this as a
+checklist, with the URL and the header's value to copy.
 
 A value belongs to the calendar date of its point, the parts of a day's
 total add up, the longest sleep is the night, and the day keeps its

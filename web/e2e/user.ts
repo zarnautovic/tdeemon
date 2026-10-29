@@ -3,11 +3,16 @@ import { expect, type Locator, type Page } from '@playwright/test'
 // The user scripts/e2e-server.sh creates for the tests (made up).
 export const user = { email: 'ana@example.com', password: 'only-for-the-e2e-tests' }
 
-// signIn signs the user in from the sign-in page, and waits for the day.
-export async function signIn(page: Page) {
+// newUser is a second user it creates, who has given nothing yet, for the
+// first steps alone: no other test uses them.
+export const newUser = { email: 'iva@example.com', password: user.password }
+
+// signIn signs a user in from the sign-in page, the tests' own unless
+// another is given, and waits for the day.
+export async function signIn(page: Page, who: { email: string; password: string } = user) {
   await page.goto('/login')
-  await page.getByLabel('Email').fill(user.email)
-  await page.getByLabel('Password').fill(user.password)
+  await page.getByLabel('Email').fill(who.email)
+  await page.getByLabel('Password').fill(who.password)
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 }

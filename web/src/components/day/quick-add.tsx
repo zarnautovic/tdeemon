@@ -18,6 +18,7 @@ import {
 import { mealName, namedBy, slotAt } from '@/components/day/meal-slot'
 import { NewEntry, type Making } from '@/components/day/new-entry'
 import { SaveStatus } from '@/components/day/save-status'
+import { WeighInChip } from '@/components/day/weigh-in-chip'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
@@ -340,6 +341,7 @@ function Composer({
               setMaking(m)
             }}
           />
+          <WeighInChip date={date} />
         </fieldset>
         <div className="space-y-2 border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {entries.length > 0 ? (

@@ -646,7 +646,8 @@ generator writes it.
 - Asynchronous UI is awaited with `findBy…` queries, never with sleeps.
 - **End-to-end tests** (`web/e2e`, Playwright, `make e2e`) run the app in
   Chromium as a phone sees it (Pixel 7), against the binary built with
-  it, over a fresh database with one made-up user
+  it, over a fresh database with two made-up users: the tests' own, and
+  a new one whom only the first steps sign in as
   (`scripts/e2e-server.sh`). They are few: a path a person takes through
   a screen, signing in, the day, the foods, the charts, the settings,
   the profile and the limits; the rest is
@@ -699,6 +700,8 @@ the API's `locale`); English is the base.
     Croatian, never "a coach", "a model" or "an AI client" ("model"
     only where a proposal names the one that made it);
   - the body's mass is "weight" and "kilaža" ("težina" is not used);
+  - what a device or an AI coach signs in with, the API's token, is its
+    "access key" and "pristupni ključ", never a "token";
   - hunger goes up one kind of word: "full · a bit hungry · hungry ·
     very hungry · starving", "sit · malo gladan · gladan · jako gladan
     · stalno gladan".

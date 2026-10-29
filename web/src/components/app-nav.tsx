@@ -13,6 +13,7 @@ import { useId, type ReactNode } from 'react'
 
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
+import { BrandMark } from '@/components/brand-mark'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { buttonVariants } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
@@ -105,16 +106,7 @@ export function AppNav() {
       className="fixed inset-x-0 bottom-0 z-30 border-t bg-card/95 pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] backdrop-blur-md lg:inset-y-0 lg:right-auto lg:flex lg:w-60 lg:flex-col lg:gap-6 lg:border-t-0 lg:border-r lg:bg-card lg:px-4 lg:py-6 lg:backdrop-blur-none"
     >
       <span className="hidden items-center gap-2.5 px-2 text-h3 lg:flex">
-        <svg aria-hidden viewBox="0 0 32 32" className="size-7">
-          <rect width="32" height="32" rx="9" className="fill-primary" />
-          <path
-            d="M8 20c3 0 4-8 8-8s5 6 8 6"
-            fill="none"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            className="stroke-primary-foreground"
-          />
-        </svg>
+        <BrandMark />
         tdeemon
       </span>
       <Link

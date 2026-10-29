@@ -34,7 +34,7 @@ export function Sheet({
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  initialFocus?: RefObject<HTMLElement | null>
+  initialFocus?: RefObject<HTMLElement | null> | undefined
   tapToType?: boolean
   finalFocus?: RefObject<HTMLElement | null> | undefined
   tall?: boolean

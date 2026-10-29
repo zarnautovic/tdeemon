@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { setLocale } from '@/i18n/locale'
 import { day, fakeServer, me, problem, renderAt, signedIn, today } from '@/test/app'
 import { dayServer } from '@/test/day-server'
+import { dayWithoutTarget, newUser, summaryOfNothing } from '@/test/new-user'
 
 afterEach(() => {
   cleanup()
@@ -502,4 +503,46 @@ test('a note sent again after it failed leaves the field to follow the day', asy
   await waitFor(() => {
     expect(screen.getByLabelText('Note')).toHaveProperty('value', 'from the phone')
   })
+})
+
+test("a new user's check-in is a line that asks how the day was, and opens", async () => {
+  const server = dayServer(dayWithoutTarget())
+  fakeServer({ ...newUser(), ...server.routes })
+  renderAt('/')
+
+  const region = within(await screen.findByRole('region', { name: 'Check-in' }))
+  const add = await region.findByRole('button', { name: 'Add a check-in' })
+  expect(add.textContent).toBe('Add')
+  expect(within(checkIn()).getByText('How was today?')).toBeDefined()
+  expect(within(checkIn()).queryByRole('group', { name: 'Mood' })).toBeNull()
+
+  fireEvent.click(add)
+  // Open, its heading has the focus, and the steps follow it.
+  expect(document.activeElement).toBe(within(checkIn()).getByRole('heading', { name: 'Check-in' }))
+  fireEvent.click(
+    within(within(checkIn()).getByRole('group', { name: 'Mood' })).getByRole('button', {
+      name: '4 good',
+    }),
+  )
+  expect(await screen.findByText('The check-in is saved')).toBeDefined()
+  expect(server.day().mood).toBe(4)
+})
+
+test('a user who measured before, or said something of the day, has the whole check-in', async () => {
+  fakeServer({
+    ...newUser(),
+    'GET /api/v1/summary': () =>
+      Response.json(summaryOfNothing({ recovery: { flags: [], sleep_h: 7.2 } })),
+  })
+  renderAt('/')
+  expect(await screen.findByRole('group', { name: 'Mood' })).toBeDefined()
+  cleanup()
+
+  fakeServer({
+    ...newUser(),
+    'GET /api/v1/days/today': () => Response.json(dayWithoutTarget({ hunger: 2 })),
+  })
+  renderAt('/')
+  expect(await screen.findByRole('group', { name: 'Hunger' })).toBeDefined()
+  expect(screen.queryByText('How was today?')).toBeNull()
 })

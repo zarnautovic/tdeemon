@@ -1014,6 +1014,30 @@ the first spec.
     the hero's numbers side by side and the meals a table of their kcal
     and macros with the day's total, and beside it the week as bars with
     the target and the average, the body, the check-in and the phase.
+  - A new user's first steps take the place of the day's hero until
+    there is a plan, or a proposal of one: a card of four, each ticked
+    once done (the profile; a first weigh-in, in the card; an AI coach
+    or a phone that called with its access key; a first meal), and,
+    once the first three are, what to ask the AI coach for a plan, to
+    copy. Put off for later, in the browser, the plan's page brings it
+    back. Until the user has measured anything, the check-in is a line
+    that asks how the day was, and the body has no empty tiles, only the
+    way to a first weigh-in. A day before the plan's first target says
+    when the plan starts, not to set one up.
+  - A weigh-in is a tap away: each of the body's tiles opens its
+    measurement (the weight in a field in its place, hinting with the
+    day before's; the others in the measurements' sheet, at their own),
+    the quick add has a Weigh-in chip, and in the morning, while today
+    has none, the hero asks for it in a line, unless the day before's
+    came from a device (a smart scale's user is not asked).
+  - Connecting an AI coach or a phone is a guided sheet: what it is,
+    its access key (an API token; the web never says "token") with the
+    scope its kind takes, and the steps to give the key to it, shown
+    this once: the instance's MCP address (its base URL, which
+    `GET /api/v1/info` says), Claude Code's command, Claude Desktop's
+    configuration, or Health Auto Export's checklist. Then it says when
+    the client first calls, by the key's last use, which it asks the
+    server for every two seconds until it comes.
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the progress's page (a chunk of its own), not
     with the app. A chart's colours are the theme's tokens, read from the

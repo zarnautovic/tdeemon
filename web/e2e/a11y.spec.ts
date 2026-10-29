@@ -220,6 +220,21 @@ const screens: Screen[] = [
       await settled(page)
     },
   })),
+  // An AI coach's access key just made, with the steps to connect it.
+  {
+    name: 'connect',
+    open: async (page) => {
+      await page.goto('/settings/devices?connect=coach')
+      const sheet = page.getByRole('dialog')
+      await sheet
+        .getByRole('button', { name: /^(Create the access key|Napravi pristupni ključ)$/ })
+        .click()
+      await expect(
+        sheet.getByText(/^(Waiting for the first call…|Čeka prvi poziv…)$/),
+      ).toBeVisible()
+      await settled(page)
+    },
+  },
 ]
 
 // serious is what axe finds of a serious or critical impact, against

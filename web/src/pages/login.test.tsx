@@ -278,6 +278,20 @@ test('the sign-in page says it is connecting until the server answers', async ()
   expect(screen.queryByLabelText('Password')).toBeNull()
 })
 
+test('the sign-in says what the app is: its mark, its name and a sentence', async () => {
+  fakeServer(signedOut)
+
+  renderAt('/login')
+
+  const main = await screen.findByRole('main')
+  const name = await screen.findByText('tdeemon')
+  expect(name.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+  expect(main.textContent).toContain(
+    'Log what you eat; tdeemon learns what you burn, and your AI coach plans from it.',
+  )
+  expect(screen.getByRole('heading', { name: 'Sign in', level: 1 })).toBeDefined()
+})
+
 test('a failure of the app itself is not blamed on the server', async () => {
   // A session without its user: reading its locale is a TypeError, as most
   // bugs are, and not a request that got no answer.

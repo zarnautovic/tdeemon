@@ -1,30 +1,28 @@
-import { useId, useState, type ReactNode, type SubmitEvent } from 'react'
+import { useId, type ReactNode, type Ref, type SubmitEvent } from 'react'
 
-import { useLogMetric } from '@/api/day'
-import { statusOf } from '@/api/errors'
 import { units, type MetricKind } from '@/components/day/metric-kinds'
+import { useMetricValue } from '@/components/day/metric-value'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button } from '@/components/ui/button'
-import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import limits from '@/lib/limits.json'
 import { fieldLabel, inputClass } from '@/lib/styles'
-import { sayChange } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 // MetricForm takes a measurement of a kind, typed in the language and the
 // kind's unit, and stores it for the day; what is not a number, or not a
-// value of the kind (limits.json, the server's bounds), it says so of,
-// and sends nothing, until the field changes. Saved, a toast says so, by
-// the kind's name, whatever label names the field, with Undo. initial is
-// what the field starts with, as the value is shown: left as it is, it is
-// not sent, so the value keeps the decimals it was shown without.
-// children are more buttons, after Save.
+// value of the kind, it says so of, and sends nothing, until the field
+// changes (useMetricValue). Saved, a toast says so, by the kind's name,
+// whatever label names the field, with Undo. initial is what the field
+// starts with, as the value is shown: left as it is, it is not sent, so
+// the value keeps the decimals it was shown without. inputRef is the
+// field's, for a sheet opened at it to focus. children are more buttons,
+// after Save.
 export function MetricForm({
   date,
   kind,
   label,
   initial = '',
+  inputRef,
   onSaved,
   children,
 }: {
@@ -32,32 +30,14 @@ export function MetricForm({
   kind: MetricKind
   label: string
   initial?: string
+  inputRef?: Ref<HTMLInputElement> | undefined
   onSaved?: () => void
   children?: ReactNode
 }) {
   const t = useMessages()
-  const f = useFormat()
   const id = useId()
-  const log = useLogMetric(date, () => {
-    sayChange(
-      { title: t.toast.savedOf(t.day.metric[kind]) },
-      { last: { action: 'metric.set', entity: `${date}/${kind}` }, date },
-    )
-  })
-  const [notNumber, setNotNumber] = useState(false)
-  const [outside, setOutside] = useState(false)
+  const value = useMetricValue(date, kind, onSaved)
   const unit = units[kind]
-  const { least, most } = limits.metrics[kind]
-  // A value the server refuses (422) is out of what the kind can be:
-  // sending it again would not help.
-  const refused = log.isError && statusOf(log.error) === 422
-
-  function save(value: number) {
-    log.mutate(
-      { params: { path: { date, kind } }, body: { value } },
-      { onSuccess: () => onSaved?.() },
-    )
-  }
 
   function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -66,13 +46,7 @@ export function MetricForm({
       onSaved?.()
       return
     }
-    const value = typeof typed === 'string' ? f.parse(typed) : undefined
-    const out = value !== undefined && (value < least || value > most)
-    setNotNumber(value === undefined)
-    setOutside(out)
-    if (value !== undefined && !out) {
-      save(value)
-    }
+    value.give(typeof typed === 'string' ? typed : '')
   }
 
   return (
@@ -83,21 +57,16 @@ export function MetricForm({
       <div className="flex flex-wrap gap-2">
         <div className="relative min-w-32 flex-1">
           <input
+            ref={inputRef}
             id={id}
             name="value"
             inputMode="decimal"
             autoComplete="off"
             defaultValue={initial}
-            aria-invalid={notNumber || outside || log.isError}
+            aria-invalid={value.invalid}
             aria-describedby={unit ? `${id}-unit` : undefined}
             className={cn(inputClass, 'tabular-nums', unit && 'pr-20')}
-            onChange={() => {
-              setNotNumber(false)
-              setOutside(false)
-              if (log.isError) {
-                log.reset()
-              }
-            }}
+            onChange={value.clear}
           />
           {unit && (
             <span
@@ -108,28 +77,17 @@ export function MetricForm({
             </span>
           )}
         </div>
-        <Button type="submit" disabled={log.isPending}>
+        <Button type="submit" disabled={value.log.isPending}>
           {t.day.save}
         </Button>
         {children}
       </div>
-      {notNumber || outside || refused ? (
-        <p role="alert" className="text-xs text-destructive">
-          {notNumber
-            ? t.day.notANumber
-            : outside
-              ? t.day.between(f.number(least, 1), f.number(most, 1), unit)
-              : t.day.outOfRange}
-        </p>
+      {value.problem === undefined ? (
+        <SaveStatus change={value.log} onRetry={value.retry} />
       ) : (
-        <SaveStatus
-          change={log}
-          onRetry={() => {
-            if (log.variables) {
-              save(log.variables.body.value)
-            }
-          }}
-        />
+        <p role="alert" className="text-xs text-destructive">
+          {value.problem}
+        </p>
       )}
     </form>
   )

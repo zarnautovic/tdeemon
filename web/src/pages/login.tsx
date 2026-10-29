@@ -6,6 +6,7 @@ import { $api } from '@/api/client'
 import { HttpError, NoAnswerError } from '@/api/errors'
 import { safeTarget, sessionQuery } from '@/api/session'
 import { signIn } from '@/api/sign-in'
+import { BrandMark } from '@/components/brand-mark'
 import { Button, buttonVariants } from '@/components/ui/button'
 import type { Messages } from '@/i18n/en'
 import { useMessages } from '@/i18n/messages'
@@ -36,7 +37,8 @@ function problem(t: Messages, error: unknown): string {
 }
 
 // LoginPage signs a person in with a password, or through the instance's
-// OpenID Connect provider, and then goes where they were headed.
+// OpenID Connect provider, and then goes where they were headed. Above
+// the form, the product's mark and name, and what it is.
 export function LoginPage() {
   const t = useMessages()
   const target = safeTarget(useSearch({ from: '/login' }).redirect)
@@ -64,6 +66,14 @@ export function LoginPage() {
   const oidc = methods.data?.oidc
   return (
     <main className={cn(narrowPage, 'max-w-sm space-y-6 pt-10')}>
+      {/* What the app is, before the form. */}
+      <div className="space-y-2">
+        <p className="flex items-center gap-2.5 text-h2">
+          <BrandMark className="size-9" />
+          tdeemon
+        </p>
+        <p className="text-muted-foreground">{t.signIn.tagline}</p>
+      </div>
       <h1 className="text-2xl font-semibold">{t.signIn.title}</h1>
       {methods.isPending && <p className="text-muted-foreground">{t.connecting}</p>}
       {methods.isError && (

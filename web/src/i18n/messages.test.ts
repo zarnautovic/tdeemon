@@ -48,3 +48,10 @@ test("the messages call the coach the AI coach, and the weight the weight's word
   expect(astray(textsOf(en), /\b(a coach|the coach|models?|AI clients?)\b/i)).toEqual([])
   expect(astray(textsOf(hr), /\b(coach\w*|model\w*|AI klijent\w*|težin\w*)/i)).toEqual([])
 })
+
+// What a device or an AI coach signs in with is its access key, the
+// API's token, never named so.
+test('the messages call a token an access key', () => {
+  expect(astray(textsOf(en), /\btokens?\b/i)).toEqual([])
+  expect(astray(textsOf(hr), /\btoken\w*/i)).toEqual([])
+})

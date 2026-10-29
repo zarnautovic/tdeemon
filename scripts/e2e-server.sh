@@ -2,9 +2,11 @@
 # Runs the server of the end-to-end tests (web/playwright.config.ts): the
 # binary built with the web app, on 127.0.0.1:<port>, over a fresh data
 # directory with one user, whose address and password are E2E_EMAIL and
-# E2E_PASSWORD. It runs on macOS's bash 3.2 too.
+# E2E_PASSWORD; and, with E2E_NEW_EMAIL, a second user of that address and
+# the same password, for the first steps of a user who has given nothing
+# yet. It runs on macOS's bash 3.2 too.
 #
-#   E2E_EMAIL=… E2E_PASSWORD=… scripts/e2e-server.sh <binary> <port> <data dir>
+#   E2E_EMAIL=… E2E_PASSWORD=… [E2E_NEW_EMAIL=…] scripts/e2e-server.sh <binary> <port> <data dir>
 set -euo pipefail
 
 if [[ $# -ne 3 || ! $2 =~ ^[0-9]+$ || -z ${E2E_EMAIL:-} || -z ${E2E_PASSWORD:-} ]]; then
@@ -49,5 +51,9 @@ fi
 
 printf '%s\n' "$E2E_PASSWORD" |
   "$bin" user create --email "$E2E_EMAIL" --name Ana --timezone Europe/Zagreb --password-stdin >/dev/null
+if [[ -n ${E2E_NEW_EMAIL:-} ]]; then
+  printf '%s\n' "$E2E_PASSWORD" |
+    "$bin" user create --email "$E2E_NEW_EMAIL" --name Iva --timezone Europe/Zagreb --password-stdin >/dev/null
+fi
 
 TDEEMON_LISTEN=127.0.0.1:$port exec "$bin"

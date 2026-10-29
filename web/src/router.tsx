@@ -219,13 +219,19 @@ const accountRoute = createRoute({
   path: '/settings/account',
   component: AccountPage,
 })
-// connect=coach opens a new token for an AI coach (the plan's Connect an
-// AI coach), which takes it out of the address once open.
+// connect opens the way to connect an AI coach (coach, the plan's Connect
+// an AI coach), a phone (phone), or either (choose, today's first steps),
+// which takes it out of the address once open.
 const devicesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/settings/devices',
-  validateSearch: (search: Record<string, unknown>): { connect?: 'coach' | undefined } => ({
-    connect: search.connect === 'coach' ? 'coach' : undefined,
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { connect?: 'coach' | 'phone' | 'choose' | undefined } => ({
+    connect:
+      search.connect === 'coach' || search.connect === 'phone' || search.connect === 'choose'
+        ? search.connect
+        : undefined,
   }),
   component: DevicesPage,
 })

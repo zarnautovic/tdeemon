@@ -11,6 +11,7 @@ import { CheckIn } from '@/components/day/check-in'
 import { DayPhase } from '@/components/day/day-phase'
 import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
+import { FirstSteps } from '@/components/day/first-steps'
 import { kcalLeft } from '@/components/day/left'
 import { MealList } from '@/components/day/meal-list'
 import { slotAt } from '@/components/day/meal-slot'
@@ -272,7 +273,10 @@ export function DayPage() {
             phone has them one after the other, the phase in the day's
             hero. */}
         <div className="space-y-4 lg:col-span-8">
-          <DaySummary day={day.data} phase={!desktop} />
+          {/* A new user's first steps, in place of the hero before a plan. */}
+          <FirstSteps day={day.data}>
+            <DaySummary day={day.data} phase={!desktop} />
+          </FirstSteps>
           {/* A proposal that waits, under the day's hero. */}
           {isToday && <ProposalNudge />}
           {isToday && (
