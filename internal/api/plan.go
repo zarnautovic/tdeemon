@@ -15,6 +15,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
+	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 )
 
 // webActor is who writes through these operations: the user, in a web
@@ -106,6 +107,20 @@ func (s *sessions) registerPlan(a huma.API) {
 		Tags:   []string{"plan"},
 		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusConflict, http.StatusUnprocessableEntity},
 	}, s.setLimits)
+	huma.Register(a, huma.Operation{
+		OperationID: "change-plan",
+		Method:      http.MethodPost,
+		Path:        Prefix + "/plan/changes",
+		Summary:     "Change your plan",
+		Description: "Needs a web session: the user's own change of the phases and the targets, in the app. " +
+			"It is a proposal of the user's, made and applied at once: a revision of the plan, which the history shows and a revert takes back, " +
+			"its rationale the code `" + proposal.ChangedInTheApp + "`. " +
+			"The limits hold it as they hold any proposal: one past them is refused (422), each violation an error detail as propose_changes gives it, " +
+			"and so is a change of the past or of nothing. It supersedes the proposal that waits, as any change of the plan does. " +
+			"The answer holds the revision, and what the limits checked, with their warnings.",
+		Tags:   []string{"plan"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
+	}, s.changePlan)
 }
 
 func newProfileBody(p profile.Profile) ProfileBody {

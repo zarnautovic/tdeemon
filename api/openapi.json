@@ -28,6 +28,30 @@
         },
         "type": "object"
       },
+      "ChangePlanBody": {
+        "additionalProperties": false,
+        "properties": {
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseChangeIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetChangeIn"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
       "ChangesBody": {
         "additionalProperties": false,
         "properties": {
@@ -2351,7 +2375,7 @@
             "type": "string"
           },
           "rationale": {
-            "description": "Why it was proposed.",
+            "description": "Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there).",
             "type": "string"
           },
           "reverted_by": {
@@ -7083,6 +7107,128 @@
         "summary": "Get your plan",
         "tags": [
           "tools"
+        ]
+      }
+    },
+    "/api/v1/plan/changes": {
+      "post": {
+        "description": "Needs a web session: the user's own change of the phases and the targets, in the app. It is a proposal of the user's, made and applied at once: a revision of the plan, which the history shows and a revert takes back, its rationale the code `changed in the app`. The limits hold it as they hold any proposal: one past them is refused (422), each violation an error detail as propose_changes gives it, and so is a change of the past or of nothing. It supersedes the proposal that waits, as any change of the plan does. The answer holds the revision, and what the limits checked, with their warnings.",
+        "operationId": "change-plan",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePlanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposedBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Change your plan",
+        "tags": [
+          "plan"
         ]
       }
     },

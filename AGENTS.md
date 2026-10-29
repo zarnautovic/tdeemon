@@ -16,7 +16,8 @@ domain and the database with an event log and undo, the proposals of
 changes of the plan and their life in the domain and the database, the
 API for the profile, the limits, the settings, the notes for a coach,
 the list of foods, a new food, the recent meals, the history and the
-plan, calibration
+plan, the user's own change of the plan (a proposal applied at once),
+calibration
 (the measured TDEE and the verdict on a phase), the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
 `find_foods`, `get_food`, `upsert_food`, `log_meal`, `update_meal`,
@@ -50,9 +51,13 @@ and the TDEE against intake as charts, the weeks in a table, sleep,
 the heart, the steps and the body fat in small, each a chart a tap
 away, over 30 days to a year or the phase; ECharts loaded with them,
 in the theme's tokens), the plan (its phase as the hero, with its pace,
-week, progress and the phases on a timeline, a proposal that waits,
-the targets by type of day and the deficit they plan, the history of its
-revisions with a revert, a proposal of the limits accepted there alone,
+week, progress and the phases on a timeline, edited and the next one
+planned in a sheet, a proposal that waits, saying only what it changes,
+who made it, when it expires and what the data say beside it, marked
+on the plan's section and in a line on the day, the targets by type of
+day and the deficit they plan, edited in a sheet, the history of its
+revisions with a revert, their rationales of the app's own as codes, a
+proposal of the limits accepted there alone,
 and, before a plan, how one comes; what it rests on of the user's, each
 a row to its page: the profile, the limits in groups that open, a wrong
 one focused at its field, the notes for a coach) and the settings as a
@@ -76,7 +81,7 @@ languages, exist.
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the settings, the list of foods, a new food, a food's use and the recent meals (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the list of foods, a new food, a food's use and the recent meals (web session only), the imports (API token only), and the tools, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |

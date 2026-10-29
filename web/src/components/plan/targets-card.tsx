@@ -2,6 +2,7 @@ import { useId } from 'react'
 
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
+import { EditTargets } from '@/components/plan/edit-targets'
 import { targetNow, weekdays, weeklyAverage } from '@/components/plan/phases'
 import { useDate, usePlanWords } from '@/components/plan/proposal-text'
 import { InfoTip } from '@/components/ui/info-tip'
@@ -14,7 +15,8 @@ type DayTarget = components['schemas']['DayTargetBody']
 // TargetsCard is what the plan sets a day to eat by its type, training
 // and rest: the kcal and the macros of each, and the days of the week
 // each is; the weekly average they come to over the training days,
-// against the TDEE calibration measures; and the targets to come.
+// against the TDEE calibration measures; and the targets to come. The
+// user edits them from today on.
 export function TargetsCard({ plan }: { plan: Plan }) {
   const t = useMessages()
   const date = useDate()
@@ -29,15 +31,18 @@ export function TargetsCard({ plan }: { plan: Plan }) {
 
   return (
     <section aria-labelledby={id} className="space-y-3 rounded-lg border bg-card p-4 lg:p-5">
-      <header className="flex items-baseline justify-between gap-2">
+      <header className="flex items-center justify-between gap-2">
         <h2 id={id} className="text-h3">
           {g.title}
         </h2>
-        {target !== undefined && (
-          <span className="text-small text-muted-foreground">
-            {g.since(date(target.effective_from))}
-          </span>
-        )}
+        <div className="flex items-center gap-1">
+          {target !== undefined && (
+            <span className="text-small text-muted-foreground">
+              {g.since(date(target.effective_from))}
+            </span>
+          )}
+          <EditTargets plan={plan} />
+        </div>
       </header>
       {target === undefined ? (
         <>

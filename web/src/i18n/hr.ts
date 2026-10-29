@@ -20,6 +20,7 @@ export const hr: Messages = {
     settings: 'Postavke',
     logMeal: 'Upiši obrok',
     darkTheme: 'Tamna tema',
+    waits: 'Čeka prijedlog',
   },
   toast: {
     close: 'Zatvori',
@@ -836,8 +837,30 @@ export const hr: Messages = {
     pending: {
       title: 'Prijedlog promjene',
       by: (who: string) => `Predložio ${who}`,
+      byYou: 'Tvoj prijedlog',
+      who: (name: string, model: string) => `${name} (${model})`,
+      coach: 'AI trener',
       window: (from: string, to: string) => `Na osnovu dana od ${from} do ${to}.`,
-      expires: (date: string) => `Čeka tvoj odgovor do ${date}.`,
+      expiresIn: (days: number) =>
+        `istječe za ${String(days)} ${plural('hr', days, { one: 'dan', few: 'dana', other: 'dana' })}`,
+      data: {
+        title: 'Što kažu podaci',
+        rate: {
+          on_target: (pct: string, from: string, to: string) =>
+            `Kalibracija mjeri ${pct} tjedno, u rasponu faze (${from} do ${to}).`,
+          below: (pct: string, from: string, to: string) =>
+            `Kalibracija mjeri ${pct} tjedno, ispod raspona faze (${from} do ${to}).`,
+          above: (pct: string, from: string, to: string) =>
+            `Kalibracija mjeri ${pct} tjedno, iznad raspona faze (${from} do ${to}).`,
+        },
+        noVerdict: 'Kalibracija još nema ocjenu faze.',
+        trusted: (kcal: string, pm: string) => `TDEE od ${kcal} ± ${pm} kcal je pouzdan.`,
+        notTrusted: (kcal: string) => `TDEE od oko ${kcal} kcal još nije pouzdan.`,
+        noTdee: 'TDEE još nije izmjeren.',
+        inRange: 'Tempo je u rasponu: sami podaci ne traže ovu promjenu.',
+        more: 'Podaci pokazuju suprotno: traže više kcal, ne manje.',
+        fewer: 'Podaci pokazuju suprotno: traže manje kcal, ne više.',
+      },
       accept: 'Prihvati',
       reject: 'Odbij',
       sending: 'Šaljem…',
@@ -873,6 +896,70 @@ export const hr: Messages = {
       limit: (name: string) => `Granica: ${name}`,
       loosened: 'otpuštena',
       tightened: 'stegnuta',
+      to: (from: string, to: string) => `${from} → ${to}`,
+      days: { training: 'dani treninga', rest: 'dani odmora', every: 'svaki dan' },
+      kcal: (from: string, to: string) => `${from} → ${to} kcal`,
+      grams: (name: string, from: string, to: string) => `${name} ${from} → ${to} g`,
+      open: 'bez kraja',
+    },
+    rationales: {
+      'changed in the app': 'Promijenjeno u aplikaciji.',
+      'taken back in the app': 'Vraćeno u aplikaciji.',
+    },
+    byUser: 'ti',
+    nudge: {
+      coach: (what: string) => `AI trener predlaže: ${what}`,
+      yours: (what: string) => `Promjena čeka tvoj odgovor: ${what}`,
+      review: 'Pogledaj',
+    },
+    edit: {
+      phase: 'Uredi fazu',
+      next: 'Sljedeća faza',
+      targets: 'Uredi',
+      targetsLabel: 'Uredi ciljeve',
+      targetsTitle: 'Ciljevi po tipu dana',
+      type: 'Vrsta',
+      start: 'Počinje',
+      end: 'Završava',
+      endHint: 'Prazno: dok ne počne sljedeća faza.',
+      since: (type: string, date: string) => `${type}, od ${date}`,
+      loss: 'Gubitak (% tjedno)',
+      gain: 'Dobitak (% tjedno)',
+      rate: 'Tempo (% tjedno, minus je gubitak)',
+      goal: 'Ciljna kilaža, kg',
+      milestone: 'Međucilj kilaže, kg',
+      kcal: 'kcal',
+      protein: 'Proteini, g',
+      fat: 'Masti, g',
+      carbs: (g: string) => `Ugljikohidrati slijede: ${g} g`,
+      fromToday: 'Od danas nadalje, do promjene.',
+      save: 'Spremi',
+      saving: 'Spremam…',
+      problem: {
+        number: 'Nije broj.',
+        positive: 'Više od 0.',
+        most: (n: string) => `Najviše ${n}.`,
+        range: (min: string, max: string) => `Od ${min} do ${max}.`,
+        over: 'Proteini i masti daju više kcal nego što dan ima.',
+        endBefore: 'Prije početka faze.',
+        endPast: 'Prije današnjeg dana: prošli dani ostaju kakvi su bili.',
+        startAfter: (date: string) => `Nakon ${date}.`,
+        startPast: 'Danas ili kasnije.',
+      },
+      atLeast: (value: string) => `Najmanje ${value}`,
+      atMost: (value: string) => `Najviše ${value}`,
+      levels: {
+        user: 'tvoja granica',
+        instance: 'granica instance',
+        code: 'granica koju ništa ne mijenja',
+      },
+      refused: 'Granice to ne dopuštaju.',
+      loosen: 'Popusti je u granicama',
+      saved: {
+        phase: 'Faza promijenjena',
+        next: 'Sljedeća faza isplanirana',
+        targets: 'Ciljevi promijenjeni',
+      },
     },
     revisions: {
       title: 'Povijest plana',
@@ -885,7 +972,6 @@ export const hr: Messages = {
         `Vraćanje otpušta granicu (${names}), što dopušta plan koji je granica odbijala.`,
       yes: 'Vrati',
       no: 'Zadrži',
-      reason: 'Vraćeno u aplikaciji.',
       cannot:
         'Ova promjena se više ne može vratiti: već je stupila na snagu ili se plan od tada mijenjao. Zatraži novu promjenu.',
     },
@@ -919,11 +1005,11 @@ export const hr: Messages = {
       `predloženo ${proposed}, granica ${limit}: ${level}`,
     warnings: {
       below_bmr: (value: string, threshold: string) =>
-        `${value} kcal, ispod procijenjenog BMR-a od ${threshold}`,
+        `Ispod tvoje potrošnje u mirovanju (${value} kcal, BMR ti je oko ${threshold}): neko vrijeme ide, dugo je teško izdržati.`,
       low_energy_availability: (value: string, threshold: string) =>
-        `dostupnost energije ${value} kcal po kg nemasne mase, ispod ${threshold}`,
+        `Malo energije za tvoju nemasnu masu (${value} kcal/kg, preporuka barem ${threshold}): na duže može umarati i usporiti oporavak.`,
       low_carbs: (value: string, threshold: string) =>
-        `${value} g ugljikohidrata, ispod ${threshold}`,
+        `Malo ugljikohidrata (${value} g, preporuka barem ${threshold} g): u redu ako to biraš, ali trening može biti teži.`,
     },
   },
   notFound: {

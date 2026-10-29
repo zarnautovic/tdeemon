@@ -49,6 +49,13 @@ const TTL = 7 * 24 * time.Hour
 // MaxRationaleLen bounds why a proposal is made, in characters.
 const MaxRationaleLen = 4000
 
+// ChangedInTheApp is the rationale of the user's own change of the plan
+// in the app, which nobody writes: a code, not words in a language, which
+// the app says in the user's and a coach reads as it is
+// (docs/conventions.md, Languages). The app takes a revision back with
+// one of its own, "taken back in the app".
+const ChangedInTheApp = "changed in the app"
+
 // PhaseChange is a change of the phase that starts on Start: Before is
 // the phase as it is, nil for none, and After as the change leaves it,
 // nil for a delete.

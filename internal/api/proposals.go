@@ -64,6 +64,17 @@ type dayTargetIn struct {
 	Fat     float64 `json:"fat"`
 }
 
+type changePlanInput struct {
+	Body changePlanBody
+}
+
+// changePlanBody is the user's own change of the plan, in the app: the
+// phases and the targets as a proposal sets them.
+type changePlanBody struct {
+	Phases  []phaseChangeIn  `json:"phases,omitempty"`
+	Targets []targetChangeIn `json:"targets,omitempty"`
+}
+
 type proposalIDInput struct {
 	ID string `path:"id" format:"uuid" doc:"The proposal's id, as get_plan or propose_changes gave it."`
 }
@@ -256,6 +267,33 @@ func (s *sessions) proposeChanges(ctx context.Context, in *proposeInput) (*propo
 		return nil, proposalProblem("making the proposal failed", err)
 	}
 	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(made, cal.Location), Preview: cs.preview(checks)}}, nil
+}
+
+// changePlan is the user's own change of the plan in the app: a proposal
+// of theirs, with the code ChangedInTheApp for its rationale, which the
+// store applies as it makes it, held to the limits as any proposal.
+func (s *sessions) changePlan(ctx context.Context, in *changePlanInput) (*proposedOutput, error) {
+	p, err := requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d, err := proposeInputBody{Rationale: proposal.ChangedInTheApp, Phases: in.Body.Phases, Targets: in.Body.Targets}.draft()
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	cal, today, err := userDay(p, now)
+	if err != nil {
+		return nil, internalError("changing the plan failed", err)
+	}
+	var cs coachState
+	var checks []proposal.Checked
+	changed, err := s.db.ChangePlan(ctx, p.User.ID, actorOf(p), d, today, now, s.check(ctx, p, now, &cs, &checks))
+	if err != nil {
+		return nil, proposalProblem("changing the plan failed", err)
+	}
+	s.logger.InfoContext(ctx, "changed the plan", "user_id", p.User.ID.String(), "proposal_id", changed.ID.String())
+	return &proposedOutput{Body: proposedBody{Proposal: newProposalBody(changed, cal.Location), Preview: cs.preview(checks)}}, nil
 }
 
 func (s *sessions) applyProposal(ctx context.Context, in *applyInput) (*proposalOutput, error) {

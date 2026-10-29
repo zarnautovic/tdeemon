@@ -681,8 +681,9 @@ the API's `locale`); English is the base.
   take it: …").
 - **What is stored is a code, never a text said in a language**, such as
   a day's reason for leaving it out of calibration (`sick`, said
-  "bolest" in Croatian): a user who changes the language, and a model,
-  read the same.
+  "bolest" in Croatian), or the rationale of a change of the plan the app
+  makes (`changed in the app`, `taken back in the app`): a user who
+  changes the language, and a model, read the same.
 - **A text with values is a function of them**, and the values come
   formatted in the language: numbers, dates and times through
   `useFormat()` (`Intl`), a word's forms by count through `plural()`

@@ -28,6 +28,28 @@ export function reasonOf(reason: string): Reason | undefined {
     )
 }
 
+// Rationale is the code of the rationale of a change made in the app.
+type Rationale = keyof Messages['plan']['rationales']
+
+function isRationale(code: string): code is Rationale {
+  return code in en.plan.rationales
+}
+
+// rationaleOf is the code of a proposal's rationale, if the app made it:
+// its code, or what the app says of it in any language, as a revision
+// taken back before the app sent codes holds it. Undefined for a
+// rationale a coach wrote.
+export function rationaleOf(rationale: string): Rationale | undefined {
+  const written = rationale.trim()
+  return Object.keys(en.plan.rationales)
+    .filter(isRationale)
+    .find(
+      (code) =>
+        code === written ||
+        Object.values(dictionaries).some((d) => d.plan.rationales[code] === written),
+    )
+}
+
 // useMessages returns the app's text in the current language, e.g.
 // useMessages().nav.today; a component that uses it renders again when
 // the language changes.

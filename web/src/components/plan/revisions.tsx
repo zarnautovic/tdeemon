@@ -3,12 +3,16 @@ import { useId, useState } from 'react'
 
 import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
+import type { components } from '@/api/schema'
 import { sessionQuery } from '@/api/session'
+import { useRationale, useWho } from '@/components/plan/change-words'
 import { ProposalChanges, type Proposal } from '@/components/plan/proposal-changes'
 import { useLimitWords, useViolationText, violationsOf } from '@/components/plan/proposal-text'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+
+type Target = components['schemas']['TargetPeriodBody']
 
 // tightened are the limits a revision tightened, which taking it back
 // loosens.
@@ -16,12 +20,23 @@ function tightened(rev: Proposal): string[] {
   return rev.changes.limits.filter((ch) => !ch.loosens).map((ch) => ch.name)
 }
 
+// takenBack is the code the app proposes taking a revision back with, as
+// its rationale: each language says it its own way (rationales).
+const takenBack = 'taken back in the app'
+
 // Revisions is the history of the plan: the proposals applied, newest
-// first, each with when, who, why and what it changed. One applied may be
-// taken back in a step: the user, here, consents to the inverse the
-// server makes, which applies at once. Taking back a limit it tightened
-// loosens it: the question says so, and the answer confirms it.
-export function Revisions({ revisions }: { revisions: Proposal[] }) {
+// first, each with when, who, why and what it changed, against the plan's
+// targets. One applied may be taken back in a step: the user, here,
+// consents to the inverse the server makes, which applies at once. Taking
+// back a limit it tightened loosens it: the question says so, and the
+// answer confirms it.
+export function Revisions({
+  revisions,
+  targets,
+}: {
+  revisions: Proposal[]
+  targets: readonly Target[]
+}) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
@@ -30,6 +45,8 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
   const queryClient = useQueryClient()
   const violation = useViolationText()
   const limit = useLimitWords()
+  const who = useWho()
+  const rationale = useRationale()
   // The revision the user is asked about, and the one being taken back.
   const [asking, setAsking] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState<{ id: string; error: unknown } | undefined>(undefined)
@@ -43,7 +60,7 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
     try {
       const made = await revert.mutateAsync({
         params: { path: { id: rev.id } },
-        body: { rationale: r.reason },
+        body: { rationale: takenBack },
       })
       // The user confirmed what the question said it loosens, and no more:
       // anything else is asked when the revert, waiting, is accepted.
@@ -85,12 +102,12 @@ export function Revisions({ revisions }: { revisions: Proposal[] }) {
             <p className="text-sm text-muted-foreground">
               {r.applied(
                 rev.decided_at === undefined ? '' : f.day(rev.decided_at, timeZone),
-                rev.by.model ?? rev.by.client,
+                who(rev.by),
               )}
               {rev.status === 'reverted' && ` · ${r.reverted}`}
             </p>
-            <p className="whitespace-pre-line">{rev.rationale}</p>
-            <ProposalChanges changes={rev.changes} />
+            <p className="whitespace-pre-line">{rationale(rev.rationale)}</p>
+            <ProposalChanges changes={rev.changes} targets={targets} />
             {failed?.id === rev.id && (
               <p role="alert" className="text-sm text-destructive">
                 {why(failed.error)}

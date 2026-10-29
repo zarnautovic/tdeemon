@@ -1,9 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { useId, useState } from 'react'
 
 import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
-import { sessionQuery } from '@/api/session'
+import type { components } from '@/api/schema'
+import { useRationale, useWho } from '@/components/plan/change-words'
 import { Loosen } from '@/components/plan/loosen'
 import {
   PreviewLines,
@@ -11,6 +12,7 @@ import {
   type Preview,
   type Proposal,
 } from '@/components/plan/proposal-changes'
+import { ProposalData } from '@/components/plan/proposal-data'
 import {
   useDate,
   useLimitWords,
@@ -21,29 +23,41 @@ import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
+type Plan = components['schemas']['PlanBody']
+
 // PendingProposal is the proposal of a change of the plan that waits for
 // the user's answer, as a model made it in a chat that did not decide it:
-// why, what it changes, what it would come to by the data now, and the
-// buttons to accept or reject it. An accepted one changes the plan, so
-// every answer the app holds is read again. One that changes the user's
-// limits is accepted only here, and one that loosens a limit asks first,
-// as the limits' form does.
+// who made it and when, how long it waits, why, what it changes against
+// the plan (plan), what the data say beside it, what it would come to by
+// the data now, and the buttons to accept or reject it. An accepted one
+// changes the plan, so every answer the app holds is read again. One that
+// changes the user's limits is accepted only here, and one that loosens a
+// limit asks first, as the limits' form does.
 export function PendingProposal({
   proposal,
   preview,
+  plan,
 }: {
   proposal: Proposal
   preview: Preview | undefined
+  plan: Plan
 }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const session = useQuery(sessionQuery)
-  const timeZone = session.data?.user.timezone ?? 'UTC'
   const queryClient = useQueryClient()
   const violation = useViolationText()
   const limit = useLimitWords()
   const date = useDate()
+  const who = useWho()
+  const rationale = useRationale()
+  // When the card came, for how long ago it was made and how long it
+  // waits: a proposal waits days, so a minute does not matter.
+  const [now] = useState(Date.now)
+  const daysLeft = Math.max(
+    1,
+    Math.ceil((new Date(proposal.expires_at).getTime() - now) / 86_400_000),
+  )
   // Whether the user is asked to loosen what the proposal loosens.
   const [asking, setAsking] = useState(false)
   const loosened = proposal.changes.limits.filter((ch) => ch.loosens)
@@ -74,26 +88,36 @@ export function PendingProposal({
       aria-labelledby={id}
       className="space-y-3 rounded-lg border border-primary/40 bg-card p-4 shadow-card lg:p-5"
     >
-      <h2 id={id} className="text-h3">
-        {p.title}
-      </h2>
-      <p className="text-sm text-muted-foreground">
-        {p.by(proposal.by.model ?? proposal.by.client)}
-      </p>
-      <p className="whitespace-pre-line">{proposal.rationale}</p>
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <h2 id={id} className="text-h3">
+            {p.title}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {[
+              proposal.by.client === 'web' && proposal.by.model === undefined
+                ? p.byYou
+                : p.by(who(proposal.by)),
+              f.ago(proposal.created_at, now),
+            ].join(' · ')}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-warning/10 px-3 py-1 text-small text-warning">
+          {p.expiresIn(daysLeft)}
+        </span>
+      </header>
+      <p className="whitespace-pre-line">{rationale(proposal.rationale)}</p>
       {proposal.window !== undefined && (
         <p className="text-sm text-muted-foreground">
           {p.window(date(proposal.window.from), date(proposal.window.to))}
         </p>
       )}
-      <ProposalChanges changes={proposal.changes} />
+      <ProposalChanges changes={proposal.changes} targets={plan.targets} />
       {proposal.changes.limits.length > 0 && (
         <p className="text-sm text-muted-foreground">{p.limitsHere}</p>
       )}
+      <ProposalData proposal={proposal} plan={plan} />
       {preview !== undefined && <PreviewLines preview={preview} />}
-      <p className="text-sm text-muted-foreground">
-        {p.expires(f.day(proposal.expires_at, timeZone))}
-      </p>
       {failed && (
         <div role="alert" className="space-y-1 text-sm text-destructive">
           {gone ? (

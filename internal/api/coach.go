@@ -80,7 +80,7 @@ type outcomeBody struct {
 type proposalBody struct {
 	ID         string      `json:"id" format:"uuid"`
 	Status     string      `json:"status" enum:"pending,applied,rejected,expired,superseded,reverted" doc:"pending waits for the user's consent, for a week; superseded is one the plan changed under, or a newer one replaced; reverted is an applied one a later one took back."`
-	Rationale  string      `json:"rationale" doc:"Why it was proposed."`
+	Rationale  string      `json:"rationale" doc:"Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there)."`
 	By         actorBody   `json:"by" doc:"Who proposed it."`
 	Window     *windowBody `json:"window,omitempty" doc:"The days it was drawn from."`
 	Changes    changesBody `json:"changes"`
