@@ -258,11 +258,11 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // 2026, raised for the rules of a meal's parts, then for the coach's
 // history and notes, then for an item's quantities and a search again,
 // then for the coach's plan, then for its proposals, then for the limits
-// they change.
+// they change, then for a food's barcodes.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 20900
+	const budget = 21000
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)

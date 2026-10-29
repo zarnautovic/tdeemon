@@ -72,6 +72,8 @@ const (
 	UndoNameTaken UndoReason = "another food has taken its name since"
 	// UndoAliasTaken: another food took one of the food's aliases.
 	UndoAliasTaken UndoReason = "another food has taken one of its aliases since"
+	// UndoBarcodeTaken: another food took one of the food's barcodes.
+	UndoBarcodeTaken UndoReason = "another food has taken one of its barcodes since"
 	// UndoItemTaken: another meal took one of the meal's item ids.
 	UndoItemTaken UndoReason = "another meal has taken one of its items since"
 	// UndoUnreadable: the change's entity or a state of it does not

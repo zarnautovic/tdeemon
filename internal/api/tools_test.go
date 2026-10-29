@@ -494,7 +494,7 @@ func TestFindFoods(t *testing.T) {
 		 "last_use": {"at": %[3]q, "day": "2026-10-21", "meal_id": %[4]q, "quantity": {"amount": 120, "unit": "g"}, "amount": 120, "unit": "g"}, "queries": ["rye"]},
 		{"id": %[2]q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": false,
 		 "nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
-		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"],
+		 "servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"], "barcodes": ["3850000000015"],
 		 "last_use": {"at": %[3]q, "day": "2026-10-21", "meal_id": "*", "quantity": {"servings": 2, "serving": "slice"}, "amount": 80, "unit": "g"}, "queries": ["rye"]}
 	], "unfound": []}`, roll.ID, bread.ID, now.Format(time.RFC3339), m.ID))
 	// By an alias; an archived food not at all; at most limit.
@@ -584,6 +584,42 @@ func TestUpsertFood(t *testing.T) {
 	rec = in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Air", "basis": "100g", "source": "label", "nutrients": {"kcal": 950, "protein": 0, "carbs": 0, "fat": 0}}`, session, nil)
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("an invalid food: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A food's barcodes are kept in their canonical form, a UPC-A as its
+// EAN-13; one misread is refused, saying why, and one another food has is
+// a conflict that names the food and where the barcode is sent, in any
+// form of it, as a new food or as a save.
+func TestFoodBarcodes(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	session := []*http.Cookie{sessionOf(t, in)}
+	const gum = `{"name": "%s", "basis": "100g", "source": "label", "barcodes": [%s],
+		"nutrients": {"kcal": 160, "protein": 0, "carbs": 64, "fat": 0, "polyols": 64}}`
+	rec := in.do(t, http.MethodPost, "/api/v1/foods", fmt.Sprintf(gum, "Spearmint gum", `"036000291452"`), session, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a food with a UPC-A: %d %s", rec.Code, rec.Body.String())
+	}
+	saved := decodeJSON[struct {
+		ID       string   `json:"id"`
+		Barcodes []string `json:"barcodes"`
+	}](t, rec.Body.Bytes())
+	if !slices.Equal(saved.Barcodes, []string{"0036000291452"}) {
+		t.Errorf("the barcodes saved: %q, want the UPC-A as its EAN-13", saved.Barcodes)
+	}
+
+	for _, path := range []string{"/api/v1/foods", "/api/v1/foods/new"} {
+		rec = in.do(t, http.MethodPost, path, fmt.Sprintf(gum, "Peppermint gum", `"4006381333931", "00036000291452"`), session, nil)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "the barcode 0036000291452 is taken by food "+saved.ID) {
+			t.Errorf("%s, a taken barcode: %d %s", path, rec.Code, rec.Body.String())
+		}
+		checkConflictData(t, rec.Body.Bytes(), "body.barcodes[1]", saved.ID)
+		rec = in.do(t, http.MethodPost, path, fmt.Sprintf(gum, "Peppermint gum", `"4006381333932"`), session, nil)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "check digit") {
+			t.Errorf("%s, a misread barcode: %d %s", path, rec.Code, rec.Body.String())
+		}
 	}
 }
 
@@ -679,7 +715,7 @@ func TestGetFood(t *testing.T) {
 	checkJSON(t, rec.Body.Bytes(), fmt.Sprintf(`{
 		"id": %q, "name": "Ana's rye bread", "basis": "100g", "source": "user", "archived": true,
 		"nutrients": {"kcal": 259, "protein": 8.5, "carbs": 48, "fat": 3.3, "fiber": 6},
-		"servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"]
+		"servings": [{"name": "slice", "amount": 40}], "aliases": ["Ana's loaf"], "barcodes": ["3850000000015"]
 	}`, bread.ID))
 	if rec := in.do(t, http.MethodGet, "/api/v1/foods/"+uuid.NewV7().String(), "", session, nil); rec.Code != http.StatusNotFound {
 		t.Errorf("an id no food has: %d %s, want 404", rec.Code, rec.Body.String())

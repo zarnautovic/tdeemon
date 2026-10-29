@@ -639,6 +639,35 @@ func TestEventsAtMost(t *testing.T) {
 	}
 }
 
+// A barcode taken by another food since: the change's undo is a
+// conflict, as an alias's is, and the food keeps the barcode it has.
+func TestUndoAfterTheBarcodeWasTaken(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	f := bar()
+	f.Barcodes = []string{"4006381333931"}
+	a := saveFood(t, db, ana, f)
+	moved := a
+	moved.Barcodes = []string{"96385074"}
+	saveFood(t, db, ana, moved)
+	other := food.Food{
+		ID: uuid.NewV7(), Name: "Caramel wafer", Basis: food.Per100g, Source: food.Label,
+		Nutrients: food.Nutrients{Kcal: 500, Protein: 6, Carbs: 60, Fat: 25}, Barcodes: []string{"4006381333931"},
+	}
+	if _, err := db.SaveFood(t.Context(), ana, importer, other, t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	_, err := db.UndoLast(t.Context(), ana, testActor, t0)
+	if !errors.As(err, &conflict) || conflict.Reason != store.UndoBarcodeTaken || !errors.Is(conflict.Err, store.ErrBarcodeTaken) {
+		t.Fatalf("undo = %v, want an UndoConflictError about the barcode", err)
+	}
+	if got, _ := db.FoodByID(t.Context(), ana, a.ID); !reflect.DeepEqual(got.Barcodes, []string{"96385074"}) {
+		t.Errorf("the food's barcodes became %v", got.Barcodes)
+	}
+}
+
 // An alias taken by another food since: the rename's undo is a conflict,
 // not a failure that every later undo meets again.
 func TestUndoAfterTheAliasWasTaken(t *testing.T) {

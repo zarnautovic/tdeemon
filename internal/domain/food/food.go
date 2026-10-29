@@ -95,7 +95,13 @@ type Food struct {
 	Servings []Serving
 	// Aliases are other names the user calls the food by: "my bread", "the
 	// dessert from Sunday". Search finds a food by them too.
-	Aliases  []string
+	Aliases []string
+	// Barcodes are the product's barcodes, each in its canonical form
+	// (Barcode), one for each size of its package: a scan of one finds the
+	// food. Left out of a food's JSON without any, so a food is the JSON
+	// it was before foods had them: undo compares the state an event
+	// recorded with the food now, as JSON.
+	Barcodes []string `json:",omitempty"`
 	Source   Source
 	Note     string
 	Archived bool
@@ -153,7 +159,7 @@ func (f Food) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("basis %q: want 100g, 100ml or portion", f.Basis))
 	}
-	errs = append(errs, validateAliases(f.Aliases))
+	errs = append(errs, validateAliases(f.Aliases), validateBarcodes(f.Barcodes))
 	return errors.Join(errs...)
 }
 

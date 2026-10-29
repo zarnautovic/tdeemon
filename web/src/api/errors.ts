@@ -77,10 +77,11 @@ export function detailOf(error: unknown): string {
 }
 
 // Conflict is the food in the way of a food's save, as a 409 says it in
-// data: the name and brand it has, or the other name at alias of those
-// sent, and its id.
+// data: the name and brand it has, the other name at alias of those sent,
+// or the barcode at barcode, and its id.
 export interface Conflict {
   alias?: number
+  barcode?: number
   foodId: string
 }
 
@@ -106,5 +107,9 @@ export function conflictOf(error: unknown): Conflict | undefined {
     return { foodId: e.value }
   }
   const alias = /^body\.aliases\[(\d+)\]$/.exec(e.location)?.[1]
-  return alias === undefined ? undefined : { alias: Number(alias), foodId: e.value }
+  if (alias !== undefined) {
+    return { alias: Number(alias), foodId: e.value }
+  }
+  const barcode = /^body\.barcodes\[(\d+)\]$/.exec(e.location)?.[1]
+  return barcode === undefined ? undefined : { barcode: Number(barcode), foodId: e.value }
 }

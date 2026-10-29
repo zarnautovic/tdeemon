@@ -27,6 +27,7 @@ const oats: Food = {
   nutrients: { kcal: 370, protein: 13, carbs: 60, fat: 7, fiber: 10 },
   servings: [{ name: 'cup', amount: 80 }],
   aliases: ['porridge oats'],
+  barcodes: ['3850000000015'],
   note: 'from the label',
 }
 
@@ -171,6 +172,8 @@ test('a food says its energy, where it comes from, and what it brings for 100 g 
   ])
   expect(screen.getByText('80 g · 296 kcal')).toBeDefined()
   expect(screen.getByText('porridge oats')).toBeDefined()
+  expect(screen.getByRole('heading', { name: 'Barcodes' })).toBeDefined()
+  expect(screen.getByText('3850000000015')).toBeDefined()
   expect(screen.getByText('from the label')).toBeDefined()
   expect(screen.getByText('Label')).toBeDefined()
   expect(await screen.findByText('14× · last Oct 21')).toBeDefined()

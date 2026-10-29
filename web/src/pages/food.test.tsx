@@ -317,6 +317,25 @@ test('an other name another food has says which food, under it, in Croatian', as
   expect(screen.getByLabelText('Drugi naziv 1').getAttribute('aria-invalid')).toBe('true')
 })
 
+test('a barcode another food took meanwhile says which food, under the save, marking no field', async () => {
+  const wafer = { ...otherOats, name: 'Caramel wafer', brand: '' }
+  foodServer(
+    () => conflict('body.barcodes[0]', wafer.id),
+    'en',
+    { ...oats, barcodes: ['96385074'] },
+    [wafer],
+  )
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Save the food' }))
+
+  await screen.findByRole('link', { name: 'Caramel wafer' })
+  expect(screen.getByRole('alert').textContent).toBe(
+    'Another food of yours has one of its barcodes: Caramel wafer',
+  )
+  expect(screen.getByLabelText('Name').getAttribute('aria-invalid')).toBe('false')
+})
+
 test('a conflict of an other name removed while the save was on its way marks no field', async () => {
   let answer: ((r: Response) => void) | undefined
   const withTwo = { ...oats, aliases: ['porridge oats', 'muesli'] }
@@ -636,6 +655,18 @@ test('a serving or another name past the most a food has is said there, and not 
     servings: expect.arrayContaining([{ name: 'bowl', amount: 120 }]) as unknown,
     aliases: expect.arrayContaining(['muesli base']) as unknown,
   })
+})
+
+test("a food's barcodes, which a scan adds, go with it when the form saves it", async () => {
+  const server = foodServer(undefined, 'en', { ...oats, barcodes: ['3850000000015', '96385074'] })
+  renderAt(`/foods/${id}?edit=true`)
+
+  fireEvent.change(await screen.findByLabelText('Energy (kcal)'), { target: { value: '372' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ id, barcodes: ['3850000000015', '96385074'] })
 })
 
 test('energy far from what the macros make is warned of, with theirs to take, and saved all the same', async () => {
