@@ -195,6 +195,32 @@ const screens: Screen[] = [
     },
   },
   {
+    name: 'food-form',
+    open: async (page, made) => {
+      await page.goto(`/foods/${made.foodId}?edit=true`)
+      await settled(page)
+    },
+  },
+  // A meal logged from the food's page, whose toast leads to the day.
+  {
+    name: 'logged',
+    open: async (page, made) => {
+      await page.goto(`/foods/${made.foodId}`)
+      await settled(page)
+      await page
+        .getByRole('main')
+        .getByRole('button', { name: /^(Log|Upiši) 80 g$/ })
+        .click()
+      const sheet = page.getByRole('dialog', { name: /^(A new meal|Novi obrok)$/ })
+      await sheet.getByRole('button', { name: /^(Log 1 item|Upiši 1 stavku) · / }).click()
+      await expect(
+        page.getByRole('link', { name: /^(See it today|Pogledaj danas)$/ }),
+      ).toBeVisible()
+      await expect(sheet).toHaveCount(0)
+      await settled(page)
+    },
+  },
+  {
     name: 'progress',
     open: async (page) => {
       await page.goto('/progress')
@@ -260,13 +286,35 @@ async function serious(page: Page): Promise<string[]> {
     )
 }
 
-// smallTargets are what a finger taps on the page, outside a line of
-// text, smaller than 44 px either way. What a control draws past its box
-// (an ::after laid over it, as a chip does) counts as its own.
+// smallTargets are what a finger taps on the page, but a link in a
+// sentence, smaller than 44 px either way: each control, whatever its
+// role. What a control draws past its box (an ::after laid over it, as a
+// chip does) counts as its own.
 async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const taps = document.querySelectorAll<HTMLElement>(
-      'button, a[href], select, textarea, input:not([type=hidden]), [role=button], [role=tab], [role=switch]',
+      [
+        'button',
+        'a[href]',
+        'summary',
+        'select',
+        'textarea',
+        'input:not([type=hidden])',
+        ...[
+          'button',
+          'link',
+          'tab',
+          'switch',
+          'checkbox',
+          'radio',
+          'option',
+          'menuitem',
+          'menuitemradio',
+          'menuitemcheckbox',
+          'slider',
+          'combobox',
+        ].map((role) => `[role=${role}]`),
+      ].join(', '),
     )
     const small: string[] = []
     for (const el of taps) {
@@ -285,9 +333,13 @@ async function smallTargets(page: Page): Promise<string[]> {
         box.height <= 1 ||
         style.visibility === 'hidden' ||
         target.closest('[inert], [aria-hidden=true]') !== null
-      // A link in a sentence is the sentence's size (WCAG 2.5.8).
-      const inline = target.tagName === 'A' && style.display === 'inline'
-      if (hidden || inline) {
+      // A link in a sentence is the sentence's size (WCAG 2.5.8): one
+      // with words around it, not one alone on its line.
+      const own = target.textContent.replace(/\s+/g, '')
+      const around = target.parentElement?.textContent.replace(/\s+/g, '') ?? ''
+      const inSentence =
+        target.tagName === 'A' && style.display === 'inline' && around.length > own.length
+      if (hidden || inSentence) {
         continue
       }
       // How far an ::after laid over it reaches past its box, each way.

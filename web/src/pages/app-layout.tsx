@@ -2,8 +2,10 @@ import { Outlet, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 
 import { AppNav } from '@/components/app-nav'
+import { LogToday } from '@/components/day/log-today'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
 import { useMessages } from '@/i18n/messages'
+import { LogHereContext, type LogHere } from '@/lib/log-here'
 import { useShortcuts } from '@/lib/shortcuts'
 import { useUndoLatest } from '@/lib/undo'
 
@@ -11,19 +13,38 @@ import { useUndoLatest } from '@/lib/undo'
 // the bottom on a phone, a sidebar on a desktop) and the page, whose end
 // keeps clear of the bar and whose sides of a phone's notch in landscape
 // (viewport-fit=cover in index.html gives the page the whole screen).
-// The keyboard's first stop skips the sections to the page. The keyboard
-// has a shortcut to log a meal (N), to find a food (/), to undo the
-// latest change (⌘Z or Ctrl+Z, which a toast says), to each section (G,
-// then its letter), and to the list of them (?).
+// The keyboard's first stop skips the sections to the page. Log a meal
+// opens the meal to log on today over the page, which stays as it was;
+// today's page logs it itself (LogHere).
+// The keyboard has a shortcut to log a meal (N), to find a food (/), to
+// undo the latest change (⌘Z or Ctrl+Z, which a toast says), to each
+// section (G, then its letter), and to the list of them (?).
 export function AppLayout() {
   const t = useMessages()
   const navigate = useNavigate()
   const main = useRef<HTMLElement>(null)
   const [shortcuts, setShortcuts] = useState(false)
   const latest = useUndoLatest()
+  const [logging, setLogging] = useState(false)
+  // What opened the meal to log, which the focus goes back to.
+  const opener = useRef<HTMLElement | null>(null)
+  // The page's own meal to log, while it has one.
+  const logHere = useRef<LogHere | null>(null)
+  const setLogHere = (l: LogHere | null) => {
+    logHere.current = l
+  }
+  // log opens the meal to log on today, from what opened it.
+  const log = (from: HTMLElement | null) => {
+    if (logHere.current !== null) {
+      logHere.current(from)
+      return
+    }
+    opener.current = from
+    setLogging(true)
+  }
   useShortcuts({
     n: () => {
-      void navigate({ to: '/', search: { log: true } })
+      log(null)
     },
     '/': () => {
       // The foods' search, there already or once there.
@@ -74,12 +95,15 @@ export function AppLayout() {
       >
         {t.nav.skip}
       </a>
-      <AppNav />
+      <AppNav onLog={log} />
       <main id="content" ref={main} tabIndex={-1} className="pb-28 outline-none lg:pb-12 lg:pl-60">
         <div className="mx-auto w-full max-w-300 pt-6 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] lg:px-10 lg:pt-8">
-          <Outlet />
+          <LogHereContext value={setLogHere}>
+            <Outlet />
+          </LogHereContext>
         </div>
       </main>
+      <LogToday open={logging} onOpenChange={setLogging} opener={opener} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
     </>
   )

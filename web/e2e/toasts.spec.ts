@@ -23,6 +23,18 @@ function onTop(target: Locator): Promise<boolean> {
   })
 }
 
+// overlap tells whether two boxes on the screen have any of it in common.
+function overlap(a: Box, b: Box): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+}
+
+interface Box {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 // deleteInSheet gives the day a resting heart rate, through the API with
 // the page's session, and deletes it in the sheet of the day's
 // measurements, which stays open: no question before, as its toast's
@@ -51,13 +63,29 @@ for (const size of sizes) {
     }) => {
       const { sheet, toasts, undo } = await deleteInSheet(page)
 
-      // Over the bottom sheet on a phone, the panel at the right on a
-      // desktop: what a finger or the pointer reaches is the Undo.
+      // Over the page and the sheet, above it on a phone and beside the
+      // panel at the right on a desktop: what a finger or the pointer
+      // reaches is the Undo.
       expect(await onTop(undo)).toBe(true)
       await (size.hasTouch ? undo.tap() : undo.click())
 
       await expect(toasts).toContainText('Taken back: a measurement deleted.')
       await expect(sheet).toContainText('Resting heart rate')
+    })
+
+    test('a toast keeps clear of a sheet, whose buttons a tap under it would miss', async ({
+      page,
+    }) => {
+      const { sheet, toasts } = await deleteInSheet(page)
+
+      // Above the sheet on a phone, beside it on a desktop.
+      const toast = await toasts.boundingBox()
+      const panel = await sheet.boundingBox()
+      if (toast === null || panel === null) {
+        throw new Error('no toast, or no sheet')
+      }
+      expect(overlap(toast, panel)).toBe(false)
+      expect(await onTop(sheet.getByRole('button', { name: 'Add a measurement' }))).toBe(true)
     })
   })
 }

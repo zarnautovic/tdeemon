@@ -19,7 +19,8 @@ test('a meal is logged by hand, of a food and an estimate', async ({ page }) => 
   expect(food.ok()).toBe(true)
 
   await page.goto(`/?date=${date}`)
-  await page.getByRole('button', { name: 'Log a meal' }).click()
+  // The day's own, of its day: the bar's is today's.
+  await page.getByRole('main').getByRole('button', { name: 'Log a meal' }).click()
   const sheet = page.getByRole('dialog', { name: 'A new meal' })
   await sheet.getByRole('button', { name: 'Change the name and time' }).click()
   await sheet.getByLabel('What it was').fill('Dinner')

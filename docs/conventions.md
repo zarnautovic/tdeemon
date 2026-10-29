@@ -659,9 +659,11 @@ generator writes it.
 - **Every screen is checked for access** (`web/e2e/a11y.spec.ts`), on a
   phone (390 px) and a desktop (1440 px), in both themes and both
   languages: axe (`@axe-core/playwright`) finds nothing serious or
-  critical against WCAG 2.2 AA; on a phone, what a finger taps is 44 px
-  or more either way (an `::after` over a smaller control counts, as
-  `linkTarget` in `web/src/lib/styles.ts` draws one); on a desktop, the
+  critical against WCAG 2.2 AA; on a phone, what a finger taps, whatever
+  its role (a button, a link, a summary, a menu's item), is 44 px or
+  more either way (an `::after` over a smaller control counts, as
+  `linkTarget` in `web/src/lib/styles.ts` draws one), but a link in a
+  sentence, which is the sentence's size (WCAG 2.5.8); on a desktop, the
   keyboard's first stops show the focus; asked for less motion, nothing
   moves but by fading. A new screen joins its `screens`. Each screen is
   photographed as it runs (a phone's in Croatian, a desktop's in English,

@@ -102,9 +102,10 @@ function initials(name: string): string {
 // width. On a phone it is a bar at the bottom, in reach of a thumb, with
 // Log a meal in its middle; from 1024 px it is a sidebar, with Log a meal
 // first, and the settings, the user and the theme at its foot. Each hides
-// what is the other's. The plan's section has a dot while a proposal
-// waits there for the user's answer.
-export function AppNav() {
+// what is the other's. Log a meal is no section: it asks onLog for the
+// meal to log over the page, from the button tapped. The plan's section
+// has a dot while a proposal waits there for the user's answer.
+export function AppNav({ onLog }: { onLog: (from: HTMLElement) => void }) {
   const t = useMessages()
   const session = useQuery(sessionQuery)
   const name = session.data?.user.name ?? ''
@@ -119,13 +120,15 @@ export function AppNav() {
         <BrandMark />
         tdeemon
       </span>
-      <Link
-        to="/"
-        search={{ log: true }}
+      <button
+        type="button"
         aria-keyshortcuts="n"
         // cva joins classes without merging: cn lets hidden win over the
         // button's inline-flex.
         className={cn(buttonVariants(), 'hidden lg:flex')}
+        onClick={(e) => {
+          onLog(e.currentTarget)
+        }}
       >
         <Plus aria-hidden strokeWidth={2.25} />
         {t.nav.logMeal}
@@ -135,7 +138,7 @@ export function AppNav() {
         >
           N
         </kbd>
-      </Link>
+      </button>
       <ul className="grid grid-cols-5 items-center px-1 pt-1 lg:flex lg:flex-col lg:items-stretch lg:gap-1 lg:p-0">
         <li>
           <Section to="/" icon={CalendarDays} exact letter="D">
@@ -148,14 +151,16 @@ export function AppNav() {
           </Section>
         </li>
         <li className="flex justify-center lg:hidden">
-          <Link
-            to="/"
-            search={{ log: true }}
+          <button
+            type="button"
             aria-label={t.nav.logMeal}
             className="flex size-13 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-[0_6px_16px_-4px] shadow-primary/50 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+            onClick={(e) => {
+              onLog(e.currentTarget)
+            }}
           >
             <Plus aria-hidden strokeWidth={2.25} className="size-6" />
-          </Link>
+          </button>
         </li>
         <li>
           <Section to="/progress" icon={ChartLine} letter="P">

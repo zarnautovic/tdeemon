@@ -16,12 +16,13 @@ test('a phone has the bar at the bottom, a desktop the sidebar, and the keys wor
   await expect(sections.getByRole('link', { name: 'Progress' })).toBeVisible()
   await expect(sections.getByRole('link', { name: 'Settings' })).toBeHidden()
   await sections.getByRole('link', { name: 'Foods' }).click()
-  await sections.getByRole('link', { name: 'Log a meal' }).click()
+  await sections.getByRole('button', { name: 'Log a meal' }).click()
   const sheet = page.getByRole('dialog', { name: 'A new meal' })
   await expect(sheet).toBeVisible()
-  // A phone's keyboard waits for a tap on the search.
+  // A phone's keyboard waits for a tap on the search; the foods stay
+  // under it.
   await expect(sheet).toBeFocused()
-  await expect(page).toHaveURL('/')
+  await expect(page).toHaveURL('/foods')
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
 
@@ -32,6 +33,7 @@ test('a phone has the bar at the bottom, a desktop the sidebar, and the keys wor
   await expect(sections.getByRole('link', { name: 'Settings' })).toBeVisible()
   await expect(sections.getByRole('button', { name: 'Dark theme' })).toBeVisible()
 
+  await sections.getByRole('link', { name: 'Today' }).click()
   await page.getByRole('heading', { name: 'Today', exact: true }).click()
   await page.keyboard.press('/')
   await expect(page.getByRole('searchbox', { name: 'Search the foods' })).toBeFocused()

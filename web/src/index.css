@@ -18,6 +18,12 @@
   }
 }
 
+/*
+  sheet-open: while a sheet is open (Sheet marks its panel data-sheet),
+  for the toasts, which keep clear of its buttons.
+*/
+@custom-variant sheet-open (body:has([data-sheet][data-open]) &);
+
 @theme inline {
   --font-sans: 'Geist Variable', system-ui, sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);

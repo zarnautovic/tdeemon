@@ -27,12 +27,13 @@ calibration
 that serves them at `/mcp`, the API contract and the web app's frame
 (signing in, under the product's mark and what it is, and out, its
 sections in a bar at the bottom on a phone and
-a sidebar on a desktop, keyboard shortcuts (a skip to the content, G
-and a letter to a section, ⌘Z or Ctrl+Z to undo the latest change), a
-light and a dark theme,
-each change said in a toast whose Undo takes it back, a delete's for
-10 s, and after it the recent changes in a sheet, by whom, with Undo
-on the next, each number of
+a sidebar on a desktop, Log a meal over the screen shown, sheets with a
+handle, dragged down to close, keyboard shortcuts (a skip to the
+content, G and a letter to a section, ⌘Z or Ctrl+Z to undo the latest
+change), a light and a dark theme,
+each change said in a toast whose Undo takes it back, clear of a
+sheet's buttons, a delete's for 10 s, and after it the recent changes
+in a sheet, by whom, with Undo on the next, each number of
 calibration's an ⓘ away from what it is, in English and Croatian) with
 the day (a new user's first steps to a plan in place of its hero,
 ticked one by one; what was eaten against the target in a ring and the macros'
