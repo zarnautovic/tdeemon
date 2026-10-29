@@ -67,6 +67,16 @@ function Item({ toast }: { toast: ToastObject<Said> }) {
         {said?.to !== undefined && <DayLink date={said.to} />}
       </Toast.Content>
       {said?.undo !== undefined && <UndoAction undo={said.undo} />}
+      {said?.action !== undefined && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="font-semibold text-primary"
+          onClick={said.action.run}
+        >
+          {said.action.label}
+        </Button>
+      )}
       <Toast.Close
         aria-label={t.toast.close}
         className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}

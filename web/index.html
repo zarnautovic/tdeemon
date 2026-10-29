@@ -19,6 +19,16 @@
       media="(prefers-color-scheme: dark)"
       content="#0A0E15"
     />
+    <!--
+      The app installed (vite.config.ts writes its manifest): its icons,
+      and on iOS, which reads neither the manifest's icons nor its name,
+      the home screen's icon, title and a page of its own.
+    -->
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="tdeemon" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>tdeemon</title>
   </head>
   <body>

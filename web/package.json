@@ -30,7 +30,8 @@
     "openapi-fetch": "0.17.0",
     "openapi-react-query": "0.5.4",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "workbox-window": "7.4.1"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
@@ -55,6 +56,8 @@
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.3.4",
-    "vitest": "5.0.5"
+    "vite-plugin-pwa": "2.0.0",
+    "vitest": "5.0.5",
+    "workbox-build": "7.4.1"
   }
 }

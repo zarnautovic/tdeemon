@@ -18,6 +18,9 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${String(port)}`,
     trace: 'retain-on-failure',
+    // The app's service worker would take requests that page.route then
+    // never sees; e2e/pwa.spec.ts, which is about it, lets it run.
+    serviceWorkers: 'block',
   },
   projects: [{ name: 'phone', use: { ...devices['Pixel 7'] } }],
   webServer: {

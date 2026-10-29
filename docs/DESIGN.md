@@ -1113,15 +1113,26 @@ the first spec.
     ("Offline · data from 21:14", or "Not updated" when the server
     failed); a refusal (4xx) is not the network's, and its part says it.
     A section opened while the session cannot be asked again opens on the
-    one the app has. A reload without a network waits for the PWA (P1):
-    the app shell in a service worker, the last day from a persisted
-    cache, and meals logged offline queued until the network is back.
+    one the app has. A reload without a network opens the app's shell
+    from its service worker (the PWA, below), which says the server is
+    out of reach; the last day from a persisted cache, and meals logged
+    offline queued until the network is back, are still to come.
   - i18n without a library: each language's text is a typed object
     (`web/src/i18n`), so a key missing in one language fails the type
     check. Paraglide JS was the plan, but its compiler loads plugins
     from a CDN at build time and pulls ~500 packages, one without a
     licence on npm; two languages do not need that.
-  - `vite-plugin-pwa` for install and web push.
+  - **The app installs** (a PWA, `vite-plugin-pwa`): a manifest with
+    the brand's icons (`web/icons/generate.sh` draws them, a maskable one
+    and iOS's apple-touch icon among them), and a service worker that
+    precaches the shell (the page, scripts, styles, fonts and icons) and
+    answers a navigation with it, so the app opens without a network.
+    It keeps no data: the API, `/mcp` and `/healthz` go past it, and a
+    sign-in's redirects with them. A new version does not reload the
+    page under the user: a toast says it is ready, and its Reload takes
+    it (`UpdatePrompt`). The server serves the manifest as
+    `application/manifest+json` and the worker revalidated, so a new one
+    is found at once. Web push comes with it later.
   - Later, Capacitor wraps the same app for iOS with a HealthKit plugin.
 - **Offline-ready IDs:** clients generate IDs (UUIDv7) for meals, their
   items and later sets, and writes are idempotent on that ID: the same

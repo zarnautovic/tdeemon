@@ -22,6 +22,11 @@ import (
 // (build.assetsDir in web/vite.config.ts).
 const assetsDir = "assets/"
 
+// contentTypes are the types of the web app's files whose extension the
+// standard library does not know and a minimal image has no mime.types
+// for: the installed app's manifest.
+var contentTypes = map[string]string{".webmanifest": "application/manifest+json"}
+
 // New returns the handler for the paths the API does not own, and whether
 // the web app is compiled in.
 func New() (http.Handler, bool, error) {
@@ -42,7 +47,9 @@ func New() (http.Handler, bool, error) {
 // Handler serves the built web app in fsys:
 //   - files under assets/ with a year-long immutable cache, because a new
 //     build gives every changed file a new name;
-//   - other files (favicon and the like) with revalidation on every use;
+//   - other files (the icons, the manifest and the service worker of the
+//     installed app) with revalidation on every use, so a new service
+//     worker is found at once;
 //   - index.html for every other path, so the app's client-side router can
 //     own it, never cached, so a deploy takes effect on the next page load;
 //   - 404 instead for a missing file under assets/, so a tab still open
@@ -61,6 +68,9 @@ func Handler(fsys fs.FS) (http.Handler, error) {
 		if name != "" && name != "index.html" {
 			if info, err := fs.Stat(fsys, name); err == nil && !info.IsDir() {
 				w.Header().Set("Cache-Control", cacheControl(name))
+				if ct, ok := contentTypes[path.Ext(name)]; ok {
+					w.Header().Set("Content-Type", ct)
+				}
 				http.ServeFileFS(w, r, fsys, name) //nolint:gosec // G703: path.Clean above, and an fs.FS rejects names with ..
 				return
 			}
