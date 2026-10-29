@@ -242,7 +242,7 @@ func writeFoodReport(b *strings.Builder, u user.User, r history.FoodReport, dryR
 	list(b, "Foods renamed", r.Renamed)
 	list(b, "Foods per portion though given by weight or volume, as per 100 they would be no food", r.PerPortion)
 	list(b, "Rows skipped", r.Skipped)
-	list(b, "Combinations left out, as a food is one food", r.Combinations)
+	list(b, "Combinations made foods per portion, plates the split of a meal reads none of", r.Combinations)
 }
 
 // writePlanReport writes what an import of a plan into u did, or would

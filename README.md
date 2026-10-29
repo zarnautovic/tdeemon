@@ -550,8 +550,10 @@ cooked") is a food per portion, the portion in its note. A food whose
 note names a declaration is a label's, the rest estimates. A name the
 table has twice takes each row's portion, and a food you have already,
 by its name, stays yours. A row of several foods eaten together, a plus
-in its name or portion ("Jogurt + Whey + Müsli"), is no food and is left
-out: a meal of them is a meal.
+in its name or portion ("Jogurt + Whey + Müsli", "350 g piletine + 5 g
+ulja"), is a plate: a food per portion, the portion in its note, logged
+in a tap as it was eaten; it gives way to a food of one of its name,
+which keeps its name, and the split of a meal reads no part as it.
 
 With `--plan`, it takes a plan file you write from the goals note, which
 is prose: the profile, the training weekdays, the phases and the targets

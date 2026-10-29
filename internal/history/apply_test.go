@@ -160,8 +160,9 @@ func TestImportSplitsDry(t *testing.T) {
 	}
 }
 
-// The food table's combinations are left out, as a food is one food.
-func TestImportFoodsLeavesCombinationsOut(t *testing.T) {
+// The food table's combinations are plates, foods per portion whatever
+// their portion, the portion in their note.
+func TestImportFoodsMakesCombinationsPlates(t *testing.T) {
 	t.Parallel()
 
 	db, u := newUser(t)
@@ -170,11 +171,39 @@ func TestImportFoodsLeavesCombinationsOut(t *testing.T) {
 		{Line: 4, Name: "Skyr + jagode", Portion: "150 g", Nutrients: kcal(130)},
 		{Line: 5, Name: "Zdjela", Portion: "150 g skyra + 100 g jagoda", Nutrients: kcal(130)},
 	}, now, false)
-	if err != nil || r.Created != 1 || strings.Join(r.Combinations, "; ") != "line 4, Skyr + jagode; line 5, Zdjela" {
-		t.Errorf("report %+v, %v; want one food, the combinations left out", r, err)
+	if err != nil || r.Created != 3 || strings.Join(r.Combinations, "; ") != "line 4, Skyr + jagode; line 5, Zdjela" {
+		t.Errorf("report %+v, %v; want three foods, two of them combinations", r, err)
 	}
-	if _, err := db.FoodByName(t.Context(), u.ID, "Skyr + jagode", ""); err == nil {
-		t.Error("the combination is a food")
+	for _, name := range []string{"Skyr + jagode", "Zdjela"} {
+		f, err := db.FoodByName(t.Context(), u.ID, name, "")
+		if err != nil || f.Basis != food.PerPortion || f.Nutrients.Kcal != 130 || len(f.Servings) != 0 {
+			t.Errorf("%s = %+v, %v; want a plate of 130 kcal per portion", name, f, err)
+		}
+	}
+	if f, _ := db.FoodByName(t.Context(), u.ID, "Zdjela", ""); !strings.HasPrefix(f.Note, "Portion: 150 g skyra + 100 g jagoda.") {
+		t.Errorf("the plate's note = %q, want its portion", f.Note)
+	}
+}
+
+// A plate the import made is no food a part of a meal reads as, in a run
+// that writes as in a dry run: the meal of it stays one estimate.
+func TestImportSplitsNoPartAsAPlate(t *testing.T) {
+	t.Parallel()
+
+	db, u := newUser(t)
+	table := []history.FoodRow{{Line: 3, Name: "Kruh s jogurtom", Portion: "50 g kruha + 200 g jogurta", Nutrients: kcal(245)}}
+	if _, err := history.ImportFoods(t.Context(), db, u, table, now, false); err != nil {
+		t.Fatal(err)
+	}
+	days := []history.Day{{Date: "2026-09-01", Meals: []history.Meal{{Description: "kruh s jogurtom (1 porcija)", Nutrients: kcal(245)}}}}
+	for _, dryRun := range []bool{true, false} {
+		if r, err := history.Import(t.Context(), db, u, days, table, now, dryRun); err != nil || r.Split != 0 {
+			t.Errorf("dry run %t: split %d, %v; want none", dryRun, r.Split, err)
+		}
+	}
+	stored, err := db.MealsOfDay(t.Context(), u.ID, day.Date{Year: 2026, Month: 9, Day: 1})
+	if err != nil || len(stored) != 1 || len(stored[0].Items) != 1 || stored[0].Items[0].FoodID != uuid.Nil() {
+		t.Errorf("the meal = %+v, %v; want one estimate", stored, err)
 	}
 }
 
@@ -210,7 +239,8 @@ func TestImportSplitsAgain(t *testing.T) {
 	}
 }
 
-// A combination of a food's name gives it no portion in its name.
+// A combination of a food's name gives it no portion in its name: the
+// combination takes its portion in its own.
 func TestImportFoodsCombinationOfAName(t *testing.T) {
 	t.Parallel()
 
@@ -223,5 +253,9 @@ func TestImportFoodsCombinationOfAName(t *testing.T) {
 	}
 	if _, err := db.FoodByName(t.Context(), u.ID, "Zobena kaša", ""); err != nil {
 		t.Errorf("the food: %v; want it by its own name", err)
+	}
+	// The plate of its name gives way, its portion in its name.
+	if _, err := db.FoodByName(t.Context(), u.ID, "Zobena kaša (50 g zobenih + 200 ml mlijeka)", ""); err != nil {
+		t.Errorf("the plate: %v; want it with its portion in its name", err)
 	}
 }

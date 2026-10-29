@@ -451,16 +451,29 @@ func buildMeals(userID uuid.UUID, cal day.Calendar, date day.Date, d Day, sp spl
 }
 
 // splitFoods returns the foods a split reads meals as: userID's, not the
-// archived ones, and with dryRun those of table too that userID has not
-// by their name, as a dry run has not written them.
+// archived ones nor those the combinations of table made, plates that no
+// part of a meal is; and with dryRun those of table too that userID has
+// not by their name, as a dry run has not written them.
 func splitFoods(ctx context.Context, db *store.DB, userID uuid.UUID, table []FoodRow, dryRun bool) ([]food.Food, error) {
+	names := namesOf(table)
+	plates := map[string]bool{}
+	for i := range table {
+		if combination(&table[i]) {
+			name, _ := names.of(&table[i])
+			plates[food.Key(name)] = true
+		}
+	}
 	var foods []food.Food
 	for offset := 0; ; offset += store.MaxFoodList {
 		page, total, err := db.ListFoods(ctx, userID, false, "", store.ByName, store.MaxFoodList, offset)
 		if err != nil {
 			return nil, fmt.Errorf("the user's foods: %w", err)
 		}
-		foods = append(foods, page...)
+		for i := range page {
+			if !plates[food.Key(page[i].Name)] {
+				foods = append(foods, page[i])
+			}
+		}
 		if len(page) == 0 || offset+len(page) >= total {
 			break
 		}

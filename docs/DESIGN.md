@@ -1197,7 +1197,8 @@ the first spec.
    an amount and a food of the user's becomes an item of that food, the
    rest of the meal an estimate of its own, so the meal keeps its total,
    and a meal whose parts would pass it stays one estimate; a
-   combination is no food, and is not imported. The split is
+   combination is imported as a plate, a food per portion, which no
+   part of a meal is split as. The split is
    the maintainer's own history's, and goes with the import once the
    cut-over is done.
 2. **New inputs for what the predecessor took in:** Health Auto Export
