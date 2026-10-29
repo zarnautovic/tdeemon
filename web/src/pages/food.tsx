@@ -42,8 +42,11 @@ export function FoodPage() {
   } else if (food.isError && [404, 422].includes(statusOf(food.error) ?? 0)) {
     // 422: the address names no food's id at all.
     body = <p className="text-muted-foreground">{t.foods.notFound}</p>
-  } else if (food.isError) {
-    body = <LoadError error={food.error} onRetry={() => void food.refetch()} />
+  } else if (food.data === undefined) {
+    // A food that came stays while asking for it again fails.
+    body = (
+      <LoadError title={t.loadFailed.food} error={food.error} onRetry={() => void food.refetch()} />
+    )
   } else if (edit) {
     body = (
       <>

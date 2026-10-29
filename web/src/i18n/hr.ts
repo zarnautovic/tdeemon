@@ -96,6 +96,23 @@ export const hr: Messages = {
     tagline: 'Upisuj što jedeš; tdeemon uči koliko trošiš, a tvoj AI trener po tome planira.',
   },
   loading: 'Učitavanje…',
+  loadFailed: {
+    today: 'Danas se nije učitao.',
+    day: 'Ovaj dan se nije učitao.',
+    foods: 'Namirnice se nisu učitale.',
+    food: 'Namirnica se nije učitala.',
+    progress: 'Napredak se nije učitao.',
+    plan: 'Plan se nije učitao.',
+    profile: 'Profil se nije učitao.',
+    limits: 'Granice plana nisu se učitale.',
+    notes: 'Bilješke za AI trenera nisu se učitale.',
+    keys: 'Pristupni ključevi nisu se učitali.',
+  },
+  stale: {
+    offline: (when: string) => `Nema veze · podaci od ${when}`,
+    failed: (when: string) => `Nije osvježeno · podaci od ${when}`,
+    dayTime: (day: string, time: string) => `${day} u ${time}`,
+  },
   notSaved: (why: string) => `Nije spremljeno. ${why}`,
   refused: 'Server to nije prihvatio.',
   // Amounts in their units, which every language here writes the same.

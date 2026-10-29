@@ -102,11 +102,21 @@ export function ChartsPage() {
   const words = useChartWords(from !== undefined && today !== undefined && byMonth(from, today))
   const colors = useChartColors()
 
+  // What came stays while asking for it again fails: the bar over the
+  // page says since when.
   let body
-  if (me.isError) {
-    body = <LoadError error={me.error} onRetry={() => void me.refetch()} />
-  } else if (history.isError) {
-    body = <LoadError error={history.error} onRetry={() => void history.refetch()} />
+  if (me.data === undefined && me.isError) {
+    body = (
+      <LoadError title={t.loadFailed.progress} error={me.error} onRetry={() => void me.refetch()} />
+    )
+  } else if (history.data === undefined && history.isError) {
+    body = (
+      <LoadError
+        title={t.loadFailed.progress}
+        error={history.error}
+        onRetry={() => void history.refetch()}
+      />
+    )
   } else if (!history.data || today === undefined || from === undefined) {
     body = <ProgressSkeleton />
   } else if (history.data.days.every((d) => !drawn(d))) {

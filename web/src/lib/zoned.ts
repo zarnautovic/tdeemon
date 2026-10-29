@@ -79,6 +79,16 @@ export function clockAt(instant: number, timeZone: string): string {
   return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`
 }
 
+// dateAt is the date (YYYY-MM-DD) timeZone's clock shows at instant.
+export function dateAt(instant: number, timeZone: string): string {
+  const p = partsAt(instant, timeZone)
+  return [
+    String(p.year).padStart(4, '0'),
+    String(p.month).padStart(2, '0'),
+    String(p.day).padStart(2, '0'),
+  ].join('-')
+}
+
 // parseClock is a time of day as typed, as HH:MM: on a 24-hour clock,
 // 19:30, 19.30, 19,30 (a phone's keys for decimals), 1930, 7:05, 123
 // (01:23) or 7; on a 12-hour clock, with its AM or PM, as English writes

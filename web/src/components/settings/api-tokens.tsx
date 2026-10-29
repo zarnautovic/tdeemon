@@ -112,8 +112,11 @@ export function ApiTokens({ connect }: { connect?: ConnectKind | 'choose' | unde
   let body
   if (list.isPending) {
     body = <Skeleton blocks={['h-24', 'h-24']} />
-  } else if (list.isError) {
-    body = <LoadError error={list.error} onRetry={() => void list.refetch()} />
+  } else if (list.data === undefined) {
+    // The keys that came stay while asking for them again fails.
+    body = (
+      <LoadError title={t.loadFailed.keys} error={list.error} onRetry={() => void list.refetch()} />
+    )
   } else if (list.data.tokens.length === 0) {
     body = (
       <div className="space-y-3 rounded-lg border border-dashed bg-card p-5">

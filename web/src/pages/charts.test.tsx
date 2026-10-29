@@ -7,7 +7,17 @@ import { weekStart } from '@/components/progress/span'
 import { addDays, daysBetween } from '@/i18n/format'
 import { setLocale } from '@/i18n/locale'
 import { setTheme } from '@/lib/theme'
-import { fakeServer, me, problem, renderAt, signedIn, today, type Handler } from '@/test/app'
+import {
+  askAgain,
+  fakeServer,
+  me,
+  problem,
+  renderAt,
+  signedIn,
+  today,
+  unreachable,
+  type Handler,
+} from '@/test/app'
 import { themeStyle, themeTokens } from '@/test/charts'
 
 // The first test of the file loads the charts' module, ECharts with it,
@@ -722,11 +732,30 @@ test('a history that did not come says why, and asks again', async () => {
   })
   renderAt('/progress')
 
-  expect((await screen.findByRole('alert')).textContent).toBe('The server failed to answer.')
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load your progress.")).toBeDefined()
+  expect(within(alert).getByText('The server failed to answer.')).toBeDefined()
+  // Under the page's header, which keeps its spans.
+  expect(screen.getByRole('heading', { level: 1, name: 'Progress' })).toBeDefined()
   up = true
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
   expect(await screen.findByRole('region', { name: 'Weight' }, { timeout: 10_000 })).toBeDefined()
+})
+
+test('what came stays when it cannot be asked again, and the bar over it says since when', async () => {
+  progressServer()
+  const router = renderAt('/progress')
+  expect(await screen.findByRole('region', { name: 'Weight' }, { timeout: 10_000 })).toBeDefined()
+  await hero()
+
+  unreachable()
+  await askAgain(router)
+
+  expect(await screen.findByText(/^Offline · data from /)).toBeDefined()
+  expect(screen.getByRole('region', { name: 'Weight' })).toBeDefined()
+  expect(screen.getByRole('region', { name: 'The phase so far' })).toBeDefined()
+  expect(screen.queryByRole('alert')).toBeNull()
 })
 
 test('a summary that did not come says why in the hero, and asks again', async () => {

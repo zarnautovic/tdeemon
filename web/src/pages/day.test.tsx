@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Meal } from '@/api/types'
@@ -13,6 +13,7 @@ import {
   signedIn,
   signedOut,
   today,
+  type Handler,
 } from '@/test/app'
 import { dayServer } from '@/test/day-server'
 import { planBody } from '@/test/plan'
@@ -136,10 +137,10 @@ test('today shows what was eaten against the target, the meals and the measureme
 
   renderAt('/')
 
-  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  const summary = await screen.findByRole('region', { name: 'Energy and macros' })
+  expect(screen.getByRole('heading', { name: 'Today' })).toBeDefined()
   expect(screen.getByText('Friday, October 23')).toBeDefined()
   expect(screen.getByRole('button', { name: 'Type of day: Rest day' })).toBeDefined()
-  const summary = screen.getByRole('region', { name: 'Energy and macros' })
   expect(within(summary).getByText('Eaten 1,460 of 2,500 kcal, 1,040 left')).toBeDefined()
   expect(macroOf(summary, 'Protein')).toBe('Protein88 / 160 g · 72 to go')
 
@@ -662,7 +663,7 @@ test('a day to come shows its own week, with nothing in it yet, and asks for no 
   renderAt('/?date=2026-11-04')
 
   expect(await screen.findByRole('heading', { name: 'Wednesday, November 4' })).toBeDefined()
-  const week = screen.getByRole('navigation', { name: 'The week' })
+  const week = await screen.findByRole('navigation', { name: 'The week' })
   expect(within(week).queryAllByRole('link')).toEqual([])
   const days = within(week).getAllByRole('listitem')
   expect(days.map((d) => d.textContent)).toEqual([
@@ -819,7 +820,7 @@ test("another day's header has its date between the arrows, its type and the way
   // Once, there: not at the page's foot too.
   expect(screen.getAllByRole('link', { name: 'Natrag na danas' })).toHaveLength(1)
   // The body is the day's, not today's.
-  expect(screen.getByRole('region', { name: 'Tijelo' })).toBeDefined()
+  expect(await screen.findByRole('region', { name: 'Tijelo' })).toBeDefined()
 })
 
 test('the first day a history is of has no day before, and asks for the week from it', async () => {
@@ -841,7 +842,7 @@ test('the first day a history is of has no day before, and asks for the week fro
     '/?date=1900-01-02',
   )
   // Its week is the first seven days, the day among them.
-  const week = within(screen.getByRole('navigation', { name: 'The week' }))
+  const week = within(await screen.findByRole('navigation', { name: 'The week' }))
   expect(week.getAllByRole('link')[0]?.getAttribute('href')).toBe('/?date=1900-01-01')
   await waitFor(() => {
     expect(new Set(asked)).toEqual(new Set(['1900-01-01 to 1900-01-07']))
@@ -886,7 +887,7 @@ test('a day of another year than today says its year, in each language', async (
   ).toBeDefined()
 })
 
-test('a day that did not come says why, and asks again', async () => {
+test('a day that did not come says why in its place, under its header, and asks again', async () => {
   let up = false
   fakeServer({
     ...signedIn(),
@@ -895,12 +896,115 @@ test('a day that did not come says why, and asks again', async () => {
   })
   renderAt('/')
 
-  expect((await screen.findByRole('alert')).textContent).toBe('The server cannot be reached.')
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load today.")).toBeDefined()
+  expect(within(alert).getByText('The server cannot be reached.')).toBeDefined()
+  // The page's frame stays: its header, its arrows, and the sections.
+  expect(screen.getByRole('heading', { level: 1, name: 'Today' })).toBeDefined()
+  expect(screen.getByText('Friday, October 23')).toBeDefined()
+  expect(screen.getByRole('link', { name: 'The day before' }).getAttribute('href')).toBe(
+    '/?date=2026-10-22',
+  )
+  expect(screen.getByRole('navigation', { name: 'Sections' })).toBeDefined()
 
   up = true
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 
-  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(await screen.findByRole('region', { name: 'Meals' })).toBeDefined()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+// What the day shows above its meals, each held back in turn: who the
+// user is, the summary (the hero's TDEE), the plan (the phase, a
+// proposal), the week's history, and today's chips' (the day before, the
+// foods logged most, the meals of before).
+test.each([
+  'GET /api/v1/me',
+  'GET /api/v1/summary',
+  'GET /api/v1/plan',
+  'GET /api/v1/history',
+  'GET /api/v1/days/2026-10-22',
+  'GET /api/v1/foods/list',
+  'GET /api/v1/meals/recent',
+])('while %s comes, the day is a skeleton under its header, then shows at once', async (held) => {
+  const routes: Record<string, Handler> = {
+    ...signedIn(),
+    'GET /api/v1/days/today': () => Response.json(day({ meals: [breakfast] })),
+  }
+  const answer = routes[held] ?? (() => problem(404))
+  // Each request of it waits until released, and answers at once after.
+  let released = false
+  const waiting: (() => void)[] = []
+  fakeServer({
+    ...routes,
+    [held]: (request) =>
+      released
+        ? answer(request)
+        : new Promise<Response>((resolve) => {
+            waiting.push(() => {
+              resolve(answer(request))
+            })
+          }),
+  })
+  renderAt('/')
+
+  // The day came, the other not yet.
+  expect(await screen.findByRole('button', { name: 'Type of day: Rest day' })).toBeDefined()
+  await waitFor(() => {
+    expect(waiting.length).toBeGreaterThan(0)
+  })
+  expect(screen.getByRole('heading', { level: 1, name: 'Today' })).toBeDefined()
+  expect(screen.getByText('Loading…')).toBeDefined()
+  expect(screen.queryByRole('region', { name: 'Meals' })).toBeNull()
+  expect(screen.queryByRole('region', { name: 'Energy and macros' })).toBeNull()
+
+  released = true
+  for (const go of waiting) {
+    go()
+  }
+
+  const meals = await screen.findByRole('region', { name: 'Meals' })
+  expect(within(meals).getByRole('article', { name: 'Oats with a banana' })).toBeDefined()
+  expect(screen.getByRole('region', { name: 'Energy and macros' })).toBeDefined()
+  expect(screen.queryByText('Loading…')).toBeNull()
+})
+
+test("once the day showed, another week's day keeps the page while its week comes", async () => {
+  let asked = false
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/2026-10-16': () => Response.json(day({ date: '2026-10-16' })),
+    'GET /api/v1/history': (request) => {
+      if (new URL(request.url).searchParams.get('from') !== '2026-10-12') {
+        return problem(404)
+      }
+      asked = true
+      return new Promise<Response>(() => undefined)
+    },
+  })
+  const router = renderAt('/')
+  await screen.findByRole('region', { name: 'Meals' })
+
+  await act(() => router.navigate({ to: '/', search: { date: '2026-10-16' } }))
+
+  expect(await screen.findByRole('heading', { level: 1, name: 'Friday, October 16' })).toBeDefined()
+  await waitFor(() => {
+    expect(asked).toBe(true)
+  })
+  expect(await screen.findByRole('region', { name: 'Meals' })).toBeDefined()
+  expect(screen.queryByText('Loading…')).toBeNull()
+})
+
+test('a day before that did not come says so of the day, under its date', async () => {
+  fakeServer({ ...signedIn('hr'), 'GET /api/v1/days/2026-10-20': () => problem(500) })
+  renderAt('/?date=2026-10-20')
+
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText('Ovaj dan se nije učitao.')).toBeDefined()
+  expect(within(alert).getByText('Server nije uspio odgovoriti.')).toBeDefined()
+  expect(screen.getByRole('heading', { level: 1, name: 'utorak, 20. listopada' })).toBeDefined()
+  expect(screen.getByRole('link', { name: 'Natrag na danas' })).toBeDefined()
+  expect(screen.getByRole('button', { name: 'Pokušaj ponovno' })).toBeDefined()
 })
 
 test('a session that ends while the app is open sends the browser to sign in', async () => {
@@ -932,10 +1036,10 @@ test('the day speaks Croatian, its numbers too', async () => {
 
   renderAt('/')
 
-  expect(await screen.findByRole('heading', { name: 'Danas' })).toBeDefined()
+  const summary = await screen.findByRole('region', { name: 'Energija i makroi' })
+  expect(screen.getByRole('heading', { name: 'Danas' })).toBeDefined()
   expect(screen.getByText('petak, 23. listopada')).toBeDefined()
   expect(screen.getByRole('button', { name: 'Tip dana: Dan odmora' })).toBeDefined()
-  const summary = screen.getByRole('region', { name: 'Energija i makroi' })
   expect(within(summary).getByText('Pojedeno 1.460 od 2.500 kcal, preostalo 1.040')).toBeDefined()
   expect(macroOf(summary, 'Proteini')).toBe('Proteini88 / 160 g · još 72')
 })
@@ -948,7 +1052,7 @@ test('on another day, the section is still the current one, and no link to a day
 
   renderAt('/?date=2026-10-22')
 
-  expect(await screen.findByRole('link', { name: 'Back to today' })).toBeDefined()
+  expect(await screen.findByRole('navigation', { name: 'The week' })).toBeDefined()
   expect(currentIn('Sections').map((a) => a.getAttribute('href'))).toEqual(['/'])
   // And in the week, the day shown.
   expect(currentIn('The week').map((a) => a.getAttribute('href'))).toEqual(['/?date=2026-10-22'])
@@ -1003,7 +1107,8 @@ test('a day the server refuses is not blamed on the server', async () => {
 
   renderAt('/')
 
-  expect((await screen.findByRole('alert')).textContent).toBe('Something went wrong.')
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText('Something went wrong.')).toBeDefined()
 })
 
 test('while another day comes, the page says which, and the one before waits dimmed', async () => {

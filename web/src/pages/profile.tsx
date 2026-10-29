@@ -27,7 +27,11 @@ export function ProfilePage() {
       {fresh ? (
         <ProfileForm profile={profile.data} labelledBy={id} />
       ) : profile.isError ? (
-        <LoadError error={profile.error} onRetry={() => void profile.refetch()} />
+        <LoadError
+          title={t.loadFailed.profile}
+          error={profile.error}
+          onRetry={() => void profile.refetch()}
+        />
       ) : (
         <Skeleton blocks={['h-24', 'h-16', 'h-16', 'h-11 w-28']} />
       )}

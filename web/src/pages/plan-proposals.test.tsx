@@ -631,7 +631,9 @@ test('a plan loading is a skeleton of its shape, and one that did not come says 
       { status: 500, headers: { 'Content-Type': 'application/problem+json' } },
     ),
   )
-  expect((await screen.findByRole('alert')).textContent).toBe('The server failed to answer.')
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load your plan.")).toBeTruthy()
+  expect(within(alert).getByText('The server failed to answer.')).toBeTruthy()
   fails = false
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
   expect(await screen.findByRole('region', { name: 'Cut' })).toBeTruthy()

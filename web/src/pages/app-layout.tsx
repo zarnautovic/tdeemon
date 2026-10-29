@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import { AppNav } from '@/components/app-nav'
 import { LogToday } from '@/components/day/log-today'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
+import { StaleBar } from '@/components/stale-bar'
 import { useMessages } from '@/i18n/messages'
 import { LogHereContext, type LogHere } from '@/lib/log-here'
 import { useShortcuts } from '@/lib/shortcuts'
@@ -12,7 +13,8 @@ import { useUndoLatest } from '@/lib/undo'
 // The frame of the app's sections: the navigation between them (a bar at
 // the bottom on a phone, a sidebar on a desktop) and the page, whose end
 // keeps clear of the bar and whose sides of a phone's notch in landscape
-// (viewport-fit=cover in index.html gives the page the whole screen).
+// (viewport-fit=cover in index.html gives the page the whole screen);
+// over the page, a bar while what it shows could not be asked for again.
 // The keyboard's first stop skips the sections to the page. Log a meal
 // opens the meal to log on today over the page, which stays as it was;
 // today's page logs it itself (LogHere).
@@ -98,6 +100,7 @@ export function AppLayout() {
       <AppNav onLog={log} />
       <main id="content" ref={main} tabIndex={-1} className="pb-28 outline-none lg:pb-12 lg:pl-60">
         <div className="mx-auto w-full max-w-300 pt-6 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] lg:px-10 lg:pt-8">
+          <StaleBar />
           <LogHereContext value={setLogHere}>
             <Outlet />
           </LogHereContext>

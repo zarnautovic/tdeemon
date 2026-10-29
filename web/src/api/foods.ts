@@ -49,6 +49,18 @@ export function useFoodList(filter: FoodFilter, order: 'name' | 'use' | 'frequen
   )
 }
 
+// useFrequentFoods are the user's foods the latest meals had most, 50 at
+// most: what the day's chips and the quick add's Frequent offer, of one
+// query. Asked only when enabled.
+export function useFrequentFoods(enabled = true) {
+  return $api.useQuery(
+    'get',
+    '/api/v1/foods/list',
+    { params: { query: { order: 'frequent', limit: 50 } } },
+    { enabled },
+  )
+}
+
 // useFindFoods is the user's foods a search finds (find_foods), when
 // there is something to search for: the archived ones, or the others.
 export function useFindFoods(query: string, archived = false) {

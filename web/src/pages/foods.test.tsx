@@ -3,7 +3,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Food } from '@/api/types'
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, problem, renderAt, signedIn, today } from '@/test/app'
+import { askAgain, fakeServer, problem, renderAt, signedIn, today, unreachable } from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -315,6 +315,22 @@ test('a search finds the foods, or says none matches', async () => {
   expect(await screen.findByText('No food matches.')).toBeDefined()
 })
 
+test('the foods a search found stay when it cannot be asked again, the bar says since when', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods': () => Response.json({ foods: [oats], unfound: [] }),
+  })
+  const router = renderAt('/foods?q=oat')
+  const found = await screen.findByRole('list', { name: 'Found' })
+
+  unreachable()
+  await askAgain(router)
+
+  expect(await screen.findByText(/^Offline · data from /)).toBeDefined()
+  expect(within(found).getByText('Rolled oats')).toBeDefined()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
 test('a search in the archive finds the archived foods, and the archive stays', async () => {
   const stew = { ...oats, id: '0193c3a5-0000-7000-8000-0000000000f9', name: 'Canteen stew' }
   const fetch = fakeServer({
@@ -349,7 +365,9 @@ test('a list that did not come says why, and asks again', async () => {
   })
   renderAt('/foods')
 
-  expect((await screen.findByRole('alert')).textContent).toBe('The server failed to answer.')
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load your foods.")).toBeDefined()
+  expect(within(alert).getByText('The server failed to answer.')).toBeDefined()
   up = true
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
 

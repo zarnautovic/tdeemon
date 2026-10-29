@@ -10,6 +10,8 @@ import { BodyToday } from '@/components/day/body-today'
 import { ChangesButton } from '@/components/day/changes-button'
 import { CheckIn } from '@/components/day/check-in'
 import { DayPhase } from '@/components/day/day-phase'
+import { useDayReady } from '@/components/day/day-ready'
+import { DaySkeleton } from '@/components/day/day-skeleton'
 import { DaySummary } from '@/components/day/day-summary'
 import { DayTypeChip } from '@/components/day/day-type-chip'
 import { FirstSteps } from '@/components/day/first-steps'
@@ -23,6 +25,7 @@ import { WeekLine } from '@/components/day/week-line'
 import { WeekStrip } from '@/components/day/week-strip'
 import { LoadError } from '@/components/load-error'
 import { ProposalNudge } from '@/components/plan/proposal-nudge'
+import { Skeleton } from '@/components/progress/skeleton'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -127,77 +130,89 @@ export function DayPage() {
     }
   }, [setLogHere, date])
 
-  if (day.isPending) {
-    return <output className="block text-muted-foreground">{t.loading}</output>
-  }
-  if (day.isError) {
-    return <LoadError error={day.error} onRetry={() => void day.refetch()} />
-  }
-
   // While another day comes, the one before stays on the page
   // (placeholder data), and the title and arrows already follow the day
   // asked for.
   const waiting = day.isPlaceholderData
+  // What the day shows above its meals, come with it: the page shows it
+  // all at once, under its header, and the day's skeleton until then;
+  // the first time, as another day keeps the one before until it comes.
+  const ready = useDayReady(date, waiting ? undefined : day.data)
+  const [painted, setPainted] = useState(false)
+  if (ready && day.data !== undefined && !painted) {
+    setPainted(true)
+  }
   // Today is the day / answered, once it has: /me's may be older, the
   // day's start hour having passed since.
-  const todayDate = date === undefined && !waiting ? day.data.date : today
-  const shown = date ?? todayDate ?? day.data.date
+  const todayDate = date === undefined && !waiting && day.data !== undefined ? day.data.date : today
+  // The day shown, unknown only while neither the day nor the user came.
+  const shown = date ?? todayDate ?? day.data?.date
   const isToday = date === undefined || shown === todayDate
   // A day to come, which an address may name though the arrows stop at
   // today, takes its type and exclusion only, as the server has it. A day
   // an address names may be one until the app knows today; if it cannot
   // learn it, the server says what it refuses.
-  const future = todayDate === undefined ? date !== undefined && me.isPending : shown > todayDate
-  const before = addDays(shown, -1)
-  const after = addDays(shown, 1)
+  const future =
+    shown !== undefined && todayDate !== undefined
+      ? shown > todayDate
+      : date !== undefined && me.isPending
   // A day's link: today's is / itself.
   const searchOf = (d: string) => (d === todayDate ? {} : { date: d })
   // The arrows go back to the first day a history is of, which the
   // router takes a day from, and ahead up to today.
-  const hasBefore = shown > limits.history.since
-  const hasNext = todayDate !== undefined && shown < todayDate
-  // What the day's target leaves, as its ring says it.
-  const left =
-    day.data.target === undefined ? undefined : kcalLeft(day.data.total.kcal, day.data.target.kcal)
+  const hasBefore = shown !== undefined && shown > limits.history.since
+  const hasNext = shown !== undefined && todayDate !== undefined && shown < todayDate
+  const before = hasBefore ? addDays(shown, -1) : undefined
+  const after = hasNext ? addDays(shown, 1) : undefined
   const arrow = buttonVariants({ variant: 'ghost', size: 'icon-sm' })
   // An arrow there is none of keeps the place of one.
   const noArrow = <span className="size-11 shrink-0 lg:size-9" />
-  const previous = hasBefore ? (
-    <Link
-      to="/"
-      search={searchOf(before)}
-      // Another day is never the current page: its date must match too,
-      // not be left out.
-      activeOptions={{ exact: true }}
-      aria-label={t.day.previous}
-      className={arrow}
-    >
-      <ChevronLeft aria-hidden />
-    </Link>
-  ) : (
-    noArrow
-  )
-  const next = hasNext ? (
-    <Link
-      to="/"
-      search={searchOf(after)}
-      activeOptions={{ exact: true }}
-      aria-label={t.day.next}
-      className={arrow}
-    >
-      <ChevronRight aria-hidden />
-    </Link>
-  ) : (
-    noArrow
-  )
-  // Of the day shown, not of the one before while it comes; beside it the
-  // recent changes, whose Undo reaches past a toast.
-  const dayType = (
-    <div inert={waiting} className="flex items-center gap-1">
-      <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
-      <ChangesButton />
-    </div>
-  )
+  const previous =
+    before !== undefined ? (
+      <Link
+        to="/"
+        search={searchOf(before)}
+        // Another day is never the current page: its date must match too,
+        // not be left out.
+        activeOptions={{ exact: true }}
+        aria-label={t.day.previous}
+        className={arrow}
+      >
+        <ChevronLeft aria-hidden />
+      </Link>
+    ) : (
+      noArrow
+    )
+  const next =
+    after !== undefined ? (
+      <Link
+        to="/"
+        search={searchOf(after)}
+        activeOptions={{ exact: true }}
+        aria-label={t.day.next}
+        className={arrow}
+      >
+        <ChevronRight aria-hidden />
+      </Link>
+    ) : (
+      noArrow
+    )
+  // Of the day shown, not of the one before while it comes; its place
+  // kept while the day comes. Beside it the recent changes, whose Undo
+  // reaches past a toast.
+  let dayType
+  if (day.data !== undefined) {
+    dayType = (
+      <div inert={waiting} className="flex items-center gap-1">
+        <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
+        <ChangesButton />
+      </div>
+    )
+  } else if (day.isPending) {
+    dayType = <Skeleton className="h-9 w-28 rounded-full" />
+  }
+  // The day's date, its place kept while it is not known.
+  const dated = shown === undefined ? <Skeleton className="h-4.5 w-36" /> : f.date(shown, todayDate)
 
   const toToday = (
     <Link
@@ -219,9 +234,13 @@ export function DayPage() {
           {next}
         </div>
         <h1 className="text-title">{t.day.today}</h1>
-        <p className="col-span-2 col-start-2 row-start-2 text-small text-muted-foreground">
-          {f.date(shown, todayDate)}
-        </p>
+        {shown === undefined ? (
+          <div className="col-span-2 col-start-2 row-start-2">{dated}</div>
+        ) : (
+          <p className="col-span-2 col-start-2 row-start-2 text-small text-muted-foreground">
+            {dated}
+          </p>
+        )}
         <div className="col-start-3 row-start-1">{dayType}</div>
       </header>
     )
@@ -234,7 +253,7 @@ export function DayPage() {
           {previous}
           {next}
         </div>
-        <h1 className="min-w-0 flex-1 text-title">{f.date(shown, todayDate)}</h1>
+        <h1 className="min-w-0 flex-1 text-title">{dated}</h1>
         {dayType}
         {toToday}
       </header>
@@ -247,9 +266,7 @@ export function DayPage() {
       <header className="flex items-start gap-2">
         {previous}
         <div className="flex min-w-0 flex-1 flex-col items-center gap-2 text-center">
-          <h1 className="flex min-h-11 items-center text-h3 text-balance">
-            {f.date(shown, todayDate)}
-          </h1>
+          <h1 className="flex min-h-11 items-center text-h3 text-balance">{dated}</h1>
           {dayType}
           {toToday}
         </div>
@@ -257,6 +274,38 @@ export function DayPage() {
       </header>
     )
   }
+  const keys = (
+    <DayKeys
+      before={before === undefined ? undefined : searchOf(before)}
+      after={after === undefined ? undefined : searchOf(after)}
+    />
+  )
+  // Until the day comes, its skeleton under the header; or why it did
+  // not come, with a way to ask again.
+  if (day.data === undefined) {
+    return (
+      <div className="max-w-3xl space-y-4 lg:max-w-none">
+        {keys}
+        {header}
+        {day.isError ? (
+          <LoadError
+            title={isToday ? t.loadFailed.today : t.loadFailed.day}
+            error={day.error}
+            onRetry={() => void day.refetch()}
+          />
+        ) : (
+          <DaySkeleton columns={desktop} />
+        )}
+      </div>
+    )
+  }
+  // Until what it shows above its meals comes too, its parts are there
+  // but hidden, asking for it, and the skeleton stays.
+  const hide = !(ready || painted)
+
+  // What the day's target leaves, as its ring says it.
+  const left =
+    day.data.target === undefined ? undefined : kcalLeft(day.data.total.kcal, day.data.target.kcal)
   // What the user says of the day, and what it measured: their fields
   // start again with each day.
   const checkIn = <CheckIn key={`check-in ${day.data.date}`} day={day.data} future={future} />
@@ -272,19 +321,18 @@ export function DayPage() {
 
   return (
     <div className="max-w-3xl space-y-4 lg:max-w-none">
-      <DayKeys
-        before={hasBefore ? searchOf(before) : undefined}
-        after={hasNext ? searchOf(after) : undefined}
-      />
+      {keys}
       {header}
+      {hide && <DaySkeleton columns={desktop} />}
       {/* A phone's week, above the day; a desktop's is beside it. */}
-      {!desktop && todayDate !== undefined && (
-        <div className="space-y-2">
+      {!desktop && shown !== undefined && todayDate !== undefined && (
+        <div hidden={hide} className="space-y-2">
           <WeekStrip date={shown} today={todayDate} />
           <WeekLine date={shown} today={todayDate} />
         </div>
       )}
       <div
+        hidden={hide}
         aria-busy={waiting}
         // What is changed while it waits would be the day before's.
         inert={waiting}
@@ -368,7 +416,9 @@ export function DayPage() {
         <div className="space-y-4 lg:col-span-4">
           {desktop ? (
             <>
-              {todayDate !== undefined && <WeekCard date={shown} today={todayDate} />}
+              {shown !== undefined && todayDate !== undefined && (
+                <WeekCard date={shown} today={todayDate} />
+              )}
               {body}
               {checkIn}
               <DayPhase date={day.data.date} card />

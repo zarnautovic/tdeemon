@@ -1,6 +1,7 @@
 import { Repeat2 } from 'lucide-react'
 
 import { $api } from '@/api/client'
+import { useFrequentFoods } from '@/api/foods'
 import { useLogMeal, useRecentMeals } from '@/api/meals'
 import type { Food } from '@/api/types'
 import { lastAmountOf, repeatOf } from '@/components/day/meal-entries'
@@ -42,9 +43,7 @@ export function QuickChips({
     params: { path: { date: addDays(date, -1) } },
   })
   // The list the quick add's Frequent shows: one query for both.
-  const frequent = $api.useQuery('get', '/api/v1/foods/list', {
-    params: { query: { order: 'frequent', limit: 50 } },
-  })
+  const frequent = useFrequentFoods()
   const recent = useRecentMeals()
   const repeat = useLogMeal(date, (answer) => {
     sayChange(

@@ -1,9 +1,10 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
+import { sessionQuery } from '@/api/session'
 import { setLocale } from '@/i18n/locale'
 import { setTheme } from '@/lib/theme'
-import { day, fakeServer, renderAt, signedIn, today } from '@/test/app'
+import { day, fakeServer, renderAt, signedIn, today, unreachable } from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -255,6 +256,27 @@ test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
   expect(said('Delete the meal')).toBe('Delete')
 })
 
+test('a section opens in the frame on the session the app has, when the server cannot say it', async () => {
+  fakeServer(signedIn())
+  const router = renderAt('/')
+  await screen.findByRole('region', { name: 'Meals' })
+  // The session the app has is old enough to be asked again on the way.
+  await act(() =>
+    router.options.context.queryClient.invalidateQueries({
+      queryKey: sessionQuery.queryKey,
+      refetchType: 'none',
+    }),
+  )
+
+  unreachable()
+  fireEvent.click(within(await nav()).getByRole('link', { name: 'Foods' }))
+
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load your foods.")).toBeDefined()
+  expect(screen.getByRole('heading', { level: 1, name: 'Foods' })).toBeDefined()
+  expect(screen.getByRole('navigation', { name: 'Sections' })).toBeDefined()
+})
+
 test('a shortcut is not taken from a field, nor with a modifier', async () => {
   fakeServer({
     ...signedIn(),
@@ -278,7 +300,7 @@ test('the arrows move a day back and ahead, up to today', async () => {
     [`GET /api/v1/days/${yesterday}`]: () => Response.json(day({ date: yesterday })),
   })
   const router = renderAt('/')
-  await screen.findByRole('heading', { name: 'Today' })
+  await screen.findByRole('link', { name: 'The day before' })
 
   fireEvent.keyDown(document.body, { key: 'ArrowRight' })
   fireEvent.keyDown(document.body, { key: 'ArrowLeft' })

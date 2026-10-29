@@ -102,6 +102,8 @@ test("a meal's row gives its name the room, and its values stay with their label
 
   await page.goto('/')
   const meal = (description: string) => page.getByRole('article').filter({ hasText: description })
+  // The day shown, not its parts while they are hidden under its skeleton.
+  await expect(meal('Yoghurt, granola, honey')).toBeVisible()
   // A name of a few words is whole: nothing of it is cut.
   const name = meal('Yoghurt, granola, honey').getByText('Yoghurt, granola, honey', {
     exact: true,
