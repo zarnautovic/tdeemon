@@ -99,6 +99,10 @@ interface Compact {
   onAdd: (food: Food, amount: number) => void
 }
 
+// summaryClass is a More's summary: the whole row of its box to a
+// finger, 44 px, its words where its box's padding has them.
+const summaryClass = '-m-3 cursor-pointer p-3 text-sm'
+
 // The fields a compact form shows outside More.
 const outside = new Set<string>(['name', ...needed, 'mass', 'eaten'])
 
@@ -724,7 +728,7 @@ export function FoodForm({
           )}
         </div>
         <details className="rounded-lg border p-3" open={moreWrong}>
-          <summary className="cursor-pointer text-sm">{t.foods.moreFields}</summary>
+          <summary className={summaryClass}>{t.foods.moreFields}</summary>
           <div className="mt-3 space-y-4">
             {brandField}
             {otherValues}
@@ -767,7 +771,7 @@ export function FoodForm({
       </div>
       {values}
       <details className="rounded-lg border p-3" open={optional.some((k) => wrong.has(k))}>
-        <summary className="cursor-pointer text-sm">{t.foods.moreNutrients}</summary>
+        <summary className={summaryClass}>{t.foods.moreNutrients}</summary>
         <div className="mt-3">{otherValues}</div>
       </details>
       {portionField}

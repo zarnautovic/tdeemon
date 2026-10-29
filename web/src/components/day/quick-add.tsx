@@ -1,3 +1,4 @@
+import { useLocation, useSearch } from '@tanstack/react-router'
 import { useId, useRef, useState, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 
@@ -101,7 +102,8 @@ export function QuickAdd({
 // Composer is a meal being logged. Its id is made as it is sent, so the
 // meal sent again (no answer came) is the same meal, not another: it
 // holds still until it is sent again, or given up. Logged, it is done,
-// and a toast says so, with what the server warned of it and Undo. Its
+// and a toast says so, with what the server warned of it and Undo, and,
+// over another page than its day's, the way to the day. Its
 // next step (a new food, an estimate) takes the search's place, which
 // stays as it was under it, and the foot's: one button, Add to meal.
 function Composer({
@@ -125,12 +127,17 @@ function Composer({
   // Whether the meal sent is one of before, logged again, which its toast
   // says.
   const repeating = useRef(false)
+  // Whether the page is the meal's day's: today's is / itself.
+  const onDay = useLocation({ select: (l) => l.pathname === '/' })
+  const shown = useSearch({ strict: false, select: (s) => s.date })
+  const dayShown = onDay && (shown === date || (today && shown === undefined))
   const log = useLogMeal(date, (answer) => {
     const said = repeating.current ? t.meal.repeated : t.toast.logged
     sayChange(
       {
         title: said(mealName(answer.meal, t), t.unit.kcal(f.number(answer.meal.total.kcal))),
         lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
+        to: dayShown ? undefined : date,
       },
       { last: { action: 'meal.create', entity: answer.meal.id }, date },
     )

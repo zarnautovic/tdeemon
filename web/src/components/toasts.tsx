@@ -8,15 +8,20 @@ import { useUndo } from '@/api/meals'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import { linkTarget } from '@/lib/styles'
 import { sayUndone, toasts, type Said } from '@/lib/toast'
 import { undoRefused, useShownDay } from '@/lib/undo'
+import { cn } from '@/lib/utils'
 
 // Toasts shows the app's toasts, announced as they come (aria-live, by
 // Base UI): above the bar on a phone, at the bottom right on a desktop.
 // They are over a sheet too (z-50, its portal after theirs), so a change
-// made in one is taken back from there; a sheet keeps Tab within it, and
-// F6 takes the focus to them (Base UI), as a sheet leaves them out of
-// what it hides. Rendered within the router, so a toast links a day.
+// made in one is taken back from there, and clear of its buttons, which
+// a finger or the pointer would miss under them: at the top on a phone,
+// above the sheet, and beside the panel on a desktop. A sheet keeps Tab
+// within it, and F6 takes the focus to them (Base UI), as a sheet leaves
+// them out of what it hides. Rendered within the router, so a toast
+// links a day.
 export function Toasts() {
   const t = useMessages()
 
@@ -25,7 +30,7 @@ export function Toasts() {
       <Toast.Portal>
         <Toast.Viewport
           aria-label={t.toast.region}
-          className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-60 mx-auto flex max-w-md flex-col gap-2 outline-none lg:right-8 lg:bottom-8 lg:left-auto lg:mx-0 lg:w-96"
+          className="fixed inset-x-4 bottom-[calc(6rem+env(safe-area-inset-bottom))] z-60 mx-auto flex max-w-md flex-col gap-2 outline-none lg:right-8 lg:bottom-8 lg:left-auto lg:mx-0 lg:w-96 sheet-open:max-lg:top-[max(0.5rem,env(safe-area-inset-top))] sheet-open:max-lg:bottom-auto sheet-open:lg:right-[calc(var(--container-md)+2rem)]"
         >
           <List />
         </Toast.Viewport>
@@ -72,7 +77,8 @@ function Item({ toast }: { toast: ToastObject<Said> }) {
   )
 }
 
-// DayLink is the way to a day a change is of, other than the one shown.
+// DayLink is the way to a day a change is of, other than the one shown,
+// a finger's size.
 function DayLink({ date }: { date: string }) {
   const t = useMessages()
   const f = useFormat()
@@ -83,7 +89,7 @@ function DayLink({ date }: { date: string }) {
       to="/"
       // Today's link is / itself.
       search={date === today ? {} : { date }}
-      className="block text-sm text-primary underline underline-offset-2"
+      className={cn(linkTarget, 'block text-sm text-primary underline underline-offset-2')}
     >
       {date === today ? t.meal.seeToday : t.toast.see(f.date(date, today))}
     </Link>

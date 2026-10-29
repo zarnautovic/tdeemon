@@ -33,7 +33,7 @@ test('a meal eaten at this hour before is suggested above the search, and logged
   // just logged is no card.
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Log a meal' })
+    .getByRole('button', { name: 'Log a meal' })
     .click()
   const sheet = page.getByRole('dialog', { name: 'A new meal' })
   const cards = sheet.getByRole('region', { name: /^For / })
@@ -45,11 +45,40 @@ test('a meal eaten at this hour before is suggested above the search, and logged
   await expect(curries).toHaveCount(1)
 })
 
+test("the bar's + logs a meal over the foods, which stay, its toast the way to today", async ({
+  page,
+}) => {
+  await signIn(page)
+  await page.goto('/foods')
+  await expect(page.getByRole('heading', { name: 'Foods' })).toBeVisible()
+  await page
+    .getByRole('navigation', { name: 'Sections' })
+    .getByRole('button', { name: 'Log a meal' })
+    .click()
+  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  await sheet.getByRole('button', { name: 'An estimate', exact: true }).click()
+  await sheet.getByLabel('What it is').fill('Flat white')
+  await sheet.getByLabel('Energy (kcal)').fill('120')
+  await sheet.getByLabel('Protein (g)').fill('6')
+  await sheet.getByLabel('Carbs (g)').fill('9')
+  await sheet.getByLabel('Fat (g)', { exact: true }).fill('6')
+  await sheet.getByRole('button', { name: 'Add to meal' }).click()
+  await sheet.getByRole('button', { name: 'Log 1 item · 120 kcal' }).click()
+
+  await expect(page.getByText(/^Logged: Flat white · 120 kcal/)).toBeVisible()
+  await expect(sheet).toBeHidden()
+  await expect(page).toHaveURL('/foods')
+  await expect(page.getByRole('heading', { name: 'Foods' })).toBeVisible()
+  await page.getByRole('link', { name: 'See it today' }).click()
+  await expect(page).toHaveURL('/')
+  await expect(page.getByRole('article').filter({ hasText: 'Flat white' })).not.toHaveCount(0)
+})
+
 test('on a phone the keyboard waits for a tap on the search', async ({ page }) => {
   await signIn(page)
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Log a meal' })
+    .getByRole('button', { name: 'Log a meal' })
     .click()
   const sheet = page.getByRole('dialog', { name: 'A new meal' })
   const search = sheet.getByLabel('Find a food or a meal')
@@ -77,7 +106,7 @@ test('a food not found is made in a step of its own, and goes into the meal logg
   await signIn(page)
   await page
     .getByRole('navigation', { name: 'Sections' })
-    .getByRole('link', { name: 'Log a meal' })
+    .getByRole('button', { name: 'Log a meal' })
     .click()
   const sheet = page.getByRole('dialog', { name: 'A new meal' })
   await sheet.getByLabel('Find a food or a meal').fill('kefir')

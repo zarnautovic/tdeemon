@@ -980,37 +980,43 @@ the first spec.
     self-hosted (Fontsource). The sections (today, the foods, the
     progress, the plan) are a bar at the bottom on a phone, with Log a
     meal in its middle, and a sidebar from 1024 px, with the settings at
-    its foot; on a phone the settings are a list under the plan, beside
-    what a plan rests on of the user's (the profile, the limits, the
-    notes for a coach), each row with its value in short and a page of
-    its own. The keyboard has shortcuts (`?` lists them): N logs a meal,
-    / finds a food, ⌘Z or Ctrl+Z outside a field takes back the latest
-    change (made anywhere, which its toast says), G and a letter goes to
-    a section (D, F, P, L, S, which the sidebar shows as the pointer or
-    the focus is on one), and ← → to the day before or after; the first
-    stop of Tab skips the sections to the page. On a desktop, the day's
-    meals are one stop of Tab (a roving tabindex): ↑ ↓ Home End move
-    between the rows, and on a row Enter opens its editor (a click or
-    Space opens it to its items, as a tap does), R repeats it today and
-    Delete deletes it. A meal just logged or repeated takes the focus to
-    its row, which a screen reader says. A change says
-    it is done in a toast (Base UI), one at a time, with what the server
-    warned of it and Undo, which takes back that change only (`last`,
-    §5); a delete asks nothing first, and its toast stays 10 s, as one
-    that warns, 6 s the others; none goes while the pointer or the
-    focus is on the toasts, or a finger touched them last. After the
-    toast, the recent changes (a sheet from the day's header and from
-    the settings) list the latest changes, made by the user, their AI
-    coach or a device, each said as its toast said it, with Undo on the
-    one undo takes back next. The toasts are over a sheet too,
-    so a change made in one is taken back there, and F6 takes the focus
-    to them from a sheet, which keeps Tab within it. A sheet has one
-    primary button at a time: the quick add's new food (in short, its
-    other fields under More and on its page) and its estimate are a step
-    of their own, in the search's place, with Add to meal alone. The
-    quick add's search takes the focus as it opens, but on a touch screen
-    (`pointer: coarse`), whose keyboard would cover what it lists, only
-    when tapped.
+    its foot. Log a meal (and its key, N) opens the meal to log on today
+    over the screen shown, which stays as it was, and the toast of the meal
+    logged leads to the day. On a phone the settings are a list under the
+    plan, beside what a plan rests on of the user's (the profile, the
+    limits, the notes for a coach), each row with its value in short and a
+    page of its own. The keyboard has shortcuts (`?` lists them): N logs a
+    meal, / finds a food, ⌘Z or Ctrl+Z outside a field takes back the
+    latest change (made anywhere, which its toast says), G and a letter
+    goes to a section (D, F, P, L, S, which the sidebar shows as the
+    pointer or the focus is on one), and ← → to the day before or after;
+    the first stop of Tab skips the sections to the page. On a desktop, the
+    day's meals are one stop of Tab (a roving tabindex): ↑ ↓ Home End move
+    between the rows, and on a row Enter opens its editor (a click or Space
+    opens it to its items, as a tap does), R repeats it today and Delete
+    deletes it. A meal just logged or repeated takes the focus to its row,
+    which a screen reader says. A change says it is done in a toast (Base
+    UI), one at a time, with what the server warned of it and Undo, which
+    takes back that change only (`last`, §5); a delete asks nothing first,
+    and its toast stays 10 s, as one that warns, 6 s the others; none goes
+    while the pointer or the focus is on the toasts, or a finger touched
+    them last. After the toast, the recent changes (a sheet from the day's
+    header and from the settings) list the latest changes, made by the
+    user, their AI coach or a device, each said as its toast said it, with
+    Undo on the one undo takes back next. The toasts are over a sheet too,
+    so a change made in one is taken back there, and clear of its buttons,
+    which a tap under them would miss: at the top of a phone, beside the
+    panel on a desktop; F6 takes the focus to them from a sheet, which
+    keeps Tab within it. A sheet is Base UI's Drawer: from the bottom on a
+    phone, with a handle, dragged down to close (from anywhere its list is
+    at its top), and at the right on a desktop, dragged away by its title;
+    its × stays, for the keyboard and a screen reader. What a finger taps
+    is 44 px or more either way, but a link in a sentence. A sheet has one
+    primary button at a time: the quick add's new food (in short, its other
+    fields under More and on its page) and its estimate are a step of their
+    own, in the search's place, with Add to meal alone. The quick add's
+    search takes the focus as it opens, but on a touch screen (`pointer:
+    coarse`), whose keyboard would cover what it lists, only when tapped.
   - The day judges nothing it shows (§8: logging is never judged; the
     plan works on the week's average). It has what was eaten against
     its target in a ring and the macros' bars, beside the TDEE and what

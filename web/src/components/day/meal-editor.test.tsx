@@ -149,8 +149,9 @@ function mealServer(answer: Partial<Record<string, Handler>> = {}) {
   return { routes, sent, elsewhere }
 }
 
-// logMeal names the button that logs a meal: today's names the meal of
-// the hour.
+// logMeal names the day's button that logs a meal, in the page (the
+// navigation's Log a meal is the app's): today's names the meal of the
+// hour.
 const logMeal =
   /^(Log a meal|Upiši obrok|Add (breakfast|lunch|a snack|dinner)|Dodaj (doručak|ručak|užinu|večeru))/
 
@@ -2170,7 +2171,9 @@ test('an estimate saved as a food is found by the next search of a meal to log',
   renderAt('/')
 
   // A meal being logged, its search finding nothing yet.
-  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
+  fireEvent.click(
+    await within(await screen.findByRole('main')).findByRole('button', { name: logMeal }),
+  )
   let log = within(await screen.findByRole('dialog', { name: 'A new meal' }))
   fireEvent.change(log.getByLabelText('Find a food or a meal'), { target: { value: 'canteen' } })
   expect(
@@ -2187,7 +2190,9 @@ test('an estimate saved as a food is found by the next search of a meal to log',
     expect(saved).toBe(true)
   })
 
-  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
+  fireEvent.click(
+    await within(await screen.findByRole('main')).findByRole('button', { name: logMeal }),
+  )
   log = within(await screen.findByRole('dialog', { name: 'A new meal' }))
   fireEvent.change(log.getByLabelText('Find a food or a meal'), { target: { value: 'canteen' } })
   expect(await log.findByRole('button', { name: /^Canteen salad/ })).toBeDefined()

@@ -22,22 +22,22 @@ test('the sections are linked from one navigation, the current one marked', asyn
   renderAt('/foods')
 
   const links = within(await nav()).getAllByRole('link')
-  // A phone shows the bar's (Log a meal its middle), a desktop the
-  // sidebar's (Log a meal first, the settings at the foot): each hides
-  // the other's. The sidebar's sections show their keys, G and a letter,
-  // as the pointer or the focus is on them; their names stay their own.
+  // A phone shows the bar's, a desktop the sidebar's (the settings at the
+  // foot): each hides the other's. The sidebar's sections show their keys,
+  // G and a letter, as the pointer or the focus is on them; their names
+  // stay their own.
   expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([
-    ['Log a mealN', '/?log=true'],
     ['TodayG D', '/'],
     ['FoodsG F', '/foods'],
-    ['', '/?log=true'],
     ['ProgressG P', '/progress'],
     ['PlanG L', '/plan'],
     ['SettingsG S', '/settings'],
   ])
-  expect(links.filter((a) => a.getAttribute('aria-current') === 'page')).toEqual([links[2]])
-  expect(within(await nav()).getAllByRole('link', { name: 'Log a meal' })).toHaveLength(2)
-  expect(within(await nav()).getByRole('link', { name: 'Today' })).toBe(links[1])
+  expect(links.filter((a) => a.getAttribute('aria-current') === 'page')).toEqual([links[1]])
+  // Log a meal is no section, but a button of each: the bar's middle, the
+  // sidebar's first.
+  expect(within(await nav()).getAllByRole('button', { name: 'Log a meal' })).toHaveLength(2)
+  expect(within(await nav()).getByRole('link', { name: 'Today' })).toBe(links[0])
 })
 
 // The keyboard's first stop skips the sections to the page, which takes
@@ -189,23 +189,30 @@ test("the system's dark theme is the one shown, and changes with it", async () =
   expect(button.getAttribute('aria-pressed')).toBe('false')
 })
 
-test('Log a meal opens the form on today, from another section', async () => {
-  fakeServer(signedIn())
-  const router = renderAt('/foods')
+test('Log a meal opens the form on today over the section, which stays', async () => {
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/foods/list': () => Response.json({ foods: [], total: 0 }),
+  })
+  const router = renderAt('/foods?filter=archived')
 
   // The bar's, a phone's.
-  const [, bar] = within(await nav()).getAllByRole('link', { name: 'Log a meal' })
+  const [, bar] = within(await nav()).getAllByRole('button', { name: 'Log a meal' })
   if (bar === undefined) {
     throw new Error('no Log a meal in the bar')
   }
   fireEvent.click(bar)
 
-  expect(await screen.findByRole('dialog', { name: 'A new meal' })).toBeDefined()
-  // Once open, the address is today's again: a reload does not open it.
+  const sheet = await screen.findByRole('dialog', { name: 'A new meal' })
+  expect(router.state.location.pathname).toBe('/foods')
+  expect(router.state.location.search).toEqual({ filter: 'archived' })
+
+  // Closed, the focus is back on the bar's Log a meal.
+  fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
   await waitFor(() => {
-    expect(router.state.location.search).toEqual({})
+    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
   })
-  expect(router.state.location.pathname).toBe('/')
+  expect(document.activeElement).toBe(bar)
 })
 
 test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
@@ -218,7 +225,7 @@ test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
 
   fireEvent.keyDown(window, { key: 'n' })
   const sheet = await screen.findByRole('dialog', { name: 'A new meal' })
-  expect(router.state.location.pathname).toBe('/')
+  expect(router.state.location.pathname).toBe('/foods')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
   await waitFor(() => {
     expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()

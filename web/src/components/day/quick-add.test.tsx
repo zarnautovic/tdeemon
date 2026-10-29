@@ -151,14 +151,20 @@ function logServer(date = '2026-10-23', over: Record<string, Handler> = {}) {
 // Sheet is what the queries find in the sheet.
 type Sheet = BoundFunctions<typeof queries>
 
-// logMeal names the button that logs a meal: today's names the meal of
-// the hour, a day before's does not.
+// logMeal names the day's button that logs a meal, in the page (the
+// navigation's Log a meal is the app's): today's names the meal of the
+// hour, a day before's does not.
 const logMeal =
   /^(Log a meal|Upiši obrok|Add (breakfast|lunch|a snack|dinner)|Dodaj (doručak|ručak|užinu|večeru))/
 
+// page is what the queries find in the page, outside the navigation.
+async function page() {
+  return within(await screen.findByRole('main'))
+}
+
 // openSheet opens the meal to log, and gives what is in it.
 async function openSheet(name = 'A new meal') {
-  fireEvent.click(await screen.findByRole('button', { name: logMeal }))
+  fireEvent.click(await (await page()).findByRole('button', { name: logMeal }))
   return within(await screen.findByRole('dialog', { name }))
 }
 
@@ -218,6 +224,8 @@ test("a meal is logged of a food of the user's and an estimate, each with what i
   fireEvent.click(sheet.getByRole('button', { name: 'Log 2 items · 205 kcal' }))
 
   expect(await screen.findByText(/^Logged: Breakfast · 207 kcal/)).toBeDefined()
+  // The day's page is the meal's: no way to it.
+  expect(screen.queryByRole('link', { name: 'See it today' })).toBeNull()
   await waitFor(() => {
     expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
   })
@@ -237,6 +245,35 @@ test("a meal is logged of a food of the user's and an estimate, each with what i
       ],
     },
   ])
+})
+
+test("the app's Log a meal logs today's over another page, which stays, its toast the way to today", async () => {
+  const server = logServer()
+  const router = renderAt('/progress?days=30')
+
+  // The bar's, a phone's.
+  const [, bar] = await within(
+    await screen.findByRole('navigation', { name: 'Sections' }),
+  ).findAllByRole('button', { name: 'Log a meal' })
+  if (bar === undefined) {
+    throw new Error('no Log a meal in the bar')
+  }
+  fireEvent.click(bar)
+  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  await giveEstimate(sheet, 'Coffee', '50')
+  // What today's target leaves, as its ring says it.
+  expect(sheet.getByText('after: 2,450 kcal left')).toBeDefined()
+  fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 50 kcal' }))
+
+  const see = await screen.findByRole('link', { name: 'See it today' })
+  expect(screen.getByText(/^Logged: Breakfast · 207 kcal/)).toBeDefined()
+  expect(server.sent).toHaveLength(1)
+  expect(router.state.location.pathname).toBe('/progress')
+  expect(router.state.location.search).toEqual({ days: 30 })
+  fireEvent.click(see)
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/')
+  })
 })
 
 test('a meal without a name is named by what is in it, as its field and its toast say', async () => {
@@ -403,7 +440,7 @@ test('a search that finds nothing says so, an estimate is given up, and the shee
     expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
   })
   // The focus is back on the button that opened it.
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: logMeal }))
+  expect(document.activeElement).toBe((await page()).getByRole('button', { name: logMeal }))
 })
 
 test('a meal sent without an answer holds still, and goes again as it was', async () => {
@@ -497,7 +534,7 @@ test('a day to come has no meal to log', async () => {
   renderAt('/?date=2026-10-25')
 
   expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
-  expect(screen.queryByRole('button', { name: logMeal })).toBeNull()
+  expect((await page()).queryByRole('button', { name: logMeal })).toBeNull()
 })
 
 test('Enter in the search opens the first food for its amount, and sends nothing', async () => {
