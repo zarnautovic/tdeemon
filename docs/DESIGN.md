@@ -206,7 +206,7 @@ duplicate food would stay in the list.
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
 | `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
-| `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21), and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`: its window, the one before a phase it may fall back to, and the intake of the 14 days before a boundary that may begin one, 133 days) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
+| `get_summary(weeks?)` | the days up to yesterday: weekly averages (1 to 12 weeks, 4 by default), weight trend, measured TDEE with its interval and doubts, and on the way to one what it has of what it needs and about when it comes (§7), calibration verdict with its guards and flags, recovery flags (sleep under 6.5 h, resting heart rate 5 % over and HRV 15 % under the 21 days before the last 7, an average of at least 4 of the last 7 days and 5 of the 21) and the usual range of each, its base that much either way, and the days possibly incomplete (§4). A day reads as calibration reads it: meals by their day, an excluded day's weigh-in and steps, and a value of 0, as none. It reads in full the days calibration reads in full (`calibration.FullDays`: its window, the one before a phase it may fall back to, and the intake of the 14 days before a boundary that may begin one, 133 days) or the 12 weeks it may give, whichever are more, and of the days before them what calibration reads of the whole history: the weigh-ins and the first meal's day. Recovery reads today too, as a night's sleep is dated by the morning it ends |
 | `get_history(from?, to?, granularity?)` | coaching: a day or week table of intake against target, the measurements, the trend weight and the TDEE measured up to each day, at most 366 days up to today (§8) |
 | `get_plan()` | phases, target history **with outcomes**, the limits that hold, the pending proposal and the latest revisions, of the last 365 days and those to come (§8) |
 | `propose_changes(rationale, model?, window?, phases?, targets?, training_weekdays?, limits?)` | a change of the plan, the user's limits among it (by name, applied only in the app), held to its rules (no change of the past) and to the limits in the transaction that stores it: one past them is refused (422), each violation an error detail with the rule, the day type, the limit, the value proposed and the level as its value; else it waits, replacing any other, and answers with a preview (each check, the target's weekly kcal and the rate it implies with a trusted TDEE, warnings); applies nothing |
@@ -292,7 +292,8 @@ The slot and the order are the app's: the server says only when.
 The charts read
 `GET /api/v1/history?from=&to=&granularity=day|week`, the tool
 `get_history`: every day of a span of at most 366 days up to today (the
-90 up to it by default), or its weeks, with what was eaten against the
+90 up to it by default), or its calendar weeks, Monday to Sunday, the
+last up to the span's last day, with what was eaten against the
 day's target, the measurements, the trend weight and the TDEE
 calibration measures up to each day, as the summary computes them, of
 the days that are over: today's are the summary's, up to yesterday,
@@ -479,6 +480,20 @@ The replacement:
   doubts say what is missing: `few_days`, `few_weigh_ins`,
   `few_logged_days`, `wide_interval`. Too few days is the only doubt of
   a window that has them, as only the days to come settle it.
+- **On the way to an estimate,** the summary says how far the window is
+  from one, so the first weeks of logging show something being built:
+  what it has of each thing an estimate needs against the least it needs
+  (`needs`: the days, the logged days between the first weigh-in and the
+  last, the weigh-ins and the days between the first and the last), what
+  a trusted one needs (`trust`: the widest ± and the user's weigh-ins
+  and logged days a week), and about when a first estimate comes
+  (`expected`, `calibration.Expected`): the first day whose window would
+  have them, if the days to come are logged and weighed in as often as
+  the last 14 were, counted by those shares, and as a phase that starts
+  meanwhile moves the window; none when they had no meal or no
+  weigh-in, or past 90 days. The app says these numbers, never its own:
+  the counts ticked once met, the day, and of a TDEE not trusted yet, a
+  sentence for each doubt.
 - **Known limits,** for the real data to settle (#116): trusting only
   narrow intervals favours windows whose autocorrelation came out low,
   so trusted intervals cover less than 80 % when much water carries
@@ -534,7 +549,8 @@ The replacement:
     With fewer than 3 logged days after it, or none before, it is a
     change. A window needs 14 days of the phase after them, so until
     the phase's 28th day the estimate is the latest one from before the
-    phase, marked as such, with no verdict on the phase. It goes back
+    phase, marked as such, with no verdict on the phase, and the summary
+    says that last day (`before_phase_until`). It goes back
     past a phase too short to give one, as a diet break, but not past
     one with days enough and too little data in them, nor to a window
     that ends 42 days or more before: an estimate from before those
@@ -969,7 +985,9 @@ the first spec.
     plan works on the week's average). It has what was eaten against
     its target in a ring and the macros' bars, beside the TDEE and what
     is left of it after what was eaten, live through the day (a day
-    before: how far under or over it). Within 5 % of the kcal target
+    before: how far under or over it); until there is a TDEE, in its
+    place, calibration's counts against what it needs and about when a
+    first comes (§7). Within 5 % of the kcal target
     either way, and 100 kcal at least, a day is on it, in the brand's
     colour; past that, the ring, and the week's mini rings and bars
     above the target's line, run on in a warm neutral (`--over`),
@@ -991,6 +1009,20 @@ the first spec.
     one axis of values and a legend of its card's; to a screen reader it
     is an image with a summary, and the weeks' table says the charts in
     text.
+  - The progress leads with the verdict on the phase, or, until the TDEE
+    is reliable, with calibration on its way to it (§7); without a phase
+    the TDEE still leads, the way to a plan after it. The weight's axis
+    holds the weights: a goal far off them is said, not drawn. The TDEE
+    and intake chart shades the space between the TDEE and the last 7
+    days' intake, and says what it comes to ("You eat about 500 kcal under
+    what you burn: about −0.5 kg a week"), at 7700 kcal a kg, the
+    server's (`limits.json`). The weeks are calendar weeks, Monday to
+    Sunday, as everywhere in the app. Sleep, the resting heart rate and
+    the HRV in small are the last 7 days' average against the usual (the
+    summary's recovery), in words and an arrow, a line of the 7 days'
+    average in a neutral colour over the usual range; each tile is one
+    button to its whole chart, and what recovery flags is a sentence of
+    the hero's. Sleep is hours and minutes everywhere ("6 h 52").
   - i18n without a library: each language's text is a typed object
     (`web/src/i18n`), so a key missing in one language fails the type
     check. Paraglide JS was the plan, but its compiler loads plugins

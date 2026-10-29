@@ -207,7 +207,8 @@ A change is done when:
   - the web app's table of names' keys after `food.Key` or
     `golang.org/x/text` changes
     (`go test ./internal/domain/food -run TestWebKey -update`);
-  - the web app's copy of the limits it checks its forms by,
+  - the web app's copy of the limits it checks its forms by, and of the
+    energy of a kg it says a deficit in,
     `web/src/lib/limits.json`, after one of them changes
     (`go test ./internal/api -run TestWebLimits -update`);
 - the docs say what changed: README, these conventions, `DESIGN.md` for

@@ -3,6 +3,7 @@ package api_test
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -106,12 +107,18 @@ func TestGetHistory(t *testing.T) {
 	}
 }
 
-// A history by week has a row for each 7 days ending on to.
+// A history by week has a row for each calendar week, Monday to Sunday,
+// the last up to to.
 func TestGetHistoryByWeek(t *testing.T) {
 	t.Parallel()
 
 	in, session := signedIn(t)
 	today := saveHistory(t, in)
+	if today != (day.Date{Year: 2026, Month: time.October, Day: 21}) {
+		t.Fatalf("today is %s, want Wednesday 21 October", today)
+	}
+	// From Wednesday the 7th to Tuesday the 20th: the week of the 5th,
+	// the 12th's, and the 19th's to the 20th.
 	rec := in.do(t, http.MethodGet, "/api/v1/history?granularity=week&from="+today.AddDays(-14).String()+"&to="+today.AddDays(-1).String(),
 		"", []*http.Cookie{session}, nil)
 	var b struct {
@@ -126,9 +133,17 @@ func TestGetHistoryByWeek(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &b); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	if len(b.Days) != 0 || len(b.Weeks) != 2 || b.Weeks[1].To != today.AddDays(-1).String() || b.Weeks[0].From != today.AddDays(-14).String() ||
-		b.Weeks[1].LoggedDays != 7 || b.Weeks[1].Kcal != 2000 {
-		t.Errorf("weeks = %+v", b)
+	type week struct {
+		from, to string
+		logged   int
+	}
+	var got []week
+	for _, w := range b.Weeks {
+		got = append(got, week{w.From, w.To, w.LoggedDays})
+	}
+	want := []week{{"2026-10-05", "2026-10-11", 7}, {"2026-10-12", "2026-10-18", 7}, {"2026-10-19", "2026-10-20", 2}}
+	if len(b.Days) != 0 || !slices.Equal(got, want) || b.Weeks[2].Kcal != 2000 {
+		t.Errorf("weeks = %+v, want %+v of 2000 kcal", got, want)
 	}
 }
 

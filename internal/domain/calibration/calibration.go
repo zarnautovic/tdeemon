@@ -39,14 +39,15 @@ const (
 	DoubtWideInterval = "wide_interval"
 )
 
-// What an estimate needs at all: six weigh-ins, two weeks of someone who
-// weighs in thrice a week, from first to last at least a week apart, and
-// a week of logged days. Three weigh-ins over two days would give a slope
-// of water, and two logged days a spread of nothing.
+// What an estimate needs at all, besides Params.MinDays: six weigh-ins,
+// two weeks of someone who weighs in thrice a week, from first to last at
+// least a week apart, and a week of logged days. Three weigh-ins over two
+// days would give a slope of water, and two logged days a spread of
+// nothing.
 const (
-	minWeighIns     = 6
-	minWeighInsSpan = 7
-	minLoggedDays   = 7
+	MinWeighIns     = 6
+	MinWeighInsSpan = 7
+	MinLoggedDays   = 7
 )
 
 // week is the end of a window whose data a trusted estimate needs too,
@@ -186,6 +187,18 @@ type Estimate struct {
 	// in the window's last 7 days.
 	Days, LoggedDays, WeighIns       int
 	RecentLoggedDays, RecentWeighIns int
+	// SpanLoggedDays is how many logged days lie from the window's first
+	// weigh-in to its last, whose intake the slope measures; the window's
+	// LoggedDays while its weigh-ins are too few for a slope. WeighInDays
+	// is how many days the first weigh-in is before the last, 0 for fewer
+	// than two. An estimate needs Params.MinDays days, MinLoggedDays of
+	// the first and MinWeighIns weigh-ins, MinWeighInsSpan of the second.
+	SpanLoggedDays, WeighInDays int
+	// OwnFrom is, while BeforePhase, the first day a window that ends on
+	// it holds Params.MinDays of the days after the intake last changed,
+	// past their first Params.WaterDays: from it on at the latest, the
+	// estimate is of those days, or there is none.
+	OwnFrom day.Date
 	// TrendKg is the trend weight on the last day Calibrate was asked
 	// for, from the weigh-ins up to it, also when the window ends before
 	// the phase; 0 before the first weigh-in. TrendDate is the day of the
@@ -260,6 +273,12 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 	changes := intakeChanges(days, phases, last, p)
 	change := latestChange(changes, last.AddDays(1))
 	e := window(days, last, change, first, p)
+	// The days since the change start past its water days, or at the
+	// first data.
+	own := change.AddDays(p.WaterDays)
+	if own.Before(first) {
+		own = first
+	}
 	for e.Days < p.MinDays && !change.IsZero() {
 		before := change.AddDays(-1)
 		if last.DaysSince(before) >= p.WindowDays {
@@ -269,6 +288,7 @@ func Calibrate(days map[day.Date]Day, phases []plan.Phase, last day.Date, p Para
 		if b := window(days, before, change, first, p); b.Days >= p.MinDays {
 			if b.Measured {
 				b.BeforePhase = true
+				b.OwnFrom = own.AddDays(p.MinDays - 1)
 				e = b
 			}
 			break
@@ -539,7 +559,11 @@ func measure(days map[day.Date]Day, from, to day.Date, p Params) Estimate {
 		span = loggedKcal(kcal[int(xs[0]) : int(xs[len(xs)-1])+1])
 		dt.spanLogged = len(span)
 	}
-	e.Measured = e.Days >= p.MinDays && dt.spread && dt.spanLogged >= minLoggedDays
+	e.SpanLoggedDays = dt.spanLogged
+	if len(xs) > 1 {
+		e.WeighInDays = int(xs[len(xs)-1] - xs[0])
+	}
+	e.Measured = e.Days >= p.MinDays && dt.spread && dt.spanLogged >= MinLoggedDays
 	if e.Measured {
 		f := regress(xs, kgs)
 		e.IntakeKcal = mean(span)
@@ -570,9 +594,9 @@ func loggedKcal(kcal []float64) []float64 {
 }
 
 // spread reports whether the weigh-ins on the days xs, in order, are
-// enough for a slope: minWeighIns of them, minWeighInsSpan days apart.
+// enough for a slope: MinWeighIns of them, MinWeighInsSpan days apart.
 func spread(xs []float64) bool {
-	return len(xs) >= minWeighIns && xs[len(xs)-1]-xs[0] >= minWeighInsSpan
+	return len(xs) >= MinWeighIns && xs[len(xs)-1]-xs[0] >= MinWeighInsSpan
 }
 
 // Logged reports whether d's intake counts: a complete day with a meal
@@ -600,7 +624,7 @@ func doubts(e Estimate, dt data, p Params) []string {
 	if perWeek(dt.weighIns, dt.weekDays) < p.WeighIns || !dt.spread || dt.emptyWeeks > 0 || float64(e.RecentWeighIns) < p.WeighIns {
 		out = append(out, DoubtFewWeighIns)
 	}
-	if perWeek(dt.logged, dt.weekDays) < p.LoggedDays || dt.spanLogged < minLoggedDays || float64(e.RecentLoggedDays) < p.LoggedDays {
+	if perWeek(dt.logged, dt.weekDays) < p.LoggedDays || dt.spanLogged < MinLoggedDays || float64(e.RecentLoggedDays) < p.LoggedDays {
 		out = append(out, DoubtFewLoggedDays)
 	}
 	// Not "wider than": an interval that is no number is not narrow.
@@ -633,7 +657,7 @@ type fit struct {
 }
 
 // regress fits a line to the weigh-ins kgs on the days xs, which are
-// distinct and in order, at least minWeighIns of them. The error of the
+// distinct and in order, at least MinWeighIns of them. The error of the
 // slope assumes independent residuals, which weigh-ins on following days
 // are not (water and salt carry over), so it is widened by their lag-1
 // autocorrelation, and the independent weigh-ins it counts are fewer.

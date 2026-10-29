@@ -300,6 +300,21 @@ func TestDaysSince(t *testing.T) {
 	}
 }
 
+func TestWeekStart(t *testing.T) {
+	t.Parallel()
+
+	// 26 October 2026 is a Monday: its week runs to Sunday 1 November.
+	monday := Date{2026, time.October, 26}
+	for i := range 7 {
+		if got := monday.AddDays(i).WeekStart(); got != monday {
+			t.Errorf("%s.WeekStart() = %s, want %s", monday.AddDays(i), got, monday)
+		}
+	}
+	if got := monday.AddDays(-1).WeekStart(); got != monday.AddDays(-7) {
+		t.Errorf("Sunday's week starts on %s, want the Monday before", got)
+	}
+}
+
 func TestCompare(t *testing.T) {
 	t.Parallel()
 

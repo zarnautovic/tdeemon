@@ -16,6 +16,8 @@ export interface Words {
   day: (date: string) => string
   number: (n: number, digits?: number) => string
   percent: (n: number, digits?: number) => string
+  // Hours of sleep, in hours and minutes: 6 h 52.
+  hm: (hours: number) => string
   names: {
     weighIn: string
     trend: string
@@ -24,6 +26,7 @@ export interface Words {
     interval: string
     intake: string
     target: string
+    gap: string
     average: string
     rhr: string
     hrv: string
@@ -41,7 +44,6 @@ export interface Words {
     tdee: (kcal: string, half: string) => string
     eaten: (kcal: string) => string
     target: (kcal: string) => string
-    hours: (hours: string) => string
     average: (hours: string) => string
     bpm: (bpm: string) => string
     ms: (ms: string) => string
@@ -189,16 +191,37 @@ export function reachOf(values: number[]): Option {
   return { min: Math.floor(lo / step) * step, max: Math.ceil(hi / step) * step, interval: step }
 }
 
+// weightsOf are the weigh-ins and the trend weights of the days.
+function weightsOf(days: HistoryDay[]): number[] {
+  return days.flatMap((d) => [d.weight_kg, d.trend_kg]).filter((v) => v !== undefined)
+}
+
+// goalShown reports whether the weight chart draws a goal: within the
+// axis the weights reach, from a step below them to one above. One
+// further off would squeeze the weights into a strip; the card says it
+// in words instead.
+export function goalShown(days: HistoryDay[], goalKg: number | undefined): boolean {
+  const kg = weightsOf(days)
+  const reach = reachOf(kg)
+  return (
+    goalKg !== undefined &&
+    typeof reach.min === 'number' &&
+    typeof reach.max === 'number' &&
+    reach.min <= goalKg &&
+    goalKg <= reach.max
+  )
+}
+
 // weightOption is the weigh-ins as dots and the trend weight as a line,
-// with the phase's goal as a dashed line when it has one. The axis reaches
-// the goal too, which is seldom among the weights.
+// with the phase's goal as a dashed line when it is near them
+// (goalShown). The axis reaches the weights alone.
 export function weightOption(
   days: HistoryDay[],
   w: Words,
   c: ChartColors,
   goalKg?: number,
 ): Option {
-  const kg = days.flatMap((d) => [d.weight_kg, d.trend_kg]).filter((v) => v !== undefined)
+  const goal = goalShown(days, goalKg) ? goalKg : undefined
   return {
     ...base(days, w, c, {
       axis: (n) => w.number(n, 1),
@@ -206,7 +229,7 @@ export function weightOption(
         ...(d.weight_kg === undefined ? [] : [w.tips.kg(w.number(d.weight_kg, 1))]),
         ...(d.trend_kg === undefined ? [] : [w.tips.trend(w.number(d.trend_kg, 1))]),
       ],
-      reach: reachOf(goalKg === undefined || kg.length === 0 ? kg : [...kg, goalKg]),
+      reach: reachOf(weightsOf(days)),
     }),
     series: [
       {
@@ -222,7 +245,7 @@ export function weightOption(
         days.map((d): Point => value(d.trend_kg)),
         {
           lineStyle: { color: c.primary, width: 2.5 },
-          ...(goalKg === undefined
+          ...(goal === undefined
             ? {}
             : {
                 markLine: {
@@ -232,9 +255,9 @@ export function weightOption(
                   label: {
                     color: c.warning,
                     position: 'insideEndTop',
-                    formatter: `${w.names.goal} ${w.number(goalKg, 1)}`,
+                    formatter: `${w.names.goal} ${w.number(goal, 1)}`,
                   },
-                  data: [{ yAxis: goalKg }],
+                  data: [{ yAxis: goal }],
                 },
               }),
         },
@@ -243,13 +266,28 @@ export function weightOption(
   }
 }
 
+// eaten7 is what was eaten of the days calibration counts, each day's 7
+// days' average up to it.
+export function eaten7(days: HistoryDay[]): Point[] {
+  return average7(days.map((d): Point => (counted(d) ? value(d.intake?.kcal) : null)))
+}
+
 // tdeeOption is the TDEE measured up to each day, with its 80 % interval
-// as a band, what was eaten as dots, and the target as its 7 days'
-// average, a dashed line: the days' own, a training day's and a rest
-// day's in turn, would zigzag (a tooltip says the day's own). What was
-// eaten is of the days calibration counts: today's, not over yet, would
-// be a dot far below the others.
+// as a band, what was eaten as dots, the space between the TDEE and the 7
+// days' average of what was eaten shaded (a deficit, or a surplus), and
+// the target as its 7 days' average, a dashed line: the days' own, a
+// training day's and a rest day's in turn, would zigzag (a tooltip says
+// the day's own). What was eaten is of the days calibration counts:
+// today's, not over yet, would be a dot far below the others.
 export function tdeeOption(days: HistoryDay[], w: Words, c: ChartColors): Option {
+  const eaten = eaten7(days)
+  // The gap's foot and its height, on the days that have both.
+  const gap = days.map((d, i) => {
+    const kcal = eaten[i]
+    return d.tdee === undefined || kcal === null || kcal === undefined
+      ? undefined
+      : { foot: Math.min(d.tdee.kcal, kcal), height: Math.abs(d.tdee.kcal - kcal) }
+  })
   return {
     ...base(days, w, c, {
       axis: (n) => w.number(n),
@@ -279,6 +317,25 @@ export function tdeeOption(days: HistoryDay[], w: Words, c: ChartColors): Option
         itemStyle: { color: c.blue },
         areaStyle: { color: c.blue, opacity: 0.16 },
         data: days.map((d): Point => (d.tdee ? 2 * d.tdee.half_width : null)),
+      },
+      {
+        // The gap's foot, not drawn: the gap stacks on it.
+        name: 'gapFoot',
+        type: 'line',
+        stack: 'gap',
+        showSymbol: false,
+        lineStyle: { opacity: 0 },
+        data: gap.map((g): Point => g?.foot ?? null),
+      },
+      {
+        name: w.names.gap,
+        type: 'line',
+        stack: 'gap',
+        showSymbol: false,
+        lineStyle: { opacity: 0 },
+        itemStyle: { color: c.neutral },
+        areaStyle: { color: c.neutral, opacity: 0.22 },
+        data: gap.map((g): Point => g?.height ?? null),
       },
       line(
         w.names.tdee,
@@ -358,8 +415,8 @@ export function sleepOption(days: HistoryDay[], w: Words, c: ChartColors): Optio
       tip: (d, i) => {
         const mean = average[i]
         return [
-          ...(d.sleep_h === undefined ? [] : [w.tips.hours(w.number(d.sleep_h, 1))]),
-          ...(mean === null || mean === undefined ? [] : [w.tips.average(w.number(mean, 1))]),
+          ...(d.sleep_h === undefined ? [] : [w.hm(d.sleep_h)]),
+          ...(mean === null || mean === undefined ? [] : [w.tips.average(w.hm(mean))]),
         ]
       },
       reach: { min: 0 },

@@ -1863,6 +1863,24 @@
         ],
         "type": "object"
       },
+      "NeedBody": {
+        "additionalProperties": false,
+        "properties": {
+          "has": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "need": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "has",
+          "need"
+        ],
+        "type": "object"
+      },
       "NotesInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -2563,6 +2581,24 @@
         },
         "type": "object"
       },
+      "RangeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "high": {
+            "format": "double",
+            "type": "number"
+          },
+          "low": {
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "low",
+          "high"
+        ],
+        "type": "object"
+      },
       "RecentMealBody": {
         "additionalProperties": false,
         "properties": {
@@ -2656,6 +2692,10 @@
             "format": "double",
             "type": "number"
           },
+          "hrv_usual": {
+            "$ref": "#/components/schemas/RangeBody",
+            "description": "Its usual range: the base, 15 % either way."
+          },
           "resting_hr": {
             "description": "The last 7 days' average resting heart rate, of 4 days or more.",
             "format": "double",
@@ -2665,6 +2705,10 @@
             "description": "The 21 days' before them, of 5 days or more.",
             "format": "double",
             "type": "number"
+          },
+          "resting_hr_usual": {
+            "$ref": "#/components/schemas/RangeBody",
+            "description": "Its usual range: the base, 5 % either way."
           },
           "sleep_h": {
             "description": "The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends.",
@@ -3083,12 +3127,22 @@
             "description": "The estimate is of the days before the current phase, whose own are too few yet: no verdict on the phase.",
             "type": "boolean"
           },
+          "before_phase_until": {
+            "description": "While before_phase, the last day the summary gives that estimate, at the latest: from the next, the phase's own days, after their first 14, are enough for a window, which may still hold too little for an estimate.",
+            "format": "date",
+            "type": "string"
+          },
           "doubts": {
             "description": "Why the estimate is missing or not trusted: few_days, few_weigh_ins, few_logged_days, wide_interval.",
             "items": {
               "type": "string"
             },
             "type": "array"
+          },
+          "expected": {
+            "description": "Without an estimate, the day the summary may first give one, if the days to come are logged and weighed in as often as the last 14 were: about then. Absent when they had no meal or no weigh-in, or more than 90 days ahead.",
+            "format": "date",
+            "type": "string"
           },
           "from": {
             "description": "The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday.",
@@ -3115,13 +3169,21 @@
             "type": "integer"
           },
           "measured": {
-            "description": "Whether the window held enough for an estimate; doubts say what is missing.",
+            "description": "Whether the window held enough for an estimate; doubts say what is missing, needs how far it is.",
             "type": "boolean"
+          },
+          "needs": {
+            "$ref": "#/components/schemas/TdeeNeedsBody",
+            "description": "What the window has of what an estimate needs: with each, it is measured."
           },
           "to": {
             "description": "The window's last day.",
             "format": "date",
             "type": "string"
+          },
+          "trust": {
+            "$ref": "#/components/schemas/TdeeTrustBody",
+            "description": "What a measured estimate needs to be trusted."
           },
           "trusted": {
             "description": "Whether its interval and data are enough for a verdict on the phase it measures: none on the current one while before_phase.",
@@ -3140,7 +3202,63 @@
           "to",
           "logged_days",
           "weigh_ins",
-          "doubts"
+          "doubts",
+          "needs",
+          "trust"
+        ],
+        "type": "object"
+      },
+      "TdeeNeedsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "$ref": "#/components/schemas/NeedBody",
+            "description": "The window's days, which start at the first meal: none before one."
+          },
+          "logged_days": {
+            "$ref": "#/components/schemas/NeedBody",
+            "description": "The logged days from the first weigh-in to the last; the window's, while its weigh-ins are too few for a slope."
+          },
+          "weigh_in_days": {
+            "$ref": "#/components/schemas/NeedBody",
+            "description": "How many days the first weigh-in is before the last."
+          },
+          "weigh_ins": {
+            "$ref": "#/components/schemas/NeedBody",
+            "description": "The window's weigh-ins."
+          }
+        },
+        "required": [
+          "days",
+          "logged_days",
+          "weigh_ins",
+          "weigh_in_days"
+        ],
+        "type": "object"
+      },
+      "TdeeTrustBody": {
+        "additionalProperties": false,
+        "properties": {
+          "half_width": {
+            "description": "The widest half of its interval, in kcal a day.",
+            "format": "double",
+            "type": "number"
+          },
+          "logged_days": {
+            "description": "The fewest logged days a week, over the window's whole weeks and in its last 7 days: the user's limits.",
+            "format": "double",
+            "type": "number"
+          },
+          "weigh_ins": {
+            "description": "The fewest weigh-ins a week, over the window's whole weeks, each with one, and in its last 7 days: the user's limits.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "half_width",
+          "weigh_ins",
+          "logged_days"
         ],
         "type": "object"
       },
@@ -5545,13 +5663,13 @@
             }
           },
           {
-            "description": "day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out.",
+            "description": "day: a row a day; week: one for each calendar week, Monday to Sunday, the last up to to, the first maybe starting before from. A week of today leaves today's steps out.",
             "explode": false,
             "in": "query",
             "name": "granularity",
             "schema": {
               "default": "day",
-              "description": "day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out.",
+              "description": "day: a row a day; week: one for each calendar week, Monday to Sunday, the last up to to, the first maybe starting before from. A week of today leaves today's steps out.",
               "enum": [
                 "day",
                 "week"

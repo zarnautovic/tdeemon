@@ -7,15 +7,15 @@ import type { components } from '@/api/schema'
 import { Legend } from '@/components/charts/legend'
 import {
   counted,
+  eaten7,
+  goalShown,
   lineOption,
-  nightOf,
   sleepOption,
   stepsOf,
   stepsOption,
   tdeeOption,
   weightOption,
   type HistoryDay,
-  type Night,
   type Point,
   type Words,
 } from '@/components/charts/options'
@@ -23,7 +23,7 @@ import { useChartColors, type ChartColors } from '@/components/charts/palette'
 import { useChartWords } from '@/components/charts/words'
 import { LoadError } from '@/components/load-error'
 import { ChartCard } from '@/components/progress/chart-card'
-import { MetricTile } from '@/components/progress/metric-tile'
+import { MetricTile, type Usual } from '@/components/progress/metric-tile'
 import { Skeleton } from '@/components/progress/skeleton'
 import { byMonth, firstDay, spans, weeksOf, type Span } from '@/components/progress/span'
 import { card, entry } from '@/components/progress/styles'
@@ -31,8 +31,9 @@ import { VerdictHero } from '@/components/progress/verdict-hero'
 import { WeeklyTable } from '@/components/progress/weekly-table'
 import { buttonVariants } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented'
-import { useFormat } from '@/i18n/format'
+import { rounded, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
+import limits from '@/lib/limits.json'
 import { cn } from '@/lib/utils'
 
 type Phase = components['schemas']['PhaseBody']
@@ -159,6 +160,34 @@ export function ChartsPage() {
   )
 }
 
+// balanceOf is what was eaten, the last 7 days' average, against the TDEE
+// of the last day with both, in a sentence: about so many kcal under or
+// over it, to 50, and the weight that moves a week, at the server's kcal
+// a kg (limits.json).
+function balanceOf(
+  days: HistoryDay[],
+  t: ReturnType<typeof useMessages>,
+  f: ReturnType<typeof useFormat>,
+): string | undefined {
+  const eaten = eaten7(days)
+  for (let i = days.length - 1; i >= 0; i--) {
+    const tdee = days[i]?.tdee?.kcal
+    const kcal = eaten[i]
+    if (tdee === undefined || kcal === null || kcal === undefined) {
+      continue
+    }
+    const gap = Math.round((kcal - tdee) / 50) * 50
+    const kg = rounded((gap * 7) / limits.plan.kcalPerKg, 1)
+    if (kg === 0) {
+      return t.charts.balance.even
+    }
+    return gap < 0
+      ? t.charts.balance.under(f.number(-gap), f.signed(kg, 1))
+      : t.charts.balance.over(f.number(gap), f.signed(kg, 1))
+  }
+  return undefined
+}
+
 // Progress is the charts of the days, the table of the weeks and the
 // measurements in small.
 function Progress({
@@ -211,6 +240,14 @@ function Progress({
   const eatenSaid = kcal === undefined ? undefined : said.eaten(f.number(kcal), logged.length)
   const names = words.names
   const goal = phase?.goal_weight
+  // A goal far off the weights is said, not drawn.
+  const goalDrawn = goalShown(days, goal)
+  const weightNote = [
+    firstTrend === undefined || lastTrend === undefined || trends.length < 2
+      ? undefined
+      : t.charts.change(f.signed(lastTrend - firstTrend, 1)),
+    goal === undefined || goalDrawn ? undefined : t.charts.goal(f.number(goal, 1)),
+  ].filter((s) => s !== undefined)
 
   return (
     <div
@@ -222,17 +259,13 @@ function Progress({
           title={t.charts.weight}
           value={lastTrend === undefined ? undefined : t.charts.tips.kg(f.number(lastTrend, 1))}
           caption={t.charts.trend}
-          note={
-            firstTrend === undefined || lastTrend === undefined || trends.length < 2
-              ? undefined
-              : t.charts.change(f.signed(lastTrend - firstTrend, 1))
-          }
+          note={weightNote.length === 0 ? undefined : weightNote.join(' · ')}
           marks={[
             { name: names.weighIn, mark: 'dot', color: 'bg-chart-5' },
             { name: names.trend, mark: 'line', color: 'bg-chart-1' },
-            ...(goal === undefined
-              ? []
-              : [{ name: names.goal, mark: 'dashed' as const, color: 'border-warning' }]),
+            ...(goalDrawn
+              ? [{ name: names.goal, mark: 'dashed' as const, color: 'border-warning' }]
+              : []),
           ]}
           option={weightOption(days, words, colors, goal)}
           label={weightLabel}
@@ -242,10 +275,12 @@ function Progress({
           value={lastTDEE ? t.unit.kcal(f.number(lastTDEE.kcal)) : undefined}
           caption={lastTDEE ? t.charts.tdeeNow(f.number(lastTDEE.half_width)) : undefined}
           note={kcal === undefined ? undefined : t.charts.eaten(f.number(kcal), logged.length)}
+          lead={balanceOf(days, t, f)}
           marks={[
             { name: names.tdee, mark: 'line', color: 'bg-chart-2' },
             { name: names.interval, mark: 'band', color: 'bg-chart-2' },
             { name: names.intake, mark: 'dot', color: 'bg-chart-5' },
+            { name: names.gap, mark: 'band', color: 'bg-chart-5' },
             { name: names.target, mark: 'dashed', color: 'border-warning' },
           ]}
           option={tdeeOption(days, words, colors)}
@@ -262,15 +297,31 @@ function Progress({
   )
 }
 
-// The nights' classes by their length, as the charts' colours.
-const nights: Record<Night, string> = {
-  long: 'fill-chart-2',
-  middle: 'fill-chart-3',
-  short: 'fill-destructive',
+// usualOf is how the last 7 days' average (now) stands against its base,
+// as both are shown: by so much (by), which way, and whether that is
+// worse, as recovery flags it.
+function usualOf(
+  now: number | undefined,
+  base: number | undefined,
+  by: (now: number, base: number) => { difference: number; said: string },
+  worse: boolean,
+  t: ReturnType<typeof useMessages>,
+): Usual | undefined {
+  if (now === undefined || base === undefined) {
+    return undefined
+  }
+  const { difference, said } = by(now, base)
+  if (difference === 0) {
+    return { said: t.charts.asUsual, way: 'same', worse: false }
+  }
+  return { said: t.charts.vsUsual(said), way: difference > 0 ? 'up' : 'down', worse }
 }
 
 // Measurements are sleep, the resting heart rate, the HRV, the steps and
-// the body fat in small, each that has a value in the days.
+// the body fat in small, each that has a value in the days. Sleep, the
+// heart rate and the HRV are the last 7 days' average, as recovery has
+// them (GET /api/v1/summary), against the usual, the 21 days before
+// them; until it has them, the days' average.
 function Measurements({
   days,
   words,
@@ -284,6 +335,8 @@ function Measurements({
   const f = useFormat()
   const said = t.charts.said
   const tips = t.charts.tips
+  const recovery = $api.useQuery('get', '/api/v1/summary').data?.recovery
+  const flags = recovery?.flags ?? []
 
   const sleep = days.map((d): Point => d.sleep_h ?? null)
   const rhr = days.map((d): Point => d.resting_hr ?? null)
@@ -295,20 +348,20 @@ function Measurements({
   const hrvAverage = averageOf(hrv)
   const stepsAverage = averageOf(steps)
   const lastFat = fat.findLast((v): v is number => v !== null)
+  // A value of the last 7 days', else the days' average.
+  const caption = (lastWeek: number | undefined) =>
+    lastWeek === undefined ? t.charts.average : t.charts.lastWeek
 
   const tiles = [
     sleepAverage !== undefined && (
       <MetricTile
         key="sleep"
         title={t.charts.sleep}
-        value={tips.hours(f.number(sleepAverage, 1))}
-        caption={t.charts.average}
-        said={said.sleep(f.number(sleepAverage, 1))}
+        value={words.hm(recovery?.sleep_h ?? sleepAverage)}
+        caption={caption(recovery?.sleep_h)}
+        said={said.sleep(words.hm(sleepAverage))}
         values={sleep}
-        bars
-        classOf={(h) => nights[nightOf(h)]}
         legend={<SleepLegend />}
-        chartLegend={<SleepLegend average />}
         option={sleepOption(days, words, colors)}
       />
     ),
@@ -316,14 +369,25 @@ function Measurements({
       <MetricTile
         key="rhr"
         title={t.charts.rhr}
-        value={tips.bpm(f.number(rhrAverage))}
-        caption={t.charts.average}
+        value={tips.bpm(f.number(recovery?.resting_hr ?? rhrAverage))}
+        caption={caption(recovery?.resting_hr)}
+        // So many bpm, as both are shown.
+        usual={usualOf(
+          recovery?.resting_hr,
+          recovery?.resting_hr_base,
+          (now, base) => {
+            const difference = rounded(now) - rounded(base)
+            return { difference, said: f.signed(difference) }
+          },
+          flags.includes('high_resting_hr'),
+          t,
+        )}
         said={said.rhr(f.number(rhrAverage))}
         values={rhr}
-        className="stroke-chart-4"
+        band={recovery?.resting_hr_usual}
         option={lineOption(days, words, colors, {
           name: words.names.rhr,
-          color: colors.pink,
+          color: colors.blue,
           values: rhr,
           axis: (n) => words.number(n),
           tip: (v) => tips.bpm(f.number(v)),
@@ -334,14 +398,25 @@ function Measurements({
       <MetricTile
         key="hrv"
         title={t.charts.hrv}
-        value={tips.ms(f.number(hrvAverage))}
-        caption={t.charts.average}
+        value={tips.ms(f.number(recovery?.hrv ?? hrvAverage))}
+        caption={caption(recovery?.hrv)}
+        // A share of the base, as an HRV's own level is the person's.
+        usual={usualOf(
+          recovery?.hrv,
+          recovery?.hrv_base,
+          (now, base) => {
+            const difference = rounded(((now - base) / base) * 100)
+            return { difference, said: f.signedPercent(difference) }
+          },
+          flags.includes('low_hrv'),
+          t,
+        )}
         said={said.hrv(f.number(hrvAverage))}
         values={hrv}
-        className="stroke-chart-1"
+        band={recovery?.hrv_usual}
         option={lineOption(days, words, colors, {
           name: words.names.hrv,
-          color: colors.primary,
+          color: colors.blue,
           values: hrv,
           axis: (n) => words.number(n),
           tip: (v) => tips.ms(f.number(v)),
@@ -356,8 +431,6 @@ function Measurements({
         caption={t.charts.average}
         said={said.steps(f.number(stepsAverage))}
         values={steps}
-        bars
-        className="fill-chart-2"
         option={stepsOption(days, words, colors)}
       />
     ),
@@ -369,10 +442,9 @@ function Measurements({
         caption={t.charts.latest}
         said={said.bodyFat(f.percent(lastFat, 1))}
         values={fat}
-        className="stroke-chart-3"
         option={lineOption(days, words, colors, {
           name: words.names.bodyFat,
-          color: colors.amber,
+          color: colors.blue,
           values: fat,
           axis: (n) => words.percent(n),
           tip: (v) => f.percent(v, 1),
@@ -396,9 +468,9 @@ function Measurements({
   )
 }
 
-// SleepLegend says what the colours of the nights' bars mean, and of the
-// whole chart, its 7 days' average (average).
-function SleepLegend({ average = false }: { average?: boolean }) {
+// SleepLegend says what the colours of the nights' bars of the whole
+// chart mean, and its 7 days' average.
+function SleepLegend() {
   const names = useMessages().charts.names
 
   return (
@@ -407,9 +479,7 @@ function SleepLegend({ average = false }: { average?: boolean }) {
         { name: names.long, mark: 'bar', color: 'bg-chart-2' },
         { name: names.middle, mark: 'bar', color: 'bg-chart-3' },
         { name: names.short, mark: 'bar', color: 'bg-destructive' },
-        ...(average
-          ? [{ name: names.average, mark: 'dashed' as const, color: 'border-chart-5' }]
-          : []),
+        { name: names.average, mark: 'dashed', color: 'border-chart-5' },
       ]}
     />
   )

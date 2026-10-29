@@ -69,6 +69,7 @@
     "since": "1900-01-01"
   },
   "plan": {
-    "maxKcal": 15000
+    "maxKcal": 15000,
+    "kcalPerKg": 7700
   }
 }

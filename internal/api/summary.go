@@ -69,17 +69,45 @@ type trendBody struct {
 }
 
 type tdeeBody struct {
-	Measured    bool     `json:"measured" doc:"Whether the window held enough for an estimate; doubts say what is missing."`
-	Kcal        *float64 `json:"kcal,omitempty" doc:"The measured TDEE, in kcal a day."`
-	HalfWidth   *float64 `json:"half_width,omitempty" doc:"Half its 80 % interval."`
-	Trusted     bool     `json:"trusted" doc:"Whether its interval and data are enough for a verdict on the phase it measures: none on the current one while before_phase."`
-	BeforePhase bool     `json:"before_phase" doc:"The estimate is of the days before the current phase, whose own are too few yet: no verdict on the phase."`
-	From        string   `json:"from" format:"date" doc:"The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday."`
-	To          string   `json:"to" format:"date" doc:"The window's last day."`
-	LoggedDays  int      `json:"logged_days"`
-	WeighIns    int      `json:"weigh_ins"`
-	KgPerWeek   *float64 `json:"kg_per_week,omitempty" doc:"The weight's slope over the window, a minus being a loss."`
-	Doubts      []string `json:"doubts" nullable:"false" doc:"Why the estimate is missing or not trusted: few_days, few_weigh_ins, few_logged_days, wide_interval."`
+	Measured         bool          `json:"measured" doc:"Whether the window held enough for an estimate; doubts say what is missing, needs how far it is."`
+	Kcal             *float64      `json:"kcal,omitempty" doc:"The measured TDEE, in kcal a day."`
+	HalfWidth        *float64      `json:"half_width,omitempty" doc:"Half its 80 % interval."`
+	Trusted          bool          `json:"trusted" doc:"Whether its interval and data are enough for a verdict on the phase it measures: none on the current one while before_phase."`
+	BeforePhase      bool          `json:"before_phase" doc:"The estimate is of the days before the current phase, whose own are too few yet: no verdict on the phase."`
+	BeforePhaseUntil string        `json:"before_phase_until,omitempty" format:"date" doc:"While before_phase, the last day the summary gives that estimate, at the latest: from the next, the phase's own days, after their first 14, are enough for a window, which may still hold too little for an estimate."`
+	From             string        `json:"from" format:"date" doc:"The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday."`
+	To               string        `json:"to" format:"date" doc:"The window's last day."`
+	LoggedDays       int           `json:"logged_days"`
+	WeighIns         int           `json:"weigh_ins"`
+	KgPerWeek        *float64      `json:"kg_per_week,omitempty" doc:"The weight's slope over the window, a minus being a loss."`
+	Doubts           []string      `json:"doubts" nullable:"false" doc:"Why the estimate is missing or not trusted: few_days, few_weigh_ins, few_logged_days, wide_interval."`
+	Needs            tdeeNeedsBody `json:"needs" doc:"What the window has of what an estimate needs: with each, it is measured."`
+	Trust            tdeeTrustBody `json:"trust" doc:"What a measured estimate needs to be trusted."`
+	Expected         string        `json:"expected,omitempty" format:"date" doc:"Without an estimate, the day the summary may first give one, if the days to come are logged and weighed in as often as the last 14 were: about then. Absent when they had no meal or no weigh-in, or more than 90 days ahead."`
+}
+
+// tdeeNeedsBody is how far the window is from an estimate, by what
+// calibration counts (DESIGN.md §7).
+type tdeeNeedsBody struct {
+	Days        needBody `json:"days" doc:"The window's days, which start at the first meal: none before one."`
+	LoggedDays  needBody `json:"logged_days" doc:"The logged days from the first weigh-in to the last; the window's, while its weigh-ins are too few for a slope."`
+	WeighIns    needBody `json:"weigh_ins" doc:"The window's weigh-ins."`
+	WeighInDays needBody `json:"weigh_in_days" doc:"How many days the first weigh-in is before the last."`
+}
+
+// needBody is what a window has of something, and the least an estimate
+// needs of it.
+type needBody struct {
+	Has  int `json:"has"`
+	Need int `json:"need"`
+}
+
+// tdeeTrustBody is what a measured estimate needs to be trusted: the
+// doubts wide_interval, few_weigh_ins and few_logged_days.
+type tdeeTrustBody struct {
+	HalfWidth  float64 `json:"half_width" doc:"The widest half of its interval, in kcal a day."`
+	WeighIns   float64 `json:"weigh_ins" doc:"The fewest weigh-ins a week, over the window's whole weeks, each with one, and in its last 7 days: the user's limits."`
+	LoggedDays float64 `json:"logged_days" doc:"The fewest logged days a week, over the window's whole weeks and in its last 7 days: the user's limits."`
 }
 
 type verdictBody struct {
@@ -98,12 +126,20 @@ type verdictBody struct {
 }
 
 type recoveryBody struct {
-	SleepH        *float64 `json:"sleep_h,omitempty" doc:"The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends."`
-	RestingHR     *float64 `json:"resting_hr,omitempty" doc:"The last 7 days' average resting heart rate, of 4 days or more."`
-	RestingHRBase *float64 `json:"resting_hr_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
-	HRV           *float64 `json:"hrv,omitempty" doc:"The last 7 days' average HRV, of 4 days or more."`
-	HRVBase       *float64 `json:"hrv_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
-	Flags         []string `json:"flags" nullable:"false" doc:"What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base)."`
+	SleepH         *float64   `json:"sleep_h,omitempty" doc:"The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends."`
+	RestingHR      *float64   `json:"resting_hr,omitempty" doc:"The last 7 days' average resting heart rate, of 4 days or more."`
+	RestingHRBase  *float64   `json:"resting_hr_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
+	RestingHRUsual *rangeBody `json:"resting_hr_usual,omitempty" doc:"Its usual range: the base, 5 % either way."`
+	HRV            *float64   `json:"hrv,omitempty" doc:"The last 7 days' average HRV, of 4 days or more."`
+	HRVBase        *float64   `json:"hrv_base,omitempty" doc:"The 21 days' before them, of 5 days or more."`
+	HRVUsual       *rangeBody `json:"hrv_usual,omitempty" doc:"Its usual range: the base, 15 % either way."`
+	Flags          []string   `json:"flags" nullable:"false" doc:"What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base)."`
+}
+
+// rangeBody is a range of values, its ends included.
+type rangeBody struct {
+	Low  float64 `json:"low"`
+	High float64 `json:"high"`
 }
 
 // summaryDay is what the summary reads of one of the user's days beside
@@ -167,8 +203,18 @@ func (s *sessions) summary(ctx context.Context, p auth.Principal, weeks int, now
 	}
 	v := calibration.Judge(e, ph, t, data.training, pr, data.lim, data.params)
 	b := summaryBody{
-		Date: today.String(), Weeks: []weekBody{}, TDEE: newTDEEBody(e), Verdict: newVerdictBody(v),
+		Date: today.String(), Weeks: []weekBody{}, TDEE: newTDEEBody(e, data.params), Verdict: newVerdictBody(v),
 		Recovery: newRecoveryBody(recovery.Of(data.recoveryValues(today), today)),
+	}
+	if !e.Measured {
+		// The day after the window's last whose estimate it foresees.
+		if on := calibration.Expected(data.calDays, data.phases, last, data.params); !on.IsZero() {
+			b.TDEE.Expected = on.AddDays(1).String()
+		}
+	}
+	if !calibration.Started(data.calDays) {
+		// No meal up to yesterday: no day counts yet.
+		b.TDEE.Needs.Days.Has = 0
 	}
 	if e.TrendKg > 0 {
 		b.Trend = &trendBody{Kg: round2(e.TrendKg), Date: e.TrendDate.String()}
@@ -380,14 +426,27 @@ func (data summaryData) incomplete(from, to day.Date) []string {
 	return out
 }
 
-func newTDEEBody(e calibration.Estimate) tdeeBody {
+// newTDEEBody is the estimate e, which calibration made with p.
+func newTDEEBody(e calibration.Estimate, p calibration.Params) tdeeBody {
 	b := tdeeBody{
 		Measured: e.Measured, Trusted: e.Trusted, BeforePhase: e.BeforePhase,
 		From: e.From.String(), To: e.To.String(), LoggedDays: e.LoggedDays, WeighIns: e.WeighIns,
 		Doubts: append([]string{}, e.Doubts...),
+		Needs: tdeeNeedsBody{
+			Days:        needBody{Has: e.Days, Need: p.MinDays},
+			LoggedDays:  needBody{Has: e.SpanLoggedDays, Need: calibration.MinLoggedDays},
+			WeighIns:    needBody{Has: e.WeighIns, Need: calibration.MinWeighIns},
+			WeighInDays: needBody{Has: e.WeighInDays, Need: calibration.MinWeighInsSpan},
+		},
+		Trust: tdeeTrustBody{HalfWidth: p.TrustedKcal, WeighIns: p.WeighIns, LoggedDays: p.LoggedDays},
 	}
 	if e.Measured {
 		b.Kcal, b.HalfWidth, b.KgPerWeek = new(noNegativeZero(math.Round(e.TDEE))), new(math.Round(e.HalfWidth)), new(round2(e.KgPerWeek))
+	}
+	// A summary's window ends the day before it: on the day the phase's
+	// own window may first end, the summary still gives the one before.
+	if e.BeforePhase {
+		b.BeforePhaseUntil = e.OwnFrom.String()
 	}
 	return b
 }
@@ -406,10 +465,17 @@ func newVerdictBody(v calibration.Verdict) verdictBody {
 }
 
 func newRecoveryBody(r recovery.Recovery) recoveryBody {
-	return recoveryBody{
+	b := recoveryBody{
 		SleepH: positive(r.SleepH), RestingHR: positive(r.RestingHR), RestingHRBase: positive(r.RestingHRBase),
 		HRV: positive(r.HRV), HRVBase: positive(r.HRVBase), Flags: append([]string{}, r.Flags...),
 	}
+	if low, high := r.RestingHRUsual(); high > 0 {
+		b.RestingHRUsual = &rangeBody{Low: low, High: high}
+	}
+	if low, high := r.HRVUsual(); high > 0 {
+		b.HRVUsual = &rangeBody{Low: low, High: high}
+	}
+	return b
 }
 
 // averageOf returns the rounded average of vs, nil for none.

@@ -75,10 +75,13 @@ export function MetricCard({
   }
 
   // The value in its unit, as the language writes it: the steps without
-  // one, which the label says.
+  // one, which the label says, and sleep in hours and minutes, as
+  // everywhere.
   let value = f.number(metric.value, digits[metric.kind] ?? 0)
   if (metric.unit === '%') {
     value = f.percent(metric.value)
+  } else if (metric.kind === 'sleep_h') {
+    value = t.unit.hm(...f.hm(metric.value))
   } else if (metric.kind !== 'steps') {
     value = `${value} ${metric.unit}`
   }

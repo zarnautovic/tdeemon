@@ -8,13 +8,15 @@ import { cn } from '@/lib/utils'
 
 // ChartCard is one of the progress's main charts: its title and a line of
 // what it shows (note), its number now beside them (value, with what it
-// is, caption), the legend of its marks, and the chart, which label sums
-// up for a screen reader. Its tooltip stays within it.
+// is, caption), the sentence it comes to (lead), the legend of its marks,
+// and the chart, which label sums up for a screen reader. Its tooltip
+// stays within it.
 export function ChartCard({
   title,
   note,
   value,
   caption,
+  lead,
   marks,
   option,
   label,
@@ -23,6 +25,7 @@ export function ChartCard({
   note?: string | undefined
   value?: string | undefined
   caption?: string | undefined
+  lead?: string | undefined
   marks: Mark[]
   option: Option
   label: string
@@ -47,6 +50,7 @@ export function ChartCard({
           </p>
         )}
       </div>
+      {lead !== undefined && <p className="font-medium">{lead}</p>}
       <Legend marks={marks} />
       <Chart option={option} label={label} />
     </section>

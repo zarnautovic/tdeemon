@@ -1496,6 +1496,12 @@ export interface components {
             /** Format: double */
             value: number;
         };
+        NeedBody: {
+            /** Format: int64 */
+            has: number;
+            /** Format: int64 */
+            need: number;
+        };
         NotesInputBody: {
             /** @description What a coach should know of the user, in their words; empty deletes them. */
             notes: string;
@@ -1840,6 +1846,12 @@ export interface components {
              */
             unit?: "g" | "ml";
         };
+        RangeBody: {
+            /** Format: double */
+            high: number;
+            /** Format: double */
+            low: number;
+        };
         RecentMealBody: {
             /**
              * @description What the meal was logged through: api is the API with a token.
@@ -1874,6 +1886,8 @@ export interface components {
              * @description The 21 days' before them, of 5 days or more.
              */
             hrv_base?: number;
+            /** @description Its usual range: the base, 15 % either way. */
+            hrv_usual?: components["schemas"]["RangeBody"];
             /**
              * Format: double
              * @description The last 7 days' average resting heart rate, of 4 days or more.
@@ -1884,6 +1898,8 @@ export interface components {
              * @description The 21 days' before them, of 5 days or more.
              */
             resting_hr_base?: number;
+            /** @description Its usual range: the base, 5 % either way. */
+            resting_hr_usual?: components["schemas"]["RangeBody"];
             /**
              * Format: double
              * @description The last 7 days' average sleep, in hours, of 4 days or more, excluded ones too. The days are up to today, as a night's sleep is dated by the morning it ends.
@@ -2071,8 +2087,18 @@ export interface components {
         TdeeBody: {
             /** @description The estimate is of the days before the current phase, whose own are too few yet: no verdict on the phase. */
             before_phase: boolean;
+            /**
+             * Format: date
+             * @description While before_phase, the last day the summary gives that estimate, at the latest: from the next, the phase's own days, after their first 14, are enough for a window, which may still hold too little for an estimate.
+             */
+            before_phase_until?: string;
             /** @description Why the estimate is missing or not trusted: few_days, few_weigh_ins, few_logged_days, wide_interval. */
             doubts: string[];
+            /**
+             * Format: date
+             * @description Without an estimate, the day the summary may first give one, if the days to come are logged and weighed in as often as the last 14 were: about then. Absent when they had no meal or no weigh-in, or more than 90 days ahead.
+             */
+            expected?: string;
             /**
              * Format: date
              * @description The window's first day; the day after to when the window has no day yet, the current phase's first days reaching past yesterday.
@@ -2095,16 +2121,47 @@ export interface components {
             kg_per_week?: number;
             /** Format: int64 */
             logged_days: number;
-            /** @description Whether the window held enough for an estimate; doubts say what is missing. */
+            /** @description Whether the window held enough for an estimate; doubts say what is missing, needs how far it is. */
             measured: boolean;
+            /** @description What the window has of what an estimate needs: with each, it is measured. */
+            needs: components["schemas"]["TdeeNeedsBody"];
             /**
              * Format: date
              * @description The window's last day.
              */
             to: string;
+            /** @description What a measured estimate needs to be trusted. */
+            trust: components["schemas"]["TdeeTrustBody"];
             /** @description Whether its interval and data are enough for a verdict on the phase it measures: none on the current one while before_phase. */
             trusted: boolean;
             /** Format: int64 */
+            weigh_ins: number;
+        };
+        TdeeNeedsBody: {
+            /** @description The window's days, which start at the first meal: none before one. */
+            days: components["schemas"]["NeedBody"];
+            /** @description The logged days from the first weigh-in to the last; the window's, while its weigh-ins are too few for a slope. */
+            logged_days: components["schemas"]["NeedBody"];
+            /** @description How many days the first weigh-in is before the last. */
+            weigh_in_days: components["schemas"]["NeedBody"];
+            /** @description The window's weigh-ins. */
+            weigh_ins: components["schemas"]["NeedBody"];
+        };
+        TdeeTrustBody: {
+            /**
+             * Format: double
+             * @description The widest half of its interval, in kcal a day.
+             */
+            half_width: number;
+            /**
+             * Format: double
+             * @description The fewest logged days a week, over the window's whole weeks and in its last 7 days: the user's limits.
+             */
+            logged_days: number;
+            /**
+             * Format: double
+             * @description The fewest weigh-ins a week, over the window's whole weeks, each with one, and in its last 7 days: the user's limits.
+             */
             weigh_ins: number;
         };
         TokenBody: {
@@ -3694,7 +3751,7 @@ export interface operations {
                 from?: string;
                 /** @description The last day, today at the latest; left out, today. */
                 to?: string;
-                /** @description day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out. */
+                /** @description day: a row a day; week: one for each calendar week, Monday to Sunday, the last up to to, the first maybe starting before from. A week of today leaves today's steps out. */
                 granularity?: "day" | "week";
             };
             header?: never;

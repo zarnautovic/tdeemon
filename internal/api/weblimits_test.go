@@ -50,8 +50,11 @@ type webLimits struct {
 	History struct {
 		Since string `json:"since"`
 	} `json:"history"`
+	// Plan holds, beside the most kcal of a target, the energy of a kg of
+	// body weight, by which the progress says what a deficit comes to.
 	Plan struct {
-		MaxKcal float64 `json:"maxKcal"`
+		MaxKcal   float64 `json:"maxKcal"`
+		KcalPerKg float64 `json:"kcalPerKg"`
 	} `json:"plan"`
 }
 
@@ -75,7 +78,7 @@ func newWebLimits() webLimits {
 	l.Profile.MinHeightCm, l.Profile.MaxHeightCm, l.Profile.MaxAge = profile.MinHeightCm, profile.MaxHeightCm, profile.MaxAge
 	l.User.MaxNameLen = user.MaxNameLen
 	l.History.Since = api.HistorySince.String()
-	l.Plan.MaxKcal = plan.MaxKcal
+	l.Plan.MaxKcal, l.Plan.KcalPerKg = plan.MaxKcal, plan.KcalPerKg
 	return l
 }
 

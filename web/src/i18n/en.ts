@@ -94,6 +94,39 @@ export const en = {
     kcal: (n: string) => `${n} kcal`,
     g: (n: string) => `${n} g`,
     ml: (n: string) => `${n} ml`,
+    // Hours and minutes, the minutes in two digits: 6 h 52.
+    hm: (hours: string, minutes: string) => `${hours} h ${minutes}`,
+  },
+  // Calibration on its way to a TDEE it trusts (DESIGN.md §7): what it
+  // counts against what it needs, both the server's, and when a first
+  // TDEE may come.
+  calibration: {
+    title: 'Calibration',
+    lead: 'Your TDEE is measured once there are enough days, meals and weigh-ins.',
+    days: 'Days',
+    loggedDays: 'Logged days',
+    weighIns: 'Weigh-ins',
+    // So many of the fewest it needs: 9 of 14; short, 9/14.
+    of: (has: string, need: string) => `${has} of ${need}`,
+    ofShort: (has: string, need: string) => `${has}/${need}`,
+    // Beside a count that has what it needs, for a screen reader.
+    met: 'enough',
+    // The first weigh-in to the last, which need days between them.
+    apart: (has: string, need: string) => `${has} of ${need} days from the first to the last`,
+    expected: (date: string) => `First TDEE around ${date} if you keep this up.`,
+    // Without a day foreseen: no meal or no weigh-in lately.
+    start: 'Log your meals and weigh in, and the counts grow day by day.',
+    // A TDEE measured but not reliable yet, and what it needs to be.
+    unsure: (kcal: string, half: string) => `TDEE ≈ ${kcal} ± ${half} · not reliable yet.`,
+    doubts: {
+      wide_interval: (half: string, weighIns: string) =>
+        `It is once ± is ${half} or less; weighing in ${weighIns}× a week helps most.`,
+      few_weigh_ins: (weighIns: string, count: number) =>
+        `It needs ${weighIns} ${plural('en', count, { one: 'weigh-in', other: 'weigh-ins' })} a week, in the last week too.`,
+      few_logged_days: (days: string, count: number) =>
+        `It needs ${days} logged ${plural('en', count, { one: 'day', other: 'days' })} a week, in the last week too.`,
+    },
+    beforePhase: (date: string) => `New phase: until ${date} the TDEE is from the days before it.`,
   },
   // What a number is, an ⓘ beside it away (InfoTip): the ⓘ's name, the
   // number's, and two or three sentences, from DESIGN.md §7 in plain
@@ -235,7 +268,6 @@ export const en = {
       titleOfDay: 'Body',
       all: 'All measurements',
       trend: (kg: string) => `trend ${kg} kg`,
-      sleep: (hours: string, minutes: string) => `${hours} h ${minutes} min`,
       none: '—',
     },
     reason: 'Reason',
@@ -581,14 +613,37 @@ export const en = {
     hrv: 'HRV',
     steps: 'Steps',
     bodyFat: 'Body fat',
-    // What a card's number is: the average of the days, or the last value.
+    // What a card's number is: the average of the days, the last 7
+    // days', or the last value.
     average: 'average',
+    lastWeek: 'last 7 days',
     latest: 'latest',
     trend: 'trend',
     // Under the last day's TDEE: half its 80 % interval.
     tdeeNow: (half: string) => `TDEE ± ${half}`,
     // The trend weight's change over the days shown.
     change: (kg: string) => `${kg} kg in these days`,
+    // The phase's goal, said when it is far off the weights shown.
+    goal: (kg: string) => `Goal ${kg} kg`,
+    // The last 7 days' average against the 21 days' before them: +2 vs
+    // usual, -7% vs usual.
+    vsUsual: (difference: string) => `${difference} vs usual`,
+    asUsual: 'as usual',
+    // What recovery flags, in a sentence beside the verdict: "Sleep and
+    // HRV were worse than usual last week."
+    flags: { short_sleep: 'sleep', high_resting_hr: 'resting heart rate', low_hrv: 'HRV' },
+    worse: (things: string, count: number) =>
+      `${things.charAt(0).toUpperCase()}${things.slice(1)} ${plural('en', count, { one: 'was', other: 'were' })} worse than usual last week.`,
+    // The last 7 days' intake against the TDEE, and the weight it moves a
+    // week: "You eat about 500 kcal under what you burn: about -0.5 kg a
+    // week."
+    balance: {
+      under: (kcal: string, kg: string) =>
+        `You eat about ${kcal} kcal under what you burn: about ${kg} kg a week.`,
+      over: (kcal: string, kg: string) =>
+        `You eat about ${kcal} kcal over what you burn: about ${kg} kg a week.`,
+      even: 'You eat about what you burn: your weight holds.',
+    },
     eaten: (kcal: string, days: number) =>
       `Eaten ${kcal} kcal a day, over ${String(days)} logged ${plural('en', days, { one: 'day', other: 'days' })}`,
     // A day in a tooltip: "Mon, Oct 5".
@@ -601,6 +656,8 @@ export const en = {
       interval: '80% interval',
       intake: 'Eaten',
       target: 'Target, 7-day average',
+      // The space between the TDEE and the 7 days' intake.
+      gap: 'Eaten to TDEE, 7-day average',
       average: '7-day average',
       rhr: 'Resting heart rate',
       hrv: 'HRV',
@@ -617,8 +674,7 @@ export const en = {
       tdee: (kcal: string, half: string) => `TDEE ${kcal} ± ${half}`,
       eaten: (kcal: string) => `eaten ${kcal}`,
       target: (kcal: string) => `target ${kcal}`,
-      hours: (hours: string) => `${hours} h`,
-      average: (hours: string) => `7-day average ${hours} h`,
+      average: (hours: string) => `7-day average ${hours}`,
       bpm: (bpm: string) => `${bpm} bpm`,
       ms: (ms: string) => `${ms} ms`,
       steps: (steps: string, count: number) =>
@@ -638,7 +694,7 @@ export const en = {
       // whose own are too few yet; unsure, not to be trusted yet.
       tdee: (kcal: string, half: string, trust: 'trusted' | 'before' | 'unsure') =>
         `TDEE ${kcal} ± ${half} kcal a day, as of the last day${{ trusted: '', before: ', of the days before the intake last changed', unsure: ', not to be trusted yet' }[trust]}.`,
-      sleep: (hours: string) => `${hours} hours a night on average.`,
+      sleep: (hours: string) => `${hours} a night on average.`,
       rhr: (bpm: string) => `Resting heart rate ${bpm} bpm on average.`,
       hrv: (ms: string) => `HRV ${ms} ms on average.`,
       bodyFat: (fat: string) => `Body fat ${fat}, as of the last day with it.`,
@@ -668,17 +724,12 @@ export const en = {
       reasons: {
         no_phase: 'A phase of the plan sets the rate the weight is judged by.',
         no_target: 'The phase is judged once the plan has a target of kcal.',
-        no_estimate: 'Calibration measures the TDEE once it has enough days, weigh-ins and meals.',
         before_phase:
           'The phase is new: until its own days are enough, the TDEE is of the days before it.',
-        not_trusted: 'The TDEE is measured, but not reliable enough yet for a verdict.',
         no_tdee: 'The TDEE came out at 0 or less: are the meals all logged?',
       },
-      soFar: (logged: number, weighIns: number) =>
-        `So far ${String(logged)} logged ${plural('en', logged, { one: 'day', other: 'days' })} and ${String(weighIns)} ${plural('en', weighIns, { one: 'weigh-in', other: 'weigh-ins' })}.`,
       tdee: (kcal: string, half: string) => `TDEE ${kcal} ± ${half} kcal`,
       trusted: 'Reliable',
-      unsure: 'Not reliable yet',
       before: 'From before the phase',
       trend: (kg: string) => `Trend weight ${kg} kg`,
       eaten: (kcal: string, target: string) => `Eaten ${kcal} of ${target} kcal a day`,
@@ -688,7 +739,7 @@ export const en = {
     // The table of the weeks.
     weeks: {
       title: 'By week',
-      week: 'Week of',
+      week: 'Week',
       kcal: 'kcal',
       kcalSaid: 'kcal a day',
       protein: 'P',
@@ -697,7 +748,8 @@ export const en = {
       changeSaid: 'Change of the trend weight, kg',
       days: 'Days',
       daysSaid: 'Days logged',
-      daysOf: (n: number) => `${String(n)}/7`,
+      // Of the week's days that are over: all 7 but this week's.
+      daysOf: (n: number, of: number) => `${String(n)}/${String(of)}`,
       none: '—',
       all: (n: number) => `Show all weeks (${String(n)})`,
       fewer: 'Show fewer',

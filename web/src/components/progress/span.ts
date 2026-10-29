@@ -27,14 +27,22 @@ export function byMonth(from: string, today: string): boolean {
   return daysBetween(from, today) + 1 > 180
 }
 
-// weeksOf is the table of weeks of a span: each day of it up to
-// yesterday (today is open) in a week, at most a year's. from is the
-// history to ask for, a week before the first, whose trend weight the
-// first's change is measured from; count the weeks shown, 0 when the span
-// has none over yet.
+// weekStart is the Monday of a date's week: a calendar week runs from
+// Monday to Sunday, as the server's (day.Date.WeekStart).
+export function weekStart(date: string): string {
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay()
+  return addDays(date, -((weekday + 6) % 7))
+}
+
+// weeksOf is the table of weeks of a span: the calendar weeks with a day
+// of it up to yesterday (today is open), the last up to yesterday, at
+// most a year's. from is the history to ask for, the Monday a week before
+// the first, whose trend weight the first's change is measured from;
+// count the weeks shown, 0 when the span has none over yet.
 export function weeksOf(first: string, today: string): { from: string; to: string; count: number } {
   const to = addDays(today, -1)
-  const days = daysBetween(first, to) + 1
-  const count = Math.max(0, Math.min(mostWeeks, Math.ceil(days / 7)))
-  return { from: addDays(to, -7 * count), to, count }
+  const last = weekStart(to)
+  const weeks = to < first ? 0 : daysBetween(weekStart(first), last) / 7 + 1
+  const count = Math.max(0, Math.min(mostWeeks, weeks))
+  return { from: addDays(last, -7 * count), to, count }
 }

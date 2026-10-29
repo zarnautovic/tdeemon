@@ -36,6 +36,13 @@ function summaryWith(kcal?: number) {
       trusted: kcal !== undefined,
       weigh_ins: 30,
       ...(kcal === undefined ? {} : { kcal, half_width: 60 }),
+      needs: {
+        days: { has: kcal === undefined ? 9 : 42, need: 14 },
+        logged_days: { has: 40, need: 7 },
+        weigh_ins: { has: 30, need: 6 },
+        weigh_in_days: { has: 41, need: 7 },
+      },
+      trust: { half_width: 200, weigh_ins: 3, logged_days: 4 },
     },
     verdict: {
       action: 'none',
@@ -169,6 +176,51 @@ test("what is left to the TDEE is of what was eaten, whatever the day's target",
   await waitFor(() => {
     expect(termOf(summary, 'Left to TDEE')).toBe('1,273')
   })
+})
+
+// countsOf are calibration's counts in the summary, each as it reads.
+async function countsOf(summary: HTMLElement): Promise<(string | null)[]> {
+  const term = await within(summary).findByText('Calibration')
+  return within(term.parentElement ?? summary)
+    .getAllByRole('listitem')
+    .map((li) => li.textContent)
+}
+
+// Until calibration has a TDEE, it says in the TDEE's place how far it is
+// from one: its counts, short, and the day a first may come.
+test.each([
+  ['a target', eaten(1800)],
+  ['no target yet', day({ total: { kcal: 1800, protein: 120, carbs: 200, fat: 60 } })],
+])('without a TDEE, calibration says how far it is, with %s', async (_, shown) => {
+  fakeServer({
+    ...signedIn(),
+    ...dayServer(shown).routes,
+    'GET /api/v1/summary': () =>
+      Response.json({ ...summaryWith(), tdee: { ...summaryWith().tdee, expected: '2026-11-02' } }),
+  })
+  renderAt('/')
+
+  const summary = await summaryRegion()
+  expect(await countsOf(summary)).toEqual([
+    'Days9/14',
+    'Logged days40/7enough',
+    'Weigh-ins30/6enough',
+  ])
+  expect(within(summary).getByText('First TDEE around Nov 2 if you keep this up.')).toBeDefined()
+  expect(within(summary).queryByText('Left to TDEE')).toBeNull()
+})
+
+test("a day before says nothing of calibration now, nor a TDEE's day of one", async () => {
+  serve(eaten(2001, { date: before, status: 'complete' }), undefined, [
+    historyDay(before, 2001, 2250, 2450),
+  ])
+  renderAt(`/?date=${before}`)
+
+  const summary = await summaryRegion()
+  await waitFor(() => {
+    expect(termOf(summary, 'TDEE')).toBe('2,450')
+  })
+  expect(within(summary).queryByText('Calibration')).toBeNull()
 })
 
 test('a day before under its target says how far under, not what is left', async () => {

@@ -4,6 +4,7 @@ import { ChevronRight } from 'lucide-react'
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
 import type { Day } from '@/api/types'
+import { CalibrationRow } from '@/components/day/calibration-row'
 import { EnergyRing } from '@/components/day/energy-ring'
 import { kcalLeft, kcalStanding } from '@/components/day/left'
 import { MacroBar, type Macro } from '@/components/day/macro-bar'
@@ -31,7 +32,8 @@ const dots: Record<Verdict['rate'], string> = {
 // with what was eaten, the target, the TDEE calibration measures and what
 // is left of it after what was eaten, live through the day (or, of a day
 // before, how far under it the day stayed), each an ⓘ away from what it
-// is; each macro against its target; and the phase the day is in, which
+// is, and until calibration has a TDEE, how far it is from a first; each
+// macro against its target; and the phase the day is in, which
 // leads to the progress. A day before that went over its target says it
 // in a sentence beside the TDEE, not in an error's colour. A day before
 // any target shows what was eaten, and the way to a plan.
@@ -51,6 +53,9 @@ export function DaySummary({ day }: { day: Day }) {
     { params: { query: weekOf(day.date, today ?? day.date) } },
     { enabled: past },
   )
+  // Calibration on its way to a first TDEE, in the TDEE's place: now's,
+  // so not of a day before.
+  const calibrating = !past && summary.data?.tdee.measured === false ? summary.data.tdee : undefined
 
   if (target === undefined) {
     return (
@@ -62,6 +67,11 @@ export function DaySummary({ day }: { day: Day }) {
         <p className="text-small text-muted-foreground">
           {macros.map((m) => `${t.day.short[m]} ${f.grams(total[m])}`).join(' · ')}
         </p>
+        {calibrating !== undefined && (
+          <dl className="space-y-1 text-small">
+            <CalibrationRow tdee={calibrating} />
+          </dl>
+        )}
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-surface-2 p-3">
           <p className="text-small">{t.day.summary.noTarget}</p>
           <Link to="/plan" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
@@ -123,6 +133,11 @@ export function DaySummary({ day }: { day: Day }) {
               </dt>
               <dd className="text-right font-semibold">{f.number(Math.abs(left))}</dd>
             </>
+          )}
+          {calibrating !== undefined && (
+            <div className="col-span-2 space-y-1">
+              <CalibrationRow tdee={calibrating} />
+            </div>
           )}
         </dl>
       </div>

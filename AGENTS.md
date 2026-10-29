@@ -31,10 +31,11 @@ each change said in a toast whose Undo takes it back, each number of
 calibration's an ⓘ away from what it is, in English and Croatian) with
 the day (what was eaten against the target in a ring and the macros'
 bars, a day past it by more than 5 % in a warm colour, not an error's,
-with the TDEE, what is left of it and the phase, the
-week's days, the day's type, the meals as rows that open to their
-items, the check-in with calibration as a switch, the body's tiles and
-all the measurements in a sheet, a meal's corrections in a sheet that
+with the TDEE, what is left of it (until there is one, calibration's
+counts toward it) and the phase, the week's days, the day's type, the
+meals as rows that open to their items, the check-in with calibration
+as a switch, the body's tiles and all the measurements in a sheet,
+sleep in hours and minutes, a meal's corrections in a sheet that
 says its total as it changes, an item's amount with its unit and its
 other ways in a menu, its day picked by name and its time on a 24-hour
 clock, a meal repeated or deleted taken there, a meal logged by hand
@@ -49,11 +50,15 @@ the list chosen; a food's page with its energy and its split, its
 nutrition per 100 g or a serving, how often it was logged, logged again
 in its last amount, archived with Undo, and corrected in its own form,
 which warns when the kcal and the macros disagree; beside the list on
-a desktop), the progress (the phase's verdict as its hero, the weight
-and the TDEE against intake as charts, the weeks in a table, sleep,
-the heart, the steps and the body fat in small, each a chart a tap
-away, over 30 days to a year or the phase; ECharts loaded with them,
-in the theme's tokens), the plan (its phase as the hero, with its pace,
+a desktop), the progress (the phase's verdict as its hero, or until
+the TDEE is reliable calibration on its way to it, its counts against
+what it needs and about when a first comes; the weight, its goal drawn
+only near it, and the TDEE against intake, the space between them
+shaded and said, as charts, the calendar weeks in a table, sleep, the
+heart, the steps and the body fat in small, the last 7 days against
+the usual, each tile a button to a chart, over 30 days to a year or
+the phase; ECharts loaded with them, in the theme's tokens), the plan
+(its phase as the hero, with its pace,
 week, progress and the phases on a timeline, edited and the next one
 planned in a sheet, a proposal that waits, saying only what it changes,
 who made it, when it expires and what the data say beside it, marked
@@ -74,7 +79,7 @@ languages, exist.
 | --- | --- |
 | `cmd/tdeemon` | the binary: the server (configuration, wiring, start and stop) and the `user create`, `user set-password`, `user set-telegram`, `user set-locale` and `import-history` commands |
 | `internal/config` | settings from `TDEEMON_*` environment variables |
-| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day and its status), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `proposal` (a proposed change of the plan, the user's limits among it, each change with the state before and after, its life (pending, applied, rejected, expired, superseded, reverted) and its check against the limits; DESIGN.md §8), `calibration` (the trend weight, the measured TDEE with its interval, of the window up to a day or of a target's days, and the verdict on a phase, DESIGN.md §7), `recovery` (the last week's sleep, resting heart rate and HRV against the weeks before), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
+| `internal/domain` | the domain types and their rules, one package each: `user`, `day` (the logical day, its status and its calendar week), `food` (foods and nutrients), `meal` (items, totals, warnings), `metric` (a day's measurements and their merge rules), `profile` (sex, birth date and height, and the age, BMI, BMR and protein's reference mass that follow), `plan` (phases and their rates, targets by type of day, the type of a day), `limits` (the three levels of limits of a plan, and `Validate`, whose contract is docs/limits.md), `proposal` (a proposed change of the plan, the user's limits among it, each change with the state before and after, its life (pending, applied, rejected, expired, superseded, reverted) and its check against the limits; DESIGN.md §8), `calibration` (the trend weight, the measured TDEE with its interval, of the window up to a day or of a target's days, what it needs and about when a first comes, and the verdict on a phase, DESIGN.md §7), `recovery` (the last week's sleep, resting heart rate and HRV against the weeks before, and their usual range), `event` (who wrote what, for the audit trail and undo), `clientid` (the ids a client makes for a meal or an undo, so a retry is known), `text` (the rules for free text, shared by the others) |
 | `internal/auth` | credentials: password rules, argon2id hashes, session and API tokens, scopes, sealed values and who a request acts for |
 | `internal/ingest` | what devices and apps send (Health Auto Export, a simple JSON form) turned into a day's metrics: which value a day keeps, units, a check of each value; the days of workouts in Strong's CSV export; the archive of the bodies |
 | `internal/history` | the one-off import of a user's history from the predecessor: days' metrics and meals from its database, with the rest of a day's total, foods from its food table, and a plan file written from its goals note; and the split of its meals and of its table's combinations (DESIGN.md §10) |
