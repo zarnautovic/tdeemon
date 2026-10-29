@@ -27,6 +27,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
+	"github.com/zarnautovic/tdeemon/internal/off"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -73,6 +74,9 @@ type Config struct {
 	Limits limits.Limits
 	// IngestArchive keeps the raw bodies of the ingest; none when nil.
 	IngestArchive *ingest.Archive
+	// OpenFoodFacts looks up a barcode none of a user's foods has; none
+	// when nil.
+	OpenFoodFacts *off.Client
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
@@ -435,6 +439,7 @@ func register(a huma.API, info infoBody, s *sessions, o *oidcLogin) {
 	s.registerTokens(a)
 	s.registerPlan(a)
 	s.registerFoods(a)
+	s.registerBarcodes(a)
 	s.registerMeals(a)
 	s.registerChanges(a)
 	s.registerSettings(a)

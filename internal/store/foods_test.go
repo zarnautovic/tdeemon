@@ -638,6 +638,28 @@ func TestSaveFoodBarcodes(t *testing.T) {
 	}
 }
 
+// A scan finds a food by its barcode, archived too, among the user's own
+// foods alone.
+func TestFoodByBarcode(t *testing.T) {
+	t.Parallel()
+
+	db, ana, ivo := withTwoUsers(t)
+	anas := saveFood(t, db, ana, withBarcode(bar(), "96385074"))
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, anas.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	ivos := saveFood(t, db, ivo, withBarcode(bar(), "96385074"))
+	if got, err := db.FoodByBarcode(t.Context(), ana, "96385074"); err != nil || got.ID != anas.ID || !got.Archived {
+		t.Errorf("Ana's food of the barcode: %+v, %v; want her archived bar", got, err)
+	}
+	if got, err := db.FoodByBarcode(t.Context(), ivo, "96385074"); err != nil || got.ID != ivos.ID {
+		t.Errorf("Ivo's food of the barcode: %+v, %v; want his bar", got, err)
+	}
+	if _, err := db.FoodByBarcode(t.Context(), ana, "4006381333931"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a barcode no food of Ana's has: %v, want ErrNotFound", err)
+	}
+}
+
 // CorrectFood saves a food the user has, by its id, in the save's own
 // transaction: an id they have no food of is ErrNotFound, and saves
 // nothing, rather than a new food or the food of the same name.

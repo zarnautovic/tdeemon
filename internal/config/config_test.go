@@ -280,6 +280,34 @@ func TestLoadTelegramBotToken(t *testing.T) {
 	}
 }
 
+// Barcodes are looked up at the world's Open Food Facts, at a server of
+// one's own, or nowhere: off.
+func TestLoadOpenFoodFactsURL(t *testing.T) {
+	t.Parallel()
+
+	vars := required()
+	cfg, err := config.Load(env(vars))
+	if err != nil || cfg.OpenFoodFactsURL != "https://world.openfoodfacts.org" {
+		t.Fatalf("unset: %q, %v; want the world's", cfg.OpenFoodFactsURL, err)
+	}
+	for raw, want := range map[string]string{
+		"off":                          "",
+		"http://off.local:8080/":       "http://off.local:8080",
+		"https://hr.openfoodfacts.org": "https://hr.openfoodfacts.org",
+	} {
+		vars["TDEEMON_OPEN_FOOD_FACTS_URL"] = raw
+		if cfg, err := config.Load(env(vars)); err != nil || cfg.OpenFoodFactsURL != want {
+			t.Errorf("%q: %q, %v; want %q", raw, cfg.OpenFoodFactsURL, err, want)
+		}
+	}
+	for _, bad := range []string{"ftp://off.local", "https://", "https://off.local/?a=1", "no"} {
+		vars["TDEEMON_OPEN_FOOD_FACTS_URL"] = bad
+		if _, err := config.Load(env(vars)); err == nil || !strings.Contains(err.Error(), "TDEEMON_OPEN_FOOD_FACTS_URL") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
 func TestLoadOIDC(t *testing.T) {
 	t.Parallel()
 

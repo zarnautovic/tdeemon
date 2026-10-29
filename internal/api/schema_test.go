@@ -307,6 +307,11 @@ func answerCases() map[string]answerCase {
 			id := saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, in.clock.Now()), in.clock.Now())
 			in.do(t, http.MethodDelete, "/api/v1/meals/"+id.String(), "", []*http.Cookie{session}, nil)
 		},
+		"lookup-barcode": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+			in.do(t, http.MethodGet, "/api/v1/barcodes/3850000000015", "", []*http.Cookie{session}, nil)
+		},
 		"get-food": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())

@@ -28,6 +28,27 @@
         },
         "type": "object"
       },
+      "BarcodeOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "barcode": {
+            "description": "The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it.",
+            "type": "string"
+          },
+          "food": {
+            "$ref": "#/components/schemas/FoodBody",
+            "description": "Your food of the barcode, archived too."
+          },
+          "open_food_facts": {
+            "$ref": "#/components/schemas/OpenFoodFactsBody",
+            "description": "Without a food of yours, the product at Open Food Facts."
+          }
+        },
+        "required": [
+          "barcode"
+        ],
+        "type": "object"
+      },
       "ChangeBody": {
         "additionalProperties": false,
         "properties": {
@@ -818,7 +839,8 @@
               "label",
               "estimate",
               "user",
-              "dish"
+              "dish",
+              "off"
             ],
             "type": "string"
           }
@@ -902,7 +924,8 @@
               "label",
               "estimate",
               "user",
-              "dish"
+              "dish",
+              "off"
             ],
             "type": "string"
           }
@@ -1365,7 +1388,8 @@
               "label",
               "estimate",
               "user",
-              "dish"
+              "dish",
+              "off"
             ],
             "type": "string"
           },
@@ -2126,6 +2150,25 @@
         "required": [
           "name",
           "login_url"
+        ],
+        "type": "object"
+      },
+      "OpenFoodFactsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "food": {
+            "$ref": "#/components/schemas/FoodFields",
+            "description": "The product as a new food of the barcode, not saved: what a save of a food, or a meal's new food, takes once you have seen it."
+          },
+          "url": {
+            "description": "The product's page at Open Food Facts, whose data are open under the ODbL: say where they come from.",
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "food",
+          "url"
         ],
         "type": "object"
       },
@@ -3675,7 +3718,8 @@
               "label",
               "estimate",
               "user",
-              "dish"
+              "dish",
+              "off"
             ],
             "type": "string"
           }
@@ -4502,6 +4546,122 @@
         "summary": "Get who the request acts for",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/barcodes/{code}": {
+      "get": {
+        "description": "Needs a web session. Your food of a barcode, archived too; without one, the product of Open Food Facts as a new food, not saved, with its page there. A barcode misread, its check digit wrong, is refused (422). One neither has is 404, which names the product when Open Food Facts has it without its values; an Open Food Facts that does not answer is 502.",
+        "operationId": "lookup-barcode",
+        "parameters": [
+          {
+            "description": "An EAN-13, EAN-8, UPC-A or GTIN-14: its digits, the check digit last.",
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "description": "An EAN-13, EAN-8, UPC-A or GTIN-14: its digits, the check digit last.",
+              "examples": [
+                "3850000000015"
+              ],
+              "maxLength": 20,
+              "minLength": 8,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BarcodeOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "502": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "summary": "Look up a barcode",
+        "tags": [
+          "foods"
         ]
       }
     },
@@ -5401,7 +5561,8 @@
                 "label",
                 "estimate",
                 "user",
-                "dish"
+                "dish",
+                "off"
               ],
               "type": "string"
             }

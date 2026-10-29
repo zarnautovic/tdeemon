@@ -669,6 +669,30 @@ test("a food's barcodes, which a scan adds, go with it when the form saves it", 
   expect(server.sent[0]).toMatchObject({ id, barcodes: ['3850000000015', '96385074'] })
 })
 
+test('a food from Open Food Facts keeps it as its source when saved; one typed in is not offered it', async () => {
+  const server = foodServer(undefined, 'en', {
+    ...oats,
+    source: 'off',
+    barcodes: ['3850000000015'],
+  })
+  renderAt(`/foods/${id}?edit=true`)
+
+  const source = await screen.findByLabelText('Values from')
+  expect(source).toHaveProperty('value', 'off')
+  expect(within(source).getByRole('option', { name: 'Open Food Facts' })).toBeDefined()
+  fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
+  await waitFor(() => {
+    expect(server.sent).toHaveLength(1)
+  })
+  expect(server.sent[0]).toMatchObject({ source: 'off', barcodes: ['3850000000015'] })
+  cleanup()
+
+  foodServer()
+  renderAt(`/foods/${id}?edit=true`)
+  const typed = await screen.findByLabelText('Values from')
+  expect(within(typed).queryByRole('option', { name: 'Open Food Facts' })).toBeNull()
+})
+
 test('energy far from what the macros make is warned of, with theirs to take, and saved all the same', async () => {
   const server = foodServer()
   const router = renderAt('/foods/new')

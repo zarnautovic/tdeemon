@@ -59,7 +59,7 @@ type itemBody struct {
 	Unit     string       `json:"unit" enum:"g,ml,portion"`
 	// Nutrients are the item's own, for its amount.
 	Nutrients nutrientsBody `json:"nutrients"`
-	Source    string        `json:"source" enum:"label,estimate,user,dish"`
+	Source    string        `json:"source" enum:"label,estimate,user,dish,off"`
 	Note      string        `json:"note,omitempty"`
 }
 

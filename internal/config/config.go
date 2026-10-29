@@ -61,6 +61,10 @@ type Config struct {
 	// TelegramAPIURL is the Bot API's base URL: Telegram's, or a Bot API
 	// server of one's own.
 	TelegramAPIURL string
+	// OpenFoodFactsURL is the Open Food Facts server a barcode none of a
+	// user's foods has is looked up at; empty for none, so no request
+	// leaves the instance for it.
+	OpenFoodFactsURL string
 	// LogLevel is the minimum level that gets logged.
 	LogLevel slog.Level
 	// LogFormat is the log encoding.
@@ -152,6 +156,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		func() (err error) { cfg.BackupKeep, err = loadBackupKeep(get); return err },
 		func() (err error) { cfg.TelegramBotToken, err = loadTelegramBotToken(get); return err },
 		func() (err error) { cfg.TelegramAPIURL, err = loadTelegramAPIURL(get); return err },
+		func() (err error) { cfg.OpenFoodFactsURL, err = loadOpenFoodFactsURL(get); return err },
 	} {
 		errs = append(errs, load())
 	}
@@ -179,6 +184,20 @@ func loadTelegramAPIURL(get func(name, fallback string) string) (string, error) 
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return "", fmt.Errorf("%sTELEGRAM_API_URL %q: want an http or https URL of the Bot API", Prefix, raw)
+	}
+	return strings.TrimSuffix(raw, "/"), nil
+}
+
+// loadOpenFoodFactsURL reads the Open Food Facts server to look barcodes
+// up at, the world's unless set, or none for off.
+func loadOpenFoodFactsURL(get func(name, fallback string) string) (string, error) {
+	raw := get("OPEN_FOOD_FACTS_URL", "https://world.openfoodfacts.org")
+	if raw == "off" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("%sOPEN_FOOD_FACTS_URL %q: want an http or https URL of an Open Food Facts server, or off", Prefix, raw)
 	}
 	return strings.TrimSuffix(raw, "/"), nil
 }
@@ -351,6 +370,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("secret_key", "[redacted]"),
 		slog.String("telegram_bot_token", redactedIfSet(c.TelegramBotToken)),
 		slog.String("telegram_api_url", c.TelegramAPIURL),
+		slog.String("open_food_facts_url", c.OpenFoodFactsURL),
 		slog.Any("oidc", c.OIDC),
 		slog.Any("trusted_proxies", c.TrustedProxies),
 		slog.Any("limits", limitsValue(c.Limits)),

@@ -110,6 +110,7 @@ All settings come from environment variables:
 | `TDEEMON_LIMIT_<NAME>` | the column "Hard limit" of [docs/limits.md](docs/limits.md) | the instance's limits of a plan, such as `TDEEMON_LIMIT_KCAL_FLOOR_FEMALE=1000` for a clinician's patient; the names are in docs/limits.md, "The names of the limits". Never below the floor in the code, and some only tighter |
 | `TDEEMON_TELEGRAM_BOT_TOKEN` | — | the token of a Telegram bot (from @BotFather) that sends users their notifications and answers their commands ([Telegram](#telegram)) |
 | `TDEEMON_TELEGRAM_API_URL` | `https://api.telegram.org` | the Bot API, Telegram's or a [Bot API server](https://github.com/tdlib/telegram-bot-api) of your own; `http` only for one in your network, as the token is in every request |
+| `TDEEMON_OPEN_FOOD_FACTS_URL` | `https://world.openfoodfacts.org` | the [Open Food Facts](https://openfoodfacts.org) server where a barcode none of a user's foods has is looked up, its data open under the ODbL; `off` sends no request there |
 | `TZ` | system | default time zone of the instance |
 
 Every invalid or missing variable is reported at startup in one go.

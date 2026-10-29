@@ -22,6 +22,8 @@ export TDEEMON_BASE_URL=http://127.0.0.1:$port
 export TDEEMON_LOG_FORMAT=text
 export TDEEMON_BACKUP_KEEP=0
 export TDEEMON_LOG_LEVEL=warn
+# No test reaches the internet: a barcode no food has is no product.
+export TDEEMON_OPEN_FOOD_FACTS_URL=off
 TDEEMON_SECRET_KEY=$(head -c 32 /dev/urandom | base64)
 export TDEEMON_SECRET_KEY
 
