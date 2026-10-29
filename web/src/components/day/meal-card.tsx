@@ -1,5 +1,5 @@
 import { ChevronDown, Pencil, Repeat2, Trash2 } from 'lucide-react'
-import { useId, useRef, useState } from 'react'
+import { useId, useRef, useState, type RefObject } from 'react'
 
 import { statusOf } from '@/api/errors'
 import { useDeleteMeal, useLogMeal } from '@/api/meals'
@@ -35,13 +35,16 @@ function together(pairs: readonly string[]): string {
 // estimate, and how many items. A tap shows its items with how much of
 // each and what each brought, and the ways to change it (MealEditor, in a
 // sheet), repeat it today at this time, or delete it; a toast says what
-// was done, with what the server warned of it, and Undo.
+// was done, with what the server warned of it, and Undo. Deleted, in its
+// editor or from the card, the focus goes to afterDelete, as the card
+// goes with it.
 export function MealCard({
   meal,
   date,
   today,
   timeZone,
   startHour,
+  afterDelete,
 }: {
   meal: Meal
   date: string
@@ -50,6 +53,7 @@ export function MealCard({
   // The user's clock: its time zone and the hour a day starts at.
   timeZone: string
   startHour: number
+  afterDelete?: RefObject<HTMLElement | null>
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -79,9 +83,13 @@ export function MealCard({
       { title: t.toast.deleted(name) },
       { last: { action: 'meal.delete', entity: meal.id }, date },
     )
+    // The card goes with its Delete, and the focus in it.
+    afterDelete?.current?.focus()
   })
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  // Deleted in the editor, which closes on it.
+  const [deleted, setDeleted] = useState(false)
   // The button that opens the editor, which takes the focus back when it
   // closes, and the editor's first field.
   const change = useRef<HTMLButtonElement>(null)
@@ -206,6 +214,7 @@ export function MealCard({
               aria-label={t.meal.edit(name)}
               onClick={() => {
                 setEditing(true)
+                setDeleted(false)
               }}
             >
               <Pencil aria-hidden />
@@ -243,7 +252,7 @@ export function MealCard({
         onOpenChange={setEditing}
         title={t.meal.editTitle}
         initialFocus={first}
-        finalFocus={change}
+        finalFocus={deleted && afterDelete ? afterDelete : change}
         tall
         bare
       >
@@ -255,6 +264,10 @@ export function MealCard({
           startHour={startHour}
           first={first}
           onDone={() => {
+            setEditing(false)
+          }}
+          onDeleted={() => {
+            setDeleted(true)
             setEditing(false)
           }}
         />

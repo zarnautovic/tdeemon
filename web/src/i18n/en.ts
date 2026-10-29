@@ -237,6 +237,11 @@ export const en = {
     yesterday: 'Yesterday',
     timeToCome: 'That time is still to come: a meal is logged once eaten.',
     anotherFood: (name: string) => `Another food in place of: ${name}`,
+    // An item's menu of the ways to change it but its amount, and the
+    // visible words of its choices, named in full above.
+    more: (name: string) => `More: ${name}`,
+    anotherFoodShort: 'Another food',
+    removeShort: 'Remove',
     inPlaceOf: (name: string) => `In place of ${name}:`,
     findInPlaceOf: (name: string) => `A food of yours in place of ${name}`,
     saveAsFood: (name: string) => `Save as a food of yours: ${name}`,

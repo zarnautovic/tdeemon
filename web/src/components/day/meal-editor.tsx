@@ -1,19 +1,34 @@
-import { ArrowLeftRight, BookmarkPlus, RotateCcw, Trash2, X } from 'lucide-react'
+import { Menu } from '@base-ui/react/menu'
+import { Select } from '@base-ui/react/select'
+import {
+  ArrowLeftRight,
+  BookmarkPlus,
+  CalendarDays,
+  Check,
+  ChevronDown,
+  Ellipsis,
+  RotateCcw,
+  Trash2,
+  X,
+} from 'lucide-react'
 import {
   Fragment,
   useEffect,
   useId,
   useRef,
   useState,
+  type Ref,
   type RefObject,
   type SubmitEvent,
 } from 'react'
+import { flushSync } from 'react-dom'
 
 import { statusOf } from '@/api/errors'
 import { useFoods } from '@/api/foods'
 import { useDeleteMeal, useUpdateMeal } from '@/api/meals'
 import type { components } from '@/api/schema'
 import type { Item, Meal } from '@/api/types'
+import { AmountField } from '@/components/day/amount-field'
 import { EntryRow } from '@/components/day/entry-row'
 import { FoodPicker } from '@/components/day/food-picker'
 import {
@@ -38,7 +53,7 @@ import {
   type Values,
 } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
 import { addDays, rounded, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -110,8 +125,11 @@ const fieldOf = (item: Item, v: (typeof values)[number] | 'name' | 'unit') => `$
 // the server warned of it, the day a meal moved to, and Undo: no
 // question before a delete, as Undo takes it back. It lives in a sheet,
 // its total said as it changes, an item a change makes bring other kcal
-// marked with what it brought, the save and the delete at its foot.
-// onDone closes it.
+// marked with what it brought, the save and the delete at its foot. An
+// item's row has its name, what it brings and its amount, and its other
+// ways in a menu, so a phone's width leaves the name room to read; the
+// day is a button that lists the days by name. onDone closes it;
+// onDeleted hears of the meal deleted, which its row goes with.
 export function MealEditor({
   meal,
   date,
@@ -120,6 +138,7 @@ export function MealEditor({
   startHour,
   first,
   onDone,
+  onDeleted,
 }: {
   meal: Meal
   date: string
@@ -131,6 +150,7 @@ export function MealEditor({
   // The field the sheet's focus goes to when it opens.
   first?: RefObject<HTMLInputElement | null>
   onDone: () => void
+  onDeleted?: () => void
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -156,6 +176,7 @@ export function MealEditor({
       { title: t.toast.deleted(what) },
       { last: { action: 'meal.delete', entity: meal.id }, date },
     )
+    onDeleted?.()
   })
   // The items' foods, for the units each can be given in.
   const foodIds = [...new Set(meal.items.flatMap((i) => (i.food_id ? [i.food_id] : [])))]
@@ -276,6 +297,11 @@ export function MealEditor({
   // by the item; and the item whose other food is being found.
   const [swaps, setSwaps] = useState<Readonly<Record<string, Entry>>>({})
   const [finding, setFinding] = useState<string | undefined>(undefined)
+  // The field of the food being found, and each item's menu and Keep, by
+  // the item: the focus goes from one to the other.
+  const finder = useRef<HTMLInputElement>(null)
+  const menus = useRef(new Map<string, HTMLButtonElement>())
+  const keeps = useRef(new Map<string, HTMLButtonElement>())
   // The estimates to save as foods of the user's, a portion of each.
   const [asFoods, setAsFoods] = useState<ReadonlySet<string>>(new Set())
   const [wrongEntries, setWrongEntries] = useState<ReadonlySet<string>>(new Set())
@@ -570,16 +596,45 @@ export function MealEditor({
           />
         </label>
         <div className="flex gap-3">
-          <label className="min-w-0 flex-1 space-y-1">
-            <span className={cn(fieldLabel, 'block')}>{t.meal.day}</span>
-            <select name="day" defaultValue={date} className={inputClass}>
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {dayName(d)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* The day is a button with its name, which lists the days to
+              choose: today, yesterday, then each by its date, in the
+              app's language. */}
+          <Select.Root
+            name="day"
+            defaultValue={date}
+            items={days.map((d) => ({ value: d, label: dayName(d) }))}
+          >
+            <div className="min-w-0 flex-1 space-y-1">
+              <Select.Label className={cn(fieldLabel, 'block')}>{t.meal.day}</Select.Label>
+              <Select.Trigger className={cn(inputClass, 'flex items-center gap-2 text-left')}>
+                <CalendarDays aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <Select.Value className="min-w-0 flex-1 truncate" />
+                <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              </Select.Trigger>
+            </div>
+            <Select.Portal>
+              <Select.Positioner alignItemWithTrigger={false} sideOffset={4} className="z-50">
+                <Select.Popup className="max-h-[min(var(--available-height),22rem)] min-w-(--anchor-width) overflow-y-auto rounded-lg border bg-card p-1 shadow-sheet outline-none">
+                  <Select.List>
+                    {days.map((d) => (
+                      <Select.Item
+                        key={d}
+                        value={d}
+                        className="flex h-11 cursor-default items-center gap-2 rounded-md pr-3 pl-2 text-sm outline-none select-none data-highlighted:bg-muted"
+                      >
+                        <span className="flex size-4 shrink-0 items-center justify-center">
+                          <Select.ItemIndicator>
+                            <Check aria-hidden className="size-4" />
+                          </Select.ItemIndicator>
+                        </span>
+                        <Select.ItemText>{dayName(d)}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </Select.List>
+                </Select.Popup>
+              </Select.Positioner>
+            </Select.Portal>
+          </Select.Root>
           <label className="w-24 space-y-1">
             <span className={cn(fieldLabel, 'block')}>{t.log.time}</span>
             <TimeInput
@@ -685,183 +740,196 @@ export function MealEditor({
               <Fragment key={item.id}>
                 <li
                   className={cn(
-                    'flex flex-wrap items-center gap-2 py-2',
+                    'space-y-2 py-2',
                     changed && '-mx-2 rounded-md bg-primary-soft/60 px-2',
                   )}
                   hidden={swap !== undefined}
                 >
-                  <span
-                    className={cn('min-w-0 flex-1', gone && 'text-muted-foreground line-through')}
-                  >
-                    {name}
-                    {gone && <span className="sr-only"> ({t.meal.removed})</span>}
-                    {!gone && brings !== undefined && (
-                      <span
-                        className={cn(
-                          'block text-caption',
-                          changed ? 'font-medium text-primary' : 'text-muted-foreground',
-                        )}
-                      >
-                        {t.unit.kcal(f.number(brings.kcal))} · {t.day.short.protein}{' '}
-                        {f.grams(brings.protein)}
-                        {changed && ` · ${t.meal.was(f.number(item.nutrients.kcal))}`}
-                      </span>
-                    )}
-                    {moved && !gone && (
-                      <span className="block text-xs text-warning">{t.meal.changedElsewhere}</span>
-                    )}
-                  </span>
-                  {was && (
-                    // Hidden, not gone, while the item is to be removed: kept
-                    // again, it has what was typed in it.
-                    <span className="flex items-center gap-1" hidden={gone}>
-                      <span className={cn('relative', choices ? 'w-20' : 'w-32')}>
-                        <input
-                          // Of another food now, the field starts again.
-                          key={was.foodId}
-                          name={item.id}
-                          aria-label={t.meal.amount(name)}
-                          inputMode="decimal"
-                          autoComplete="off"
-                          defaultValue={was.text}
-                          onChange={(e) => {
-                            const next = e.currentTarget.value
-                            setTyping((ts) => ({ ...ts, [field]: next }))
-                            // Typed: what a unit chosen worked out is no more.
-                            setExact(({ [field]: _typed, ...es }) => es)
-                          }}
-                          aria-invalid={wrong.has(item.id) || over.has(item.id)}
-                          aria-describedby={
-                            wrong.has(item.id)
-                              ? `${id}-wrong`
-                              : over.has(item.id)
-                                ? `${id}-wrong-entry`
-                                : undefined
-                          }
-                          className={cn(inputClass, 'tabular-nums', !choices && unit && 'pr-14')}
-                        />
-                        {!choices && unit && (
-                          <span className="pointer-events-none absolute inset-y-0 right-2 flex max-w-12 items-center truncate text-xs text-muted-foreground">
-                            {unit}
-                          </span>
-                        )}
-                      </span>
-                      {choices && itsFood && (
-                        <select
-                          // Of another food now, the choice starts again.
-                          key={was.foodId}
-                          name={fieldOf(item, 'unit')}
-                          aria-label={t.log.unit(name)}
-                          // Held by the editor, not the page: a unit renamed or
-                          // gone elsewhere never changes it unseen.
-                          value={picked ?? unitWas}
-                          className={cn(inputClass, 'w-auto max-w-28')}
-                          onChange={(e) => {
-                            // The amount is worked out anew in the unit chosen,
-                            // when the food says the grams of both.
-                            const unitTo = e.currentTarget.value
-                            const amount = e.currentTarget.form?.elements.namedItem(item.id)
-                            setChosen((cs) => ({ ...cs, [field]: unitTo }))
-                            if (!(amount instanceof HTMLInputElement)) {
-                              return
-                            }
-                            // From what a unit chosen worked out, or the
-                            // amount as it was while it is not typed, or as it
-                            // is typed.
-                            const base =
-                              exact[field] ?? (typing[field] === undefined ? was.amount.n : typedN)
-                            const worked = Number.isFinite(base)
-                              ? converted(
-                                  itsFood,
-                                  chosen[field] ?? unitWas ?? was.amount.key,
-                                  unitTo,
-                                  base,
-                                )
-                              : undefined
-                            if (worked === undefined) {
-                              // Not to be worked out: the amount is typed anew
-                              // in the unit chosen, not taken over in it.
-                              amount.value = ''
-                              setTyping((ts) => ({ ...ts, [field]: '' }))
-                              setExact(({ [field]: _gone, ...es }) => es)
-                            } else {
-                              // Back in its own unit, the amount it was, not
-                              // one a hair off it.
-                              const n =
-                                unitTo === unitWas &&
-                                Math.abs(worked - was.amount.n) <= 1e-9 * Math.max(1, was.amount.n)
-                                  ? was.amount.n
-                                  : worked
-                              const next = shownAmount(n, f.field)
-                              amount.value = next
-                              setTyping((ts) => ({ ...ts, [field]: next }))
-                              setExact((es) => ({ ...es, [field]: n }))
-                            }
-                          }}
+                  {/* Its name and what it brings, its amount, and the rest
+                      of its ways in a menu: on a phone's width, the name
+                      keeps the room to read. */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'min-w-0 flex-1 wrap-break-word',
+                        gone && 'text-muted-foreground line-through',
+                      )}
+                    >
+                      {name}
+                      {gone && <span className="sr-only"> ({t.meal.removed})</span>}
+                      {!gone && brings !== undefined && (
+                        <span
+                          className={cn(
+                            'block text-caption',
+                            changed ? 'font-medium text-primary' : 'text-muted-foreground',
+                          )}
                         >
-                          {choices.map((u) => (
-                            <option key={u} value={u}>
-                              {u === 'portion' ? t.meal.portions(typedN) : (servingOf(u) ?? u)}
-                            </option>
-                          ))}
-                        </select>
+                          {t.unit.kcal(f.number(brings.kcal))} · {t.day.short.protein}{' '}
+                          {f.grams(brings.protein)}
+                          {changed && ` · ${t.meal.was(f.number(item.nutrients.kcal))}`}
+                        </span>
+                      )}
+                      {moved && !gone && (
+                        <span className="block text-xs text-warning">
+                          {t.meal.changedElsewhere}
+                        </span>
                       )}
                     </span>
-                  )}
-                  {estimate && !gone && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-primary aria-pressed:bg-primary-soft"
-                      aria-label={t.meal.saveAsFood(name)}
-                      aria-pressed={asFoods.has(item.id)}
-                      onClick={() => {
-                        const next = new Set(asFoods)
-                        if (next.has(item.id)) {
-                          next.delete(item.id)
-                        } else {
-                          next.add(item.id)
+                    {was && (
+                      <AmountField
+                        // Of another food now, the field and its unit start
+                        // again.
+                        key={was.foodId}
+                        // Hidden, not gone, while the item is to be removed:
+                        // kept again, it has what was typed in it.
+                        hidden={gone}
+                        name={item.id}
+                        aria-label={t.meal.amount(name)}
+                        defaultValue={was.text}
+                        onChange={(e) => {
+                          const next = e.currentTarget.value
+                          setTyping((ts) => ({ ...ts, [field]: next }))
+                          // Typed: what a unit chosen worked out is no more.
+                          setExact(({ [field]: _typed, ...es }) => es)
+                        }}
+                        aria-invalid={wrong.has(item.id) || over.has(item.id)}
+                        aria-describedby={
+                          wrong.has(item.id)
+                            ? `${id}-wrong`
+                            : over.has(item.id)
+                              ? `${id}-wrong-entry`
+                              : undefined
                         }
-                        setAsFoods(next)
-                      }}
-                    >
-                      <BookmarkPlus aria-hidden />
-                      {t.meal.asFoodShort}
-                    </Button>
-                  )}
-                  {!gone && (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={t.meal.anotherFood(name)}
-                      aria-expanded={finding === item.id}
-                      onClick={() => {
-                        setFinding(finding === item.id ? undefined : item.id)
-                      }}
-                    >
-                      <ArrowLeftRight aria-hidden />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={gone ? t.meal.keep(name) : t.meal.remove(name)}
-                    onClick={() => {
-                      const next = new Set(removed)
-                      if (gone) {
-                        next.delete(item.id)
-                      } else {
-                        next.add(item.id)
-                      }
-                      setRemoved(next)
-                    }}
-                  >
-                    {gone ? <RotateCcw aria-hidden /> : <X aria-hidden />}
-                  </Button>
+                        unit={unit}
+                        select={
+                          choices && itsFood
+                            ? {
+                                name: fieldOf(item, 'unit'),
+                                'aria-label': t.log.unit(name),
+                                // Held by the editor, not the page: a unit
+                                // renamed or gone elsewhere never changes it
+                                // unseen.
+                                value: picked ?? unitWas,
+                                onChange: (e) => {
+                                  // The amount is worked out anew in the unit
+                                  // chosen, when the food says the grams of
+                                  // both.
+                                  const unitTo = e.currentTarget.value
+                                  const amount = e.currentTarget.form?.elements.namedItem(item.id)
+                                  setChosen((cs) => ({ ...cs, [field]: unitTo }))
+                                  if (!(amount instanceof HTMLInputElement)) {
+                                    return
+                                  }
+                                  // From what a unit chosen worked out, or the
+                                  // amount as it was while it is not typed, or
+                                  // as it is typed.
+                                  const base =
+                                    exact[field] ??
+                                    (typing[field] === undefined ? was.amount.n : typedN)
+                                  const worked = Number.isFinite(base)
+                                    ? converted(
+                                        itsFood,
+                                        chosen[field] ?? unitWas ?? was.amount.key,
+                                        unitTo,
+                                        base,
+                                      )
+                                    : undefined
+                                  if (worked === undefined) {
+                                    // Not to be worked out: the amount is
+                                    // typed anew in the unit chosen, not taken
+                                    // over in it.
+                                    amount.value = ''
+                                    setTyping((ts) => ({ ...ts, [field]: '' }))
+                                    setExact(({ [field]: _gone, ...es }) => es)
+                                  } else {
+                                    // Back in its own unit, the amount it was,
+                                    // not one a hair off it.
+                                    const n =
+                                      unitTo === unitWas &&
+                                      Math.abs(worked - was.amount.n) <=
+                                        1e-9 * Math.max(1, was.amount.n)
+                                        ? was.amount.n
+                                        : worked
+                                    const next = shownAmount(n, f.field)
+                                    amount.value = next
+                                    setTyping((ts) => ({ ...ts, [field]: next }))
+                                    setExact((es) => ({ ...es, [field]: n }))
+                                  }
+                                },
+                                children: choices.map((u) => (
+                                  <option key={u} value={u}>
+                                    {u === 'portion'
+                                      ? t.meal.portions(typedN)
+                                      : (servingOf(u) ?? u)}
+                                  </option>
+                                )),
+                              }
+                            : undefined
+                        }
+                      />
+                    )}
+                    {gone ? (
+                      <Button
+                        ref={(el) => {
+                          if (el) {
+                            keeps.current.set(item.id, el)
+                          }
+                          return () => {
+                            keeps.current.delete(item.id)
+                          }
+                        }}
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t.meal.keep(name)}
+                        onClick={() => {
+                          // Kept, the focus goes back to its menu.
+                          flushSync(() => {
+                            setRemoved((rs) => new Set([...rs].filter((r) => r !== item.id)))
+                          })
+                          menus.current.get(item.id)?.focus()
+                        }}
+                      >
+                        <RotateCcw aria-hidden />
+                      </Button>
+                    ) : (
+                      <ItemMenu
+                        name={name}
+                        asFood={estimate ? asFoods.has(item.id) : undefined}
+                        finder={finder}
+                        trigger={(el) => {
+                          if (el) {
+                            menus.current.set(item.id, el)
+                          }
+                          return () => {
+                            menus.current.delete(item.id)
+                          }
+                        }}
+                        onFind={() => {
+                          // Its field there before the menu gives it the focus.
+                          flushSync(() => {
+                            setFinding(item.id)
+                          })
+                        }}
+                        onAsFood={(checked) => {
+                          setAsFoods((fs) =>
+                            checked
+                              ? new Set([...fs, item.id])
+                              : new Set([...fs].filter((s) => s !== item.id)),
+                          )
+                        }}
+                        onRemove={() => {
+                          // Removed, its Keep takes the focus where its menu
+                          // was.
+                          flushSync(() => {
+                            setRemoved((rs) => new Set([...rs, item.id]))
+                          })
+                          keeps.current.get(item.id)?.focus()
+                        }}
+                      />
+                    )}
+                  </div>
                   {estimate && asFoods.has(item.id) && !gone && (
-                    <span className="basis-full text-xs text-muted-foreground">
-                      {t.meal.asFood}
-                    </span>
+                    <p className="text-xs text-muted-foreground">{t.meal.asFood}</p>
                   )}
                   {estimate && (
                     <input
@@ -871,12 +939,12 @@ export function MealEditor({
                       maxLength={200}
                       autoComplete="off"
                       hidden={gone}
-                      className={cn(inputClass, 'basis-full')}
+                      className={inputClass}
                     />
                   )}
                   {estimate && (
                     // Hidden, not gone, as an amount's field.
-                    <span className="grid basis-full grid-cols-4 gap-2" hidden={gone}>
+                    <span className="grid grid-cols-4 gap-2" hidden={gone}>
                       {values.map((v) => (
                         <label key={v} className="space-y-1">
                           <span className="block text-xs text-muted-foreground">
@@ -903,17 +971,21 @@ export function MealEditor({
                     </span>
                   )}
                   {finding === item.id && !gone && (
-                    <span className="basis-full">
-                      <FoodPicker
-                        label={t.meal.findInPlaceOf(name)}
-                        onPick={(food) => {
-                          const entry = foodEntry(food, f.field)
-                          setSwaps((ss) => ({ ...ss, [item.id]: entry }))
-                          setFinding(undefined)
-                          setAdded(entry.key)
-                        }}
-                      />
-                    </span>
+                    <FoodPicker
+                      label={t.meal.findInPlaceOf(name)}
+                      field={finder}
+                      onPick={(food) => {
+                        const entry = foodEntry(food, f.field)
+                        setSwaps((ss) => ({ ...ss, [item.id]: entry }))
+                        setFinding(undefined)
+                        setAdded(entry.key)
+                      }}
+                      onCancel={() => {
+                        // Back to the menu it came from.
+                        menus.current.get(item.id)?.focus()
+                        setFinding(undefined)
+                      }}
+                    />
                   )}
                 </li>
                 {swap && (
@@ -1061,5 +1133,104 @@ export function MealEditor({
         </div>
       </div>
     </form>
+  )
+}
+
+// The classes of a choice in an item's menu.
+const choice =
+  'flex h-11 cursor-default items-center gap-2 rounded-md pr-3 pl-2 text-sm outline-none select-none data-highlighted:bg-muted [&_svg]:size-4 [&_svg]:shrink-0'
+
+// ItemMenu is the ways to change an item of a meal but its amount, behind
+// its ⋯ button: another food in its place, an estimate saved as a food of
+// the user's (asFood, whether it is; undefined for a food's item), or the
+// item removed. Another food chosen, the focus goes to the field it is
+// found in (finder), there by then; the item removed, nowhere, as its Keep
+// takes it (onRemove); otherwise back to the button, which trigger is
+// given.
+function ItemMenu({
+  name,
+  asFood,
+  finder,
+  trigger,
+  onFind,
+  onAsFood,
+  onRemove,
+}: {
+  name: string
+  asFood: boolean | undefined
+  finder: RefObject<HTMLInputElement | null>
+  trigger: Ref<HTMLButtonElement>
+  onFind: () => void
+  onAsFood: (checked: boolean) => void
+  onRemove: () => void
+}) {
+  const t = useMessages()
+  // What was chosen since the menu opened.
+  const chosen = useRef<'find' | 'remove' | undefined>(undefined)
+
+  return (
+    <Menu.Root
+      onOpenChange={(open) => {
+        if (open) {
+          chosen.current = undefined
+        }
+      }}
+    >
+      <Menu.Trigger
+        ref={trigger}
+        aria-label={t.meal.more(name)}
+        className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+      >
+        <Ellipsis aria-hidden />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={4} align="end" className="z-50">
+          <Menu.Popup
+            finalFocus={() =>
+              chosen.current === 'find' ? (finder.current ?? true) : chosen.current === undefined
+            }
+            className="min-w-48 rounded-lg border bg-card p-1 shadow-sheet outline-none"
+          >
+            <Menu.Item
+              aria-label={t.meal.anotherFood(name)}
+              className={choice}
+              onClick={() => {
+                chosen.current = 'find'
+                onFind()
+              }}
+            >
+              <ArrowLeftRight aria-hidden />
+              {t.meal.anotherFoodShort}
+            </Menu.Item>
+            {asFood !== undefined && (
+              <Menu.CheckboxItem
+                aria-label={t.meal.saveAsFood(name)}
+                checked={asFood}
+                closeOnClick
+                onCheckedChange={onAsFood}
+                className={choice}
+              >
+                <BookmarkPlus aria-hidden />
+                <span className="flex-1">{t.meal.asFoodShort}</span>
+                <Menu.CheckboxItemIndicator>
+                  <Check aria-hidden />
+                </Menu.CheckboxItemIndicator>
+              </Menu.CheckboxItem>
+            )}
+            <Menu.Item
+              aria-label={t.meal.remove(name)}
+              className={cn(choice, 'text-destructive')}
+              onClick={() => {
+                chosen.current = 'remove'
+                onRemove()
+              }}
+            >
+              <X aria-hidden />
+              {t.meal.removeShort}
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   )
 }

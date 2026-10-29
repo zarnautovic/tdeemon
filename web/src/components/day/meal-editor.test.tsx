@@ -172,6 +172,69 @@ async function edit() {
   fireEvent.click(await screen.findByRole('button', { name: 'Change the meal: Breakfast' }))
 }
 
+// itemMenu opens the menu of the meal's item named name, its ways to
+// change it but its amount.
+async function itemMenu(name: string) {
+  fireEvent.click(meal().getByRole('button', { name: `More: ${name}` }))
+  return within(await screen.findByRole('menu'))
+}
+
+// removeItem removes the meal's item named name, from its menu.
+async function removeItem(name: string) {
+  fireEvent.click((await itemMenu(name)).getByRole('menuitem', { name: `Remove: ${name}` }))
+  await waitFor(() => {
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+}
+
+// removeItems removes the meal's items named names, each once the one
+// before is: a menu at a time.
+async function removeItems(names: readonly string[]) {
+  await names.reduce<Promise<void>>(
+    (before, name) => before.then(() => removeItem(name)),
+    Promise.resolve(),
+  )
+}
+
+// saveAsFood marks the meal's estimate named name to be saved as a food
+// of the user's, or no longer, from its menu.
+async function saveAsFood(name: string) {
+  fireEvent.click(
+    (await itemMenu(name)).getByRole('menuitemcheckbox', {
+      name: `Save as a food of yours: ${name}`,
+    }),
+  )
+  await waitFor(() => {
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+}
+
+// dayField is the meal's day in its editor: a button that lists the days.
+const dayField = (editor = meal()) => editor.getByRole('combobox', { name: /^(Day|Dan)$/ })
+
+// daysOffered opens the list of the days of the meal's editor, and says
+// them, and the one chosen.
+async function daysOffered(editor = meal()) {
+  fireEvent.click(dayField(editor))
+  const days = await screen.findAllByRole('option')
+  return {
+    names: days.map((o) => o.textContent),
+    chosen: days.find((o) => o.getAttribute('aria-selected') === 'true')?.textContent,
+  }
+}
+
+// pickDay picks the day named name for the meal, in its editor, as a
+// pointer does: pressed on the day, and let go.
+async function pickDay(name: string, editor = meal()) {
+  fireEvent.click(dayField(editor))
+  const option = await screen.findByRole('option', { name })
+  fireEvent.pointerDown(option)
+  fireEvent.click(option)
+  await waitFor(() => {
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+}
+
 test("an item's amount is changed as it was given, in one change of the meal", async () => {
   const server = mealServer()
   fakeServer(server.routes)
@@ -232,7 +295,7 @@ test('the word for portions agrees with the number typed', async () => {
   expect(unitBeside(slices)).toBe('portions')
   // Removed and kept again, the field has what was typed, as its word.
   fireEvent.change(slices, { target: { value: '1' } })
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Banana bread' }))
+  await removeItem('Banana bread')
   fireEvent.click(meal().getByRole('button', { name: 'Keep: Banana bread' }))
   expect(meal().getByLabelText('Amount: Banana bread')).toHaveProperty('value', '1')
   expect(unitBeside(meal().getByLabelText('Amount: Banana bread'))).toBe('portion')
@@ -247,8 +310,8 @@ test('items are removed, and one can be kept again before saving', async () => {
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Salad from the canteen' }))
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Salad from the canteen')
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Keep: Egg' }))
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
@@ -264,9 +327,7 @@ test('a meal is not left without items', async () => {
   renderAt('/')
 
   await edit()
-  for (const name of ['Oats', 'Banana bread', 'Egg', 'Salad from the canteen']) {
-    fireEvent.click(meal().getByRole('button', { name: `Remove: ${name}` }))
-  }
+  await removeItems(['Oats', 'Banana bread', 'Egg', 'Salad from the canteen'])
 
   expect(meal().getByText('A meal keeps at least one item: delete the meal instead.')).toBeDefined()
   expect(meal().getByRole('button', { name: 'Save the meal' }).hasAttribute('disabled')).toBe(true)
@@ -334,7 +395,7 @@ test("the server's warnings of a change are said in the app's words", async () =
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   // In the toast of the change, the meal's editor closed.
@@ -351,7 +412,7 @@ test('a change the server refuses says so, with nothing to try again', async () 
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect((await meal().findByRole('alert')).textContent).toBe(
@@ -453,7 +514,7 @@ test("an item removed is brought back by its change's toast", async () => {
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect(await screen.findByText('Changed: Breakfast')).toBeDefined()
@@ -529,7 +590,7 @@ test('an amount left as it started is not sent, though the field shows it rounde
 
   await edit()
   expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '66.667')
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Salad from the canteen' }))
+  await removeItem('Salad from the canteen')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   await waitFor(() => {
@@ -572,7 +633,7 @@ test('a change made elsewhere while the meal is open stays, unless it is changed
   }))
   focusManager.setFocused(false)
   focusManager.setFocused(true)
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   // Its row again, once the editor is gone.
@@ -593,7 +654,7 @@ test('a change sent again after it failed closes the meal once saved', async () 
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   expect((await meal().findByRole('alert')).textContent).toContain(
     'Not saved. The server failed to answer.',
@@ -612,7 +673,7 @@ test('a change of an item changed meanwhile (409) is refused, with nothing to tr
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect((await meal().findByRole('alert')).textContent).toBe(
@@ -662,6 +723,93 @@ test('the focus goes into the meal when it opens, and back to its Change once it
   })
 })
 
+test('a meal deleted in its editor leaves the focus on the meals of the day', async () => {
+  fakeServer(mealServer().routes)
+  renderAt('/')
+
+  await edit()
+  fireEvent.click(meal().getByRole('button', { name: 'Delete the meal' }))
+
+  expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog', { name: 'Change the meal' })).toBeNull()
+  })
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Meals' }))
+})
+
+test('a meal deleted from its card leaves the focus on the meals of the day', async () => {
+  fakeServer(mealServer().routes)
+  renderAt('/')
+
+  const row = within(await screen.findByRole('article')).getByRole('button', { expanded: false })
+  fireEvent.click(row)
+  fireEvent.click(await screen.findByRole('button', { name: /^Delete: / }))
+
+  expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
+  expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Meals' }))
+})
+
+test("an item's row has its name, what it brings and its amount, and its other ways in a menu", async () => {
+  fakeServer(mealServer().routes)
+  renderAt('/')
+
+  await edit()
+  // Its amount's one field, and one button: its menu.
+  const oatsRow = meal().getByLabelText('Amount: Oats').closest('li')
+  if (oatsRow === null) {
+    throw new Error('no row of the oats')
+  }
+  expect(oatsRow.textContent).toContain('Oats300 kcal · P 11')
+  expect(
+    within(oatsRow)
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label')),
+  ).toEqual(['More: Oats'])
+  let menu = await itemMenu('Oats')
+  expect(menu.getAllByRole('menuitem').map((i) => i.textContent)).toEqual([
+    'Another food',
+    'Remove',
+  ])
+  expect(menu.queryByRole('menuitemcheckbox')).toBeNull()
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+  await waitFor(() => {
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+  // An estimate's may be saved as a food too.
+  menu = await itemMenu('Salad from the canteen')
+  expect(menu.getByRole('menuitemcheckbox').textContent).toBe('Save as a food')
+})
+
+test('an item removed from its menu leaves the focus on its Keep, and kept, on its menu', async () => {
+  fakeServer(mealServer().routes)
+  renderAt('/')
+
+  await edit()
+  await removeItem('Egg')
+  expect(document.activeElement).toBe(meal().getByRole('button', { name: 'Keep: Egg' }))
+  fireEvent.click(meal().getByRole('button', { name: 'Keep: Egg' }))
+  expect(document.activeElement).toBe(meal().getByRole('button', { name: 'More: Egg' }))
+})
+
+test('another food chosen for an item takes the focus to its search, and Cancel back', async () => {
+  fakeServer(withFoods().routes)
+  renderAt('/')
+
+  await edit()
+  await find('Egg')
+  await waitFor(() => {
+    expect(document.activeElement).toBe(meal().getByLabelText('A food of yours in place of Egg'))
+  })
+  // Chosen again, the search stays, and has the focus.
+  await find('Egg')
+  await waitFor(() => {
+    expect(document.activeElement).toBe(meal().getByLabelText('A food of yours in place of Egg'))
+  })
+  fireEvent.click(meal().getByRole('button', { name: 'Cancel' }))
+  expect(meal().queryByLabelText('A food of yours in place of Egg')).toBeNull()
+  expect(document.activeElement).toBe(meal().getByRole('button', { name: 'More: Egg' }))
+})
+
 test('an item removed here and elsewhere leaves the meal its others', async () => {
   const server = mealServer()
   let gone = false
@@ -673,7 +821,7 @@ test('an item removed here and elsewhere leaves the meal its others', async () =
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   gone = true
   focusManager.setFocused(false)
   focusManager.setFocused(true)
@@ -756,7 +904,7 @@ test('a change tried again after it failed sends the meal as it is typed then', 
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   await meal().findByRole('alert')
   fireEvent.change(meal().getByLabelText('Amount: Oats'), { target: { value: '95' } })
@@ -788,7 +936,7 @@ test('a change of a meal deleted elsewhere (404) asks the day again, and the mea
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect(await screen.findByText('Nothing logged yet.')).toBeDefined()
@@ -834,12 +982,10 @@ test('a try again keeps the meal its one item', async () => {
   renderAt('/')
 
   await edit()
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   await meal().findByRole('button', { name: 'Try again' })
-  for (const name of ['Oats', 'Banana bread', 'Salad from the canteen']) {
-    fireEvent.click(meal().getByRole('button', { name: `Remove: ${name}` }))
-  }
+  await removeItems(['Oats', 'Banana bread', 'Salad from the canteen'])
   fireEvent.click(meal().getByRole('button', { name: 'Try again' }))
 
   // Nothing is sent: a change sent would be saving at once.
@@ -1193,9 +1339,7 @@ test('a meal of its items all removed keeps the one added in their place', async
   renderAt('/')
 
   await edit()
-  for (const name of ['Oats', 'Banana bread', 'Egg', 'Salad from the canteen']) {
-    fireEvent.click(meal().getByRole('button', { name: `Remove: ${name}` }))
-  }
+  await removeItems(['Oats', 'Banana bread', 'Egg', 'Salad from the canteen'])
   expect(meal().getByRole('button', { name: 'Save the meal' }).hasAttribute('disabled')).toBe(true)
   fireEvent.change(meal().getByLabelText('Find a food of yours'), { target: { value: 'rye' } })
   fireEvent.click(await meal().findByRole('button', { name: /Rye bread/ }))
@@ -1258,7 +1402,7 @@ test('an estimate removed and kept again keeps the values typed in it', async ()
   fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
     target: { value: '300' },
   })
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Salad from the canteen' }))
+  await removeItem('Salad from the canteen')
   fireEvent.click(meal().getByRole('button', { name: 'Keep: Salad from the canteen' }))
   expect(meal().getByLabelText('Energy (kcal): Salad from the canteen')).toHaveProperty(
     'value',
@@ -1314,7 +1458,7 @@ test('items added elsewhere, then corrected elsewhere, are not undone by fields 
   await waitFor(() => {
     expect(meal().getAllByText('Changed elsewhere since this opened.')).toHaveLength(2)
   })
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   await waitFor(() => {
@@ -1359,7 +1503,7 @@ test("an item added by a change that got no answer is the meal's, and not added 
     expect(meal().getByLabelText('Amount: Rye bread').matches(':disabled')).toBe(false)
   })
   // Unwanted after all: removed, and not added again with the retry.
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Rye bread' }))
+  await removeItem('Rye bread')
   up = true
   fireEvent.click(again)
 
@@ -1410,7 +1554,7 @@ test('an item added by a change that got no answer, then removed elsewhere, stay
   await waitFor(() => {
     expect(meal().queryByLabelText('Amount: Rye bread')).toBeNull()
   })
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   up = true
   fireEvent.click(again)
 
@@ -1472,8 +1616,9 @@ test('a meal is moved to a day before, at its time or another', async () => {
   renderAt('/')
 
   await edit()
-  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-23')
-  fireEvent.change(meal().getByLabelText('Day'), { target: { value: '2026-10-22' } })
+  expect(dayField().textContent).toBe('Today')
+  await pickDay('Yesterday')
+  expect(dayField().textContent).toBe('Yesterday')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   // 08:45 in Los Angeles, a day before.
@@ -1499,7 +1644,7 @@ test('a meal moved to another day says where, with the way to it', async () => {
   const router = renderAt('/')
 
   await edit()
-  fireEvent.change(meal().getByLabelText('Day'), { target: { value: '2026-10-22' } })
+  await pickDay('Yesterday')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect(await screen.findByText('Moved to Thursday, October 22')).toBeDefined()
@@ -1519,13 +1664,13 @@ function withBreakfast(d: string): Handler {
   return () => Response.json(day({ date: d, meals: [breakfastOf(d)] }))
 }
 
-// moveTo moves a meal of date to day to, in Croatian or English, as the
-// server answers, and returns the router.
-async function moveTo(date: string, to: string, locale: 'en' | 'hr') {
+// moveTo moves a meal of date to day to, named toName, in Croatian or
+// English, as the server answers, and returns the router.
+async function moveTo(date: string, to: string, toName: string, locale: 'en' | 'hr') {
   const words =
     locale === 'hr'
-      ? { title: 'Promijeni obrok', day: 'Dan', save: 'Spremi obrok' }
-      : { title: 'Change the meal', day: 'Day', save: 'Save the meal' }
+      ? { title: 'Promijeni obrok', save: 'Spremi obrok' }
+      : { title: 'Change the meal', save: 'Save the meal' }
   fakeServer({
     ...signedIn(locale),
     'GET /api/v1/days/today': withBreakfast(today),
@@ -1546,23 +1691,23 @@ async function moveTo(date: string, to: string, locale: 'en' | 'hr') {
   }
   fireEvent.click(await screen.findByRole('button', { name: `${words.title}: Breakfast` }))
   const editor = within(await screen.findByRole('dialog', { name: words.title }))
-  fireEvent.change(editor.getByLabelText(words.day), { target: { value: to } })
+  await pickDay(toName, editor)
   fireEvent.click(editor.getByRole('button', { name: words.save }))
   return router
 }
 
 test('a meal moved says the day it went to after a colon in Croatian, as its case would not agree', async () => {
-  await moveTo(today, '2026-10-21', 'hr')
+  await moveTo(today, '2026-10-21', 'srijeda, 21. listopada', 'hr')
 
   expect(await screen.findByText('Premješteno: srijeda, 21. listopada')).toBeDefined()
   expect(screen.getByRole('link', { name: 'Otvori: srijeda, 21. listopada' })).toBeDefined()
 })
 
 test.each([
-  ['en', 'Moved to today', 'See it today'],
-  ['hr', 'Premješteno na danas', 'Pogledaj danas'],
-] as const)('a meal moved to today says today (%s)', async (locale, said, link) => {
-  const router = await moveTo('2026-10-21', today, locale)
+  ['en', 'Today', 'Moved to today', 'See it today'],
+  ['hr', 'Danas', 'Premješteno na danas', 'Pogledaj danas'],
+] as const)('a meal moved to today says today (%s)', async (locale, name, said, link) => {
+  const router = await moveTo('2026-10-21', today, name, locale)
 
   expect(await screen.findByText(said)).toBeDefined()
   fireEvent.click(screen.getByRole('link', { name: link }))
@@ -1577,7 +1722,7 @@ test('a meal moved to a day and a time is sent as both', async () => {
   renderAt('/')
 
   await edit()
-  fireEvent.change(meal().getByLabelText('Day'), { target: { value: '2026-10-21' } })
+  await pickDay('Wednesday, October 21')
   fireEvent.change(meal().getByLabelText('Time'), { target: { value: '19:00' } })
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
@@ -1591,14 +1736,12 @@ test('the day is today or one of the days before, each named in words', async ()
   renderAt('/')
 
   await edit()
-  const days = within(meal().getByLabelText('Day'))
-    .getAllByRole('option')
-    .map((o) => o.textContent)
+  const days = await daysOffered()
   // Today the 23rd, and the 30 days before it: none to come.
-  expect(days.slice(0, 3)).toEqual(['Today', 'Yesterday', 'Wednesday, October 21'])
-  expect(days).toHaveLength(31)
-  expect(days.at(-1)).toBe('Wednesday, September 23')
-  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-23')
+  expect(days.names.slice(0, 3)).toEqual(['Today', 'Yesterday', 'Wednesday, October 21'])
+  expect(days.names).toHaveLength(31)
+  expect(days.names.at(-1)).toBe('Wednesday, September 23')
+  expect(days.chosen).toBe('Today')
 })
 
 test("a meal of a day after the app's today keeps its day, left as it is", async () => {
@@ -1612,7 +1755,7 @@ test("a meal of a day after the app's today keeps its day, left as it is", async
   renderAt('/?date=2026-10-24')
 
   await edit()
-  expect(meal().getByLabelText('Day')).toHaveProperty('value', '2026-10-24')
+  expect(dayField().textContent).toBe('Saturday, October 24')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   await waitFor(() => {
     expect(meal().queryByRole('button', { name: 'Save the meal' })).toBeNull()
@@ -1732,9 +1875,20 @@ test('a unit chosen and chosen back sends the amount as it was', async () => {
   expect(server.sent).toEqual([])
 })
 
+// find opens the search of another food in the place of the item named
+// name, from its menu.
+async function find(name: string) {
+  fireEvent.click(
+    (await itemMenu(name)).getByRole('menuitem', { name: `Another food in place of: ${name}` }),
+  )
+  await waitFor(() => {
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+}
+
 // swap finds the rye bread for the item named name.
 async function swap(name: string) {
-  fireEvent.click(meal().getByRole('button', { name: `Another food in place of: ${name}` }))
+  await find(name)
   fireEvent.change(meal().getByLabelText(`A food of yours in place of ${name}`), {
     target: { value: 'rye' },
   })
@@ -1825,12 +1979,14 @@ test("an estimate is saved as a food of the user's, a portion of it, as it is ty
   renderAt('/')
 
   await edit()
-  const save = meal().getByRole('button', {
-    name: 'Save as a food of yours: Salad from the canteen',
-  })
-  fireEvent.click(save)
-  expect(save.getAttribute('aria-pressed')).toBe('true')
+  await saveAsFood('Salad from the canteen')
   expect(meal().getByText('Saved as a food of yours, a portion of it eaten.')).toBeDefined()
+  expect(
+    (await itemMenu('Salad from the canteen'))
+      .getByRole('menuitemcheckbox', { name: 'Save as a food of yours: Salad from the canteen' })
+      .getAttribute('aria-checked'),
+  ).toBe('true')
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   fireEvent.change(meal().getByLabelText('What it is: Salad from the canteen'), {
     target: { value: 'Canteen salad' },
   })
@@ -1868,12 +2024,14 @@ test('an estimate saved as a food and taken back sends nothing', async () => {
   renderAt('/')
 
   await edit()
-  const save = meal().getByRole('button', {
-    name: 'Save as a food of yours: Salad from the canteen',
-  })
-  fireEvent.click(save)
-  fireEvent.click(save)
-  expect(save.getAttribute('aria-pressed')).toBe('false')
+  await saveAsFood('Salad from the canteen')
+  await saveAsFood('Salad from the canteen')
+  expect(
+    (await itemMenu('Salad from the canteen'))
+      .getByRole('menuitemcheckbox', { name: 'Save as a food of yours: Salad from the canteen' })
+      .getAttribute('aria-checked'),
+  ).toBe('false')
+  fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   expect(meal().queryByText('Saved as a food of yours, a portion of it eaten.')).toBeNull()
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
@@ -1896,9 +2054,7 @@ test('a food of the same name the user has already is said to be kept', async ()
   renderAt('/')
 
   await edit()
-  fireEvent.click(
-    meal().getByRole('button', { name: 'Save as a food of yours: Salad from the canteen' }),
-  )
+  await saveAsFood('Salad from the canteen')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
 
   expect(
@@ -2019,9 +2175,7 @@ test('an estimate saved as a food is found by the next search of a meal to log',
     expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
   })
   await edit()
-  fireEvent.click(
-    meal().getByRole('button', { name: 'Save as a food of yours: Salad from the canteen' }),
-  )
+  await saveAsFood('Salad from the canteen')
   fireEvent.click(meal().getByRole('button', { name: 'Save the meal' }))
   await waitFor(() => {
     expect(saved).toBe(true)
@@ -2394,7 +2548,7 @@ test('the total is said as the meal changes, and an item changed with what it br
   expect(meal().getByLabelText('Amount: Oats')).toHaveProperty('value', '2.22')
   expect(total()).toBe('810 kcal')
   // An item removed, and an estimate's energy typed anew.
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Egg' }))
+  await removeItem('Egg')
   expect(total()).toBe('670 kcal')
   fireEvent.change(meal().getByLabelText('Energy (kcal): Salad from the canteen'), {
     target: { value: '300' },
@@ -2508,8 +2662,8 @@ test("without its items' foods, a meal still opens with the day's total, and cha
   expect(total()).toBe('553 kcal')
   expect(meal().getByText('+10 kcal from the changes')).toBeDefined()
   // With none of its items left as they were, what they bring now.
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Tuna' }))
-  fireEvent.click(meal().getByRole('button', { name: 'Remove: Boiled potatoes' }))
+  await removeItem('Tuna')
+  await removeItem('Boiled potatoes')
   expect(total()).toBe('150 kcal')
 })
 
@@ -2523,10 +2677,13 @@ test('in Croatian, the day is named in words and the time is on a 24-hour clock'
   fireEvent.click(row.getByRole('button', { expanded: false }))
   fireEvent.click(await row.findByRole('button', { name: 'Promijeni obrok: Breakfast' }))
   const editor = within(await screen.findByRole('dialog', { name: 'Promijeni obrok' }))
-  const days = within(editor.getByLabelText('Dan'))
-    .getAllByRole('option')
-    .map((o) => o.textContent)
-  expect(days.slice(0, 3)).toEqual(['Danas', 'Jučer', 'srijeda, 21. listopada'])
+  expect(dayField(editor).textContent).toBe('Danas')
+  const days = await daysOffered(editor)
+  expect(days.names.slice(0, 3)).toEqual(['Danas', 'Jučer', 'srijeda, 21. listopada'])
+  fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' })
+  await waitFor(() => {
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
   // 15:45 UTC is 08:45 in Los Angeles: no AM or PM.
   expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '08:45')
 
@@ -2541,7 +2698,7 @@ test('in Croatian, the day is named in words and the time is on a 24-hour clock'
   expect(editor.queryByRole('alert')).toBeNull()
   fireEvent.blur(editor.getByLabelText('Vrijeme'))
   expect(editor.getByLabelText('Vrijeme')).toHaveProperty('value', '09:30')
-  fireEvent.change(editor.getByLabelText('Dan'), { target: { value: '2026-10-22' } })
+  await pickDay('Jučer', editor)
   fireEvent.click(editor.getByRole('button', { name: 'Spremi obrok' }))
   await waitFor(() => {
     expect(server.sent).toHaveLength(1)

@@ -32,10 +32,11 @@ and the macros' bars, with the TDEE, the deficit and the phase, the
 week's days, the day's type, the meals as rows that open to their
 items, the check-in with calibration as a switch, the body's tiles and
 all the measurements in a sheet, a meal's corrections in a sheet that
-says its total as it changes, its time on a 24-hour clock, a meal
-repeated or deleted taken there, a meal logged by hand in a sheet of
-the foods found, eaten lately or most and the meals of before, and the
-chips that add yesterday's meal or a food in a tap),
+says its total as it changes, an item's amount with its unit and its
+other ways in a menu, its day picked by name and its time on a 24-hour
+clock, a meal repeated or deleted taken there, a meal logged by hand
+in a sheet of the foods found, eaten lately or most and the meals of
+before, and the chips that add yesterday's meal or a food in a tap),
 the foods (their list by how often they are eaten, grouped by this
 week and earlier, in use, archived or the estimates, searched within
 the list chosen; a food's page with its energy and its split, its
