@@ -219,7 +219,40 @@ export const en = {
       eatenOf: (eaten: string, target: string) => `${eaten} of ${target} kcal`,
       eaten: (eaten: string) => `${eaten} kcal`,
       nothing: 'nothing logged',
+      toCome: 'to come',
+      // The week's line: what the days logged ate a day on average,
+      // against their target. Today, still open, is not counted.
+      thisWeek: 'This week',
+      thatWeek: 'That week',
+      // Before the average, which is shown bolder: "This week: average 1,905".
+      average: (week: string) => `${week}: average`,
+      of: (target: string) => `of ${target}`,
+      under: (kcal: string) => `${kcal} under a day`,
+      over: (kcal: string) => `${kcal} over a day`,
+      on: 'on target',
+      none: (week: string) => `${week}: nothing to average yet`,
+      logged: (n: number) =>
+        `${String(n)} ${plural('en', n, { one: 'day', other: 'days' })} logged`,
+      span: (from: string, to: string) => `${from} – ${to}`,
+      // The week's days in a sheet, and what the days left can eat.
+      days: "The week's days",
+      dayColumn: 'Day',
+      eatenColumn: 'Eaten',
+      targetColumn: 'Target',
+      today: 'today, counted once over',
+      budget: (kcal: string) =>
+        `Until Sunday you can average ${kcal} a day and stay on your weekly target.`,
+      budgetToday: (kcal: string) => `Today you can eat ${kcal} and stay on your weekly target.`,
+      // Past the plan's kcal floor: the day's target, not less.
+      keep: (kcal: string) =>
+        `The week is ${kcal} over its target: keep to your day's target until Sunday.`,
+      keepToday: (kcal: string) => `The week is ${kcal} over its target: keep to today's target.`,
+      legendTarget: 'target',
+      legendAverage: 'average',
     },
+    // A desktop's meals, in a table.
+    columns: { time: 'Time', meal: 'Meal', kcal: 'kcal', total: 'Total' },
+    phase: 'Phase',
     dayTypeOf: (type: string) => `Type of day: ${type}`,
     protein: 'Protein',
     carbs: 'Carbs',

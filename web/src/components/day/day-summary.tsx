@@ -1,43 +1,38 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronRight } from 'lucide-react'
 
 import { $api } from '@/api/client'
-import type { components } from '@/api/schema'
 import type { Day } from '@/api/types'
 import { CalibrationRow } from '@/components/day/calibration-row'
+import { DayPhase } from '@/components/day/day-phase'
 import { EnergyRing } from '@/components/day/energy-ring'
 import { kcalLeft, kcalStanding } from '@/components/day/left'
 import { MacroBar, type Macro } from '@/components/day/macro-bar'
 import { weekOf } from '@/components/day/week'
 import { buttonVariants } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/info-tip'
-import { daysBetween, useFormat } from '@/i18n/format'
+import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
-import { cn } from '@/lib/utils'
-
-type Verdict = components['schemas']['VerdictBody']
 
 const macros: readonly Macro[] = ['protein', 'carbs', 'fat']
 
-// The dot of a phase's line: the brand's green on target, the warning's
-// amber off it; the words beside it say which.
-const dots: Record<Verdict['rate'], string> = {
-  none: 'bg-muted-foreground',
-  on_target: 'bg-success',
-  below: 'bg-warning',
-  above: 'bg-warning',
-}
+// A term of the numbers beside the ring and its value: in two columns on
+// a phone, the term and its value on a row; on a desktop, each a column
+// of its own, the value under the term.
+const term = 'contents lg:flex lg:flex-col lg:gap-1'
+const value = 'text-right font-semibold lg:text-left lg:text-h2'
 
 // DaySummary is the day at a glance: what is left of its target in a ring,
 // with what was eaten, the target, the TDEE calibration measures and what
 // is left of it after what was eaten, live through the day (or, of a day
 // before, how far under it the day stayed), each an ⓘ away from what it
 // is, and until calibration has a TDEE, how far it is from a first; each
-// macro against its target; and the phase the day is in, which
-// leads to the progress. A day before that went over its target says it
-// in a sentence beside the TDEE, not in an error's colour. A day before
-// any target shows what was eaten, and the way to a plan.
-export function DaySummary({ day }: { day: Day }) {
+// macro against its target; and the phase the day is in, which leads to
+// the progress, unless the page shows it elsewhere (phase: a desktop's,
+// beside the day). A desktop has the numbers side by side beside the
+// ring, and the macros in three columns. A day before that went over its
+// target says it in a sentence beside the TDEE, not in an error's colour.
+// A day before any target shows what was eaten, and the way to a plan.
+export function DaySummary({ day, phase = true }: { day: Day; phase?: boolean }) {
   const t = useMessages()
   const f = useFormat()
   const { total, target } = day
@@ -101,37 +96,48 @@ export function DaySummary({ day }: { day: Day }) {
   }
 
   return (
-    <section aria-labelledby="day-summary" className="space-y-4 rounded-lg border bg-card p-4">
+    <section
+      aria-labelledby="day-summary"
+      className="space-y-4 rounded-lg border bg-card p-4 lg:p-6"
+    >
       <h2 id="day-summary" className="sr-only">
         {s.title}
       </h2>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-4 lg:gap-8">
         <EnergyRing eaten={total.kcal} target={target.kcal} past={past} />
-        <dl className="grid max-w-72 flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 text-small">
-          <dt className="text-muted-foreground">{t.day.eaten}</dt>
-          <dd className="text-right font-semibold">{f.number(total.kcal)}</dd>
-          <dt className="text-muted-foreground">{s.target}</dt>
-          <dd className="text-right font-semibold">{f.number(target.kcal)}</dd>
+        <dl className="grid max-w-72 flex-1 grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 text-small lg:max-w-none lg:grid-cols-4 lg:items-start lg:gap-x-6">
+          <div className={term}>
+            <dt className="text-muted-foreground">{t.day.eaten}</dt>
+            <dd className={value}>{f.number(total.kcal)}</dd>
+          </div>
+          <div className={term}>
+            <dt className="text-muted-foreground">{s.target}</dt>
+            <dd className={value}>{f.number(target.kcal)}</dd>
+          </div>
           {measured !== undefined && left !== undefined && (
             <>
-              <dt className="flex items-center gap-1 text-muted-foreground">
-                {s.tdee}
-                <InfoTip label={t.info.tdee.label} title={t.info.tdee.title}>
-                  {t.info.tdee.text}
-                </InfoTip>
-              </dt>
-              <dd className="text-right font-semibold">
-                {/* A TDEE calibration does not trust yet is about so much. */}
-                {tdee?.trusted === true ? '' : '≈'}
-                {f.number(measured)}
-              </dd>
-              <dt className="flex items-center gap-1 text-muted-foreground">
-                {leftTerm}
-                <InfoTip label={t.info.left.label} title={t.info.left.title}>
-                  {t.info.left.text}
-                </InfoTip>
-              </dt>
-              <dd className="text-right font-semibold">{f.number(Math.abs(left))}</dd>
+              <div className={term}>
+                <dt className="flex items-center gap-1 text-muted-foreground">
+                  {s.tdee}
+                  <InfoTip label={t.info.tdee.label} title={t.info.tdee.title}>
+                    {t.info.tdee.text}
+                  </InfoTip>
+                </dt>
+                <dd className={value}>
+                  {/* A TDEE calibration does not trust yet is about so much. */}
+                  {tdee?.trusted === true ? '' : '≈'}
+                  {f.number(measured)}
+                </dd>
+              </div>
+              <div className={term}>
+                <dt className="flex items-center gap-1 text-muted-foreground">
+                  {leftTerm}
+                  <InfoTip label={t.info.left.label} title={t.info.left.title}>
+                    {t.info.left.text}
+                  </InfoTip>
+                </dt>
+                <dd className={value}>{f.number(Math.abs(left))}</dd>
+              </div>
             </>
           )}
           {calibrating !== undefined && (
@@ -148,57 +154,12 @@ export function DaySummary({ day }: { day: Day }) {
             : s.overUnderTdee(f.number(over), f.number(left))}
         </p>
       )}
-      <div className="space-y-3">
+      <div className="space-y-3 lg:grid lg:grid-cols-3 lg:gap-6 lg:space-y-0">
         {macros.map((m) => (
           <MacroBar key={m} macro={m} eaten={total[m]} target={target[m]} />
         ))}
       </div>
-      <PhaseLine date={day.date} verdict={summary.data?.verdict} />
+      {phase && <DayPhase date={day.date} />}
     </section>
-  )
-}
-
-// PhaseLine is the phase of the plan a day is in, and its week of the
-// phase's; of the phase now, the rate calibration measures and where it
-// stands against the phase's. Nothing without a phase.
-function PhaseLine({ date, verdict }: { date: string; verdict: Verdict | undefined }) {
-  const t = useMessages()
-  const f = useFormat()
-  const plan = $api.useQuery('get', '/api/v1/plan')
-  const today = plan.data?.today
-  const phase = plan.data?.phases.find(
-    (p) => p.start <= date && (p.end === undefined || date <= p.end),
-  )
-  if (phase === undefined || today === undefined) {
-    return null
-  }
-  const week = Math.floor(daysBetween(phase.start, date) / 7) + 1
-  const weeks =
-    phase.end === undefined ? undefined : Math.ceil((daysBetween(phase.start, phase.end) + 1) / 7)
-  // The verdict is of the phase today is in.
-  const now = phase.start <= today && (phase.end === undefined || today <= phase.end)
-  const rate = now && verdict?.measured_pct_week !== undefined ? verdict.rate : 'none'
-
-  return (
-    <Link
-      to="/progress"
-      className="flex items-center gap-2 rounded-md bg-surface-2 px-3 py-2.5 text-small outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <span aria-hidden className={cn('size-2 shrink-0 rounded-full', dots[rate])} />
-      <span className="flex-1">
-        {t.plan.change.types[phase.type]} ·{' '}
-        {weeks === undefined ? t.day.summary.week(week) : t.day.summary.weekOf(week, weeks)}
-        {rate !== 'none' && verdict?.measured_pct_week !== undefined && (
-          <>
-            {' · '}
-            <b className="font-semibold">
-              {t.day.summary.rate(f.signed(verdict.measured_pct_week, 1))}
-            </b>
-            , {t.day.summary.rates[rate]}
-          </>
-        )}
-      </span>
-      <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-    </Link>
   )
 }

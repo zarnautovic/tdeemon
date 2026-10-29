@@ -1000,6 +1000,20 @@ the first spec.
     number. The TDEE and its ±, how far it is trusted, the trend weight,
     the deficit and the verdict are each an ⓘ (`InfoTip`) away from what
     they are, in two or three plain sentences drawn from §7.
+  - The day's week is the calendar week, Monday to Sunday, as the
+    progress's weeks are: its days, each what it ate against its
+    target, and a line of their average over the days logged, as
+    calibration counts them (a day without a meal, one left out, and
+    today while it is open are not), against their target ("This week:
+    average 1,905 of 2,079 · 174 under a day · 5 days logged"). The
+    line opens the days in a sheet, and of this week what the days
+    left, today's among them, can eat on average and keep the week on
+    its target, by the plan's targets of the days to come; below the
+    plan's kcal floor, the day's target is said instead. A phone has
+    the week above the day. A desktop has the day in 8 of 12 columns,
+    the hero's numbers side by side and the meals a table of their kcal
+    and macros with the day's total, and beside it the week as bars with
+    the target and the average, the body, the check-in and the phase.
   - ECharts: `echarts/core` with only the charts it draws and the SVG
     renderer, loaded with the progress's page (a chunk of its own), not
     with the app. A chart's colours are the theme's tokens, read from the

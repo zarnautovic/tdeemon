@@ -32,10 +32,13 @@ calibration's an ⓘ away from what it is, in English and Croatian) with
 the day (what was eaten against the target in a ring and the macros'
 bars, a day past it by more than 5 % in a warm colour, not an error's,
 with the TDEE, what is left of it (until there is one, calibration's
-counts toward it) and the phase, the week's days, the day's type, the
-meals as rows that open to their items, the check-in with calibration
-as a switch, the body's tiles and all the measurements in a sheet,
-sleep in hours and minutes, a meal's corrections in a sheet that
+counts toward it) and the phase, the week's days, Monday to Sunday, and
+their average against the target, whose sheet says what the days left
+can eat, the day's type, the meals as rows that open to their items, on
+a desktop a table with its total beside the week, the body, the check-in
+and the phase, the check-in with calibration as a switch, the body's
+tiles and all the measurements in a sheet, sleep in hours and minutes, a
+meal's corrections in a sheet that
 says its total as it changes, an item's amount with its unit and its
 other ways in a menu, its day picked by name and its time on a 24-hour
 clock, a meal repeated or deleted taken there, a meal logged by hand
