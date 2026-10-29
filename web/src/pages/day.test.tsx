@@ -89,6 +89,13 @@ function summaryOf() {
       measured: false,
       trusted: false,
       weigh_ins: 0,
+      needs: {
+        days: { has: 0, need: 14 },
+        logged_days: { has: 0, need: 7 },
+        weigh_ins: { has: 0, need: 6 },
+        weigh_in_days: { has: 0, need: 7 },
+      },
+      trust: { half_width: 200, weigh_ins: 3, logged_days: 4 },
     },
     verdict: {
       action: 'none',
@@ -186,7 +193,7 @@ test("the body's tiles: the weight with its trend, the night's sleep, a dash for
     expect(tile('Weight')).toBe('Weight86.4 kgtrend 86.1 kg')
   })
   // 7.999 hours are 8 h, not 7 h 60.
-  expect(tile('Sleep')).toBe('Sleep8 h 0 min')
+  expect(tile('Sleep')).toBe('Sleep8 h 00')
   expect(tile('Steps')).toBe('Steps—')
   expect(tile('Resting heart rate')).toBe('Resting heart rate—')
 })

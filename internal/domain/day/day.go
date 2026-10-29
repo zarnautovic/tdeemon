@@ -52,6 +52,10 @@ func (d Date) AddDays(n int) Date {
 // Weekday returns the day of the week d falls on.
 func (d Date) Weekday() time.Weekday { return d.at(time.UTC).Weekday() }
 
+// WeekStart returns the Monday of d's week: a calendar week runs from
+// Monday to Sunday (ISO 8601), as the app's do.
+func (d Date) WeekStart() Date { return d.AddDays(-((int(d.Weekday()) + 6) % 7)) }
+
 // Before reports whether d comes before e.
 func (d Date) Before(e Date) bool { return d.at(time.UTC).Before(e.at(time.UTC)) }
 

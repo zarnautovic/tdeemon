@@ -85,6 +85,30 @@ export const hr: Messages = {
     kcal: (n: string) => `${n} kcal`,
     g: (n: string) => `${n} g`,
     ml: (n: string) => `${n} ml`,
+    hm: (hours: string, minutes: string) => `${hours} h ${minutes}`,
+  },
+  calibration: {
+    title: 'Kalibracija',
+    lead: 'TDEE se mjeri kad ima dovoljno dana, obroka i vaganja.',
+    days: 'Dani',
+    loggedDays: 'Upisani dani',
+    weighIns: 'Vaganja',
+    of: (has: string, need: string) => `${has} od ${need}`,
+    ofShort: (has: string, need: string) => `${has}/${need}`,
+    met: 'dovoljno',
+    apart: (has: string, need: string) => `${has} od ${need} dana od prvog do zadnjeg`,
+    expected: (date: string) => `Prvi TDEE oko ${date}, ako nastaviš ovako.`,
+    start: 'Upisuj obroke i važi se, i brojači rastu iz dana u dan.',
+    unsure: (kcal: string, half: string) => `TDEE ≈ ${kcal} ± ${half} · još nepouzdan.`,
+    doubts: {
+      wide_interval: (half: string, weighIns: string) =>
+        `Pouzdan je kad je ± ${half} ili manje; najviše pomaže vaganje ${weighIns}× tjedno.`,
+      few_weigh_ins: (weighIns: string, count: number) =>
+        `Treba ${weighIns} ${plural('hr', count, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })} tjedno, i u zadnjem tjednu.`,
+      few_logged_days: (days: string, count: number) =>
+        `Treba ${days} ${plural('hr', count, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} tjedno, i u zadnjem tjednu.`,
+    },
+    beforePhase: (date: string) => `Nova faza: do ${date} TDEE je iz dana prije nje.`,
   },
   info: {
     tdee: {
@@ -214,7 +238,6 @@ export const hr: Messages = {
       titleOfDay: 'Tijelo',
       all: 'Sva mjerenja',
       trend: (kg: string) => `trend ${kg} kg`,
-      sleep: (hours: string, minutes: string) => `${hours} h ${minutes} min`,
       none: '—',
     },
     reason: 'Razlog',
@@ -533,10 +556,24 @@ export const hr: Messages = {
     steps: 'Koraci',
     bodyFat: 'Masno tkivo',
     average: 'prosjek',
+    lastWeek: 'zadnjih 7 dana',
     latest: 'zadnje',
     trend: 'trend',
     tdeeNow: (half: string) => `TDEE ± ${half}`,
     change: (kg: string) => `${kg} kg u ovim danima`,
+    goal: (kg: string) => `Cilj ${kg} kg`,
+    vsUsual: (difference: string) => `${difference} od uobičajenog`,
+    asUsual: 'kao obično',
+    flags: { short_sleep: 'san', high_resting_hr: 'puls u mirovanju', low_hrv: 'HRV' },
+    worse: (things: string, count: number) =>
+      `${things.charAt(0).toUpperCase()}${things.slice(1)} ${plural('hr', count, { one: 'je', few: 'su', other: 'su' })} zadnji tjedan lošiji od uobičajenog.`,
+    balance: {
+      under: (kcal: string, kg: string) =>
+        `Jedeš oko ${kcal} kcal ispod potrošnje, to je oko ${kg} kg tjedno.`,
+      over: (kcal: string, kg: string) =>
+        `Jedeš oko ${kcal} kcal iznad potrošnje, to je oko ${kg} kg tjedno.`,
+      even: 'Jedeš otprilike koliko trošiš: kilaža stoji.',
+    },
     eaten: (kcal: string, days: number) =>
       `Pojedeno ${kcal} kcal na dan, kroz ${String(days)} ${plural('hr', days, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })}`,
     day: (weekday: string, date: string) => `${weekday} ${date}`,
@@ -548,6 +585,7 @@ export const hr: Messages = {
       interval: 'Interval 80 %',
       intake: 'Pojedeno',
       target: 'Cilj, prosjek 7 dana',
+      gap: 'Pojedeno do TDEE-a, prosjek 7 dana',
       average: 'Prosjek 7 dana',
       rhr: 'Puls u mirovanju',
       hrv: 'HRV',
@@ -563,8 +601,7 @@ export const hr: Messages = {
       tdee: (kcal: string, half: string) => `TDEE ${kcal} ± ${half}`,
       eaten: (kcal: string) => `pojedeno ${kcal}`,
       target: (kcal: string) => `cilj ${kcal}`,
-      hours: (hours: string) => `${hours} h`,
-      average: (hours: string) => `prosjek 7 dana ${hours} h`,
+      average: (hours: string) => `prosjek 7 dana ${hours}`,
       bpm: (bpm: string) => `${bpm} bpm`,
       ms: (ms: string) => `${ms} ms`,
       steps: (steps: string, count: number) =>
@@ -579,7 +616,7 @@ export const hr: Messages = {
         `Prosječno pojedeno ${kcal} kcal na dan, kroz ${String(days)} ${plural('hr', days, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })}.`,
       tdee: (kcal: string, half: string, trust: 'trusted' | 'before' | 'unsure') =>
         `TDEE ${kcal} ± ${half} kcal na dan, na zadnji dan${{ trusted: '', before: ', iz dana prije zadnje promjene unosa', unsure: ', još nepouzdan' }[trust]}.`,
-      sleep: (hours: string) => `Prosječno ${hours} sati sna po noći.`,
+      sleep: (hours: string) => `Prosječno ${hours} sna po noći.`,
       rhr: (bpm: string) => `Puls u mirovanju prosječno ${bpm} bpm.`,
       hrv: (ms: string) => `HRV prosječno ${ms} ms.`,
       bodyFat: (fat: string) => `Masno tkivo ${fat}, na zadnji dan s mjerenjem.`,
@@ -605,16 +642,11 @@ export const hr: Messages = {
       reasons: {
         no_phase: 'Faza plana zadaje tempo po kojem se kilaža ocjenjuje.',
         no_target: 'Faza se ocjenjuje kad plan ima cilj u kcal.',
-        no_estimate: 'Kalibracija mjeri TDEE kad ima dovoljno dana, vaganja i obroka.',
         before_phase: 'Faza je nova: dok njezinih dana nije dovoljno, TDEE je iz dana prije nje.',
-        not_trusted: 'TDEE je izmjeren, ali još nije dovoljno pouzdan za ocjenu.',
         no_tdee: 'TDEE je ispao 0 ili manji: jesu li svi obroci upisani?',
       },
-      soFar: (logged: number, weighIns: number) =>
-        `Zasad ${String(logged)} ${plural('hr', logged, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} i ${String(weighIns)} ${plural('hr', weighIns, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })}.`,
       tdee: (kcal: string, half: string) => `TDEE ${kcal} ± ${half} kcal`,
       trusted: 'Pouzdan',
-      unsure: 'Još nepouzdan',
       before: 'Iz dana prije faze',
       trend: (kg: string) => `Trend kilaže ${kg} kg`,
       eaten: (kcal: string, target: string) => `Pojedeno ${kcal} od ${target} kcal na dan`,
@@ -623,7 +655,7 @@ export const hr: Messages = {
     },
     weeks: {
       title: 'Po tjednima',
-      week: 'Tjedan od',
+      week: 'Tjedan',
       kcal: 'kcal',
       kcalSaid: 'kcal na dan',
       protein: 'P',
@@ -632,7 +664,7 @@ export const hr: Messages = {
       changeSaid: 'Promjena trenda kilaže, kg',
       days: 'Dani',
       daysSaid: 'Upisani dani',
-      daysOf: (n: number) => `${String(n)}/7`,
+      daysOf: (n: number, of: number) => `${String(n)}/${String(of)}`,
       none: '—',
       all: (n: number) => `Prikaži sve tjedne (${String(n)})`,
       fewer: 'Prikaži manje',

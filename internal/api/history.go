@@ -28,7 +28,7 @@ var historySince = day.Date{Year: 1900, Month: 1, Day: 1}
 type historyInput struct {
 	From        string `query:"from" format:"date" doc:"The first day; left out, 89 days before to."`
 	To          string `query:"to" format:"date" doc:"The last day, today at the latest; left out, today."`
-	Granularity string `query:"granularity" enum:"day,week" default:"day" doc:"day: a row a day; week: one for each 7 days ending on to, the first maybe starting before from. A week of today leaves today's steps out."`
+	Granularity string `query:"granularity" enum:"day,week" default:"day" doc:"day: a row a day; week: one for each calendar week, Monday to Sunday, the last up to to, the first maybe starting before from. A week of today leaves today's steps out."`
 }
 
 type historyOutput struct {
@@ -112,8 +112,10 @@ func (s *sessions) getHistory(ctx context.Context, in *historyInput) (*historyOu
 	delete(over, today)
 	trend := calibration.Trend(over, data.params.TrendAlpha)
 	if in.Granularity == "week" {
-		for end := to; !end.Before(from); end = end.AddDays(-7) {
-			b.Weeks = append(b.Weeks, data.week(end.AddDays(-6), end, trend))
+		// Calendar weeks, the last up to to, the first from its Monday,
+		// which may be before from.
+		for end := to; !end.Before(from); end = end.WeekStart().AddDays(-1) {
+			b.Weeks = append(b.Weeks, data.week(end.WeekStart(), end, trend))
 		}
 		for i, j := 0, len(b.Weeks)-1; i < j; i, j = i+1, j-1 {
 			b.Weeks[i], b.Weeks[j] = b.Weeks[j], b.Weeks[i]

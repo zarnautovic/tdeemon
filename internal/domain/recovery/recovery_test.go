@@ -127,3 +127,26 @@ func TestOfJudgesTheAveragesAsShown(t *testing.T) {
 		t.Errorf("recovery %+v, want 6.5 hours and no flag", r)
 	}
 }
+
+func TestUsual(t *testing.T) {
+	t.Parallel()
+
+	// A resting heart rate of 57.1 and an HRV of 52.2 over the 21 days
+	// before: 5 % and 15 % either way, the flags' bounds.
+	r := Recovery{RestingHRBase: 57.1, HRVBase: 52.2}
+	if low, high := r.RestingHRUsual(); low != 54.2 || high != 60 {
+		t.Errorf("resting heart rate's usual %v to %v, want 54.2 to 60", low, high)
+	}
+	if low, high := r.HRVUsual(); low != 44.4 || high != 60 {
+		t.Errorf("HRV's usual %v to %v, want 44.4 to 60", low, high)
+	}
+	// Past them, a flag.
+	past := Of(days([3]float64{7.5, 60.1, 44.3}, [3]float64{7.5, 57.1, 52.2}), last)
+	if !slices.Equal(past.Flags, []string{FlagHighRestingHR, FlagLowHRV}) {
+		t.Errorf("past the usual: flags %v", past.Flags)
+	}
+	var none Recovery
+	if low, high := none.HRVUsual(); low != 0 || high != 0 {
+		t.Errorf("usual without a base %v to %v, want none", low, high)
+	}
+}

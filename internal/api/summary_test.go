@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"encoding/json"
+	"maps"
 	"math"
 	"net/http"
 	"slices"
@@ -549,5 +550,138 @@ func TestGetSummaryReadsTheBody(t *testing.T) {
 	}
 	if v := summaryOf(t, in).Verdict; !slices.Equal(v.Flags, []string{"no_height"}) {
 		t.Errorf("flags %v, want only no_height: the lean mass and body fat are there", v.Flags)
+	}
+}
+
+// calibrationAnswer is what get_summary says of how far the TDEE is, and
+// of the usual recovery.
+type calibrationAnswer struct {
+	TDEE struct {
+		Measured         bool     `json:"measured"`
+		BeforePhase      bool     `json:"before_phase"`
+		BeforePhaseUntil string   `json:"before_phase_until"`
+		Expected         string   `json:"expected"`
+		Doubts           []string `json:"doubts"`
+		Needs            map[string]struct {
+			Has  int `json:"has"`
+			Need int `json:"need"`
+		} `json:"needs"`
+		Trust struct {
+			HalfWidth  float64 `json:"half_width"`
+			WeighIns   float64 `json:"weigh_ins"`
+			LoggedDays float64 `json:"logged_days"`
+		} `json:"trust"`
+	} `json:"tdee"`
+	Recovery struct {
+		RestingHRUsual *struct{ Low, High float64 } `json:"resting_hr_usual"`
+		HRVUsual       *struct{ Low, High float64 } `json:"hrv_usual"`
+	} `json:"recovery"`
+}
+
+func calibrationOf(t *testing.T, in *instance) calibrationAnswer {
+	t.Helper()
+	rec := in.do(t, http.MethodGet, "/api/v1/summary", "", []*http.Cookie{sessionOf(t, in)}, nil)
+	var b calibrationAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	return b
+}
+
+// get_summary says how far a new user is from a first TDEE, by what
+// calibration counts against what it needs, and about when it comes: 9
+// days logged and weighed of the 14, the rest enough, and 5 days to go.
+func TestGetSummaryCountsTowardTheTDEE(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	today := userToday(t, in)
+	saveDays(t, in, today.AddDays(-9), today.AddDays(-1))
+	b := calibrationOf(t, in).TDEE
+	if b.Measured || !slices.Equal(b.Doubts, []string{"few_days"}) || b.Expected != today.AddDays(5).String() {
+		t.Errorf("measured %v, doubts %v, expected on %s; want none for few days, on %s", b.Measured, b.Doubts, b.Expected, today.AddDays(5))
+	}
+	type need struct{ has, need int }
+	got := map[string]need{}
+	for k, n := range b.Needs {
+		got[k] = need{n.Has, n.Need}
+	}
+	want := map[string]need{"days": {9, 14}, "logged_days": {9, 7}, "weigh_ins": {9, 6}, "weigh_in_days": {8, 7}}
+	if !maps.Equal(got, want) {
+		t.Errorf("needs %v, want %v", got, want)
+	}
+	if b.Trust.HalfWidth != 200 || b.Trust.WeighIns != 3 || b.Trust.LoggedDays != 4 {
+		t.Errorf("trust %+v, want ± 200, 3 weigh-ins and 4 logged days a week", b.Trust)
+	}
+}
+
+// Weigh-ins without a meal count no day toward a TDEE, whatever the
+// window reaches back to, and foresee none.
+func TestGetSummaryCountsNoDayBeforeAMeal(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	today := userToday(t, in)
+	for i := 1; i <= 20; i++ {
+		if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, today.AddDays(-i), []metric.Value{
+			{Kind: metric.Weight, Value: 80, Source: metric.Import},
+		}, in.clock.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b := calibrationOf(t, in).TDEE
+	if b.Needs["days"].Has != 0 || b.Needs["weigh_ins"].Has != 20 || b.Expected != "" {
+		t.Errorf("needs %+v, expected %q; want no day, 20 weigh-ins, nothing foreseen", b.Needs, b.Expected)
+	}
+}
+
+// get_summary says until when the TDEE is from before a phase that
+// started today: its first 14 days left out, and 14 of its own.
+func TestGetSummarySaysUntilWhenTheTDEEIsFromBefore(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	today := userToday(t, in)
+	saveDays(t, in, today.AddDays(-60), today.AddDays(-1))
+	if err := in.db.SetPhase(t.Context(), in.user.ID, isolationActor, plan.Phase{Type: plan.Cut, Start: today, RatePctWeek: -0.5}, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	b := calibrationOf(t, in).TDEE
+	if !b.Measured || !b.BeforePhase || b.BeforePhaseUntil != today.AddDays(27).String() || b.Expected != "" {
+		t.Errorf("measured %v, before the phase %v until %s, expected %q; want before it until %s",
+			b.Measured, b.BeforePhase, b.BeforePhaseUntil, b.Expected, today.AddDays(27))
+	}
+}
+
+// get_summary gives the usual range of the resting heart rate and the
+// HRV, once they have a base.
+func TestGetSummaryRecoverysUsualRange(t *testing.T) {
+	t.Parallel()
+
+	in := newInstance(t, "http://localhost", "")
+	now := in.clock.Now()
+	today := userToday(t, in)
+	saveDays(t, in, today.AddDays(-28), today.AddDays(-1))
+	if r := calibrationOf(t, in).Recovery; r.RestingHRUsual != nil || r.HRVUsual != nil {
+		t.Errorf("recovery %+v, want no usual range without a base", r)
+	}
+	for i := 1; i <= 27; i++ {
+		rhr, hrv := 60.0, 40.0
+		if i <= 6 {
+			rhr, hrv = 64, 33
+		}
+		if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, today.AddDays(-i), []metric.Value{
+			{Kind: metric.RestingHR, Value: rhr, Source: metric.Import},
+			{Kind: metric.HRV, Value: hrv, Source: metric.Import},
+		}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := calibrationOf(t, in).Recovery
+	if r.RestingHRUsual == nil || *r.RestingHRUsual != (struct{ Low, High float64 }{57, 63}) {
+		t.Errorf("resting heart rate's usual %+v, want 57 to 63", r.RestingHRUsual)
+	}
+	if r.HRVUsual == nil || *r.HRVUsual != (struct{ Low, High float64 }{34, 46}) {
+		t.Errorf("HRV's usual %+v, want 34 to 46", r.HRVUsual)
 	}
 }

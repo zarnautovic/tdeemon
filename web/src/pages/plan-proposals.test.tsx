@@ -357,6 +357,13 @@ function summaryOf(over: Partial<Summary> = {}): Summary {
       measured: false,
       trusted: false,
       weigh_ins: 0,
+      needs: {
+        days: { has: 0, need: 14 },
+        logged_days: { has: 0, need: 7 },
+        weigh_ins: { has: 0, need: 6 },
+        weigh_in_days: { has: 0, need: 7 },
+      },
+      trust: { half_width: 200, weigh_ins: 3, logged_days: 4 },
     },
     verdict: {
       action: 'none',

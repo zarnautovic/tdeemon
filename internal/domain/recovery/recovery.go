@@ -102,6 +102,22 @@ func (r *Recovery) flag() {
 	}
 }
 
+// RestingHRUsual returns the usual range of the last 7 days' resting heart
+// rate: its base, HighRestingHR either way, so its top is the bound of
+// FlagHighRestingHR; 0 and 0 without a base. It is the range a chart
+// shades, rounded to a tenth as the averages are.
+func (r *Recovery) RestingHRUsual() (low, high float64) { return usual(r.RestingHRBase, HighRestingHR) }
+
+// HRVUsual returns the usual range of the last 7 days' HRV: its base,
+// LowHRV either way, so its foot is the bound of FlagLowHRV; 0 and 0
+// without a base.
+func (r *Recovery) HRVUsual() (low, high float64) { return usual(r.HRVBase, LowHRV) }
+
+// usual returns the range of share either way of base.
+func usual(base, share float64) (low, high float64) {
+	return round(base*(1-share), 10), round(base*(1+share), 10)
+}
+
 // add appends v to recent or to base, as recent says.
 func add(recentVs, baseVs []float64, recent bool, v float64) (recentOut, baseOut []float64) {
 	if recent {

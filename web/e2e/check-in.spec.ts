@@ -42,7 +42,7 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
   await measurements.getByLabel('Measurement').selectOption({ label: 'Sleep' })
   await measurements.getByLabel('Value').fill('7.5')
   await measurements.getByRole('button', { name: 'Save' }).click()
-  await expect(measurements).toContainText('7.5 h')
+  await expect(measurements).toContainText('7 h 30')
   await measurements.getByRole('button', { name: 'Change: Sleep' }).click()
   await measurements.getByRole('button', { name: 'Delete' }).click()
   // Gone once the server answered: its form, which names it, goes too.

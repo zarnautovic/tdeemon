@@ -1,6 +1,43 @@
-import { expect, test } from 'vitest'
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, expect, test } from 'vitest'
 
-import { daysBetween, formatGrams, parseNumber, roundedGrams } from '@/i18n/format'
+import { daysBetween, formatGrams, parseNumber, roundedGrams, useFormat } from '@/i18n/format'
+import { setLocale } from '@/i18n/locale'
+
+afterEach(() => {
+  act(() => {
+    setLocale('en')
+  })
+})
+
+// Sleep is hours and minutes, the minutes in two digits, everywhere: 7.999
+// hours are 8 and 00, not 7 and 60.
+test.each([
+  [6.87, ['6', '52']],
+  [7.15, ['7', '09']],
+  [7.999, ['8', '00']],
+  [0.5, ['0', '30']],
+])('%d hours are %j', (hours, shown) => {
+  const { result } = renderHook(() => useFormat())
+  expect(result.current.hm(hours)).toEqual(shown)
+})
+
+test('days, a difference in percent and a list are written as the language writes them', () => {
+  const { result } = renderHook(() => useFormat())
+  const today = '2026-10-29'
+  expect(result.current.days('2026-10-19', '2026-10-25', today)).toBe('Oct 19 – 25')
+  expect(result.current.days('2025-12-29', '2026-01-04', today)).toBe('Dec 29, 2025 – Jan 4, 2026')
+  expect(result.current.signedPercent(-6.7)).toBe('-7%')
+  expect(result.current.signedPercent(3)).toBe('+3%')
+  expect(result.current.list(['sleep', 'HRV'])).toBe('sleep and HRV')
+
+  act(() => {
+    setLocale('hr')
+  })
+  expect(result.current.days('2026-10-19', '2026-10-25', today)).toBe('19. – 25. lis')
+  expect(result.current.signedPercent(-6.7)).toBe('−7 %')
+  expect(result.current.list(['san', 'HRV'])).toBe('san i HRV')
+})
 
 test.each([
   ['72.5', 'en', 72.5],

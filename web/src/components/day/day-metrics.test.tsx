@@ -168,7 +168,7 @@ test('a correction can be given up', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Change: Sleep' }))
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
-  expect(measurements().getByText('7.3 h')).toBeDefined()
+  expect(measurements().getByText('7 h 15')).toBeDefined()
   expect(server.sent).toEqual([])
 })
 
@@ -237,7 +237,7 @@ test('another kind of measurement is added, of those the day has none of', async
     }),
   )
 
-  expect(await measurements().findByText('7.5 h')).toBeDefined()
+  expect(await measurements().findByText('7 h 30')).toBeDefined()
   expect(server.sent).toEqual([
     { method: 'PUT', path: `${path}/metrics/sleep_h`, body: { value: 7.5 } },
   ])

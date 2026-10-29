@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, type LucideIcon } from 'lucide-react'
+import { useId, useState, type ReactNode } from 'react'
 
 import { Chart } from '@/components/charts/chart'
 import type { Option, Point } from '@/components/charts/options'
@@ -7,69 +8,92 @@ import { entry } from '@/components/progress/styles'
 import { Sheet } from '@/components/sheet'
 import { cn } from '@/lib/utils'
 
-// MetricTile is a measurement of the days in small: its name, its number
-// (value, with what it is, caption) and its days as a sparkline, which
-// said sums up; legend says what its colours mean, when they mean
-// anything. A tap (its name is a button as big as the tile) opens it as a
-// whole chart, with its axis and a tooltip by day, in a sheet, under the
-// whole chart's legend (chartLegend, else the tile's).
+// Usual is how the tile's number stands against the usual: in words
+// (said), which way it went, and whether that is worse, as recovery
+// flags it.
+export interface Usual {
+  said: string
+  way: 'up' | 'down' | 'same'
+  worse: boolean
+}
+
+const arrows: Record<Usual['way'], LucideIcon | undefined> = {
+  up: ArrowUp,
+  down: ArrowDown,
+  same: undefined,
+}
+
+// MetricTile is a measurement in small, the whole tile one button: its
+// name, its number (value, with what it is, caption), how that stands
+// against the usual (usual), and its days' 7 days' average as a
+// sparkline, over the usual range (band). A tap opens it as a whole
+// chart, with its axis and a tooltip by day, in a sheet, under its
+// legend; said sums that chart up, and describes the tile to a screen
+// reader.
 export function MetricTile({
   title,
   value,
   caption,
+  usual,
   said,
   values,
-  bars = false,
-  className,
-  classOf,
+  band,
   legend,
-  chartLegend = legend,
   option,
 }: {
   title: string
   value: string
   caption: string
+  usual?: Usual | undefined
   said: string
   values: Point[]
-  bars?: boolean
-  className?: string | undefined
-  classOf?: ((v: number) => string) | undefined
+  band?: { low: number; high: number } | undefined
   legend?: ReactNode
-  chartLegend?: ReactNode
   option: Option
 }) {
   const [open, setOpen] = useState(false)
+  const saidId = useId()
+  const Arrow = usual === undefined ? undefined : arrows[usual.way]
 
   return (
-    <li
-      className={cn(
-        'relative flex min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 hover:bg-muted/40 has-focus-visible:ring-2 has-focus-visible:ring-ring lg:p-4',
-        entry,
-      )}
-    >
-      <h3 className="text-small text-muted-foreground">
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          onClick={() => {
-            setOpen(true)
-          }}
-          // The whole tile is the button's to tap.
-          className="text-left outline-none after:absolute after:inset-0 after:rounded-lg"
-        >
-          {title}
-        </button>
-      </h3>
-      <p className="flex flex-wrap items-baseline gap-x-1.5">
-        <span className="text-h2">{value}</span>
-        <span className="text-caption text-muted-foreground">{caption}</span>
-      </p>
-      <Sparkline values={values} label={said} bars={bars} className={className} classOf={classOf} />
-      {legend}
+    <li className="min-w-0">
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-describedby={saidId}
+        onClick={() => {
+          setOpen(true)
+        }}
+        className={cn(
+          'flex size-full min-h-11 min-w-0 flex-col gap-2 rounded-lg border bg-card p-3 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring lg:p-4',
+          entry,
+        )}
+      >
+        <span className="text-small text-muted-foreground">{title}</span>
+        <span className="flex flex-wrap items-baseline gap-x-1.5">
+          <span className="text-h2">{value}</span>
+          <span className="text-caption text-muted-foreground">{caption}</span>
+        </span>
+        {usual !== undefined && (
+          <span
+            className={cn(
+              'flex items-center gap-1 text-caption',
+              usual.worse ? 'text-warning' : 'text-muted-foreground',
+            )}
+          >
+            {Arrow !== undefined && <Arrow aria-hidden className="size-3.5 shrink-0" />}
+            {usual.said}
+          </span>
+        )}
+        <Sparkline values={values} band={band} />
+      </button>
+      <span id={saidId} className="sr-only">
+        {said}
+      </span>
       <Sheet open={open} onOpenChange={setOpen} title={title}>
         <div className="space-y-3">
           <p className="text-small text-muted-foreground">{said}</p>
-          {chartLegend}
+          {legend}
           <Chart option={option} label={said} height={260} />
         </div>
       </Sheet>

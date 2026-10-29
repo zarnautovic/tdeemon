@@ -1,17 +1,18 @@
-import { Link } from '@tanstack/react-router'
 import { CircleAlert, CircleCheck, Flag, Hourglass, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
 import { LoadError } from '@/components/load-error'
+import { CalibrationCard } from '@/components/progress/calibration-card'
+import { PlanRow } from '@/components/progress/plan-row'
+import { phaseSaid, recoverySaid } from '@/components/progress/said'
 import { Skeleton } from '@/components/progress/skeleton'
 import { card, entry } from '@/components/progress/styles'
 import { Badge } from '@/components/ui/badge'
-import { buttonVariants } from '@/components/ui/button'
 import { InfoTip } from '@/components/ui/info-tip'
 import type { Messages } from '@/i18n/en'
-import { daysBetween, useFormat } from '@/i18n/format'
+import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { cn } from '@/lib/utils'
 
@@ -58,11 +59,12 @@ const looks: Record<State, { icon: LucideIcon; card: string; tint: string }> = {
 // VerdictHero is the page's one fact that matters most: how the phase
 // goes, as calibration judges it (GET /api/v1/summary). On track, too
 // fast or too slow, it says the rate measured against the phase's range;
-// without enough data, why and what there is so far; without a phase or
-// a target, the way to the plan. Beside it, how far the TDEE is to be
-// trusted, the trend weight and what was eaten against the target. The
-// verdict, the TDEE, its trust and the trend weight are each an ⓘ away
-// from what they are.
+// without a verdict yet, why. Beside it, how far the TDEE is to be
+// trusted, the trend weight, what was eaten against the target, and how
+// the body recovered. Until the TDEE is reliable, calibration's card
+// stands in its place; without a phase or a target, the TDEE leads, and
+// the way to the plan follows. The verdict, the TDEE, its trust and the
+// trend weight are each an ⓘ away from what they are.
 export function VerdictHero({ phase, today }: { phase: Phase | undefined; today: string }) {
   const t = useMessages()
   const f = useFormat()
@@ -89,8 +91,16 @@ export function VerdictHero({ phase, today }: { phase: Phase | undefined; today:
     )
   }
 
-  const { verdict, tdee, trend } = summary.data
+  const { verdict, tdee, trend, recovery } = summary.data
   const state = stateOf(verdict)
+  const missing = state === 'no_phase' || state === 'no_target' ? state : undefined
+  // The phase and its week, over the headline.
+  const ofPhase =
+    phase !== undefined && state !== 'no_phase' ? phaseSaid(phase, today, t) : undefined
+  if (!tdee.trusted) {
+    return <CalibrationCard summary={summary.data} phase={ofPhase} missing={missing} />
+  }
+
   const look = looks[state]
   const Icon = look.icon
   const headlines: Record<State, string> = {
@@ -102,52 +112,39 @@ export function VerdictHero({ phase, today }: { phase: Phase | undefined; today:
     no_target: v.noTarget,
   }
 
-  // The phase and its week, over the headline.
-  let eyebrow = v.label
-  if (phase !== undefined && state !== 'no_phase') {
-    const week = Math.floor(daysBetween(phase.start, today) / 7) + 1
-    const weeks =
-      phase.end === undefined ? undefined : Math.ceil((daysBetween(phase.start, phase.end) + 1) / 7)
-    eyebrow = `${t.plan.change.types[phase.type]} · ${
-      weeks === undefined ? t.day.summary.week(week) : t.day.summary.weekOf(week, weeks)
-    }`
-  }
-
-  let said: string
+  let said: string | undefined
   if (state === 'waiting') {
-    const reasons = v.reasons
-    const reason = verdict.reasons.find((r): r is keyof Said['reasons'] => r in reasons)
-    said = `${reasons[reason ?? 'no_estimate']} ${v.soFar(tdee.logged_days, tdee.weigh_ins)}`
-  } else if (state === 'no_phase' || state === 'no_target') {
-    said = v.reasons[state]
-  } else {
+    said =
+      verdict.reasons.includes('before_phase') && tdee.before_phase_until !== undefined
+        ? t.calibration.beforePhase(f.short(tdee.before_phase_until))
+        : v.reasons[verdict.reasons.includes('no_tdee') ? 'no_tdee' : 'before_phase']
+  } else if (missing === undefined) {
     said = rateSaid(verdict, state === 'on_target', v, f)
   }
+  const recovered = recoverySaid(recovery, t, f)
 
-  // What there is beside the verdict: the TDEE and how far it is to be
-  // trusted, the trend weight, and what was eaten against the target.
-  const trust = tdee.trusted ? (tdee.before_phase ? 'before' : 'trusted') : 'unsure'
+  // The TDEE and how far it is to be trusted: the headline without a
+  // phase or a target to judge by, else beside the verdict.
+  const trust = tdee.before_phase ? 'before' : 'trusted'
+  const measured = tdee.kcal !== undefined && tdee.half_width !== undefined && (
+    <>
+      {v.tdee(f.number(tdee.kcal), f.number(tdee.half_width))}
+      <InfoTip label={i.tdee.label} title={i.tdee.title}>
+        {i.tdee.text}
+      </InfoTip>
+      <Badge tone={trust === 'trusted' ? 'primary' : 'neutral'}>
+        {trust === 'trusted' ? v.trusted : v.before}
+      </Badge>
+      <InfoTip label={i.trusted.label} title={i.trusted.title}>
+        {i.trusted.text}
+      </InfoTip>
+    </>
+  )
+  // What there is beside the verdict: the TDEE, the trend weight, and
+  // what was eaten against the target.
   const facts: { key: string; fact: ReactNode }[] = []
-  if (tdee.kcal !== undefined && tdee.half_width !== undefined) {
-    facts.push({
-      key: 'tdee',
-      fact: (
-        <>
-          {v.tdee(f.number(tdee.kcal), f.number(tdee.half_width))}
-          <InfoTip label={i.tdee.label} title={i.tdee.title}>
-            {i.tdee.text}
-          </InfoTip>
-          <Badge
-            tone={trust === 'trusted' ? 'primary' : trust === 'unsure' ? 'warning' : 'neutral'}
-          >
-            {{ trusted: v.trusted, unsure: v.unsure, before: v.before }[trust]}
-          </Badge>
-          <InfoTip label={i.trusted.label} title={i.trusted.title}>
-            {i.trusted.text}
-          </InfoTip>
-        </>
-      ),
-    })
+  if (measured !== false && missing === undefined) {
+    facts.push({ key: 'tdee', fact: measured })
   }
   if (trend !== undefined) {
     facts.push({
@@ -177,33 +174,31 @@ export function VerdictHero({ phase, today }: { phase: Phase | undefined; today:
       <div className="flex items-start gap-3">
         <Icon aria-hidden className={cn('mt-1 size-6 shrink-0 lg:size-7', look.tint)} />
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-small text-muted-foreground">{eyebrow}</p>
-          <p className="flex items-center gap-2 text-h2 lg:text-title">
-            {headlines[state]}
-            <InfoTip label={i.verdict.label} title={i.verdict.title}>
-              {i.verdict.text}
-            </InfoTip>
-          </p>
-          <p className="max-w-prose">{said}</p>
+          <p className="text-small text-muted-foreground">{ofPhase ?? v.label}</p>
+          {missing === undefined || measured === false ? (
+            <p className="flex items-center gap-2 text-h2 lg:text-title">
+              {headlines[state]}
+              <InfoTip label={i.verdict.label} title={i.verdict.title}>
+                {i.verdict.text}
+              </InfoTip>
+            </p>
+          ) : (
+            <p className="flex flex-wrap items-center gap-2 text-h2">{measured}</p>
+          )}
+          {said !== undefined && <p className="max-w-prose">{said}</p>}
+          {recovered !== undefined && <p className="max-w-prose">{recovered}</p>}
         </div>
       </div>
-      {state === 'no_phase' || state === 'no_target' ? (
-        <div className="pl-9 lg:pl-10">
-          <Link to="/plan" className={buttonVariants({ variant: 'secondary', size: 'sm' })}>
-            {state === 'no_phase' ? v.setPlan : v.openPlan}
-          </Link>
-        </div>
-      ) : (
-        facts.length > 0 && (
-          <ul className="flex flex-wrap gap-x-5 gap-y-2 pl-9 text-small lg:pl-10">
-            {facts.map(({ key, fact }) => (
-              <li key={key} className="flex items-center gap-2">
-                {fact}
-              </li>
-            ))}
-          </ul>
-        )
+      {facts.length > 0 && (
+        <ul className="flex flex-wrap gap-x-5 gap-y-2 pl-9 text-small lg:pl-10">
+          {facts.map(({ key, fact }) => (
+            <li key={key} className="flex items-center gap-2">
+              {fact}
+            </li>
+          ))}
+        </ul>
       )}
+      {missing !== undefined && <PlanRow missing={missing} />}
     </section>
   )
 }

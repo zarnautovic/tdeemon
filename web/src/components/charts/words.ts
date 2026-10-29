@@ -31,6 +31,7 @@ export function useChartWords(byMonth: boolean): Words {
     day: (date) => t.charts.day(f.weekday(date), f.short(date)),
     number: f.number,
     percent: f.percent,
+    hm: (hours) => t.unit.hm(...f.hm(hours)),
     names: t.charts.names,
     tips: t.charts.tips,
   }

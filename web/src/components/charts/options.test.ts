@@ -3,6 +3,8 @@ import { afterEach, expect, test } from 'vitest'
 
 import {
   average7,
+  eaten7,
+  goalShown,
   lineOption,
   nightOf,
   reachOf,
@@ -54,12 +56,12 @@ function series(option: Record<string, unknown>): Record<string, unknown[]> {
   )
 }
 
-test('the weight is its weigh-ins and its trend, with gaps, and the goal as a line', () => {
-  const option = weightOption(days, words, palette, 75)
+test('the weight is its weigh-ins and its trend, with gaps, and a goal near them as a line', () => {
+  const option = weightOption(days, words, palette, 82.5)
   const s = series(option)
   expect(s['Weigh-in']).toEqual([82.4, null, null])
   expect(s.Trend).toEqual([82.6, null, 82.5])
-  expect(JSON.stringify(option)).toContain('"yAxis":75')
+  expect(JSON.stringify(option)).toContain('"yAxis":82.5')
   expect(JSON.stringify(weightOption(days, words, palette))).not.toContain('markLine')
   expect(JSON.stringify(option.xAxis)).toContain('["2026-10-20","2026-10-21","2026-10-22"]')
   expect(axisLabelOf(option, 'xAxis', '2026-10-20')).toBe('10-20')
@@ -123,7 +125,8 @@ test('a night is long, middle or short, each a series of its colour, and average
   const svg = svgOf(option)
   expect(svg).toContain(palette.blue)
   expect(svg).toContain(palette.bad)
-  expect(tooltipOf(option, 2)).toBe('2026-10-22 · 5.5 h · 7-day average 6.5 h')
+  // In hours and minutes, as everywhere.
+  expect(tooltipOf(option, 2)).toBe('2026-10-22 · 5 h 30 · 7-day average 6 h 30')
 })
 
 test('the 7 days are averaged over the days that have a value', () => {
@@ -149,14 +152,15 @@ test('steps count as calibration counts them, on one axis', () => {
   expect(tooltipOf(option, 0)).toBe('2026-10-20 · 9000 steps')
 })
 
-test("the weights' axis ends on its steps, the goal within it", () => {
+test("the weights' axis ends on its steps, and holds the weights alone", () => {
   expect(reachOf([84.1, 92.9, 80])).toEqual({ min: 80, max: 95, interval: 5 })
   expect(reachOf([84.1, 86.3])).toEqual({ min: 84, max: 86.5, interval: 0.5 })
   expect(reachOf([80])).toEqual({ min: 79, max: 81, interval: 0.5 })
   expect(reachOf([])).toEqual({ scale: true })
+  // A goal of 75 would stretch it to 74, the weights a strip at its top.
   const svg = svgOf(weightOption(days, words, palette, 75))
-  expect(svg).toContain('>74.0<')
-  expect(svg).toContain('>84.0<')
+  expect(svg).not.toContain('>74.0<')
+  expect(svg).toContain('>82.6<')
 })
 
 test('a measurement is one line on one axis, which writes it as told', () => {
@@ -173,11 +177,32 @@ test('a measurement is one line on one axis, which writes it as told', () => {
   expect(series(option).HRV).toEqual([50, null, 52])
 })
 
-test('the goal is drawn though it is far below the weights', () => {
-  const svg = svgOf(weightOption(days, words, palette, 75))
-
-  expect(svg).toContain('Goal 75.0')
+test('a goal is drawn within the axis the weights reach, not far below them', () => {
+  expect(goalShown(days, 82.5)).toBe(true)
+  expect(goalShown(days, 75)).toBe(false)
+  expect(goalShown(days, undefined)).toBe(false)
+  expect(goalShown([day('2026-10-20')], 80)).toBe(false)
+  expect(svgOf(weightOption(days, words, palette, 82.5))).toContain('Goal 82.5')
+  expect(svgOf(weightOption(days, words, palette, 75))).not.toContain('Goal')
   expect(svgOf(weightOption(days, words, palette))).not.toContain('Goal')
+})
+
+test("the space between the TDEE and the 7 days' intake is a band, either way", () => {
+  const eating = [2000, 2600, null, 2300].map((kcal, i) =>
+    day(`2026-10-2${String(i)}`, {
+      ...(kcal === null ? {} : { intake: { kcal, protein: 150, carbs: 200, fat: 60 } }),
+      tdee: { kcal: 2400, half_width: 50, trusted: true, before_phase: false, to: '2026-10-23' },
+    }),
+  )
+  expect(eaten7(eating)).toEqual([2000, 2300, 2300, 2300])
+  const s = series(tdeeOption(eating, words, palette))
+  // From the lower of the two, as high as they are apart.
+  expect(s.gapFoot).toEqual([2000, 2300, 2300, 2300])
+  expect(s['Eaten to TDEE, 7-day average']).toEqual([400, 100, 100, 100])
+  // None without a TDEE.
+  const intake = { kcal: 2000, protein: 150, carbs: 200, fat: 60 }
+  const before = series(tdeeOption([day('2026-10-20', { intake })], words, palette))
+  expect(before.gapFoot).toEqual([null])
 })
 
 test('one weigh-in at the goal keeps the axis around it', () => {

@@ -148,6 +148,26 @@ export function useFormat() {
     // percent is a percentage, 18.2 for 18.2 %, as the language writes it.
     percent: (n: number, digits = 1) =>
       numberFormat(locale, { style: 'percent', maximumFractionDigits: digits }).format(n / 100),
+    // signedPercent is a difference in percent, its sign always said but
+    // of 0: −7 %, +3 %.
+    signedPercent: (n: number, digits = 0) =>
+      numberFormat(locale, {
+        style: 'percent',
+        maximumFractionDigits: digits,
+        signDisplay: 'exceptZero',
+      }).format(n / 100),
+    // list is words in a list, with the language's "and": "sleep and
+    // HRV", "san i HRV".
+    list: (words: string[]) => new Intl.ListFormat(locale, { type: 'conjunction' }).format(words),
+    // hm is hours as whole hours and minutes, each as the language writes
+    // numbers, the minutes in two digits: 6.87 hours are 6 and 52.
+    hm: (hours: number): [string, string] => {
+      const minutes = Math.round(hours * 60)
+      return [
+        numberFormat(locale, {}).format(Math.floor(minutes / 60)),
+        numberFormat(locale, { minimumIntegerDigits: 2, useGrouping: false }).format(minutes % 60),
+      ]
+    },
     // date is a day's date in words: "Wednesday, October 22" in English,
     // "srijeda, 22. listopada" in Croatian; of another year than today's
     // (YYYY-MM-DD, the user's; in UTC when not known), with it.
@@ -165,6 +185,18 @@ export function useFormat() {
       dateFormat(locale, { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(
         calendarDate(date),
       ),
+    // days are the days from one date to another, short: "Oct 19 – 25" in
+    // English, "19. – 25. lis" in Croatian; of another year than today's
+    // (YYYY-MM-DD, the user's), with it.
+    days: (from: string, to: string, today: string) =>
+      dateFormat(locale, {
+        day: 'numeric',
+        month: 'short',
+        ...(from.slice(0, 4) === today.slice(0, 4) && to.slice(0, 4) === today.slice(0, 4)
+          ? {}
+          : { year: 'numeric' }),
+        timeZone: 'UTC',
+      }).formatRange(calendarDate(from), calendarDate(to)),
     // time is an instant's time of day on the user's clock.
     time: (instant: string, timeZone: string) =>
       dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(

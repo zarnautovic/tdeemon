@@ -6,19 +6,20 @@ import { LoadError } from '@/components/load-error'
 import { Skeleton } from '@/components/progress/skeleton'
 import { card, entry } from '@/components/progress/styles'
 import { Button } from '@/components/ui/button'
-import { useFormat } from '@/i18n/format'
+import { daysBetween, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import { cn } from '@/lib/utils'
 
 // The weeks shown before the rest is asked for.
 const first = 8
 
-// WeeklyTable is the span's weeks, the latest first, as calibration
-// counts them (GET /api/v1/history by week): the kcal and the protein
-// eaten a day on average over the days logged, the trend weight's change
-// from the week before, and how many of the 7 days were logged. It says
-// in text what the charts show. weeks is the history to ask for, a week
-// more than it shows: the first's change is from it.
+// WeeklyTable is the span's calendar weeks, Monday to Sunday, the latest
+// first, as calibration counts them (GET /api/v1/history by week): the
+// kcal and the protein eaten a day on average over the days logged, the
+// trend weight's change from the week before, and how many of its days
+// were logged, of the 7, or of this week's that are over. It says in text
+// what the charts show. weeks is the history to ask for, a week more than
+// it shows: the first's change is from it.
 export function WeeklyTable({
   weeks,
   today,
@@ -96,7 +97,7 @@ export function WeeklyTable({
               <tr key={week.from} className="border-t">
                 <th scope="row" className="py-2.5 text-left font-normal whitespace-nowrap">
                   {/* With its year when another than today's. */}
-                  {f.calendarDay(week.from, 'UTC', Date.parse(`${today}T12:00:00Z`))}
+                  {f.days(week.from, week.to, today)}
                 </th>
                 <td className="py-2.5 pl-2 text-right font-semibold">
                   {week.kcal === undefined ? none : f.number(week.kcal)}
@@ -108,7 +109,7 @@ export function WeeklyTable({
                   {week.change === undefined ? none : f.signed(week.change, 1)}
                 </td>
                 <td className="py-2.5 pl-2 text-right text-muted-foreground">
-                  {w.daysOf(week.logged_days)}
+                  {w.daysOf(week.logged_days, daysBetween(week.from, week.to) + 1)}
                 </td>
               </tr>
             ))}

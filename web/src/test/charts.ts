@@ -33,6 +33,10 @@ export const words: Words = {
   day: (date) => date,
   number: (n, digits = 0) => n.toFixed(digits),
   percent: (n, digits = 1) => `${n.toFixed(digits)} %`,
+  hm: (hours) => {
+    const minutes = Math.round(hours * 60)
+    return en.unit.hm(String(Math.floor(minutes / 60)), String(minutes % 60).padStart(2, '0'))
+  },
   names: en.charts.names,
   tips: en.charts.tips,
 }

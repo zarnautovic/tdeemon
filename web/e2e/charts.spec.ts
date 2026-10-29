@@ -28,10 +28,13 @@ test('the progress says how the phase goes, and shows the days logged and their 
     .getByRole('link', { name: 'Progress' })
     .click()
 
-  // The user has no plan: the hero leads to one.
-  const verdict = page.getByRole('region', { name: 'The phase so far' })
-  await expect(verdict).toContainText('No phase yet.')
-  await expect(verdict.getByRole('link', { name: 'Set up a plan' })).toBeVisible()
+  // The user has no TDEE yet, nor a plan: calibration counts toward one in
+  // the hero, which leads to a plan too.
+  const calibration = page.getByRole('region', { name: 'Calibration' })
+  await expect(calibration).toContainText('Logged days')
+  await expect(calibration).toContainText('Weigh-ins')
+  await expect(calibration).toContainText('No phase yet.')
+  await expect(calibration.getByRole('link', { name: 'Set up a plan' })).toBeVisible()
 
   // Today's weigh-in joins the trend once the day is over, as the
   // summary has it.

@@ -61,13 +61,7 @@ export function BodyToday({
     },
     {
       label: t.day.metric.sleep_h,
-      value:
-        sleep === undefined
-          ? undefined
-          : t.day.body.sleep(
-              f.number(Math.floor(Math.round(sleep * 60) / 60)),
-              f.number(Math.round(sleep * 60) % 60),
-            ),
+      value: sleep === undefined ? undefined : t.unit.hm(...f.hm(sleep)),
     },
     { label: t.day.metric.steps, value: steps === undefined ? undefined : f.number(steps) },
     {
