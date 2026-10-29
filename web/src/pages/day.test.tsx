@@ -419,7 +419,7 @@ test("an amount of portions takes the word's form of the number shown", async ()
   expect(await screen.findByText('1 portion')).toBeDefined()
 })
 
-test('a day past its target says by how much, in words and not in colour alone', async () => {
+test("a day past its target says by how much, in words and not in an error's colour", async () => {
   fakeServer({
     ...signedIn(),
     'GET /api/v1/days/today': () =>
@@ -434,10 +434,14 @@ test('a day past its target says by how much, in words and not in colour alone',
   renderAt('/')
 
   const summary = await screen.findByRole('region', { name: 'Energy and macros' })
-  expect(within(summary).getByText('Eaten 2,700 of 2,500 kcal, 200 over')).toBeDefined()
+  expect(within(summary).getByText('Eaten 2,700 of 2,500 kcal, 200 over target')).toBeDefined()
   expect(within(summary).getByText('+200')).toBeDefined()
-  expect(within(summary).getByText('kcal over')).toBeDefined()
-  expect(macroOf(summary, 'Protein')).toBe('Protein170 / 160 g · 10 over')
+  expect(within(summary).getByText('over target')).toBeDefined()
+  // Protein's target is a floor, reached; carbs and fat say how far.
+  expect(macroOf(summary, 'Protein')).toBe('Protein170 / 160 g · ✓ reached · +10 g')
+  expect(macroOf(summary, 'Carbs')).toBe('Carbs300 / 280 g · +20 g')
+  expect(macroOf(summary, 'Fat')).toBe('Fat90 / 80 g · +10 g')
+  expect(summary.querySelector('.text-destructive, .stroke-destructive')).toBeNull()
 })
 
 test('a day on its target has nothing left, and nothing over', async () => {
@@ -511,9 +515,18 @@ test('a few grams keep their decimal, many are whole', async () => {
   expect(macroOf(summary, 'Fat')).toBe('Fat1.5 / 80 g · 79 to go')
 })
 
-test('the TDEE calibration measures, and the deficit the target makes of it', async () => {
+// What is left to the TDEE is of what was eaten, live, not of the target:
+// 2,950 less 1,136, though the target is 2,500.
+test('the TDEE calibration measures, and what is left of it after what was eaten', async () => {
   fakeServer({
     ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          total: { kcal: 1136, protein: 80, carbs: 120, fat: 40 },
+          remaining: { kcal: 1364, protein: 80, carbs: 160, fat: 40 },
+        }),
+      ),
     'GET /api/v1/summary': () =>
       Response.json({
         ...summaryOf(),
@@ -526,12 +539,20 @@ test('the TDEE calibration measures, and the deficit the target makes of it', as
   const summary = await screen.findByRole('region', { name: 'Energy and macros' })
   expect(await within(summary).findByText('TDEE')).toBeDefined()
   expect(termOf(summary, 'TDEE')).toBe('2,950')
-  expect(termOf(summary, 'Deficit')).toBe('-450')
+  expect(termOf(summary, 'Left to TDEE')).toBe('1,814')
+  expect(within(summary).queryByText('Deficit')).toBeNull()
 })
 
-test('a TDEE not trusted yet is about so much, and a target over it a surplus', async () => {
+test('a TDEE not trusted yet is about so much, and a day past it says how far, never below 0', async () => {
   fakeServer({
     ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(
+        day({
+          total: { kcal: 2600, protein: 160, carbs: 280, fat: 80 },
+          remaining: { kcal: -100, protein: 0, carbs: 0, fat: 0 },
+        }),
+      ),
     'GET /api/v1/summary': () =>
       Response.json({
         ...summaryOf(),
@@ -542,9 +563,9 @@ test('a TDEE not trusted yet is about so much, and a target over it a surplus', 
   renderAt('/')
 
   const summary = await screen.findByRole('region', { name: 'Energy and macros' })
-  expect(await within(summary).findByText('Surplus')).toBeDefined()
+  expect(await within(summary).findByText('Over TDEE')).toBeDefined()
   expect(termOf(summary, 'TDEE')).toBe('≈2,300')
-  expect(termOf(summary, 'Surplus')).toBe('+200')
+  expect(termOf(summary, 'Over TDEE')).toBe('300')
 })
 
 test('the phase of the day, its week, and the rate against the phase', async () => {

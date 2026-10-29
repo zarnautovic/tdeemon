@@ -594,3 +594,19 @@ test("the charts take the dark theme's tokens when it is chosen, and draw again"
   expect(dark['--primary']).toBe(palette.primary)
   expect(svg()).not.toContain(light['--primary'])
 })
+
+// The verdict, the TDEE and its ±, its trust and the trend weight: each an
+// ⓘ away from what it is, in words.
+test.each([
+  ['How the phase is judged', 'The verdict', 'measured from the phase'],
+  ['What TDEE is', 'TDEE', 'with 80% probability'],
+  ['What reliable means', 'Reliable', '200 kcal or less'],
+  ['What trend weight is', 'Trend weight', 'swings of water and salt'],
+])('the hero\'s "%s" ⓘ says what it is', async (tip, name, said) => {
+  progressServer()
+  renderAt('/progress')
+
+  const verdict = await hero()
+  fireEvent.click(within(verdict).getByRole('button', { name: tip }))
+  expect((await screen.findByRole('dialog', { name })).textContent).toContain(said)
+})

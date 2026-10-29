@@ -12,9 +12,11 @@ const fills: Record<Macro, string> = {
 }
 
 // MacroBar is a macro of the day against its target: its name, the grams
-// eaten of the target's and what is left (or how far over, gramsLeft), and
-// a bar filled to them, which fills to a new value (not with less motion
-// asked for). The words say what the bar shows.
+// eaten of the target's and what is left, and a bar filled to them, which
+// fills to a new value (not with less motion asked for). Past the target
+// nothing is an error: protein's target is a floor, which the day has
+// reached, said in the brand's colour with how far past it; carbs and fat
+// say how far past theirs, plainly. The words say what the bar shows.
 export function MacroBar({
   macro,
   eaten,
@@ -26,8 +28,21 @@ export function MacroBar({
 }) {
   const t = useMessages()
   const f = useFormat()
+  const s = t.day.summary
   const left = gramsLeft(eaten, target)
   const share = target > 0 ? Math.min(eaten / target, 1) : 0
+
+  let after = <>{s.toGo(f.grams(left))}</>
+  if (macro === 'protein' && left <= 0 && target > 0) {
+    after = (
+      <span className="font-semibold text-primary">
+        <span aria-hidden>✓ </span>
+        {left < 0 ? s.reachedBy(f.grams(-left)) : s.reached}
+      </span>
+    )
+  } else if (left < 0) {
+    after = <>{s.overBy(f.grams(-left))}</>
+  }
 
   return (
     <div className="space-y-1.5">
@@ -35,10 +50,7 @@ export function MacroBar({
         <span className="font-semibold">{t.day[macro]}</span>
         <span className="text-muted-foreground">
           <b className="font-semibold text-foreground">{f.grams(eaten)}</b>{' '}
-          {t.day.summary.ofTarget(f.grams(target))} ·{' '}
-          <span className={left < 0 ? 'text-destructive' : ''}>
-            {left < 0 ? t.day.summary.overBy(f.grams(-left)) : t.day.summary.toGo(f.grams(left))}
-          </span>
+          {s.ofTarget(f.grams(target))} · {after}
         </span>
       </p>
       <div aria-hidden className="h-2 rounded-full bg-surface-2">

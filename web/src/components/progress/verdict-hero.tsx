@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/progress/skeleton'
 import { card, entry } from '@/components/progress/styles'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
+import { InfoTip } from '@/components/ui/info-tip'
 import type { Messages } from '@/i18n/en'
 import { daysBetween, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -59,12 +60,15 @@ const looks: Record<State, { icon: LucideIcon; card: string; tint: string }> = {
 // fast or too slow, it says the rate measured against the phase's range;
 // without enough data, why and what there is so far; without a phase or
 // a target, the way to the plan. Beside it, how far the TDEE is to be
-// trusted, the trend weight and what was eaten against the target.
+// trusted, the trend weight and what was eaten against the target. The
+// verdict, the TDEE, its trust and the trend weight are each an ⓘ away
+// from what they are.
 export function VerdictHero({ phase, today }: { phase: Phase | undefined; today: string }) {
   const t = useMessages()
   const f = useFormat()
   const summary = $api.useQuery('get', '/api/v1/summary')
   const v = t.charts.verdict
+  const i = t.info
 
   if (summary.isError) {
     return (
@@ -130,17 +134,33 @@ export function VerdictHero({ phase, today }: { phase: Phase | undefined; today:
       fact: (
         <>
           {v.tdee(f.number(tdee.kcal), f.number(tdee.half_width))}
+          <InfoTip label={i.tdee.label} title={i.tdee.title}>
+            {i.tdee.text}
+          </InfoTip>
           <Badge
             tone={trust === 'trusted' ? 'primary' : trust === 'unsure' ? 'warning' : 'neutral'}
           >
             {{ trusted: v.trusted, unsure: v.unsure, before: v.before }[trust]}
           </Badge>
+          <InfoTip label={i.trusted.label} title={i.trusted.title}>
+            {i.trusted.text}
+          </InfoTip>
         </>
       ),
     })
   }
   if (trend !== undefined) {
-    facts.push({ key: 'trend', fact: v.trend(f.number(trend.kg, 1)) })
+    facts.push({
+      key: 'trend',
+      fact: (
+        <>
+          {v.trend(f.number(trend.kg, 1))}
+          <InfoTip label={i.trend.label} title={i.trend.title}>
+            {i.trend.text}
+          </InfoTip>
+        </>
+      ),
+    })
   }
   if (verdict.intake_kcal !== undefined && verdict.target_kcal !== undefined) {
     facts.push({
@@ -158,7 +178,12 @@ export function VerdictHero({ phase, today }: { phase: Phase | undefined; today:
         <Icon aria-hidden className={cn('mt-1 size-6 shrink-0 lg:size-7', look.tint)} />
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-small text-muted-foreground">{eyebrow}</p>
-          <p className="text-h2 lg:text-title">{headlines[state]}</p>
+          <p className="flex items-center gap-2 text-h2 lg:text-title">
+            {headlines[state]}
+            <InfoTip label={i.verdict.label} title={i.verdict.title}>
+              {i.verdict.text}
+            </InfoTip>
+          </p>
           <p className="max-w-prose">{said}</p>
         </div>
       </div>

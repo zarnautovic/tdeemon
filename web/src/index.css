@@ -38,6 +38,7 @@
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-warning: var(--warning);
+  --color-over: var(--over);
   --color-success: var(--primary);
   --color-fat: var(--fat);
   --color-carbs: var(--carbs);
@@ -109,7 +110,10 @@
 /*
   The colours, light, and dark below. Text keeps 4.5:1 on the page, a
   card and surface-2 in both (muted-foreground too); the macros' colours
-  go with a label and a number, never alone.
+  go with a label and a number, never alone. A colour that means
+  something (the brand's, a warning's, a destructive's, over) is
+  neither one of the macros' nor near it, in either theme
+  (tokens.test.ts).
 */
 :root {
   color-scheme: light;
@@ -141,7 +145,14 @@
   --carbs: #d99a1e;
   --fat: #d4507a;
   --warning: #8a5300;
-  --destructive: #c93636;
+  --destructive: #c4302a;
+  /*
+    A day past its target, beyond what the plan's week takes in its
+    stride: a warm neutral, not a warning, as logging is never judged.
+    It keeps 3:1 on the page, a card and surface-2, as a mark and large
+    text need; smaller text says it in words.
+  */
+  --over: #937b6c;
   --chart-grid: #6b7385;
   --chart-1: var(--primary);
   --chart-2: var(--protein);
@@ -178,8 +189,9 @@
     --protein: #7aa2f7;
     --carbs: #f0b45c;
     --fat: #f07fa0;
-    --warning: #f0b45c;
-    --destructive: #f07178;
+    --warning: #efe360;
+    --destructive: #f85a48;
+    --over: #aa9576;
     --chart-grid: #8b95ab;
     /*
       A shadow is lost on a dark page: an edge and the lighter surface

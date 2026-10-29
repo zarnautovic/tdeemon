@@ -17,3 +17,19 @@ export function kcalLeft(eaten: number, target: number): number {
 export function gramsLeft(eaten: number, target: number): number {
   return rounded(roundedGrams(target) - roundedGrams(eaten), 1)
 }
+
+// Standing is where a day's energy is against its target: under it, on
+// it, or over it.
+export type Standing = 'under' | 'on' | 'over'
+
+// kcalStanding is where eaten stands against a target of kcal, both as
+// shown (kcalLeft): on it within 5 % of it either way, and 100 kcal at
+// least, as the plan works on the week's average, which such a day
+// leaves as it is; under or over it past that.
+export function kcalStanding(eaten: number, target: number): Standing {
+  const left = kcalLeft(eaten, target)
+  if (Math.abs(left) <= Math.max(rounded(target) * 0.05, 100)) {
+    return 'on'
+  }
+  return left > 0 ? 'under' : 'over'
+}

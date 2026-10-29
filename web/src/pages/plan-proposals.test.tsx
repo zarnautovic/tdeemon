@@ -502,9 +502,16 @@ test('the targets by type of day come to a weekly average, against the TDEE', as
   await waitFor(() => {
     expect(term('TDEE')).toBe('2,400 kcal a day')
   })
-  expect(term('Deficit')).toBe('-315 kcal a day')
+  // A deficit in words, beside a number never below 0.
+  expect(term('Planned deficit')).toBe('315 kcal a day, weekly average')
   expect(targets.getByText('From Oct 26:').parentElement?.textContent).toBe(
     'From Oct 26: 2,200 kcal · P 160 g · C 205 g · F 70 g',
+  )
+  // The TDEE and the deficit, each an ⓘ away from what it is.
+  expect(targets.getByRole('button', { name: 'What TDEE is' })).toBeDefined()
+  fireEvent.click(targets.getByRole('button', { name: 'What the planned deficit is' }))
+  expect((await screen.findByRole('dialog', { name: 'Planned deficit' })).textContent).toContain(
+    'A deficit of about 500 kcal a day is about half a kilo a week.',
   )
 })
 
@@ -519,7 +526,7 @@ test('a TDEE not trusted yet is about so much, and one not measured says so', as
   await waitFor(() => {
     expect(term('TDEE')).toBe('≈1,900 kcal a day')
   })
-  expect(term('Surplus')).toBe('+186 kcal a day')
+  expect(term('Planned surplus')).toBe('186 kcal a day, weekly average')
   cleanup()
 
   planPage(cut)
@@ -528,7 +535,7 @@ test('a TDEE not trusted yet is about so much, and one not measured says so', as
   await waitFor(() => {
     expect(without.getByText('TDEE').nextElementSibling?.textContent).toBe('not measured yet')
   })
-  expect(without.queryByText('Deficit')).toBeNull()
+  expect(without.queryByText('Planned deficit')).toBeNull()
 })
 
 // A plan that starts tomorrow is all to come.

@@ -4,6 +4,7 @@ import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
 import { targetNow, weekdays, weeklyAverage } from '@/components/plan/phases'
 import { useDate, usePlanWords } from '@/components/plan/proposal-text'
+import { InfoTip } from '@/components/ui/info-tip'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
@@ -109,8 +110,10 @@ function DayTile({
 }
 
 // Average is the weekly average of the targets, a day, against the TDEE
-// calibration measures, and what it is under or over it; about so much
-// while calibration does not trust it yet.
+// calibration measures, about so much while calibration does not trust it
+// yet; and the deficit or surplus it plans, said in words beside a number
+// never below 0. The TDEE and the deficit are each an ⓘ away from what
+// they are.
 function Average({
   kcal,
   tdee,
@@ -125,10 +128,15 @@ function Average({
   const balance = measured === undefined ? undefined : Math.round(kcal - measured)
 
   return (
-    <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-small">
+    <dl className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-1 text-small">
       <dt className="text-muted-foreground">{g.average}</dt>
       <dd className="text-right font-semibold">{g.perDay(f.number(kcal))}</dd>
-      <dt className="text-muted-foreground">{g.tdee}</dt>
+      <dt className="flex items-center gap-1 text-muted-foreground">
+        {g.tdee}
+        <InfoTip label={t.info.tdee.label} title={t.info.tdee.title}>
+          {t.info.tdee.text}
+        </InfoTip>
+      </dt>
       {measured === undefined ? (
         <dd className="text-right text-muted-foreground">{g.noTdee}</dd>
       ) : (
@@ -140,10 +148,13 @@ function Average({
       )}
       {balance !== undefined && (
         <>
-          <dt className="text-muted-foreground">
+          <dt className="flex items-center gap-1 text-muted-foreground">
             {balance > 0 ? g.surplus : balance < 0 ? g.deficit : g.even}
+            <InfoTip label={t.info.deficit.label} title={t.info.deficit.title}>
+              {t.info.deficit.text}
+            </InfoTip>
           </dt>
-          <dd className="text-right font-semibold">{g.perDay(f.signed(balance))}</dd>
+          <dd className="text-right font-semibold">{g.balance(f.number(Math.abs(balance)))}</dd>
         </>
       )}
     </dl>

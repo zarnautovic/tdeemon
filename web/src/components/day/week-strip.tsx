@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 
 import { $api } from '@/api/client'
 import type { components } from '@/api/schema'
+import { kcalStanding } from '@/components/day/left'
 import { weekOf } from '@/components/day/week'
 import { addDays, useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -12,22 +13,32 @@ type HistoryDay = components['schemas']['HistoryDayBody']
 const radius = 11
 const length = 2 * Math.PI * radius
 
+// overOf is how far past its target a day's intake is, as a share of the
+// target, when it is past it by more than the week takes in its stride
+// (kcalStanding); 0 when it is not.
+function overOf(intake: number | undefined, target: number | undefined): number {
+  return intake !== undefined && target && kcalStanding(intake, target) === 'over'
+    ? intake / target - 1
+    : 0
+}
+
 // MiniRing is a day's intake against its target, as the day's ring has
-// it on a smaller scale: filled to it, a destructive arc on past it; a
-// day without a meal is a dashed circle, and one without a target a full
+// it on a smaller scale: filled to it, and a thinner arc in the over
+// colour on past it, by more than the week takes in its stride; a day
+// without a meal is a dashed circle, and one without a target a full
 // muted one.
 function MiniRing({ day }: { day: HistoryDay | undefined }) {
   const intake = day?.intake?.kcal
   const target = day?.target?.kcal
   const share = intake !== undefined && target ? Math.min(intake / target, 1) : 0
-  const beyond = intake !== undefined && target ? Math.min(Math.max(intake / target - 1, 0), 1) : 0
-  const arc = (part: number, className: string) => (
+  const beyond = Math.min(overOf(intake, target), 1)
+  const arc = (part: number, width: number, className: string) => (
     <circle
       cx="14"
       cy="14"
       r={radius}
       fill="none"
-      strokeWidth="4"
+      strokeWidth={width}
       strokeDasharray={`${String(part * length)} ${String(length)}`}
       className={className}
     />
@@ -44,25 +55,37 @@ function MiniRing({ day }: { day: HistoryDay | undefined }) {
         strokeDasharray={intake === undefined ? '3 3' : undefined}
         className="stroke-border"
       />
-      {share > 0 && arc(share, 'stroke-primary')}
-      {beyond > 0 && arc(beyond, 'stroke-destructive')}
+      {share > 0 && arc(share, 4, 'stroke-primary')}
+      {beyond > 0 && arc(beyond, 2, 'stroke-over')}
     </svg>
   )
 }
 
 // Bar is a day's intake as a bar, against the week's most (scale), with
-// its target a tick across: a desktop's week, the days side by side.
+// its target a tick across: a desktop's week, the days side by side. Past
+// its target by more than the week takes in its stride, the bar is the
+// brand's up to the tick and, above it, narrower in the over colour.
 function Bar({ day, scale }: { day: HistoryDay | undefined; scale: number }) {
   const intake = day?.intake?.kcal
   const target = day?.target?.kcal
-  const over = intake !== undefined && target !== undefined && intake > target
+  const over = overOf(intake, target) > 0
+  const below = over && target !== undefined ? target : intake
 
   return (
     <span aria-hidden className="relative hidden h-16 w-6 rounded-sm bg-surface-2 lg:block">
-      {intake !== undefined && (
+      {below !== undefined && (
         <span
-          className={`absolute inset-x-0 bottom-0 rounded-sm ${over ? 'bg-destructive' : 'bg-primary'}`}
-          style={{ height: `${String((intake / scale) * 100)}%` }}
+          className="absolute inset-x-0 bottom-0 rounded-sm bg-primary"
+          style={{ height: `${String((below / scale) * 100)}%` }}
+        />
+      )}
+      {over && intake !== undefined && below !== undefined && (
+        <span
+          className="absolute inset-x-1.5 rounded-t-sm bg-over"
+          style={{
+            bottom: `${String((below / scale) * 100)}%`,
+            height: `${String(((intake - below) / scale) * 100)}%`,
+          }}
         />
       )}
       {target !== undefined && (
