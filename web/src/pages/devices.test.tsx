@@ -98,7 +98,7 @@ test("an AI coach's steps give the instance's MCP address, the key and a ready c
       },
     },
   })
-  expect(sheet.getByText(/^ChatGPT signs in to a server with OAuth, not a key/)).toBeDefined()
+  expect(sheet.getByText(/^ChatGPT signs in with OAuth, not a key/)).toBeDefined()
   expect(valueOf('Then write to your AI coach')).toBe('Look at my data and propose a plan.')
   expect(server.sent).toEqual([{ name: 'Claude', scopes: ['tools'] }])
 })

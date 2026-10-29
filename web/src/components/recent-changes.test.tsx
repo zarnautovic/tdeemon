@@ -96,7 +96,7 @@ test('the settings list the recent changes, each said with when and by whom', as
     'In use again: Skyr · Dukat1:14 PM · you',
     'A proposal applied1:14 PM · your AI coach',
     'A phase set1:14 PM · you',
-    'Changed: LunchOct 22, 1:14 PM · youTaken back',
+    'Changed: LunchOct 22, 1:14 PM · youUndone',
   ])
   // Undo is the next's alone, named by what it takes back.
   expect(sheet.getAllByRole('button', { name: /^Undo/ })).toHaveLength(1)
@@ -132,7 +132,7 @@ test('the next change is taken back from the list, after its toast is gone, and 
   const sheet = within(await screen.findByRole('dialog', { name: 'Recent changes' }))
   fireEvent.click(await sheet.findByRole('button', { name: 'Undo: Deleted: Skyr bowl' }))
 
-  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  expect(await screen.findByText('Undone: a meal deleted.')).toBeDefined()
   // Named, so taken back only while it is the latest.
   expect(undos).toEqual([
     { id: expect.any(String) as unknown, last: { action: 'meal.delete', entity: deleted } },
@@ -140,7 +140,7 @@ test('the next change is taken back from the list, after its toast is gone, and 
   expect(await sheet.findByRole('button', { name: 'Undo: Logged: Oats + 2' })).toBeDefined()
   await waitFor(() => {
     expect(sheet.getAllByRole('listitem')[0]?.textContent).toBe(
-      'Deleted: Skyr bowl1:14 PM · youTaken back',
+      'Deleted: Skyr bowl1:14 PM · youUndone',
     )
   })
 })
@@ -194,7 +194,7 @@ test('an undo is said though its row went before the page came again', async () 
     release()
   }
 
-  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  expect(await screen.findByText('Undone: a meal deleted.')).toBeDefined()
 })
 
 test('an undo another change came before says so, in Croatian too', async () => {

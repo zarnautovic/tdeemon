@@ -33,24 +33,25 @@ import { EntryRow } from '@/components/day/entry-row'
 import { FoodPicker } from '@/components/day/food-picker'
 import {
   amountOf,
+  amountWrong,
   converted,
+  entryItem,
   entryValues,
   estimateEntry,
   foodEntry,
   foodItem,
   itemName,
-  itemOf,
-  most,
   nutrientsIn,
   quantityIn,
+  sayWrong,
   servingOf,
   shownAmount,
-  tooMuch,
   unitIn,
   unitsOf,
   type Amount,
   type Entry,
   type Values,
+  type Wrong,
 } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -304,9 +305,11 @@ export function MealEditor({
   const keeps = useRef(new Map<string, HTMLButtonElement>())
   // The estimates to save as foods of the user's, a portion of each.
   const [asFoods, setAsFoods] = useState<ReadonlySet<string>>(new Set())
-  const [wrongEntries, setWrongEntries] = useState<ReadonlySet<string>>(new Set())
-  // The items whose amount is 0, or more than an item may hold (tooMuch).
-  const [over, setOver] = useState<ReadonlySet<string>>(new Set())
+  // What is wrong with each entry that cannot be sent, by its key; and
+  // with each item's amount, 0 or more than an item may hold
+  // (amountWrong), by the item.
+  const [wrongEntries, setWrongEntries] = useState<ReadonlyMap<string, Wrong>>(new Map())
+  const [over, setOver] = useState<ReadonlyMap<string, Wrong>>(new Map())
   const [added, setAdded] = useState<string | undefined>(undefined)
   // Of the items there now: one removed elsewhere is not counted.
   const none = entries.length === 0 && meal.items.every((item) => removed.has(item.id))
@@ -460,8 +463,8 @@ export function MealEditor({
     }
     const ops: Op[] = []
     const notNumbers = new Set<string>()
-    const overs = new Set<string>()
-    const bad = new Set<string>()
+    const overs = new Map<string, Wrong>()
+    const bad = new Map<string, Wrong>()
     for (const item of meal.items) {
       if (removed.has(item.id)) {
         ops.push({ op: 'remove', item_id: item.id })
@@ -471,11 +474,11 @@ export function MealEditor({
       const swap = swaps[item.id]
       if (swap !== undefined) {
         // Another food in its place, under its id, with its note.
-        const input = itemOf(swap, f.parse)
-        if (input === undefined) {
-          bad.add(swap.key)
+        const checked = entryItem(swap, f.parse)
+        if ('wrong' in checked) {
+          bad.set(swap.key, checked.wrong)
         } else {
-          const { id: _new, ...rest } = input
+          const { id: _new, ...rest } = checked.item
           ops.push({
             op: 'replace',
             item_id: item.id,
@@ -542,12 +545,13 @@ export function MealEditor({
         n !== undefined &&
         (unit !== undefined ||
           (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n))
+      const why = n === undefined ? undefined : amountWrong(itsFood, unit ?? unitWas, n)
       if (n === undefined) {
         notNumbers.add(item.id)
       } else if (!anew) {
         continue
-      } else if (n <= 0 || tooMuch(itsFood, unit ?? unitWas, n)) {
-        overs.add(item.id)
+      } else if (why !== undefined) {
+        overs.set(item.id, why)
       } else if (unit !== undefined) {
         ops.push({
           op: 'replace',
@@ -559,11 +563,11 @@ export function MealEditor({
       }
     }
     for (const entry of entries) {
-      const item = itemOf(entry, f.parse)
-      if (item === undefined) {
-        bad.add(entry.key)
+      const checked = entryItem(entry, f.parse)
+      if ('wrong' in checked) {
+        bad.set(entry.key, checked.wrong)
       } else {
-        ops.push({ op: 'add', item })
+        ops.push({ op: 'add', item: checked.item })
       }
     }
     setWrong(notNumbers)
@@ -580,6 +584,13 @@ export function MealEditor({
     }
     send({ ...fields, ...(ops.length > 0 ? { ops } : {}) })
   }
+
+  // What the foot says is wrong with an amount or an entry: the first's,
+  // of an entry still there.
+  const firstWrong = [
+    ...over.values(),
+    ...[...entries, ...Object.values(swaps)].flatMap((e) => wrongEntries.get(e.key) ?? []),
+  ].at(0)
 
   return (
     <form ref={form} onSubmit={submit} noValidate className="flex min-h-0 flex-1 flex-col">
@@ -1088,10 +1099,9 @@ export function MealEditor({
             {t.day.notANumber}
           </p>
         )}
-        {(over.size > 0 ||
-          [...entries, ...Object.values(swaps)].some((e) => wrongEntries.has(e.key))) && (
+        {firstWrong !== undefined && (
           <p id={`${id}-wrong-entry`} role="alert" className="text-xs text-destructive">
-            {t.log.wrong(most(f.number))}
+            {sayWrong(firstWrong, t, f.number)}
           </p>
         )}
         {(ahead || badTime) && (

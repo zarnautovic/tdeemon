@@ -111,7 +111,7 @@ test('⌘Z or Ctrl+Z takes back the latest change, and the toast says which', as
   fireEvent.keyDown(search, { key: 'z', ctrlKey: true })
   fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true })
 
-  expect(await screen.findByText('Taken back: a meal deleted.')).toBeDefined()
+  expect(await screen.findByText('Undone: a meal deleted.')).toBeDefined()
   // The latest, whichever it is: no change named, an id of its own. The
   // day it was of is linked, as the foods are shown.
   expect(undos).toEqual([{ id: expect.any(String) as unknown }])
@@ -204,14 +204,14 @@ test('Log a meal opens the form on today over the section, which stays', async (
   }
   fireEvent.click(bar)
 
-  const sheet = await screen.findByRole('dialog', { name: 'A new meal' })
+  const sheet = await screen.findByRole('dialog', { name: 'New meal' })
   expect(router.state.location.pathname).toBe('/foods')
   expect(router.state.location.search).toEqual({ filter: 'archived' })
 
   // Closed, the focus is back on the bar's Log a meal.
   fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   expect(document.activeElement).toBe(bar)
 })
@@ -225,11 +225,11 @@ test('N logs a meal, / finds a food, and ? lists the shortcuts', async () => {
   await nav()
 
   fireEvent.keyDown(window, { key: 'n' })
-  const sheet = await screen.findByRole('dialog', { name: 'A new meal' })
+  const sheet = await screen.findByRole('dialog', { name: 'New meal' })
   expect(router.state.location.pathname).toBe('/foods')
   fireEvent.click(within(sheet).getByRole('button', { name: 'Close' }))
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
 
   fireEvent.keyDown(document.body, { key: '/' })

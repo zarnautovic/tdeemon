@@ -379,9 +379,7 @@ test('a food is archived, and brought back', async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Archive' }))
 
   expect(
-    await screen.findByText(
-      'Archived: only a search of the archived foods finds it, and its names stay taken.',
-    ),
+    await screen.findByText('Archived. Find it among the archived foods; its names stay taken.'),
   ).toBeDefined()
   expect(server.sent[0]).toEqual({ ...oats, archived: true })
   fireEvent.click(screen.getByRole('button', { name: 'Bring back' }))
@@ -475,7 +473,7 @@ test('a new food is made, and its page shown', async () => {
   ] as const) {
     fireEvent.change(screen.getByLabelText(label), { target: { value } })
   }
-  fireEvent.change(screen.getByLabelText('The values are from'), { target: { value: 'estimate' } })
+  fireEvent.change(screen.getByLabelText('Values from'), { target: { value: 'estimate' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save the food' }))
 
   await waitFor(() => {
@@ -757,7 +755,7 @@ test('a save says so in a toast whose Undo takes it back', async () => {
   expect(await screen.findByText('Saved: Rolled oats')).toBeDefined()
   fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
 
-  expect(await screen.findByText('Taken back: a food saved.')).toBeDefined()
+  expect(await screen.findByText('Undone: a food saved.')).toBeDefined()
   expect(undos).toEqual([
     { id: expect.any(String) as unknown, last: { action: 'food.save', entity: id } },
   ])

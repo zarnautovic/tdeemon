@@ -3,7 +3,13 @@ import { ChevronLeft } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { EstimateFields } from '@/components/day/estimate-fields'
-import { itemOf, most, unitsOf, type Entry } from '@/components/day/meal-entries'
+import {
+  entryWrong,
+  sayWrong,
+  unitsOf,
+  type Entry,
+  type Wrong,
+} from '@/components/day/meal-entries'
 import { FoodForm } from '@/components/foods/food-form'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -44,7 +50,7 @@ export function NewEntry({
     carbs: '',
     fat: '',
   }))
-  const [wrong, setWrong] = useState(false)
+  const [wrong, setWrong] = useState<Wrong | undefined>(undefined)
   // A food on its way: Add to meal waits for it.
   const saving = useIsMutating({ mutationKey: ['post', '/api/v1/foods/new'] }) > 0
   // The focus goes to the first field, as the button that opened the step
@@ -82,8 +88,9 @@ export function NewEntry({
             className="space-y-2"
             onSubmit={(e) => {
               e.preventDefault()
-              if (itemOf(estimate, f.parse) === undefined) {
-                setWrong(true)
+              const why = entryWrong(estimate, f.parse)
+              if (why !== undefined) {
+                setWrong(why)
                 return
               }
               onAdd(estimate)
@@ -91,7 +98,7 @@ export function NewEntry({
           >
             <EstimateFields
               entry={estimate}
-              wrong={wrong}
+              wrong={wrong !== undefined}
               describedBy={wrong ? `${id}-wrong` : undefined}
               onChange={(e) => {
                 if (e.kind === 'estimate') {
@@ -101,7 +108,7 @@ export function NewEntry({
             />
             {wrong && (
               <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
-                {t.log.wrong(most(f.number))}
+                {sayWrong(wrong, t, f.number)}
               </p>
             )}
           </form>

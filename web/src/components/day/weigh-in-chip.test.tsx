@@ -27,7 +27,7 @@ test("the quick add's Weigh-in chip takes a weigh-in in place, and the meal stay
   })
   renderAt('/?log=true')
 
-  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'New meal' }))
   fireEvent.click(sheet.getByRole('button', { name: 'Weigh-in' }))
   const field = sheet.getByLabelText('Weight')
   expect(document.activeElement).toBe(field)
@@ -45,6 +45,6 @@ test("the quick add's Weigh-in chip takes a weigh-in in place, and the meal stay
   await waitFor(() => {
     expect(document.activeElement).toBe(sheet.getByRole('button', { name: 'Weigh-in' }))
   })
-  expect(screen.getByRole('dialog', { name: 'A new meal' })).toBeDefined()
+  expect(screen.getByRole('dialog', { name: 'New meal' })).toBeDefined()
   expect(sheet.getByRole('button', { name: 'Log the meal' })).toBeDefined()
 })

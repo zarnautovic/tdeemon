@@ -163,7 +163,7 @@ async function page() {
 }
 
 // openSheet opens the meal to log, and gives what is in it.
-async function openSheet(name = 'A new meal') {
+async function openSheet(name = 'New meal') {
   fireEvent.click(await (await page()).findByRole('button', { name: logMeal }))
   return within(await screen.findByRole('dialog', { name }))
 }
@@ -227,7 +227,7 @@ test("a meal is logged of a food of the user's and an estimate, each with what i
   // The day's page is the meal's: no way to it.
   expect(screen.queryByRole('link', { name: 'See it today' })).toBeNull()
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   expect(server.sent).toEqual([
     {
@@ -260,7 +260,7 @@ test("the app's Log a meal logs today's over another page, which stays, its toas
     throw new Error('no Log a meal in the bar')
   }
   fireEvent.click(bar)
-  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'New meal' }))
   await giveEstimate(sheet, 'Coffee', '50')
   // What today's target leaves, as its ring says it.
   expect(sheet.getByText('after: 2,450 kcal left')).toBeDefined()
@@ -339,7 +339,7 @@ test('a meal of before is logged again in two taps', async () => {
   // Its toast says it is one of before, which and its kcal.
   expect(await screen.findByText(/^Repeated: Breakfast · 207 kcal/)).toBeDefined()
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   // Today's, now: the server takes the time from its id.
   expect(server.sent).toEqual([
@@ -359,11 +359,11 @@ test("on today's page, N logs the meal there, and its row takes the focus", asyn
   await (await page()).findByRole('button', { name: logMeal })
 
   fireEvent.keyDown(window, { key: 'n' })
-  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'New meal' }))
   fireEvent.click(await sheet.findByRole('button', { name: 'Repeat: Porridge' }))
 
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   await waitFor(() => {
     expect(document.activeElement?.getAttribute('data-meal')).toBe(
@@ -411,17 +411,13 @@ test('a meal without items is not sent, nor a food without a number for its amou
   fireEvent.change(sheet.getByLabelText('Amount: Rye bread'), { target: { value: 'a few' } })
   fireEvent.click(sheet.getByRole('button', { name: 'Add: Rye bread' }))
 
-  expect(
-    sheet.getByText(
-      'An amount is more than 0 and at most 10,000 g or ml, 100 servings or 50 portions; an estimate has a name and its values, such as 72.5, and at most 10,000 kcal.',
-    ),
-  ).toBeDefined()
+  expect(sheet.getByText('Write a number, such as 72.5.')).toBeDefined()
   expect(sheet.getByLabelText('Amount: Rye bread').getAttribute('aria-invalid')).toBe('true')
   expect(sheet.queryByRole('list', { name: 'In the meal' })).toBeNull()
   expect(server.sent).toEqual([])
 })
 
-test('an amount past what the server takes is said with its bounds, in Croatian, and not added', async () => {
+test('an amount past what the server takes is said with its most in its unit, in Croatian, and not added', async () => {
   const server = logServer('2026-10-23', { ...signedIn('hr') })
   renderAt('/')
 
@@ -430,9 +426,8 @@ test('an amount past what the server takes is said with its bounds, in Croatian,
   fireEvent.change(sheet.getByLabelText('Količina: Rye bread'), { target: { value: '99999' } })
   fireEvent.click(sheet.getByRole('button', { name: 'Dodaj: Rye bread' }))
 
-  expect(sheet.getByRole('alert').textContent).toBe(
-    'Količina je veća od 0 i najviše 10.000 g ili ml, 100 servinga ili 50 porcija; procjena ima naziv i vrijednosti, npr. 72,5, i najviše 10.000 kcal.',
-  )
+  // In slices, as it was eaten last.
+  expect(sheet.getByRole('alert').textContent).toBe('Najviše 100 mjera.')
   expect(sheet.getByLabelText('Količina: Rye bread').getAttribute('aria-invalid')).toBe('true')
   expect(server.sent).toEqual([])
 })
@@ -444,7 +439,7 @@ test('a search that finds nothing says so, an estimate is given up, and the shee
   const sheet = await openSheet()
   fireEvent.change(sheet.getByLabelText('Find a food or a meal'), { target: { value: 'kale' } })
   expect(
-    await sheet.findByText('Nothing of yours matches: give an estimate, or make a new food.'),
+    await sheet.findByText('Nothing matches. Add an estimate, or make a new food.'),
   ).toBeDefined()
   fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
   // A step of its own, named by what was searched for, the focus in it.
@@ -459,7 +454,7 @@ test('a search that finds nothing says so, an estimate is given up, and the shee
 
   fireEvent.click(sheet.getByRole('button', { name: 'Close' }))
   await waitFor(() => {
-    expect(screen.queryByRole('dialog', { name: 'A new meal' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'New meal' })).toBeNull()
   })
   // The focus is back on the button that opened it.
   expect(document.activeElement).toBe((await page()).getByRole('button', { name: logMeal }))
@@ -546,7 +541,7 @@ test("the server's warnings of a logged meal are said", async () => {
   expect(await screen.findByText(/^Repeated: Rye bread · 207 kcal/)).toBeDefined()
   expect(
     await screen.findByText(
-      'A meal with the same items was logged just before: if this one was sent twice, delete it.',
+      'A meal with the same items was logged just before. If this one was sent twice, delete it.',
     ),
   ).toBeDefined()
 })
@@ -619,7 +614,7 @@ test('a time still to come is not sent, and one of the night after says so', asy
   fireEvent.click(sheet.getByRole('button', { name: 'Log 1 item · 1 kcal' }))
 
   expect((await sheet.findByRole('alert')).textContent).toBe(
-    'That time is still to come: a meal is logged once eaten.',
+    "That time hasn't come yet. Log a meal once it's eaten.",
   )
   expect(sheet.getByLabelText('Time').getAttribute('aria-invalid')).toBe('true')
   expect(server.sent).toEqual([])
@@ -670,15 +665,15 @@ test('what is wrong with an estimate is no longer said once it is given up', asy
   const sheet = await openSheet()
   fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
   fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
-  expect(sheet.getByRole('alert').textContent).toContain('an estimate has a name')
+  expect(sheet.getByRole('alert').textContent).toBe('Give the estimate a name.')
   expect(sheet.getByLabelText('What it is').getAttribute('aria-invalid')).toBe('true')
   expect(sheet.queryByRole('list', { name: 'In the meal' })).toBeNull()
 
   fireEvent.click(sheet.getByRole('button', { name: 'Back to search' }))
-  expect(sheet.queryByText(/an estimate has a name/)).toBeNull()
+  expect(sheet.queryByText('Give the estimate a name.')).toBeNull()
   // Given again, it is a new one.
   fireEvent.click(sheet.getByRole('button', { name: 'An estimate' }))
-  expect(sheet.queryByText(/an estimate has a name/)).toBeNull()
+  expect(sheet.queryByText('Give the estimate a name.')).toBeNull()
 })
 
 test('the word for portions agrees with the amount typed', async () => {
@@ -778,9 +773,7 @@ test('the lists show the foods eaten lately and most, and the meals, each as the
   fireEvent.change(sheet.getByLabelText('Find a food or a meal'), { target: { value: 'sky' } })
   expect(found()).toEqual(['Add: Skyr'])
   fireEvent.click(sheet.getByRole('tab', { name: 'Meals' }))
-  expect(
-    sheet.getByText('Nothing of yours matches: give an estimate, or make a new food.'),
-  ).toBeDefined()
+  expect(sheet.getByText('Nothing matches. Add an estimate, or make a new food.')).toBeDefined()
   // A meal is found by its items too.
   fireEvent.change(sheet.getByLabelText('Find a food or a meal'), { target: { value: 'rye' } })
   expect(found()).toEqual(['Repeat: Porridge'])
@@ -908,15 +901,15 @@ test('a new food is a step of its own, in short, and goes into the meal in the a
 
   const sheet = await openSheet()
   fireEvent.change(sheet.getByLabelText('Find a food or a meal'), { target: { value: 'kefir' } })
-  await sheet.findByText('Nothing of yours matches: give an estimate, or make a new food.')
+  await sheet.findByText('Nothing matches. Add an estimate, or make a new food.')
   expect(primaries(sheet)).toEqual(['Log the meal'])
-  fireEvent.click(sheet.getByRole('button', { name: 'A new food' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'New food' }))
 
   // In the search's place, one button of its own: never two at once.
   expect(primaries(sheet)).toEqual(['Add to meal'])
   expect(sheet.queryByRole('button', { name: /^Log / })).toBeNull()
   expect(sheet.queryByRole('button', { name: 'Save the food' })).toBeNull()
-  expect(sheet.getByRole('heading', { name: 'A new food' })).toBeDefined()
+  expect(sheet.getByRole('heading', { name: 'New food' })).toBeDefined()
   // Named by what was searched for; the brand and the rest under More.
   expect(sheet.getByLabelText('Name')).toHaveProperty('value', 'kefir')
   expect(document.activeElement).toBe(sheet.getByLabelText('Name'))
@@ -958,7 +951,7 @@ test("a new food's step checks it as the food's form does, and its amount, and s
   renderAt('/')
 
   const sheet = await openSheet()
-  fireEvent.click(sheet.getByRole('button', { name: 'A new food' }))
+  fireEvent.click(sheet.getByRole('button', { name: 'New food' }))
   fireEvent.change(sheet.getByLabelText('Name'), { target: { value: 'Kefir' } })
   // The kcal the macros tell otherwise, which does not keep it from a save.
   for (const [label, value] of [
@@ -978,9 +971,7 @@ test("a new food's step checks it as the food's form does, and its amount, and s
   fireEvent.change(sheet.getByLabelText('Other name 2'), { target: { value: 'milk kefir' } })
   fireEvent.click(sheet.getByRole('button', { name: 'Add to meal' }))
 
-  expect(
-    await sheet.findByText('An amount is more than 0 and at most 10,000 g or ml, or 50 portions.'),
-  ).toBeDefined()
+  expect(await sheet.findByText('At most 10,000 g.')).toBeDefined()
   expect(sheet.getByLabelText('Eaten now (g)').getAttribute('aria-invalid')).toBe('true')
   // More opens on what is wrong in it.
   expect(sheet.getByText('More').closest('details')?.open).toBe(true)
@@ -1012,7 +1003,7 @@ test("today's chips log yesterday's meal of the hour again, and open the meal wi
   ])
 
   fireEvent.click(chips.getByRole('button', { name: 'Rye bread 2 slice' }))
-  const sheet = within(await screen.findByRole('dialog', { name: 'A new meal' }))
+  const sheet = within(await screen.findByRole('dialog', { name: 'New meal' }))
   expect(basket(sheet)).toEqual(['Rye bread · 2 slice · 207 kcal'])
   expect(sheet.getByRole('button', { name: 'Log 1 item · 207 kcal' })).toBeDefined()
 })
@@ -1207,7 +1198,7 @@ test('on a touch screen the keyboard waits for a tap on the search, and does not
 
   const sheet = await openSheet()
   // The sheet has the focus, not the search.
-  const dialog = screen.getByRole('dialog', { name: 'A new meal' })
+  const dialog = screen.getByRole('dialog', { name: 'New meal' })
   await waitFor(() => {
     expect(document.activeElement).toBe(dialog)
   })

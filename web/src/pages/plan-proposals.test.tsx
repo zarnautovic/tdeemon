@@ -172,7 +172,7 @@ test('a proposal that waits says why, what it changes and what it comes to, and 
   })
   expect(sent).toEqual([`POST /api/v1/proposals/${step.id}/apply`])
   // Now a revision of the plan.
-  const history = within(screen.getByRole('region', { name: 'History of the plan' }))
+  const history = within(screen.getByRole('region', { name: 'Plan history' }))
   history.getByText("The loss is under the cut's rate.")
 })
 
@@ -187,7 +187,7 @@ test('a proposal that waits is rejected', async () => {
   expect(sent).toEqual([`POST /api/v1/proposals/${step.id}/reject`])
   // No plan yet, and no history of one.
   screen.getByRole('region', { name: 'No plan yet' })
-  expect(screen.queryByRole('region', { name: 'History of the plan' })).toBeNull()
+  expect(screen.queryByRole('region', { name: 'Plan history' })).toBeNull()
 })
 
 test('a proposal the limits refuse now says why, in words', async () => {
@@ -206,14 +206,14 @@ test('a proposal that waits no more says so', async () => {
   renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
-  await card.findByText('The proposal waits no more: the plan changed, or it expired.')
+  await card.findByText('This proposal is no longer open. The plan changed, or it expired.')
   expect(card.getByRole('button', { name: 'Accept' })).toHaveProperty('disabled', true)
 })
 
 test('the history shows a revision, which is taken back in a step', async () => {
   const { sent } = coachServer({ revisions: [sundays] })
   renderAt('/plan')
-  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  const history = within(await screen.findByRole('region', { name: 'Plan history' }))
   history.getByText('Train on Sundays too.')
   history.getByText('Training days')
   history.getByText('Mon → Sun, Mon')
@@ -235,11 +235,11 @@ test('a change that took effect cannot be taken back, and says so', async () => 
     { revert: () => Response.json({ status: 422, detail: 'invalid proposal' }, { status: 422 }) },
   )
   renderAt('/plan')
-  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  const history = within(await screen.findByRole('region', { name: 'Plan history' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   expect((await history.findByRole('alert')).textContent).toBe(
-    'This change cannot be taken back any more: it took effect, or the plan changed since. Ask for a new change instead.',
+    "This change can't be taken back anymore. It took effect, or the plan changed since. Ask for a new change.",
   )
 })
 
@@ -265,7 +265,7 @@ test('a new proposal, in place of one that waits no more, can be answered', asyn
   renderAt('/plan')
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
-  await card.findByText('The proposal waits no more: the plan changed, or it expired.')
+  await card.findByText('This proposal is no longer open. The plan changed, or it expired.')
   // The plan is read again, as when the app comes back to the front.
   act(() => {
     focusManager.setFocused(false)
@@ -289,7 +289,7 @@ test('a proposal that cannot be applied any more says so, and may be rejected', 
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   expect((await card.findByRole('alert')).textContent).toBe(
-    'It cannot be applied any more: a change of it would now start before today. Ask for a new one.',
+    "It can't be applied anymore, as it would now start before today. Ask for a new one.",
   )
   expect(card.getByRole('button', { name: 'Accept' })).toHaveProperty('disabled', true)
   expect(card.getByRole('button', { name: 'Reject' })).toHaveProperty('disabled', false)
@@ -311,7 +311,7 @@ test("an action's answer is its own, not the one before's", async () => {
   fireEvent.click(card.getByRole('button', { name: 'Accept' }))
   await card.findByText('The limits refuse it now:')
   fireEvent.click(card.getByRole('button', { name: 'Reject' }))
-  await card.findByText('The proposal waits no more: the plan changed, or it expired.')
+  await card.findByText('This proposal is no longer open. The plan changed, or it expired.')
   expect(card.queryByText('The limits refuse it now:')).toBeNull()
   expect(card.getByRole('button', { name: 'Reject' })).toHaveProperty('disabled', true)
 })
@@ -804,7 +804,7 @@ test('taking back a tightened limit says it loosens it, and confirms it', async 
   }
   const { applied } = takeBackServer(tightened, back)
   renderAt('/plan')
-  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  const history = within(await screen.findByRole('region', { name: 'Plan history' }))
   history.getByText('1.6 g/kg → 1.8 g/kg, tightened')
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   history.getByText('Taking it back loosens Least protein, which allows a plan the limit refused.')
@@ -831,7 +831,7 @@ test('a take-back that loosens what the question did not say is not confirmed', 
   }
   const { applied } = takeBackServer(tightened, back)
   renderAt('/plan')
-  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  const history = within(await screen.findByRole('region', { name: 'Plan history' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   fireEvent.click(history.getByRole('button', { name: 'Take back' }))
   await waitFor(() => {
@@ -931,7 +931,7 @@ test('what the data say stands beside the proposal, and says when they ask for n
   data.getByText("Calibration measures -0.55% a week, within the phase's range (-0.6% to -0.4%).")
   data.getByText('Its TDEE, 2,400 ± 40 kcal, is reliable.')
   expect(
-    data.getByText("The pace is in range: the data alone don't ask for this change."),
+    data.getByText("The pace is in range, so the data alone don't ask for this change."),
   ).toBeTruthy()
 })
 
@@ -981,7 +981,7 @@ test("a limit's warning is said in plain words, with why it matters", async () =
   const card = within(await screen.findByRole('region', { name: 'A proposed change' }))
   expect(
     card.getByText(
-      'Rest days: low energy for your lean mass (27 kcal/kg, at least 30 advised): over time it can tire you and slow recovery.',
+      'Rest days: low energy for your lean mass (27 kcal/kg, at least 30 advised). Over time it can tire you and slow recovery.',
     ),
   ).toBeTruthy()
 })
@@ -1043,7 +1043,7 @@ test("a revision made or taken back in the app is said in the reader's language"
   const before: Proposal = { ...sundays, status: 'reverted', rationale: 'Vraćeno u aplikaciji.' }
   coachServer({ revisions: [edited, before] })
   renderAt('/plan')
-  const history = within(await screen.findByRole('region', { name: 'History of the plan' }))
+  const history = within(await screen.findByRole('region', { name: 'Plan history' }))
   history.getByText('Changed in the app.')
   history.getByText('Oct 20, by you')
   history.getByText('Taken back in the app.')

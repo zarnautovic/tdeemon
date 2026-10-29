@@ -7,7 +7,7 @@ import { conflictOf, detailOf, statusOf } from '@/api/errors'
 import { useCreateFood, useSaveFood } from '@/api/foods'
 import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
-import { most as itemMost, tooMuch as tooMuchOf } from '@/components/day/meal-entries'
+import { amountWrong, sayWrong } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { energyOff } from '@/components/foods/energy'
 import { Button } from '@/components/ui/button'
@@ -344,12 +344,9 @@ export function FoodForm({
     let amount = 0
     if (compact) {
       const n = number('eaten', eaten, true)
-      if (
-        n !== undefined &&
-        !errors.has('eaten') &&
-        (n <= 0 || tooMuchOf(undefined, unitOf(draft.basis), n))
-      ) {
-        errors.set('eaten', t.log.amountWrong(itemMost(f.number)))
+      const why = n === undefined ? undefined : amountWrong(undefined, unitOf(draft.basis), n)
+      if (why !== undefined && !errors.has('eaten')) {
+        errors.set('eaten', sayWrong(why, t, f.number))
       }
       amount = n ?? 0
     }

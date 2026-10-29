@@ -47,7 +47,7 @@ test('the notes for a coach are saved, and come back', async ({ page }) => {
     .getByRole('form', { name: 'Notes for your AI coach' })
     .getByRole('button', { name: 'Save' })
     .click()
-  await expect(page.getByText('The notes for your AI coach are saved')).toBeVisible()
+  await expect(page.getByText('Notes for your AI coach saved')).toBeVisible()
   await page.reload()
   await expect(notes).toHaveValue('Knees: no running.')
 
@@ -57,7 +57,7 @@ test('the notes for a coach are saved, and come back', async ({ page }) => {
     .getByRole('form', { name: 'Notes for your AI coach' })
     .getByRole('button', { name: 'Save' })
     .click()
-  await expect(page.getByText('The notes for your AI coach are saved')).toBeVisible()
+  await expect(page.getByText('Notes for your AI coach saved')).toBeVisible()
 })
 
 test('a new access key is shown once and copied, and works until all are revoked', async ({

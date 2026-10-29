@@ -69,7 +69,7 @@ for (const size of sizes) {
       expect(await onTop(undo)).toBe(true)
       await (size.hasTouch ? undo.tap() : undo.click())
 
-      await expect(toasts).toContainText('Taken back: a measurement deleted.')
+      await expect(toasts).toContainText('Undone: a measurement deleted.')
       await expect(sheet).toContainText('Resting heart rate')
     })
 
@@ -109,7 +109,7 @@ test.describe('keyboard', () => {
     await expect(undo).toBeFocused()
     await page.keyboard.press('Enter')
 
-    await expect(toasts).toContainText('Taken back: a measurement deleted.')
+    await expect(toasts).toContainText('Undone: a measurement deleted.')
     await expect(sheet).toContainText('Resting heart rate')
   })
 })

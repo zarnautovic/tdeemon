@@ -55,7 +55,7 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
 
   // The change taken back by its toast's Undo: the item removed is back.
   await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(page.getByText('Taken back: a meal changed.')).toBeVisible()
+  await expect(page.getByText('Undone: a meal changed.')).toBeVisible()
   await expect(porridge).toContainText('Blueberries')
   await expect(porridge).toContainText('80 g')
 
@@ -68,7 +68,7 @@ test('a meal is corrected, deleted, and brought back by undo', async ({ page }) 
   await expect(page.getByRole('heading', { name: 'Meals', exact: true })).toBeFocused()
 
   await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(page.getByText('Taken back: a meal deleted.')).toBeVisible()
+  await expect(page.getByText('Undone: a meal deleted.')).toBeVisible()
   await openMeal(porridge)
   await expect(porridge).toContainText('Blueberries')
 })
@@ -100,7 +100,7 @@ test('a meal moved to the day before says so, and its toast brings it back', asy
 
   // Taken back only while it is the latest change: it is.
   await page.getByRole('button', { name: 'Undo' }).click()
-  await expect(page.getByText('Taken back: a meal changed.')).toBeVisible()
+  await expect(page.getByText('Undone: a meal changed.')).toBeVisible()
   await expect(snack).toHaveCount(1)
 })
 
@@ -166,7 +166,7 @@ test("a meal's item is given in another unit, and an estimate saved as a food", 
   await page
     .getByRole('menuitemcheckbox', { name: 'Save as a food of yours: Canteen soup' })
     .click()
-  await expect(editor).toContainText('Saved as a food of yours, a portion of it eaten.')
+  await expect(editor).toContainText('Saved as your food, one portion eaten.')
   await editor.getByRole('button', { name: 'Save the meal' }).click()
 
   await expect(lunch).toContainText('90 g')
@@ -177,7 +177,7 @@ test("a meal's item is given in another unit, and an estimate saved as a food", 
   // The toast's Undo takes back the whole change, the food saved with it.
   const toasts = page.getByRole('region', { name: 'Notifications' })
   await toasts.getByRole('button', { name: 'Undo' }).click()
-  await expect(toasts).toContainText('Taken back: a meal changed.')
+  await expect(toasts).toContainText('Undone: a meal changed.')
   await expect(lunch).toContainText('45 g')
   const gone = await page.request.get('/api/v1/foods?query=Canteen%20soup')
   expect(JSON.stringify(await gone.json())).not.toContain('"name":"Canteen soup"')

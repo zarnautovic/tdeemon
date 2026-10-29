@@ -3,8 +3,10 @@ import { expect, test } from 'vitest'
 import type { Food, Item, Meal } from '@/api/types'
 import {
   amountOf,
+  amountWrong,
   converted,
   entryValues,
+  entryWrong,
   foodEntry,
   inputOf,
   inUnit,
@@ -12,14 +14,15 @@ import {
   itemOf,
   nutrientsIn,
   repeatOf,
+  sayWrong,
   servingsOf,
-  tooMuch,
   unitGrams,
   unitIn,
   unitsOf,
   type Entry,
 } from '@/components/day/meal-entries'
 import { en } from '@/i18n/en'
+import { hr } from '@/i18n/hr'
 
 const field = (n: number) => String(n)
 const parse = (s: string) => (/^\d+(\.\d+)?$/.test(s) ? Number(s) : undefined)
@@ -295,25 +298,32 @@ test("a food's entry in a unit of no grams asks for its amount anew", () => {
   expect(converted(bread, 'g', 'ml', 100)).toBeUndefined()
 })
 
-test('an item holds no more than the server takes', () => {
+test('an item holds no more than the server takes, and says the most in its unit', () => {
   // Grams, servings and their grams, portions, and a portion's grams.
-  expect(tooMuch(bread, 'g', 10_000)).toBe(false)
-  expect(tooMuch(bread, 'g', 10_001)).toBe(true)
-  expect(tooMuch(bread, 'serving:slice', 100)).toBe(false)
-  expect(tooMuch(bread, 'serving:slice', 101)).toBe(true)
+  expect(amountWrong(bread, 'g', 10_000)).toBeUndefined()
+  expect(amountWrong(bread, 'g', 10_001)).toEqual({ kind: 'most', most: 10_000, unit: 'g' })
+  expect(amountWrong(bread, 'g', 0)).toEqual({ kind: 'none' })
+  expect(amountWrong(bread, 'serving:slice', 100)).toBeUndefined()
+  expect(amountWrong(bread, 'serving:slice', 101)).toEqual({
+    kind: 'most',
+    most: 100,
+    unit: 'serving',
+  })
   const sack = { ...bread, servings: [{ name: 'sack', amount: 5000 }] }
-  expect(tooMuch(sack, 'serving:sack', 2)).toBe(false)
-  expect(tooMuch(sack, 'serving:sack', 2.5)).toBe(true)
-  expect(tooMuch(stew, 'portion', 50)).toBe(false)
-  expect(tooMuch(stew, 'portion', 51)).toBe(true)
+  expect(amountWrong(sack, 'serving:sack', 2)).toBeUndefined()
+  // Two sacks are the most grams: the most servings is said of them.
+  expect(amountWrong(sack, 'serving:sack', 2.5)).toEqual({ kind: 'most', most: 2, unit: 'serving' })
+  expect(amountWrong(stew, 'portion', 50)).toBeUndefined()
+  expect(amountWrong(stew, 'portion', 51)).toEqual({ kind: 'most', most: 50, unit: 'portion' })
   // Grams of a food by the portion: no more than the most grams either.
-  expect(tooMuch(stew, 'g', 10_000)).toBe(false)
-  expect(tooMuch(stew, 'g', 10_001)).toBe(true)
+  expect(amountWrong(stew, 'g', 10_000)).toBeUndefined()
+  expect(amountWrong(stew, 'g', 10_001)).toEqual({ kind: 'most', most: 10_000, unit: 'g' })
   const bite = { ...stew, portion_grams: 100 }
-  expect(tooMuch(bite, 'g', 5000)).toBe(false)
-  expect(tooMuch(bite, 'g', 5100)).toBe(true)
+  expect(amountWrong(bite, 'g', 5000)).toBeUndefined()
+  expect(amountWrong(bite, 'g', 5100)).toEqual({ kind: 'most', most: 5000, unit: 'g' })
+  expect(amountWrong(bread, 'ml', 10_001)).toEqual({ kind: 'most', most: 10_000, unit: 'ml' })
   // A food not known yet: the count of servings alone.
-  expect(tooMuch(undefined, 'serving:slice', 101)).toBe(true)
+  expect(amountWrong(undefined, 'serving:slice', 101)).toMatchObject({ most: 100 })
 
   const entry = foodEntry(bread, field)
   expect(itemOf({ ...entry, unit: 'serving:slice', amount: '99999' }, parse)).toBeUndefined()
@@ -328,6 +338,10 @@ test('an item holds no more than the server takes', () => {
   }
   expect(itemOf(plate, parse)).toBeUndefined()
   expect(itemOf({ ...plate, kcal: '10000' }, parse)).toBeDefined()
+  expect(entryWrong(plate, parse)).toEqual({ kind: 'most', most: 10_000, unit: 'kcal' })
+  expect(entryWrong({ ...plate, name: ' ' }, parse)).toEqual({ kind: 'name' })
+  expect(entryWrong({ ...plate, fat: 'some' }, parse)).toEqual({ kind: 'number' })
+  expect(entryWrong({ ...entry, amount: '' }, parse)).toEqual({ kind: 'number' })
 })
 
 // near expects values near kcal and protein.
@@ -378,4 +392,28 @@ test("an item's name comes first, its brand after it, as the foods are shown", (
   )
   expect(itemName({ name: 'Rye bread' }, en)).toBe('Rye bread')
   expect(itemName({ name: 'Rest of the meal (history split)' }, en)).toBe('Rest of the meal')
+})
+
+// What is wrong is said at its field, in a few words, in each language.
+// number and broj say a number in English and in Croatian.
+const number = (n: number) => n.toLocaleString('en')
+const broj = (n: number) => n.toLocaleString('hr')
+
+test('what is wrong with an amount is said in a few words', () => {
+  expect(sayWrong({ kind: 'most', most: 10_000, unit: 'g' }, en, number)).toBe('At most 10,000 g.')
+  expect(sayWrong({ kind: 'most', most: 100, unit: 'serving' }, en, number)).toBe(
+    'At most 100 servings.',
+  )
+  expect(sayWrong({ kind: 'most', most: 1, unit: 'portion' }, en, number)).toBe(
+    'At most 1 portion.',
+  )
+  expect(sayWrong({ kind: 'none' }, en, number)).toBe('The amount must be more than 0.')
+  expect(sayWrong({ kind: 'most', most: 100, unit: 'serving' }, hr, broj)).toBe(
+    'Najviše 100 mjera.',
+  )
+  expect(sayWrong({ kind: 'most', most: 2, unit: 'serving' }, hr, broj)).toBe('Najviše 2 mjere.')
+  expect(sayWrong({ kind: 'most', most: 10_000, unit: 'kcal' }, hr, broj)).toBe(
+    'Najviše 10.000 kcal.',
+  )
+  expect(sayWrong({ kind: 'name' }, hr, broj)).toBe('Upiši naziv procjene.')
 })

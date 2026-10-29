@@ -17,7 +17,7 @@ test('a phone has the bar at the bottom, a desktop the sidebar, and the keys wor
   await expect(sections.getByRole('link', { name: 'Settings' })).toBeHidden()
   await sections.getByRole('link', { name: 'Foods' }).click()
   await sections.getByRole('button', { name: 'Log a meal' }).click()
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   await expect(sheet).toBeVisible()
   // A phone's keyboard waits for a tap on the search; the foods stay
   // under it.

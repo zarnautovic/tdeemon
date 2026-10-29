@@ -27,7 +27,7 @@ test('a food is made, logged, found, corrected, archived and brought back', asyn
 
   // Logged from its page: the meal to log opens with it.
   await page.getByRole('button', { name: 'Log it' }).click()
-  const sheet = page.getByRole('dialog', { name: 'A new meal' })
+  const sheet = page.getByRole('dialog', { name: 'New meal' })
   await sheet.getByRole('button', { name: 'Log 1 item · 370 kcal' }).click()
   await expect(page.getByText(/^Logged: .* · 370 kcal$/)).toBeVisible()
   await expect(page.getByText(/^1× · last /)).toBeVisible()
@@ -46,9 +46,7 @@ test('a food is made, logged, found, corrected, archived and brought back', asyn
   await expect(page.getByText('kcal per 100 g')).toBeVisible()
 
   await page.getByRole('button', { name: 'Archive' }).click()
-  await expect(
-    page.getByText('Archived: only a search of the archived foods finds it'),
-  ).toBeVisible()
+  await expect(page.getByText('Archived. Find it among the archived foods')).toBeVisible()
   await page.getByRole('link', { name: 'Back to the foods' }).click()
   await expect(page.getByRole('list', { name: 'Found' })).toHaveCount(0)
   await page.getByLabel('Search the foods').fill('')
