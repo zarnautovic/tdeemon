@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
@@ -43,6 +44,11 @@ type webLimits struct {
 	User struct {
 		MaxNameLen int `json:"maxNameLen"`
 	} `json:"user"`
+	// History is the first day a history can be of, the first day the
+	// day's page goes back to.
+	History struct {
+		Since string `json:"since"`
+	} `json:"history"`
 }
 
 // bounds are the least and the most a value may be.
@@ -64,6 +70,7 @@ func newWebLimits() webLimits {
 	l.Food.MaxGramsPer100g, l.Food.MaxGramsPer100ml = food.MaxGramsPer100g, food.MaxGramsPer100ml
 	l.Profile.MinHeightCm, l.Profile.MaxHeightCm, l.Profile.MaxAge = profile.MinHeightCm, profile.MaxHeightCm, profile.MaxAge
 	l.User.MaxNameLen = user.MaxNameLen
+	l.History.Since = api.HistorySince.String()
 	return l
 }
 

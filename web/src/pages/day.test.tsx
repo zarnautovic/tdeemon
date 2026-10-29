@@ -138,13 +138,19 @@ test('today shows what was eaten against the target, the meals and the measureme
   const meals = screen.getByRole('region', { name: 'Meals' })
   expect(within(meals).getByText('1 · 1,460 kcal')).toBeDefined()
   const meal = within(meals).getByRole('article', { name: 'Oats with a banana' })
-  // Its row: when, what, its kcal and macros, that a model logged it,
-  // and how many items; a tap shows them.
+  // Its row: when, what, its kcal (their unit said above, and to a
+  // screen reader) and macros, that a model logged it, and how many
+  // items; a tap shows them. A pair of a value and its label or unit
+  // keeps to a line.
   const row = within(meal).getByRole('button', { expanded: false })
-  expect(row.textContent).toBe('8:45 AMOats with a banana520 kcalP 18 · C 92 · F 9AI2 items')
+  expect(row.textContent).toBe(
+    '8:45 AMOats with a banana520520 kcalP\u00a018\u00a0· C\u00a092\u00a0· F\u00a09AI2 items',
+  )
   fireEvent.click(row)
   const items = within(meal).getAllByRole('listitem')
-  expect(items[0]?.textContent).toBe('Oats 80 g300 kcal · P 11 · C 54 · F 6')
+  expect(items[0]?.textContent).toBe(
+    'Oats 80 g300\u00a0kcal\u00a0· P\u00a011\u00a0· C\u00a054\u00a0· F\u00a06',
+  )
   expect(items[1]?.textContent).toContain('Banana bread 1.5 portions')
 
   // The body at a glance, and all its measurements a sheet away.
@@ -185,7 +191,7 @@ test("the body's tiles: the weight with its trend, the night's sleep, a dash for
   expect(tile('Resting heart rate')).toBe('Resting heart rate—')
 })
 
-test("a day before's weight has the trend of that day, which a weigh-in changed moves", async () => {
+test("a day before's body is the day's: the weight's trend of that day, which a weigh-in changed moves", async () => {
   const date = '2026-08-25'
   const server = dayServer(
     day({
@@ -217,7 +223,7 @@ test("a day before's weight has the trend of that day, which a weigh-in changed 
 
   renderAt(`/?date=${date}`)
 
-  const body = await screen.findByRole('region', { name: 'Body today' })
+  const body = await screen.findByRole('region', { name: 'Body' })
   const tile = (label: string) => within(body).getByText(label).closest('div')?.textContent ?? null
   await waitFor(() => {
     expect(tile('Weight')).toBe('Weight85.9 kgtrend 86.4 kg')
@@ -238,7 +244,7 @@ test("a day before's weight has the trend of that day, which a weigh-in changed 
   })
 })
 
-test("a model's long list goes under the meal of its hour, which names the row", async () => {
+test("a model's long list goes under the meal's name, what was in it, not the meal of its hour", async () => {
   const list = 'Rye bread 60 g, two eggs, a tomato and a slice of cheese from the fridge'
   const [oats] = breakfast.items
   if (!oats) {
@@ -256,8 +262,8 @@ test("a model's long list goes under the meal of its hour, which names the row",
 
   renderAt('/')
 
-  // 08:45 on the user's clock: breakfast.
-  const meal = await screen.findByRole('article', { name: 'Breakfast' })
+  // 08:45 on the user's clock: breakfast, which is no name.
+  const meal = await screen.findByRole('article', { name: 'Oats' })
   const row = within(meal).getByRole('button', { expanded: false })
   expect(within(row).getByText(list)).toBeDefined()
   expect(within(row).getByText('AI')).toBeDefined()
@@ -356,6 +362,40 @@ test('an item of a named serving says it as it was given, with its weight', asyn
     within(await screen.findByRole('article')).getByRole('button', { expanded: false }),
   )
   expect(await screen.findByText('0.002 bag (1 g)')).toBeDefined()
+})
+
+test("an item's brand follows its name, as the foods are shown, and names no meal", async () => {
+  const [oats] = breakfast.items
+  if (!oats) {
+    throw new Error('the fixture has no items')
+  }
+  const tuna = {
+    ...oats,
+    name: 'Tuna in its own juice',
+    brand: 'Eva',
+    quantity: { amount: 160, unit: 'g' as const },
+    amount: 160,
+  }
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/today': () =>
+      Response.json(day({ meals: [{ ...breakfast, description: '', items: [tuna] }] })),
+  })
+
+  renderAt('/')
+
+  // The meal is named by its item, the brand left out.
+  const meal = await screen.findByRole('article', { name: 'Tuna in its own juice' })
+  fireEvent.click(within(meal).getByRole('button', { expanded: false }))
+  const [item] = within(meal).getAllByRole('listitem')
+  expect(item?.textContent).toMatch(/^Tuna in its own juice · Eva 160 g/)
+  // The brand is said second, as the foods' list says it.
+  expect(within(meal).getByText('· Eva', { exact: false }).className).toContain(
+    'text-muted-foreground',
+  )
+  expect(
+    within(meal).getByRole('button', { name: 'Repeat today: Tuna in its own juice' }),
+  ).toBeDefined()
 })
 
 test("an amount of portions takes the word's form of the number shown", async () => {
@@ -623,6 +663,80 @@ test('the days move back and ahead, up to today', async () => {
   // Today is /, not /?date=… of today.
   expect(screen.getByRole('link', { name: 'The day after' }).getAttribute('href')).toBe('/')
   expect(screen.getByRole('link', { name: 'Back to today' }).getAttribute('href')).toBe('/')
+})
+
+test("another day's header has its date between the arrows, its type and the way back under it", async () => {
+  fakeServer({
+    ...signedIn('hr'),
+    'GET /api/v1/days/2026-10-20': () => Response.json(day({ date: '2026-10-20' })),
+  })
+
+  renderAt('/?date=2026-10-20')
+
+  const date = await screen.findByRole('heading', { level: 1, name: 'utorak, 20. listopada' })
+  const header = date.closest('header')
+  if (header === null) {
+    throw new Error('the date is in no header')
+  }
+  // In the order they are read and shown: the arrow back, the date, its
+  // type and the way back to today under it, then the arrow ahead.
+  const parts = Array.from(header.querySelectorAll('a, h1, button')).map(
+    (e) => e.getAttribute('aria-label') ?? e.textContent,
+  )
+  expect(parts).toEqual([
+    'Dan prije',
+    'utorak, 20. listopada',
+    'Tip dana: Dan odmora',
+    'Natrag na danas',
+    'Dan poslije',
+  ])
+  // Once, there: not at the page's foot too.
+  expect(screen.getAllByRole('link', { name: 'Natrag na danas' })).toHaveLength(1)
+  // The body is the day's, not today's.
+  expect(screen.getByRole('region', { name: 'Tijelo' })).toBeDefined()
+})
+
+test('the first day a history is of has no day before, and asks for the week from it', async () => {
+  const asked: string[] = []
+  fakeServer({
+    ...signedIn(),
+    'GET /api/v1/days/1900-01-01': () => Response.json(day({ date: '1900-01-01' })),
+    'GET /api/v1/history': (request) => {
+      const query = new URL(request.url).searchParams
+      asked.push(`${query.get('from') ?? ''} to ${query.get('to') ?? ''}`)
+      return Response.json({ from: '1900-01-01', to: '1900-01-07', days: [], weeks: [] })
+    },
+  })
+  const router = renderAt('/?date=1900-01-01')
+
+  expect(await screen.findByRole('heading', { name: 'Monday, January 1, 1900' })).toBeDefined()
+  expect(screen.queryByRole('link', { name: 'The day before' })).toBeNull()
+  expect(screen.getByRole('link', { name: 'The day after' }).getAttribute('href')).toBe(
+    '/?date=1900-01-02',
+  )
+  // Its week is the first seven days, the day among them.
+  const week = within(screen.getByRole('navigation', { name: 'The week' }))
+  expect(week.getAllByRole('link')[0]?.getAttribute('href')).toBe('/?date=1900-01-01')
+  await waitFor(() => {
+    expect(new Set(asked)).toEqual(new Set(['1900-01-01 to 1900-01-07']))
+  })
+  // Nor does the keyboard go before it.
+  fireEvent.keyDown(document.body, { key: 'ArrowLeft' })
+  fireEvent.keyDown(document.body, { key: 'ArrowRight' })
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ date: '1900-01-02' })
+  })
+})
+
+test('a date before the first day a history is of is today', async () => {
+  const fetch = fakeServer(signedIn())
+
+  const router = renderAt('/?date=1899-12-31')
+
+  expect(await screen.findByRole('heading', { name: 'Today' })).toBeDefined()
+  expect(router.state.location.href).toBe('/')
+  const paths = fetch.mock.calls.map(([r]) => (r instanceof Request ? new URL(r.url).pathname : r))
+  expect(paths).not.toContain('/api/v1/days/1899-12-31')
 })
 
 test('a day of another year than today says its year, in each language', async () => {

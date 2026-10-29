@@ -64,5 +64,8 @@
   },
   "user": {
     "maxNameLen": 100
+  },
+  "history": {
+    "since": "1900-01-01"
   }
 }

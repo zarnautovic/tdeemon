@@ -99,6 +99,18 @@ const screens: Screen[] = [
     },
   },
   {
+    name: 'day-before',
+    open: async (page) => {
+      await page.goto('/')
+      await settled(page)
+      await page.getByRole('link', { name: /^(The day before|Dan prije)$/ }).click()
+      await expect(
+        page.getByRole('link', { name: /^(Back to today|Natrag na danas)$/ }),
+      ).toBeVisible()
+      await settled(page)
+    },
+  },
+  {
     name: 'quick-add',
     open: async (page) => {
       await page.goto('/?log=true')

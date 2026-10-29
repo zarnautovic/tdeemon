@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils'
 // steps and the resting heart rate, each a dash while the day has none.
 // All its measurements, to correct, delete or add, are a sheet away. A
 // day to come takes none (canLog). today is the user's, once the app
-// knows it.
+// knows it; another day's is the day's body, not today's.
 export function BodyToday({
   date,
   today,
@@ -80,7 +80,7 @@ export function BodyToday({
     <section aria-labelledby="day-body" className="space-y-3 rounded-lg border bg-card p-4">
       <div className="flex items-baseline justify-between gap-2">
         <h2 id="day-body" className="text-h3">
-          {t.day.body.title}
+          {date === today ? t.day.body.title : t.day.body.titleOfDay}
         </h2>
         <Button
           variant="link"

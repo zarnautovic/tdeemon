@@ -68,10 +68,13 @@ type Item struct {
 	// FoodID is the food the item came from; uuid.Nil for a one-off
 	// estimate.
 	FoodID uuid.UUID
-	// Name is the food's name (with its brand) when the item was logged,
-	// or the estimate's: up to food.MaxBrandLen + 1 + food.MaxNameLen
-	// characters.
+	// Name is the food's name when the item was logged, or the
+	// estimate's; Brand is the food's brand then, which an estimate has
+	// none of. An item logged before the two were kept apart has them
+	// apart when its food's brand still started its name (migration
+	// 0020), and the brand in its name otherwise.
 	Name     string
+	Brand    string
 	Quantity Quantity
 	// Amount is the quantity in Unit: grams, ml or portions.
 	Amount float64
@@ -118,12 +121,8 @@ func FromFood(f food.Food, q Quantity, note string) (Item, error) {
 	} else {
 		n = f.Nutrients.Scale(amount / 100)
 	}
-	name := f.Name
-	if f.Brand != "" {
-		name = f.Brand + " " + f.Name
-	}
 	return Item{
-		FoodID: f.ID, Name: name, Quantity: given, Amount: amount, Unit: f.Basis.Unit(),
+		FoodID: f.ID, Name: f.Name, Brand: f.Brand, Quantity: given, Amount: amount, Unit: f.Basis.Unit(),
 		Nutrients: n, Source: f.Source, Note: note,
 	}, nil
 }

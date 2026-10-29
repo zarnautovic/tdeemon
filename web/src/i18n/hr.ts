@@ -168,6 +168,7 @@ export const hr: Messages = {
     leaveOut: 'Izostavi iz kalibracije',
     body: {
       title: 'Tijelo danas',
+      titleOfDay: 'Tijelo',
       all: 'Sva mjerenja',
       trend: (kg: string) => `trend ${kg} kg`,
       sleep: (hours: string, minutes: string) => `${hours} h ${minutes} min`,
@@ -195,11 +196,13 @@ export const hr: Messages = {
     deleteOf: (what: string) => `Obriši: ${what}`,
     repeat: (what: string) => `Ponovi danas: ${what}`,
     slots: { breakfast: 'Doručak', lunch: 'Ručak', snack: 'Užina', dinner: 'Večera' },
+    both: (first: string, second: string) => `${first} i ${second}`,
+    andMore: (first: string, more: number) => `${first} + ${String(more)}`,
     items: (n: number) =>
       `${String(n)} ${plural('hr', n, { one: 'stavka', few: 'stavke', other: 'stavki' })}`,
     ai: 'AI',
     estimate: 'procjena',
-    repeated: 'Upisano ponovo, danas u ovo vrijeme.',
+    repeated: (what: string, kcal: string) => `Ponovljeno: ${what} · ${kcal}`,
     seeToday: 'Pogledaj danas',
     amount: (name: string) => `Količina: ${name}`,
     remove: (name: string) => `Ukloni: ${name}`,

@@ -1189,6 +1189,8 @@ export interface components {
              * @description How much, in unit: what the nutrients are for.
              */
             amount: number;
+            /** @description The food's brand when the item was logged; absent for none, and for an estimate. */
+            brand?: string;
             /**
              * Format: uuid
              * @description The food it came from; absent for a one-off estimate.

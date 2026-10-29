@@ -427,7 +427,9 @@ export function lastAmountOf(food: Food, t: Messages, f: Format): string | undef
 const splitRest = 'Rest of the meal (history split)'
 
 // itemName is an item's name as the app shows it: the one the import of
-// history gives, in the language.
-export function itemName(item: Pick<Item, 'name'>, t: Messages): string {
-  return item.name === splitRest ? t.meal.restOfMeal : item.name
+// history gives, in the language; and after it, as the foods are shown,
+// its food's brand, when it has one ("Tuna in its own juice · Eva").
+export function itemName(item: Pick<Item, 'name' | 'brand'>, t: Messages): string {
+  const name = item.name === splitRest ? t.meal.restOfMeal : item.name
+  return item.brand ? `${name} · ${item.brand}` : name
 }

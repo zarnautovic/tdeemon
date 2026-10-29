@@ -63,7 +63,7 @@ test("a day's check-in and measurements are given, corrected and kept", async ({
   await expect(checkIn.getByLabel('Note')).toHaveValue('long walk')
   await expect(page.getByRole('button', { name: 'Type of day: Training day' })).toBeVisible()
   await expect(checkIn.getByText('Out of calibration: sick')).toBeVisible()
-  await expect(page.getByRole('region', { name: 'Body today' })).toContainText('72.8 kg')
+  await expect(page.getByRole('region', { name: 'Body', exact: true })).toContainText('72.8 kg')
   await page.getByRole('button', { name: 'All measurements' }).click()
   await expect(measurements).toContainText('72.8 kg')
   await expect(measurements).not.toContainText('Sleep')

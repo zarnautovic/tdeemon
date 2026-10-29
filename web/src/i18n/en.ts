@@ -176,6 +176,8 @@ export const en = {
     leaveOut: 'Leave out of calibration',
     body: {
       title: 'Body today',
+      // Of a day that is not today.
+      titleOfDay: 'Body',
       all: 'All measurements',
       trend: (kg: string) => `trend ${kg} kg`,
       sleep: (hours: string, minutes: string) => `${hours} h ${minutes} min`,
@@ -207,10 +209,14 @@ export const en = {
     deleteOf: (what: string) => `Delete: ${what}`,
     repeat: (what: string) => `Repeat today: ${what}`,
     slots: { breakfast: 'Breakfast', lunch: 'Lunch', snack: 'Snack', dinner: 'Dinner' },
+    // A meal without a name of its own is named by its items: "Skyr and
+    // banana", "Skyr + 2".
+    both: (first: string, second: string) => `${first} and ${second}`,
+    andMore: (first: string, more: number) => `${first} + ${String(more)}`,
     items: (n: number) => `${String(n)} ${plural('en', n, { one: 'item', other: 'items' })}`,
     ai: 'AI',
     estimate: 'estimate',
-    repeated: 'Logged again, today at this time.',
+    repeated: (what: string, kcal: string) => `Repeated: ${what} · ${kcal}`,
     seeToday: 'See it today',
     amount: (name: string) => `Amount: ${name}`,
     remove: (name: string) => `Remove: ${name}`,

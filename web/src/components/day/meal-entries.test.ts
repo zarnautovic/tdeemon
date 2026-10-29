@@ -8,6 +8,7 @@ import {
   foodEntry,
   inputOf,
   inUnit,
+  itemName,
   itemOf,
   nutrientsIn,
   repeatOf,
@@ -18,6 +19,7 @@ import {
   unitsOf,
   type Entry,
 } from '@/components/day/meal-entries'
+import { en } from '@/i18n/en'
 
 const field = (n: number) => String(n)
 const parse = (s: string) => (/^\d+(\.\d+)?$/.test(s) ? Number(s) : undefined)
@@ -368,4 +370,12 @@ test("an entry brings its food's amount, or an estimate's values, once they are 
   }
   expect(entryValues(estimate, parse)).toEqual({ kcal: 850, protein: 32, carbs: 105, fat: 30 })
   expect(entryValues({ ...estimate, fat: '' }, parse)).toBeUndefined()
+})
+
+test("an item's name comes first, its brand after it, as the foods are shown", () => {
+  expect(itemName({ name: 'Tuna in its own juice', brand: 'Eva' }, en)).toBe(
+    'Tuna in its own juice · Eva',
+  )
+  expect(itemName({ name: 'Rye bread' }, en)).toBe('Rye bread')
+  expect(itemName({ name: 'Rest of the meal (history split)' }, en)).toBe('Rest of the meal')
 })

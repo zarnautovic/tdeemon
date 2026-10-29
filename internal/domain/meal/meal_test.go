@@ -62,14 +62,15 @@ func TestFromFood(t *testing.T) {
 		wantUnit   string
 		wantKcal   float64
 		wantName   string
+		wantBrand  string
 	}{
-		{"grams", egg(), Quantity{Amount: 150, Unit: "g"}, 150, "g", 214.5, "Egg"},
-		{"four pieces", egg(), Quantity{Servings: 4, Serving: "piece"}, 240, "g", 343.2, "Egg"},
-		{"half a piece, the serving in another case", egg(), Quantity{Servings: 0.5, Serving: "Piece"}, 30, "g", 42.9, "Egg"},
-		{"ml, with the brand in the name", milk(), Quantity{Amount: 250, Unit: "ml"}, 250, "ml", 145, "Dukat Milk 2.8 %"},
-		{"a whole portion", canteen(0), Quantity{Portions: 1}, 1, "portion", 850, "Bean stew with sausage"},
-		{"half a portion", canteen(0), Quantity{Portions: 0.5}, 0.5, "portion", 425, "Bean stew with sausage"},
-		{"grams of a portion of known weight", canteen(500), Quantity{Amount: 250, Unit: "g"}, 0.5, "portion", 425, "Bean stew with sausage"},
+		{"grams", egg(), Quantity{Amount: 150, Unit: "g"}, 150, "g", 214.5, "Egg", ""},
+		{"four pieces", egg(), Quantity{Servings: 4, Serving: "piece"}, 240, "g", 343.2, "Egg", ""},
+		{"half a piece, the serving in another case", egg(), Quantity{Servings: 0.5, Serving: "Piece"}, 30, "g", 42.9, "Egg", ""},
+		{"ml, the brand apart from the name", milk(), Quantity{Amount: 250, Unit: "ml"}, 250, "ml", 145, "Milk 2.8 %", "Dukat"},
+		{"a whole portion", canteen(0), Quantity{Portions: 1}, 1, "portion", 850, "Bean stew with sausage", ""},
+		{"half a portion", canteen(0), Quantity{Portions: 0.5}, 0.5, "portion", 425, "Bean stew with sausage", ""},
+		{"grams of a portion of known weight", canteen(500), Quantity{Amount: 250, Unit: "g"}, 0.5, "portion", 425, "Bean stew with sausage", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -78,8 +79,9 @@ func TestFromFood(t *testing.T) {
 				t.Fatalf("FromFood: %v", err)
 			}
 			if !near(it.Amount, tc.wantAmount) || it.Unit != tc.wantUnit || !near(it.Nutrients.Kcal, tc.wantKcal) ||
-				it.Name != tc.wantName || it.FoodID != tc.f.ID || it.Source != tc.f.Source || it.Quantity != tc.q {
-				t.Errorf("item = %+v; want %v %s, %v kcal, %q", it, tc.wantAmount, tc.wantUnit, tc.wantKcal, tc.wantName)
+				it.Name != tc.wantName || it.Brand != tc.wantBrand || it.FoodID != tc.f.ID || it.Source != tc.f.Source ||
+				it.Quantity != tc.q {
+				t.Errorf("item = %+v; want %v %s, %v kcal, %q of %q", it, tc.wantAmount, tc.wantUnit, tc.wantKcal, tc.wantName, tc.wantBrand)
 			}
 		})
 	}

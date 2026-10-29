@@ -14,7 +14,7 @@ import {
   servingsOf,
   type Entry,
 } from '@/components/day/meal-entries'
-import { slotAt } from '@/components/day/meal-slot'
+import { mealName, namedBy, slotAt } from '@/components/day/meal-slot'
 import { SaveStatus } from '@/components/day/save-status'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
@@ -50,9 +50,9 @@ interface Start {
 // the amount it was eaten in last or another, and estimates, gathered in
 // the meal at the sheet's foot with what each brings, the total, and what
 // the day has left after it; or a meal of before, repeated in a tap. The
-// meal is named and timed by the hour, the meal of the day it is
-// (Snack), which can be changed. Each opening is a meal anew. opener is
-// what opened it, which the focus goes back to.
+// meal is timed now (on another day, at noon), and named by what is in
+// it, both of which can be changed. Each opening is a meal anew. opener
+// is what opened it, which the focus goes back to.
 export function QuickAdd({
   open,
   onOpenChange,
@@ -108,14 +108,14 @@ function Composer({
   const t = useMessages()
   const f = useFormat()
   const id = useId()
+  // Whether the meal sent is one of before, logged again, which its toast
+  // says.
+  const repeating = useRef(false)
   const log = useLogMeal(date, (answer) => {
+    const said = repeating.current ? t.meal.repeated : t.toast.logged
     sayChange(
       {
-        title: t.toast.logged(
-          answer.meal.description ||
-            t.meal.slots[slotAt(Date.parse(answer.meal.eaten_at), timeZone)],
-          t.unit.kcal(f.number(answer.meal.total.kcal)),
-        ),
+        title: said(mealName(answer.meal, t), t.unit.kcal(f.number(answer.meal.total.kcal))),
         lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
       },
       { last: { action: 'meal.create', entity: answer.meal.id }, date },
@@ -184,12 +184,14 @@ function Composer({
       return
     }
     const what = description.trim()
+    repeating.current = false
     send({ id: uuidv7(), ...(what ? { description: what } : {}), ...when, items })
   }
 
   function repeat(meal: Meal) {
     const when = eatenAt()
     if (when !== undefined) {
+      repeating.current = true
       send({ ...repeatOf(meal), ...when })
     }
   }
@@ -236,7 +238,11 @@ function Composer({
                 <input
                   value={description}
                   maxLength={200}
-                  placeholder={slot}
+                  // The name the meal gets without one: what is in it.
+                  placeholder={namedBy(
+                    entries.map((e) => (e.kind === 'food' ? e.food.name : e.name.trim())),
+                    t,
+                  )}
                   autoComplete="off"
                   className={inputClass}
                   onChange={(e) => {

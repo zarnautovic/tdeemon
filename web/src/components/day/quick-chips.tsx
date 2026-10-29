@@ -4,7 +4,7 @@ import { $api } from '@/api/client'
 import { useLogMeal } from '@/api/meals'
 import type { Food } from '@/api/types'
 import { lastAmountOf, repeatOf } from '@/components/day/meal-entries'
-import { slotAt } from '@/components/day/meal-slot'
+import { mealName, slotAt } from '@/components/day/meal-slot'
 import { RepeatStatus } from '@/components/day/repeat-meal'
 import { Button } from '@/components/ui/button'
 import { addDays, useFormat } from '@/i18n/format'
@@ -45,7 +45,10 @@ export function QuickChips({
   const repeat = useLogMeal(date, (answer) => {
     sayChange(
       {
-        title: t.meal.repeated,
+        title: t.meal.repeated(
+          mealName(answer.meal, t),
+          t.unit.kcal(f.number(answer.meal.total.kcal)),
+        ),
         lines: answer.warnings.map((w) => t.meal.warnings[w.code]),
       },
       { last: { action: 'meal.create', entity: answer.meal.id }, date },

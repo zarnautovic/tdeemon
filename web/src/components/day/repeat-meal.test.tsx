@@ -81,13 +81,13 @@ async function repeat() {
   return within(meal).getByRole('button', { name: 'Repeat today: Breakfast' })
 }
 
-test("yesterday's meal is repeated today at this time, and today is a tap away", async () => {
+test("yesterday's meal is repeated today at this time, its toast says which and its kcal, and today is a tap away", async () => {
   const server = repeatServer()
   renderAt(`/?date=${yesterday}`)
 
   fireEvent.click(await repeat())
 
-  expect(await screen.findByText('Logged again, today at this time.')).toBeDefined()
+  expect(await screen.findByText('Repeated: Breakfast · 550 kcal')).toBeDefined()
   expect(screen.getByText('The kcal do not match the protein, carbs and fat.')).toBeDefined()
   expect(server.sent).toEqual([
     {
@@ -132,7 +132,7 @@ test('a repeat with no answer is sent again under its id, one meal however often
   fail = false
   fireEvent.click(again)
 
-  expect(await screen.findByText('Logged again, today at this time.')).toBeDefined()
+  expect(await screen.findByText('Repeated: Breakfast · 550 kcal')).toBeDefined()
   expect(server.sent).toHaveLength(2)
   const [first, second] = server.sent
   expect(second).toEqual(first)
@@ -156,7 +156,7 @@ test("today's meal repeated needs no way to today", async () => {
 
   fireEvent.click(await repeat())
 
-  expect(await screen.findByText('Logged again, today at this time.')).toBeDefined()
+  expect(await screen.findByText('Repeated: Breakfast · 550 kcal')).toBeDefined()
   expect(screen.queryByRole('link', { name: 'See it today' })).toBeNull()
   expect(server.sent).toHaveLength(1)
   await waitFor(() => {

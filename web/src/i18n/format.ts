@@ -170,6 +170,10 @@ export function useFormat() {
       dateFormat(locale, { hour: 'numeric', minute: '2-digit', timeZone }).format(
         new Date(instant),
       ),
+    // hour12 tells a time on a 12-hour clock, 8:45 AM in English, which a
+    // column of times takes more room for than 8:45 in Croatian.
+    hour12:
+      dateFormat(locale, { hour: 'numeric', timeZone: 'UTC' }).resolvedOptions().hour12 === true,
     // day is an instant's day on the user's clock, short: "Oct 21" in
     // English, "21. lis" in Croatian; of another year than now's, with
     // it.
