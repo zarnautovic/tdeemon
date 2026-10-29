@@ -5,7 +5,16 @@ import type { components } from '@/api/schema'
 import { setLocale } from '@/i18n/locale'
 import { setTheme } from '@/lib/theme'
 import { nameNow } from '@/lib/time-zones'
-import { fakeServer, me, problem, renderAt, session, signedIn } from '@/test/app'
+import {
+  askAgain,
+  fakeServer,
+  me,
+  problem,
+  renderAt,
+  session,
+  signedIn,
+  unreachable,
+} from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -886,6 +895,20 @@ test('nothing connected says so, with the way to connect, and offers no revoke o
   expect(tokens.queryByRole('button', { name: 'Revoke all access keys' })).toBeNull()
 })
 
+test('access keys that came stay when they cannot be asked again, the bar says since when', async () => {
+  settingsServer()
+  const router = renderAt('/settings/devices')
+  const tokens = await tokensRegion()
+  expect(await tokens.findByRole('heading', { name: 'iPhone' })).toBeDefined()
+
+  unreachable()
+  await askAgain(router)
+
+  expect(await screen.findByText(/^Offline · data from /)).toBeDefined()
+  expect(tokens.getByRole('heading', { name: 'iPhone' })).toBeDefined()
+  expect(tokens.queryByRole('alert')).toBeNull()
+})
+
 test('tokens that did not come say why, and come when asked again', async () => {
   let fails = true
   settingsServer({
@@ -894,7 +917,9 @@ test('tokens that did not come say why, and come when asked again', async () => 
   renderAt('/settings/devices')
 
   const tokens = await tokensRegion()
-  expect((await tokens.findByRole('alert')).textContent).toBe('The server failed to answer.')
+  const alert = await tokens.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load your access keys.")).toBeDefined()
+  expect(within(alert).getByText('The server failed to answer.')).toBeDefined()
   fails = false
   fireEvent.click(tokens.getByRole('button', { name: 'Try again' }))
   expect(await tokens.findByRole('heading', { name: 'iPhone' })).toBeDefined()

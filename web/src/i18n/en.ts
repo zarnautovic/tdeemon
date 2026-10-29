@@ -109,6 +109,28 @@ export const en = {
     tagline: 'Log what you eat; tdeemon learns what you burn, and your AI coach plans from it.',
   },
   loading: 'Loading…',
+  // What did not load, said over why, in its place on a page whose
+  // header and navigation stay.
+  loadFailed: {
+    today: "Couldn't load today.",
+    day: "Couldn't load this day.",
+    foods: "Couldn't load your foods.",
+    food: "Couldn't load this food.",
+    progress: "Couldn't load your progress.",
+    plan: "Couldn't load your plan.",
+    profile: "Couldn't load your profile.",
+    limits: "Couldn't load the limits of your plan.",
+    notes: "Couldn't load the notes for your AI coach.",
+    keys: "Couldn't load your access keys.",
+  },
+  // A thin bar over what a page shows when asking for it again failed:
+  // the server out of reach (offline) or failing, and how old it is.
+  stale: {
+    offline: (when: string) => `Offline · data from ${when}`,
+    failed: (when: string) => `Not updated · data from ${when}`,
+    // Of a day before today: its date and time.
+    dayTime: (day: string, time: string) => `${day}, ${time}`,
+  },
   notSaved: (why: string) => `Not saved. ${why}`,
   refused: 'The server did not take it.',
   // Amounts in their units, which every language here writes the same.

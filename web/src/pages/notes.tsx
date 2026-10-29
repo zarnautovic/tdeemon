@@ -27,7 +27,7 @@ export function NotesPage() {
       {fresh ? (
         <CoachNotes notes={me.data.notes} labelledBy={id} />
       ) : me.isError ? (
-        <LoadError error={me.error} onRetry={() => void me.refetch()} />
+        <LoadError title={t.loadFailed.notes} error={me.error} onRetry={() => void me.refetch()} />
       ) : (
         <Skeleton blocks={['h-36', 'h-11 w-28']} />
       )}

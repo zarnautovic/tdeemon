@@ -22,11 +22,15 @@ export function PlanPage() {
   const plan = $api.useQuery('get', '/api/v1/plan')
   const me = $api.useQuery('get', '/api/v1/me')
 
+  // A plan that came stays while asking for it again fails: the bar over
+  // the page says since when.
   let body
-  if (plan.isPending) {
-    body = <Skeleton blocks={['h-80', 'h-52']} />
-  } else if (plan.isError) {
-    body = <LoadError error={plan.error} onRetry={() => void plan.refetch()} />
+  if (plan.data === undefined) {
+    body = plan.isError ? (
+      <LoadError title={t.loadFailed.plan} error={plan.error} onRetry={() => void plan.refetch()} />
+    ) : (
+      <Skeleton blocks={['h-80', 'h-52']} />
+    )
   } else {
     const { phases, targets, training_weekdays: days, pending, revisions } = plan.data
     const none = phases.length === 0 && targets.length === 0

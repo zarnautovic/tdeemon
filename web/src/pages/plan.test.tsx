@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import type { components } from '@/api/schema'
 import type { LimitsBody } from '@/components/plan/limit-fields'
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, me, problem, renderAt, signedIn } from '@/test/app'
+import { askAgain, fakeServer, me, problem, renderAt, signedIn, unreachable } from '@/test/app'
 import { limitsBody, planBody } from '@/test/plan'
 
 afterEach(() => {
@@ -298,6 +298,41 @@ test('limits that did not come say why, and come when asked again', async () => 
   fails = false
   fireEvent.click(again)
   expect(await screen.findByRole('form', { name: 'Limits of the plan' })).toBeTruthy()
+})
+
+test('a plan and the limits that came stay when they cannot be asked again', async () => {
+  planServer(
+    {},
+    {
+      'GET /api/v1/plan': () =>
+        Response.json(
+          planBody({
+            phases: [{ type: 'cut', start: '2026-09-01', end: '2026-11-23', rate_pct_week: -0.75 }],
+          }),
+        ),
+    },
+  )
+  const router = renderAt('/plan')
+  expect(await screen.findByRole('region', { name: 'Cut' })).toBeTruthy()
+
+  unreachable()
+  await askAgain(router)
+
+  expect(await screen.findByText(/^Offline · data from /)).toBeTruthy()
+  expect(screen.getByRole('region', { name: 'Cut' })).toBeTruthy()
+  expect(screen.queryByRole('alert')).toBeNull()
+  cleanup()
+
+  planServer()
+  const limits = renderAt('/plan/limits')
+  expect(await screen.findByRole('form', { name: 'Limits of the plan' })).toBeTruthy()
+
+  unreachable()
+  await askAgain(limits)
+
+  expect(await screen.findByText(/^Offline · data from /)).toBeTruthy()
+  expect(screen.getByRole('form', { name: 'Limits of the plan' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
 })
 
 test('a cached profile asked again says it is loading, in the shape of the form', async () => {

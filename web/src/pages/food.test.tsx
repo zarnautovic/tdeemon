@@ -1,9 +1,9 @@
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { Food } from '@/api/types'
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, problem, renderAt, signedIn } from '@/test/app'
+import { askAgain, fakeServer, problem, renderAt, signedIn, unreachable } from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -71,6 +71,35 @@ function foodServer(
   }
   return { fetch, sent }
 }
+
+test('a food that came stays when it cannot be asked again, the bar says since when', async () => {
+  foodServer()
+  const router = renderAt(`/foods/${id}`)
+  const food = await screen.findByRole('article', { name: 'Rolled oats' })
+
+  unreachable()
+  await askAgain(router)
+
+  expect(await screen.findByText(/^Offline · data from /)).toBeDefined()
+  expect(within(food).getByRole('heading', { name: 'Rolled oats' })).toBeDefined()
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+test('a food that did not come says so in its place, and asks again', async () => {
+  let up = false
+  fakeServer({
+    ...signedIn(),
+    [`GET /api/v1/foods/${id}`]: () => (up ? Response.json(oats) : problem(500)),
+  })
+  renderAt(`/foods/${id}`)
+
+  const alert = await screen.findByRole('alert')
+  expect(within(alert).getByText("Couldn't load this food.")).toBeDefined()
+  expect(within(alert).getByText('The server failed to answer.')).toBeDefined()
+  up = true
+  fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+  expect(await screen.findByRole('article', { name: 'Rolled oats' })).toBeDefined()
+})
 
 test('a food is corrected, the whole of it saved', async () => {
   const server = foodServer()

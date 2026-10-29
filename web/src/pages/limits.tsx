@@ -17,7 +17,14 @@ export function LimitsPage() {
   return (
     <SubPage title={t.plan.limits} titleId={id} from="plan" hint={t.plan.limitsHint}>
       {limits.isPending && <Skeleton blocks={['h-14', 'h-14', 'h-14', 'h-11 w-28']} />}
-      {limits.isError && <LoadError error={limits.error} onRetry={() => void limits.refetch()} />}
+      {/* The limits that came stay while asking for them again fails. */}
+      {limits.data === undefined && limits.isError && (
+        <LoadError
+          title={t.loadFailed.limits}
+          error={limits.error}
+          onRetry={() => void limits.refetch()}
+        />
+      )}
       {limits.data && <LimitsForm body={limits.data} labelledBy={id} />}
     </SubPage>
   )

@@ -63,6 +63,13 @@ const appRoute = createRoute({
         // oxlint-disable-next-line typescript/only-throw-error -- the router's redirect is thrown by design
         throw redirect({ to: '/login', search: { redirect: location.href } })
       }
+      // Without an answer, or with the server failing, a section opens on
+      // the session the app has: its page says what did not come, within
+      // the app's frame.
+      const known = context.queryClient.getQueryData(sessionQuery.queryKey)
+      if (known !== undefined) {
+        return { session: known }
+      }
       throw error
     }
   },

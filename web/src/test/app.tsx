@@ -1,13 +1,13 @@
 import { QueryClient } from '@tanstack/react-query'
 import { createMemoryHistory } from '@tanstack/react-router'
-import { render } from '@testing-library/react'
+import { act, render } from '@testing-library/react'
 import { vi } from 'vitest'
 
 import type { components } from '@/api/schema'
 import type { Day } from '@/api/types'
 import { App } from '@/app'
 import type { Locale } from '@/i18n/locale'
-import { createAppRouter } from '@/router'
+import { createAppRouter, type AppRouter } from '@/router'
 
 // renderAt renders the whole app at a path, and returns its router to see
 // where it went.
@@ -34,6 +34,21 @@ export function fakeServer(routes: Record<string, Handler>) {
   })
   vi.stubGlobal('fetch', fetch)
   return fetch
+}
+
+// unreachable takes the server out of reach: no request gets an answer,
+// as when the network is gone.
+export function unreachable() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof globalThis.fetch>(() => Promise.reject(new TypeError('Failed to fetch'))),
+  )
+}
+
+// askAgain asks the server again for all the page shows, as a window back
+// in focus does, and waits for the answers.
+export async function askAgain(router: AppRouter) {
+  await act(() => router.options.context.queryClient.invalidateQueries())
 }
 
 // problem is an error answer of the API (RFC 9457).

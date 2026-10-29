@@ -34,8 +34,12 @@ change), a light and a dark theme,
 each change said in a toast whose Undo takes it back, clear of a
 sheet's buttons, a delete's for 10 s, and after it the recent changes
 in a sheet, by whom, with Undo on the next, each number of
-calibration's an ⓘ away from what it is, in English and Croatian) with
-the day (a new user's first steps to a plan in place of its hero,
+calibration's an ⓘ away from what it is, a page that loads a skeleton
+of its shape under its header, one that did not load saying so there
+with a way to ask again, and what came kept, under a bar that says
+since when, when it cannot be asked again, in English and Croatian)
+with the day (shown at once, with what it shows above its meals, so
+nothing moves them after; a new user's first steps to a plan in place of its hero,
 ticked one by one; what was eaten against the target in a ring and the macros'
 bars, a day past it by more than 5 % in a warm colour, not an error's,
 with the TDEE, what is left of it (until there is one, calibration's

@@ -1098,6 +1098,24 @@ the first spec.
     average in a neutral colour over the usual range; each tile is one
     button to its whole chart, and what recovery flags is a sentence of
     the hero's. Sleep is hours and minutes everywhere ("6 h 52").
+  - Loading and a bad network: a page that loads is a skeleton of its
+    shape under its header, never a bare "Loading…". The day waits for
+    what it shows above its meals as well (the user, the summary, the
+    plan, the week's history and today's chips; `useDayReady`), its parts
+    there but hidden, so each is asked once, and then shows all at once:
+    nothing comes in above the meals after the first paint to push them
+    down under a finger. Once it has shown, another day keeps the one
+    before until it comes. What did not load says so in its place, within
+    the page's frame (its header and the navigation stay): what did not
+    ("Couldn't load today."), why, and Try again, not in an error's red.
+    What came stays when asking for it again fails (TanStack Query's
+    error with data), under a thin bar over the page that says since when
+    ("Offline · data from 21:14", or "Not updated" when the server
+    failed); a refusal (4xx) is not the network's, and its part says it.
+    A section opened while the session cannot be asked again opens on the
+    one the app has. A reload without a network waits for the PWA (P1):
+    the app shell in a service worker, the last day from a persisted
+    cache, and meals logged offline queued until the network is back.
   - i18n without a library: each language's text is a typed object
     (`web/src/i18n`), so a key missing in one language fails the type
     check. Paraglide JS was the plan, but its compiler loads plugins

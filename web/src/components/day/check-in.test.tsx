@@ -418,11 +418,11 @@ test('until the app knows which day today is, a day an address names takes no mo
   })
   renderAt('/?date=2026-10-21')
 
+  // The day waits for it, in its skeleton: nothing of it to change yet.
   expect(await screen.findByRole('button', { name: /^Type of day: / })).toBeDefined()
+  expect(screen.getByText('Loading…')).toBeDefined()
   expect(screen.queryByRole('group', { name: 'Mood' })).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'All measurements' }))
-  expect(screen.queryByLabelText('Weight')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+  expect(screen.queryByRole('button', { name: 'All measurements' })).toBeNull()
 
   answer?.(Response.json(me()))
 

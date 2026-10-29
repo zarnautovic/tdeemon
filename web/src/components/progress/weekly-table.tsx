@@ -40,7 +40,7 @@ export function WeeklyTable({
   )
 
   let body
-  if (history.isError) {
+  if (history.data === undefined && history.isError) {
     body = <LoadError error={history.error} onRetry={() => void history.refetch()} />
   } else if (!history.data) {
     body = (

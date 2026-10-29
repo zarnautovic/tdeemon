@@ -1,6 +1,14 @@
 import { expect, test } from 'vitest'
 
-import { clockAt, instantAt, mealInstant, nightAfter, parseClock, toCome } from '@/lib/zoned'
+import {
+  clockAt,
+  dateAt,
+  instantAt,
+  mealInstant,
+  nightAfter,
+  parseClock,
+  toCome,
+} from '@/lib/zoned'
 
 test.each([
   ['2026-10-23', '08:45', 'America/Los_Angeles', '2026-10-23T15:45:00.000Z'],
@@ -18,6 +26,13 @@ test.each([
   ['2026-11-01', '01:30', 'America/Los_Angeles', '2026-11-01T08:30:00.000Z'],
 ])('%s %s in %s is %s', (date, time, zone, want) => {
   expect(instantAt(date, time, zone)).toBe(want)
+})
+
+test("an instant's date is the time zone's", () => {
+  // 05:30 in Zagreb, 22:30 the evening before in Los Angeles.
+  const instant = Date.parse('2026-10-23T03:30:00Z')
+  expect(dateAt(instant, 'Europe/Zagreb')).toBe('2026-10-23')
+  expect(dateAt(instant, 'America/Los_Angeles')).toBe('2026-10-22')
 })
 
 test('a time before the day start hour is of the night after the day', () => {

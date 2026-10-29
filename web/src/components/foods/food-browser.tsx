@@ -232,8 +232,15 @@ function Found({ query, filter, from }: { query: string; filter: FoodFilter; fro
   if (found.isPending) {
     return <Skeleton />
   }
-  if (found.isError) {
-    return <LoadError error={found.error} onRetry={() => void found.refetch()} />
+  // A search that came stays while asking for it again fails.
+  if (found.data === undefined) {
+    return (
+      <LoadError
+        title={t.loadFailed.foods}
+        error={found.error}
+        onRetry={() => void found.refetch()}
+      />
+    )
   }
   const foods = estimates ? (guessed.data ?? []) : (all.data?.foods ?? [])
   if (foods.length === 0) {
@@ -260,7 +267,13 @@ function Listed({ filter, order, from }: { filter: FoodFilter; order: Order; fro
     return <Skeleton />
   }
   if (list.isLoadingError) {
-    return <LoadError error={list.error} onRetry={() => void list.refetch()} />
+    return (
+      <LoadError
+        title={t.loadFailed.foods}
+        error={list.error}
+        onRetry={() => void list.refetch()}
+      />
+    )
   }
   // A food may come on two pages, when the list changed between them.
   const seen = new Set<string>()

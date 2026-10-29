@@ -169,7 +169,7 @@ test("another day's header on a desktop is laid out as today's", async () => {
     'Back to today',
   ])
   // The week beside the day: that week's.
-  expect(screen.getByRole('region', { name: 'This week' })).toBeDefined()
+  expect(await screen.findByRole('region', { name: 'This week' })).toBeDefined()
 })
 
 const lunch: Meal = {

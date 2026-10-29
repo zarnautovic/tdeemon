@@ -3,7 +3,7 @@ import { Check, Plus, Repeat2, Search } from 'lucide-react'
 import { Fragment, useEffect, useId, useRef, useState, type RefObject } from 'react'
 
 import { $api } from '@/api/client'
-import { useFindFoods } from '@/api/foods'
+import { useFindFoods, useFrequentFoods } from '@/api/foods'
 import { useRecentMeals } from '@/api/meals'
 import type { Food, Meal, RecentMeal } from '@/api/types'
 import {
@@ -83,12 +83,7 @@ export function Finder({
   const recentFoods = $api.useQuery('get', '/api/v1/foods/list', {
     params: { query: { order: 'use', limit: 50 } },
   })
-  const frequentFoods = $api.useQuery(
-    'get',
-    '/api/v1/foods/list',
-    { params: { query: { order: 'frequent', limit: 50 } } },
-    { enabled: list === 'frequent' },
-  )
+  const frequentFoods = useFrequentFoods(list === 'frequent')
   const recentMeals = useRecentMeals()
   const q = query.trim()
 

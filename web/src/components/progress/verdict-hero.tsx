@@ -72,7 +72,7 @@ export function VerdictHero({ phase, today }: { phase: Phase | undefined; today:
   const v = t.charts.verdict
   const i = t.info
 
-  if (summary.isError) {
+  if (summary.data === undefined && summary.isError) {
     return (
       <section aria-label={v.label} className={card}>
         <LoadError error={summary.error} onRetry={() => void summary.refetch()} />
