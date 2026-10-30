@@ -346,3 +346,77 @@ func TestRecentChangesNameARecipe(t *testing.T) {
 		t.Errorf("RecentChanges = %+v, %v", cs, err)
 	}
 }
+
+// A recipe saved again as it was read takes its ingredients' values as
+// their foods have them now, not the ones it sends.
+func TestSaveRecipeRefreshesItsIngredients(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := saveFood(t, db, ana, kefir())
+	r := saveRecipe(t, db, ana, curryOf(t, chicken, k))
+	chicken.Nutrients.Kcal = 120
+	saveFood(t, db, ana, chicken)
+
+	read, err := db.RecipeByID(t.Context(), ana, r.Food.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.CorrectRecipe(t.Context(), ana, testActor, read, nil, t0)
+	if err != nil || got.Items[0].Nutrients.Kcal != 720 {
+		t.Errorf("CorrectRecipe as read = %v kcal of chicken, %v; want its values now, 720", got.Items[0].Nutrients.Kcal, err)
+	}
+	read.Items[0].FoodID = uuid.NewV7()
+	if _, err := db.CorrectRecipe(t.Context(), ana, testActor, read, nil, t0); !errors.Is(err, store.ErrInvalidRecipe) {
+		t.Errorf("an ingredient of no food = %v, want ErrInvalidRecipe", err)
+	}
+}
+
+// A barcode another food has is in the way of a recipe's, as of a
+// food's.
+func TestSaveRecipeBarcodeTaken(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, withBarcode(chickenBreast(), "4006381333931"))
+	k := saveFood(t, db, ana, kefir())
+	r := curryOf(t, chicken, k)
+	r.Food.Barcodes = []string{"4006381333931"}
+	var fc *store.FoodConflictError
+	if _, err := db.SaveRecipe(t.Context(), ana, testActor, r, nil, t0); !errors.As(err, &fc) || fc.Food.ID != chicken.ID ||
+		!errors.Is(err, store.ErrBarcodeTaken) {
+		t.Errorf("SaveRecipe of a barcode taken = %v, want ErrBarcodeTaken by the chicken", err)
+	}
+}
+
+// Undo does not put an ingredient back that is made of the recipe since:
+// a recipe of itself.
+func TestUndoRecipeIntoACycle(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := saveFood(t, db, ana, kefir())
+	sauce := saveRecipe(t, db, ana, recipe.Recipe{
+		Food:  food.Food{ID: uuid.NewV7(), Name: "Kefir sauce"},
+		Items: []meal.Item{itemOf(t, k, meal.Quantity{Amount: 300, Unit: "ml"})},
+	})
+	dish := curryOf(t, chicken, k)
+	dish.Items[1] = itemOf(t, sauce.Food, meal.Quantity{Servings: 1, Serving: recipe.Whole})
+	dish = saveRecipe(t, db, ana, dish)
+	dish.Items = dish.Items[:1]
+	dish = saveRecipe(t, db, ana, dish)
+	// An import makes the sauce of the dish; undo leaves its save.
+	sauce.Items = append(sauce.Items, itemOf(t, dish.Food, meal.Quantity{Amount: 100, Unit: "g"}))
+	if _, err := db.SaveRecipe(t.Context(), ana, importer, sauce, nil, t0); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *store.UndoConflictError
+	if _, err := db.UndoLast(t.Context(), ana, testActor, t0.Add(time.Hour)); !errors.As(err, &conflict) || conflict.Reason != store.UndoStuck {
+		t.Errorf("undo into a cycle = %v, want %s", err, store.UndoStuck)
+	}
+	if got, err := db.RecipeByID(t.Context(), ana, dish.Food.ID); err != nil || len(got.Items) != 1 {
+		t.Errorf("the dish after = %+v, %v; want it as it was, of the chicken alone", got, err)
+	}
+}

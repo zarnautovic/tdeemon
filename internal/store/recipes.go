@@ -107,11 +107,8 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 		}
 		before = &had
 	}
-	brought, err := saveNewFoods(ctx, tx, userID, a, foods, r.Items, now)
-	if err != nil {
-		return recipe.Recipe{}, err
-	}
-	if r.Items, err = itemsOf(r.Items, brought.ids, brought.kept); err != nil {
+	var parts []uuid.UUID
+	if r.Items, parts, err = ingredients(ctx, tx, userID, a, r.Items, foods, now); err != nil {
 		return recipe.Recipe{}, err
 	}
 	r.Food.ID = target
@@ -122,7 +119,7 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 	if err != nil {
 		return recipe.Recipe{}, fmt.Errorf("%w: %w", ErrInvalidRecipe, err)
 	}
-	if err := checkAliases(ctx, tx, userID, made.Food); err != nil {
+	if err := errors.Join(checkAliases(ctx, tx, userID, made.Food), checkBarcodes(ctx, tx, userID, made.Food)); err != nil {
 		return recipe.Recipe{}, err
 	}
 	if exists {
@@ -144,7 +141,47 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 	if err != nil {
 		return recipe.Recipe{}, err
 	}
-	return stored, markParts(ctx, tx, userID, saved, brought.parts)
+	return stored, markParts(ctx, tx, userID, saved, parts)
+}
+
+// ingredients saves the new foods of foods that items name, as a meal's
+// are saved, and returns items of the foods they are stored under, each
+// worked out of its food as it is now (freshItems), with the events of
+// the foods' writes.
+func ingredients(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, items []meal.Item, foods []food.Food,
+	now time.Time,
+) ([]meal.Item, []uuid.UUID, error) {
+	brought, err := saveNewFoods(ctx, tx, userID, a, foods, items, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	if items, err = itemsOf(items, brought.ids, brought.kept); err != nil {
+		return nil, nil, err
+	}
+	items, err = freshItems(ctx, tx, userID, items)
+	return items, brought.parts, err
+}
+
+// freshItems returns items worked out of their foods as userID has them
+// now, in the quantity each was given: a recipe saved takes its
+// ingredients' values as they are then, whatever values the client sent.
+// An ingredient of no food of the user's, or in a quantity its food no
+// longer takes (a serving taken away), is ErrInvalidRecipe.
+func freshItems(ctx context.Context, tx *sql.Tx, userID uuid.UUID, items []meal.Item) ([]meal.Item, error) {
+	out := make([]meal.Item, len(items))
+	for i := range items {
+		f, err := foodInTx(ctx, tx, userID, items[i].FoodID)
+		if errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("%w: ingredient %q: no such food", ErrInvalidRecipe, items[i].Name)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if out[i], err = meal.FromFood(f, items[i].Quantity, items[i].Note); err != nil {
+			return nil, fmt.Errorf("%w: ingredient %w", ErrInvalidRecipe, err)
+		}
+	}
+	return out, nil
 }
 
 // checkCycle refuses items of the recipe id when one of them is the
@@ -361,6 +398,13 @@ func takeBackRecipe(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.E
 		return err
 	}
 	if err := checkFoodClash(ctx, tx, userID, r.Food); err != nil {
+		return err
+	}
+	// An ingredient may be made of the recipe since (an import's save,
+	// which undo leaves).
+	if err := checkCycle(ctx, tx, userID, r.Food.ID, r.Items); errors.Is(err, ErrRecipeCycle) {
+		return fmt.Errorf("%w: %w", clash{UndoStuck}, err)
+	} else if err != nil {
 		return err
 	}
 	if err := updateFood(ctx, tx, userID, r.Food, food.Key(r.Food.Name), food.Key(r.Food.Brand), now); err != nil {
