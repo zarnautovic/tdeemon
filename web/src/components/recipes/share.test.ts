@@ -21,11 +21,17 @@ test('a share of a recipe is the nearest small fraction a person writes', () => 
   expect(shareOf(5 / 12, f.number)).toBe('5/12')
   // Whole dishes before it.
   expect(shareOf(1.5, f.number)).toBe('1½')
+  // Digits keep apart from the whole dishes: 1 5/12, not 15/12.
+  expect(shareOf(17 / 12, f.number)).toBe('1 5/12')
+  expect(shareOf(13 / 11, f.number)).toBe('1 2/11')
   // Near enough: 0.33 is a third, as a coach may have sent it.
   expect(shareOf(0.33, f.number)).toBe('⅓')
   // A twelfth is the smallest: a fourteenth is a number.
   expect(shareOf(1 / 14, f.number)).toBe('0.07')
   expect(shareOf(0.37, f.number)).toBe('0.37')
+  // A sliver of a big pot is not 0: 40 g of 10 kg.
+  expect(shareOf(1 / 250, f.number)).toBe('0.004')
+  expect(shareOf(0.000_123_4, f.number)).toBe('0.00012')
 })
 
 test('a share starts its field as a fraction, read back as it was', () => {
@@ -34,6 +40,9 @@ test('a share starts its field as a fraction, read back as it was', () => {
   expect(shareField(1.5, f.field)).toBe('3/2')
   expect(shareField(1, f.field)).toBe('1')
   expect(shareField(0.37, f.field)).toBe('0.37')
+  // Small grams as a share are not 0.
+  expect(shareField(0.000_4, f.field)).toBe('0.0004')
+  expect(shareField(0.000_123_4, f.field)).toBe('0.00012')
   // Every decimal: a third typed back is a third.
   expect(parseAmount(shareField(1 / 3, f.field), f.parse)).toBe(1 / 3)
 })

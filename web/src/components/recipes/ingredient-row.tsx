@@ -65,6 +65,8 @@ export function IngredientRow({
         </span>
         <AmountField
           value={entry.amount}
+          // A recipe's share is a fraction, whose / a keyboard of digits lacks.
+          inputMode={isRecipe(food) ? 'text' : 'decimal'}
           aria-label={t.meal.amount(name)}
           aria-invalid={wrong !== undefined}
           aria-describedby={wrong ? `${id}-wrong` : undefined}

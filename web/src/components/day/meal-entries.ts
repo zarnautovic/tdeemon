@@ -105,7 +105,7 @@ export function servingOf(unit: string): string | undefined {
 // portions, or a quarter of it when it is not divided. A share of a
 // recipe is typed as a fraction (shareField), and keeps every decimal it
 // had: a third is a third, not 0.333.
-export function foodEntry(food: Food, field: (n: number) => string): FoodEntry {
+export function foodEntry(food: Food, field: (n: number, digits?: number) => string): FoodEntry {
   const key = uuidv7()
   const q = food.last_use?.quantity
   const units = unitsOf(food)

@@ -806,6 +806,9 @@ export function MealEditor({
                         // Of another food now, the field and its unit start
                         // again.
                         key={was.foodId}
+                        // A recipe's share is a fraction, whose / a keyboard
+                        // of digits lacks.
+                        inputMode={item.source === 'recipe' ? 'text' : 'decimal'}
                         // Hidden, not gone, while the item is to be removed:
                         // kept again, it has what was typed in it.
                         hidden={gone}

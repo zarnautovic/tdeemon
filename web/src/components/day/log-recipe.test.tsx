@@ -151,6 +151,7 @@ test('a recipe found is marked, a portion its energy, and opens at a portion; â…
 
   // Never eaten: a portion.
   const amount = sheet.getByLabelText('Amount: Chicken curry')
+  expect(amount.getAttribute('inputmode')).toBe('text')
   const unit = sheet.getByLabelText('Unit: Chicken curry')
   expect(amount).toHaveProperty('value', '1')
   expect(unit).toHaveProperty('value', 'serving:portion')
@@ -422,6 +423,8 @@ test("a meal's share of a recipe opens in its editor as a fraction, and one type
   const editor = within(await screen.findByRole('dialog', { name: 'Change the meal' }))
   const amount = editor.getByLabelText('Amount: Chicken curry')
   expect(amount).toHaveProperty('value', '1/3')
+  // A keyboard with a / for the fraction.
+  expect(amount.getAttribute('inputmode')).toBe('text')
   const unit = await editor.findByLabelText('Unit: Chicken curry')
   expect(options(unit)).toEqual([
     // As it was given first, then the others.

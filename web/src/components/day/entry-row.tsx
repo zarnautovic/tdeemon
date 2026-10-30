@@ -53,6 +53,8 @@ export function EntryRow({
         </span>
         <AmountField
           ref={firstField}
+          // A recipe's share is a fraction, whose / a keyboard of digits lacks.
+          inputMode={entry.food.source === 'recipe' ? 'text' : 'decimal'}
           aria-label={t.log.amount(name)}
           aria-describedby={describedBy}
           value={entry.amount}

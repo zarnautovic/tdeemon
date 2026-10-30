@@ -200,7 +200,7 @@ export function entryUnitLabel(
 export function ingredientEntry(
   ingredient: Ingredient,
   food: Food,
-  field: (n: number) => string,
+  field: (n: number, digits?: number) => string,
 ): FoodEntry {
   const key = uuidv7()
   const q = ingredient.quantity
