@@ -961,6 +961,12 @@ the first spec.
   the instance's VAPID key (RFC 8292), derived from the secret key; it
   goes only to the push services' hosts, following no redirect, and a
   subscription they no longer have (404, 410) is deleted.
+  The web app's service worker (`web/src/sw.ts`) shows a push and
+  opens its page at a tap, and subscribes again when the browser renews
+  a subscription; the app turns them on at a tap (the browser's
+  permission asked then), and tells the server of the subscription each
+  time it opens, as iOS can drop one. A device turned off is remembered
+  in the browser, as the permission stays given.
   `internal/notify` sends a notification to every channel of a user's,
   Telegram's chat and each device, and fails (so the scheduler tries
   again) only when none took it. An inbox of the notifications comes

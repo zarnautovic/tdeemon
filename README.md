@@ -323,9 +323,15 @@ browser's push service (Apple's, Google's, Mozilla's or Microsoft's)
 takes them to the device, installed as an app on iOS. Nothing needs
 setting up: the instance's key (VAPID) is derived from
 `TDEEMON_SECRET_KEY`, and a new secret key makes every device subscribe
-again. The server must reach the push services over HTTPS. Until the
-web app's settings turn them on, a device subscribes through the API
-(`PUT /api/v1/push/subscriptions`).
+again. The server must reach the push services over HTTPS.
+
+The settings' **Notifications** turn them on for the device in hand (the
+browser asks for the permission then), list the devices that get them,
+each removed apart, and send a test to them all. On an iPhone or iPad
+they come to the app added to the home screen (Safari's Share, Add to
+Home Screen), from iOS 16.4; Safari itself cannot get them. The app
+tells the server of the device's subscription each time it opens, as
+iOS can drop one without a word.
 
 A device shows the summary in a line (yesterday's kcal against the
 target, the weight, the sleep); a tap opens the whole in the app. An

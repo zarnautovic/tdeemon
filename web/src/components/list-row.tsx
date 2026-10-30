@@ -12,6 +12,7 @@ export type RowPath =
   | '/settings/appearance'
   | '/settings/account'
   | '/settings/devices'
+  | '/settings/notifications'
 
 const rowClass =
   'flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset lg:px-5'

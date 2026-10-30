@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Globe, History, LogOut, Palette, Smartphone } from 'lucide-react'
+import { Bell, Globe, History, LogOut, Palette, Smartphone } from 'lucide-react'
 import { useState } from 'react'
 
 import { $api } from '@/api/client'
@@ -30,6 +30,7 @@ export function SettingsList({
   const session = useQuery(sessionQuery)
   const user = session.data?.user
   const tokens = $api.useQuery('get', '/api/v1/tokens')
+  const notified = $api.useQuery('get', '/api/v1/push/subscriptions')
   const info = $api.useQuery('get', '/api/v1/info')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -91,6 +92,12 @@ export function SettingsList({
         title={s.devices}
         to="/settings/devices"
         summary={tokens.data && s.devicesSummary(tokens.data.tokens.length)}
+      />
+      <ListRow
+        icon={Bell}
+        title={s.notifications.title}
+        to="/settings/notifications"
+        summary={notified.data && s.notifications.summary(notified.data.subscriptions.length)}
       />
       <ListRow
         icon={History}

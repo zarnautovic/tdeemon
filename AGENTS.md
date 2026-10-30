@@ -100,7 +100,11 @@ list (the theme, the account with a time zone found by its name, the
 devices and AI coaches connected in a guided sheet, an access key (a
 token) shown once with the steps to give it (an AI coach's MCP address
 and commands, Health Auto Export's checklist) and its first call seen
-as it comes, the recent changes, signing out), each screen checked for
+as it comes, the notifications (this device's turned on at a tap, or
+why it cannot, an iPhone's way to the app installed among them, the
+devices notified, each removed apart, a test; the service worker shows
+them and a tap opens their page), the recent changes, signing out),
+each screen checked for
 access (axe, a finger's targets, the focus, less motion) on a phone and
 a desktop, in
 both themes and languages, exist.

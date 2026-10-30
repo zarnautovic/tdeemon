@@ -981,6 +981,37 @@ export const en = {
       'What your AI coach should know of you: an injury, what you do not eat, how you train.',
     notesPlaceholder: 'Knees: no running. No lactose.',
     noNotes: 'None yet',
+    // This device's notifications by Web Push, and every device's.
+    notifications: {
+      title: 'Notifications',
+      hint: 'The morning summary at 10:00, and an alert when your data stop coming.',
+      summary: (n: number) =>
+        n === 0 ? 'Off' : `${String(n)} ${plural('en', n, { one: 'device', other: 'devices' })}`,
+      thisDevice: 'This device',
+      on: 'On',
+      off: 'Off',
+      turnOn: 'Turn on',
+      turnOff: 'Turn off',
+      unsupported: 'This browser cannot get notifications.',
+      install:
+        'On an iPhone or iPad, notifications come to the app installed. In Safari, tap Share, then Add to Home Screen, and open tdeemon from there.',
+      blocked:
+        "Notifications are blocked for tdeemon in this browser's settings. Allow them there, then come back.",
+      failed: 'The notifications could not be changed. Try again.',
+      devices: 'Devices notified',
+      noDevices: 'No device gets them yet.',
+      lastSent: (when: string) => `Last notified ${when}`,
+      neverSent: 'Nothing sent yet',
+      remove: (name: string) => `Stop the notifications to ${name}`,
+      removeShort: 'Remove',
+      test: 'Send a test',
+      tested: (sent: number, failed: number) =>
+        failed === 0
+          ? `Sent to ${String(sent)} ${plural('en', sent, { one: 'device', other: 'devices' })}.`
+          : `Sent to ${String(sent)}, not to ${String(failed)}: its push service did not take it.`,
+      testNone: 'No device took it: turn the notifications on first.',
+      testFailed: 'The test could not be sent. Try again.',
+    },
     devices: 'Devices and AI coaches',
     devicesHint: 'Each device and AI coach signs in with its own access key.',
     devicesSummary: (n: number) =>
