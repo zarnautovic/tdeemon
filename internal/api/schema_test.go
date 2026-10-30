@@ -184,6 +184,35 @@ func answerCases() map[string]answerCase {
 			t.Helper()
 			in.do(t, http.MethodPut, "/api/v1/me/notes", `{"notes": "Knees: no running."}`, []*http.Cookie{session}, nil)
 		},
+		"get-push-key": get("/api/v1/push/key"),
+		// A device that was sent to, so its last_sent_at is there.
+		"list-push-subscriptions": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPut, "/api/v1/push/subscriptions", pushBody(t, "https://web.push.apple.com/answer"), []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPost, "/api/v1/push/test", "", []*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/push/subscriptions", "", []*http.Cookie{session}, nil)
+		},
+		"save-push-subscription": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPut, "/api/v1/push/subscriptions", pushBody(t, "https://web.push.apple.com/answer"), []*http.Cookie{session},
+				map[string]string{"User-Agent": iPhoneSafari})
+		},
+		"delete-push-subscription": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			rec := in.do(t, http.MethodPut, "/api/v1/push/subscriptions", pushBody(t, "https://web.push.apple.com/answer"), []*http.Cookie{session}, nil)
+			var got struct {
+				Subscription struct {
+					ID string `json:"id"`
+				} `json:"subscription"`
+			}
+			_ = json.Unmarshal(rec.Body.Bytes(), &got)
+			in.do(t, http.MethodDelete, "/api/v1/push/subscriptions/"+got.Subscription.ID, "", []*http.Cookie{session}, nil)
+		},
+		"test-push": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPut, "/api/v1/push/subscriptions", pushBody(t, "https://web.push.apple.com/answer"), []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPost, "/api/v1/push/test", "", []*http.Cookie{session}, nil)
+		},
 		"revoke-tokens": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			in.createToken(t, session, `{"name":"phone","scopes":["read"]}`)

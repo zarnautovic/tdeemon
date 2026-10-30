@@ -48,8 +48,9 @@ type Config struct {
 	Listen string
 	// BaseURL is the public URL of the instance, without a trailing slash.
 	BaseURL *url.URL
-	// SecretKey seals the single sign-on state cookie, and will encrypt
-	// stored secrets; sessions do not depend on it. Never log it.
+	// SecretKey seals the single sign-on state cookie, derives the Web
+	// Push (VAPID) key, and will encrypt stored secrets; sessions do not
+	// depend on it. Never log it.
 	SecretKey []byte
 	// DataDir holds the database, backups and upload archives.
 	DataDir string

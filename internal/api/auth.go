@@ -15,6 +15,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
 	"github.com/zarnautovic/tdeemon/internal/off"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -48,6 +49,8 @@ type sessions struct {
 	// window (offLookups).
 	openFoodFacts *off.Client
 	offLookups    *limiter
+	// push sends the notifications by Web Push, when not nil.
+	push *push.Sender
 }
 
 func newSessions(cfg Config) *sessions {
@@ -61,6 +64,7 @@ func newSessions(cfg Config) *sessions {
 		ingestArchive:   cfg.IngestArchive,
 		openFoodFacts:   cfg.OpenFoodFacts,
 		offLookups:      newLimiter(offLookups, offWindow, cfg.Now),
+		push:            cfg.Push,
 	}
 }
 
