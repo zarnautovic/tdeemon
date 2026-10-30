@@ -40,11 +40,12 @@ import {
   estimateEntry,
   foodEntry,
   foodItem,
+  isShare,
   itemName,
   nutrientsIn,
+  parseAmount,
   quantityIn,
   sayWrong,
-  servingOf,
   shownAmount,
   unitIn,
   unitsOf,
@@ -54,6 +55,8 @@ import {
   type Wrong,
 } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
+import { entryUnitLabel } from '@/components/recipes/recipe-values'
+import { recipeUnit, shareField } from '@/components/recipes/share'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
 import { addDays, rounded, useFormat } from '@/i18n/format'
@@ -191,7 +194,12 @@ export function MealEditor({
   // does (later).
   const start = (item: Item): Start | undefined => {
     const amount = amountOf(item)
-    return amount && { text: f.field(amount.n), amount, foodId: item.food_id, note: item.note }
+    if (amount === undefined) {
+      return undefined
+    }
+    // A share of a recipe as its fraction, when it is one: 1/3, not 0.333.
+    const text = isShare(item, amount.key) ? shareField(amount.n, f.field) : f.field(amount.n)
+    return { text, amount, foodId: item.food_id, note: item.note }
   }
   const [initial] = useState(
     () =>
@@ -370,12 +378,13 @@ export function MealEditor({
       return item.nutrients
     }
     const worked = exact[field]
-    const n = worked ?? f.parse(typing[field] ?? was.text)
+    const n = worked ?? parseAmount(typing[field] ?? was.text, f.parse)
     const food = foodOf(item.food_id)
     const unitWas = food ? unitIn(food, was.amount.key) : was.amount.key
     const unit = chosen[field] ?? unitWas
     const anew =
-      unit !== unitWas || (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n)
+      unit !== unitWas ||
+      (worked === undefined ? n !== parseAmount(was.text, f.parse) : n !== was.amount.n)
     if (n !== undefined && !anew) {
       return item.nutrients
     }
@@ -530,7 +539,7 @@ export function MealEditor({
       const food = { ...item, food_id: item.food_id }
       // As a unit chosen worked it out, while the field shows it rounded.
       const worked = exact[`${item.id} ${String(was.foodId)}`]
-      const n = worked ?? f.parse(typed)
+      const n = worked ?? parseAmount(typed, f.parse)
       // A unit chosen anew: the number is of it.
       const unitTyped = text(fieldOf(item, 'unit'))
       const itsFood = foodOf(item.food_id)
@@ -544,7 +553,7 @@ export function MealEditor({
       const anew =
         n !== undefined &&
         (unit !== undefined ||
-          (worked === undefined ? n !== f.parse(was.text) : n !== was.amount.n))
+          (worked === undefined ? n !== parseAmount(was.text, f.parse) : n !== was.amount.n))
       const why = n === undefined ? undefined : amountWrong(itsFood, unit ?? unitWas, n)
       if (n === undefined) {
         notNumbers.add(item.id)
@@ -732,8 +741,12 @@ export function MealEditor({
                   estimateNow.name !== openedEstimate.name ||
                   values.some((v) => estimateNow.texts[v] !== openedEstimate.texts[v])))
             const field = `${item.id} ${String(was?.foodId)}`
-            const typedN = f.parse(typing[field] ?? was?.text ?? '') ?? Number.NaN
-            const unit = was?.amount.portions ? t.meal.portions(typedN) : was?.amount.unit
+            const typedN = parseAmount(typing[field] ?? was?.text ?? '', f.parse) ?? Number.NaN
+            const unit = was?.amount.portions
+              ? t.meal.portions(typedN)
+              : was?.amount.unit === undefined
+                ? undefined
+                : (recipeUnit(item.source, was.amount.unit, typedN, t) ?? was.amount.unit)
             // The units its food is given in, the one it has among them, once
             // the food has come: a choice only of two or more.
             const itsFood = foodOf(was?.foodId)
@@ -793,6 +806,9 @@ export function MealEditor({
                         // Of another food now, the field and its unit start
                         // again.
                         key={was.foodId}
+                        // A recipe's share is a fraction, whose / a keyboard
+                        // of digits lacks.
+                        inputMode={item.source === 'recipe' ? 'text' : 'decimal'}
                         // Hidden, not gone, while the item is to be removed:
                         // kept again, it has what was typed in it.
                         hidden={gone}
@@ -863,7 +879,9 @@ export function MealEditor({
                                         1e-9 * Math.max(1, was.amount.n)
                                         ? was.amount.n
                                         : worked
-                                    const next = shownAmount(n, f.field)
+                                    const next = isShare(itsFood, unitTo)
+                                      ? shareField(n, f.field)
+                                      : shownAmount(n, f.field)
                                     amount.value = next
                                     setTyping((ts) => ({ ...ts, [field]: next }))
                                     setExact((es) => ({ ...es, [field]: n }))
@@ -873,7 +891,7 @@ export function MealEditor({
                                   <option key={u} value={u}>
                                     {u === 'portion'
                                       ? t.meal.portions(typedN)
-                                      : (servingOf(u) ?? u)}
+                                      : entryUnitLabel(itsFood, u, typedN, t)}
                                   </option>
                                 )),
                               }

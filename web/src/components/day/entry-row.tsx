@@ -3,7 +3,8 @@ import { useEffect, useRef } from 'react'
 
 import { AmountField } from '@/components/day/amount-field'
 import { EstimateFields } from '@/components/day/estimate-fields'
-import { inUnit, servingOf, unitsOf, type Entry } from '@/components/day/meal-entries'
+import { entryAmount, inUnit, unitsOf, type Entry } from '@/components/day/meal-entries'
+import { entryUnitLabel } from '@/components/recipes/recipe-values'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -52,6 +53,8 @@ export function EntryRow({
         </span>
         <AmountField
           ref={firstField}
+          // A recipe's share is a fraction, whose / a keyboard of digits lacks.
+          inputMode={entry.food.source === 'recipe' ? 'text' : 'decimal'}
           aria-label={t.log.amount(name)}
           aria-describedby={describedBy}
           value={entry.amount}
@@ -72,9 +75,7 @@ export function EntryRow({
             },
             children: unitsOf(entry.food).map((u) => (
               <option key={u} value={u}>
-                {u === 'portion'
-                  ? t.log.portions(f.parse(entry.amount) ?? Number.NaN)
-                  : (servingOf(u) ?? u)}
+                {entryUnitLabel(entry.food, u, entryAmount(entry, f.parse) ?? Number.NaN, t)}
               </option>
             )),
           }}

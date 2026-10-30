@@ -71,8 +71,13 @@ before, those eaten at the meal of the day lately first and today's
 last, the meals of it as cards above the search, whose keyboard waits
 on a phone for a tap, a new food, an estimate or a barcode (the
 camera's, or its digits typed) a step of its own with one button, or
-a weigh-in from its chip, and the chips that add
-yesterday's meal or a food in a tap),
+a weigh-in from its chip, a recipe found marked, in a portion, a share
+of it typed as a fraction (1/10) or chosen in its chips (½, ⅓, ¼, 1/…)
+or grams, ≈ on the grams of one not weighed, opened there on its amount
+from its page, and the chips that add
+yesterday's meal or a food in a tap; a share of a recipe said as a
+fraction, ⅒ of the recipe, and its portions in the language's plural,
+wherever an item's amount is),
 the foods (their list by how often they are eaten, grouped by this
 week and earlier, in use, the recipes, archived or the estimates,
 searched within the list chosen, a recipe marked and its kcal a

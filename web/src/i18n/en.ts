@@ -824,6 +824,15 @@ export const en = {
       `${n} ${plural('en', count, { one: 'portion', other: 'portions' })}`,
     // A share of the whole dish: ¼ of the recipe.
     ofRecipe: (share: string) => `${share} of the recipe`,
+    // The unit of a share typed, after it: 1/4 of the recipe.
+    ofTheRecipe: 'of the recipe',
+    // Log a meal's amount of a recipe: its chips, a portion or a share.
+    quick: 'Quick: a portion or a share of the recipe',
+    onePortion: '1 portion',
+    denominator: '1/… of the recipe: type the denominator',
+    denominatorHint: 'Type the denominator: 1/10 is a tenth of the recipe.',
+    gramsApprox:
+      'The cooked dish was not weighed, so grams are approximate. A portion or a share is exact.',
     energy: 'Energy of the recipe',
     kcalPerPortion: 'kcal per portion',
     kcalPer100: 'kcal per 100 g',

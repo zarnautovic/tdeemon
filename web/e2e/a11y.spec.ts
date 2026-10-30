@@ -262,6 +262,24 @@ const screens: Screen[] = [
       await settled(page)
     },
   },
+  // Log a meal from the recipe's page, on the recipe's amount: its units,
+  // its chips of a portion or a share, and grams about so.
+  {
+    name: 'quick-add-recipe',
+    open: async (page, made) => {
+      await page.goto(`/foods/${made.recipeId}`)
+      await settled(page)
+      await page
+        .getByRole('main')
+        .getByRole('button', { name: /^(Log it|Upiši)$/ })
+        .click()
+      const sheet = page.getByRole('dialog', { name: /^(New meal|Novi obrok)$/ })
+      await expect(sheet.getByRole('group', { name: /^(Quick|Brzo): / })).toBeVisible()
+      await sheet.getByRole('combobox', { name: /^(Unit|Jedinica): / }).selectOption('g')
+      await expect(sheet.getByText(/^≈ /)).toBeVisible()
+      await settled(page)
+    },
+  },
   {
     name: 'ingredients',
     open: async (page) => {

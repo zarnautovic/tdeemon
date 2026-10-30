@@ -721,6 +721,13 @@ export const hr: Messages = {
     portions: (n: string, count: number) =>
       `${n} ${plural('hr', count, { one: 'porcija', few: 'porcije', other: 'porcija' })}`,
     ofRecipe: (share: string) => `${share} recepta`,
+    ofTheRecipe: 'recepta',
+    quick: 'Brzo: porcija ili dio recepta',
+    onePortion: '1 porcija',
+    denominator: '1/… recepta: upiši nazivnik',
+    denominatorHint: 'Upiši nazivnik: 1/10 je desetina recepta.',
+    gramsApprox:
+      'Gotovo jelo nije vagano, pa su grami približni. Porcija ili dio recepta su točni.',
     energy: 'Energija recepta',
     kcalPerPortion: 'kcal po porciji',
     kcalPer100: 'kcal na 100 g',

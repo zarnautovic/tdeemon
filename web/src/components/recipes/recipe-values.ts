@@ -2,9 +2,9 @@ import type { Ingredient, RecipeWarning } from '@/api/recipes'
 import type { components } from '@/api/schema'
 import type { Food } from '@/api/types'
 import {
+  entryAmount,
   entryItem,
   entryValues,
-  lastAmountOf,
   servingOf,
   servingsOf,
   unitGrams,
@@ -12,15 +12,11 @@ import {
   type FoodEntry,
   type Values,
 } from '@/components/day/meal-entries'
+import { recipeQuantity, recipeUnit, shareField, wholeServing } from '@/components/recipes/share'
 import type { Messages } from '@/i18n/en'
 import type { useFormat } from '@/i18n/format'
 import limits from '@/lib/limits.json'
 import { uuidv7 } from '@/lib/uuid'
-
-// The servings of a recipe's food, by their names (package recipe): the
-// whole dish, and one of its portions when it is divided.
-export const wholeServing = 'recipe'
-export const portionServing = 'portion'
 
 // isRecipe tells a recipe's food, which comes with its recipe.
 export function isRecipe(food: Pick<Food, 'source'>): boolean {
@@ -51,7 +47,7 @@ export function entryGrams(
   entry: FoodEntry,
   parse: (s: string) => number | undefined,
 ): number | undefined {
-  const n = entry.exact ?? parse(entry.amount)
+  const n = entryAmount(entry, parse)
   if (n === undefined) {
     return 0
   }
@@ -158,43 +154,6 @@ export function yieldOf(yieldG: number | undefined, raw: number | undefined): Yi
   }
 }
 
-// The common fractions a share of a recipe is written as.
-const fractions: readonly [number, string][] = [
-  [1 / 2, '½'],
-  [1 / 3, '⅓'],
-  [2 / 3, '⅔'],
-  [1 / 4, '¼'],
-  [3 / 4, '¾'],
-  [1 / 5, '⅕'],
-  [1 / 6, '⅙'],
-  [1 / 8, '⅛'],
-  [1 / 10, '⅒'],
-]
-
-// shareOf is a share of a whole dish as a person writes it: a common
-// fraction (¼), one of n (1/12), or else the number (number, 1.5).
-export function shareOf(x: number, number: (n: number, digits?: number) => string): string {
-  const common = fractions.find(([v]) => Math.abs(v - x) < 1e-6)
-  if (common !== undefined) {
-    return common[1]
-  }
-  const n = 1 / x
-  if (x < 1 && Math.abs(n - Math.round(n)) < 1e-6 && Math.round(n) <= 100) {
-    return `1/${String(Math.round(n))}`
-  }
-  return number(x, 2)
-}
-
-// servingName is a serving's name as the app says it: a recipe's food's
-// own (the whole dish, a portion) in the language, in its count; any
-// other as the food names it.
-export function servingName(food: Pick<Food, 'source'>, name: string, n: number, t: Messages) {
-  if (isRecipe(food) && (name === wholeServing || name === portionServing)) {
-    return t.recipes.servings[name](n)
-  }
-  return name
-}
-
 type Format = ReturnType<typeof useFormat>
 
 // ingredientAmount is how much of an ingredient a recipe has, as it was
@@ -205,11 +164,9 @@ export function ingredientAmount(ingredient: Ingredient, t: Messages, f: Format)
   const unit = ingredient.unit === 'portion' ? undefined : ingredient.unit
   const grams = unit === undefined ? '' : ` (${t.unit[unit](f.number(ingredient.amount))})`
   if (q.servings !== undefined && q.serving !== undefined) {
-    if (ingredient.source === 'recipe' && q.serving === wholeServing) {
-      return `${t.recipes.ofRecipe(shareOf(q.servings, f.number))}${grams}`
-    }
-    if (ingredient.source === 'recipe' && q.serving === portionServing) {
-      return `${t.recipes.portions(f.number(q.servings, 2), q.servings)}${grams}`
+    const ofRecipe = recipeQuantity(ingredient.source, q, t, f.number)
+    if (ofRecipe !== undefined) {
+      return `${ofRecipe}${grams}`
     }
     return `${servingsOf(f.number(q.servings, 2), q.servings, q.serving)}${grams}`
   }
@@ -220,14 +177,21 @@ export function ingredientAmount(ingredient: Ingredient, t: Messages, f: Format)
   return t.unit[unit](f.number(ingredient.amount))
 }
 
-// entryUnitLabel is a unit of an ingredient's food in a menu: its grams
-// or millilitres, a portion, or a serving by its name (servingName).
-export function entryUnitLabel(food: Food, unit: string, n: number, t: Messages): string {
+// entryUnitLabel is a unit of a food in a menu, or after an amount: its
+// grams or millilitres, a portion, or a serving by its name; of a
+// recipe, a share of it ("of the recipe") or its portions, in the
+// language (recipeUnit).
+export function entryUnitLabel(
+  food: Pick<Food, 'source'>,
+  unit: string,
+  n: number,
+  t: Messages,
+): string {
   if (unit === 'portion') {
     return t.log.portions(n)
   }
   const serving = servingOf(unit)
-  return serving === undefined ? unit : servingName(food, serving, n, t)
+  return serving === undefined ? unit : (recipeUnit(food.source, serving, n, t) ?? serving)
 }
 
 // ingredientEntry is an ingredient of a recipe as its editor starts with
@@ -236,18 +200,16 @@ export function entryUnitLabel(food: Food, unit: string, n: number, t: Messages)
 export function ingredientEntry(
   ingredient: Ingredient,
   food: Food,
-  field: (n: number) => string,
+  field: (n: number, digits?: number) => string,
 ): FoodEntry {
   const key = uuidv7()
   const q = ingredient.quantity
   if (q.servings !== undefined && q.serving !== undefined) {
-    return {
-      key,
-      kind: 'food',
-      food,
-      amount: field(q.servings),
-      unit: unitIn(food, `serving:${q.serving}`),
-    }
+    const unit = unitIn(food, `serving:${q.serving}`)
+    // A share of a recipe as its fraction, every decimal kept.
+    return isRecipe(food) && q.serving === wholeServing
+      ? { key, kind: 'food', food, amount: shareField(q.servings, field), unit, exact: q.servings }
+      : { key, kind: 'food', food, amount: field(q.servings), unit }
   }
   if (q.portions !== undefined) {
     return { key, kind: 'food', food, amount: field(q.portions), unit: 'portion' }
@@ -296,17 +258,4 @@ export function warningOf(w: RecipeWarning, t: Messages): string {
   return w.code === 'yield_low' || w.code === 'yield_high'
     ? t.recipes.warnings[w.code]
     : t.meal.warnings[w.code]
-}
-
-// lastShareOf is how much of a recipe was eaten last, as it was given: a
-// share of it, portions, or else as any food's (lastAmountOf).
-export function lastShareOf(food: Food, t: Messages, f: Format): string | undefined {
-  const q = food.last_use?.quantity
-  if (q?.servings !== undefined && q.serving === wholeServing) {
-    return t.recipes.ofRecipe(shareOf(q.servings, f.number))
-  }
-  if (q?.servings !== undefined && q.serving === portionServing) {
-    return t.recipes.portions(f.number(q.servings, 2), q.servings)
-  }
-  return lastAmountOf(food, t, f)
 }

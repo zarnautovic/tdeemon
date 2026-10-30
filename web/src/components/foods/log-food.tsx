@@ -12,18 +12,10 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 
 // LogFood logs a food today: it opens the meal to log (QuickAdd) with the
-// food in it, in the amount it was eaten in last (Log 200 g), as the
-// day's chips do, with what today has left. amount says that amount in
-// other words than a food's (a recipe's share).
-export function LogFood({
-  food,
-  amount: said,
-  className,
-}: {
-  food: Food
-  amount?: string | undefined
-  className?: string
-}) {
+// food in it, in the amount it was eaten in last (Log 200 g, Log ⅒ of
+// the recipe), as the day's chips do, with what today has left; a
+// recipe, on its amount, to choose its portion or share.
+export function LogFood({ food, className }: { food: Food; className?: string }) {
   const t = useMessages()
   const f = useFormat()
   const [open, setOpen] = useState(false)
@@ -34,7 +26,7 @@ export function LogFood({
   // Today, as the day answered, else as the user's profile says: a tap
   // before either came opens the meal once one has.
   const date = day.data?.date ?? me.data?.today
-  const amount = said ?? lastAmountOf(food, t, f)
+  const amount = lastAmountOf(food, t, f)
 
   return (
     <>

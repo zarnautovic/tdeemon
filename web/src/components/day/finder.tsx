@@ -1,18 +1,22 @@
 import { Tabs } from '@base-ui/react/tabs'
 import { Check, Plus, Repeat2, ScanBarcode, Search } from 'lucide-react'
 import { Fragment, useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { flushSync } from 'react-dom'
 
 import { $api } from '@/api/client'
 import { useFindFoods, useFrequentFoods } from '@/api/foods'
 import { useRecentMeals } from '@/api/meals'
 import type { Food, Meal, RecentMeal } from '@/api/types'
 import {
+  entryAmount,
   entryValues,
   entryWrong,
   foodEntry,
   inUnit,
+  isShare,
   lastAmountOf,
   sayWrong,
+  unitGrams,
   unitsOf,
   type Entry,
   type FoodEntry,
@@ -22,7 +26,9 @@ import { longName, mealName } from '@/components/day/meal-slot'
 import type { Making } from '@/components/day/new-entry'
 import { pastMeals } from '@/components/day/past-meals'
 import { suggestFoods, suggestMeals, type Moment } from '@/components/day/suggest'
-import { entryUnitLabel } from '@/components/recipes/recipe-values'
+import { entryUnitLabel, isRecipe } from '@/components/recipes/recipe-values'
+import { portionServing, shareOf, wholeServing } from '@/components/recipes/share'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -55,7 +61,9 @@ const firstFoods = 12
 // onAdd takes an entry, checked; onRepeat a meal to log again. search is
 // the field the sheet's focus goes to. For a recipe's ingredients
 // (ingredient), it finds foods alone, never the recipe itself (exclude),
-// and makes no estimate: an ingredient is a food.
+// and makes no estimate: an ingredient is a food. A food it opens with
+// (initial) is picked, first in the list until it is added, its amount's
+// field amount.
 export function Finder({
   search,
   query,
@@ -65,6 +73,8 @@ export function Finder({
   onRepeat,
   onMake,
   ingredient,
+  initial,
+  amount,
 }: {
   search: RefObject<HTMLInputElement | null>
   query: string
@@ -74,13 +84,17 @@ export function Finder({
   onRepeat?: (meal: Meal) => void
   onMake: (making: Making, button: HTMLElement) => void
   ingredient?: { exclude?: string | undefined }
+  initial?: Food | undefined
+  amount?: RefObject<HTMLInputElement | null>
 }) {
   const t = useMessages()
   const f = useFormat()
   const id = useId()
   const [list, setList] = useState<List>('all')
   // The food picked, with its amount, which opens in its row.
-  const [picked, setPicked] = useState<FoodEntry | undefined>(undefined)
+  const [picked, setPicked] = useState<FoodEntry | undefined>(() =>
+    initial === undefined ? undefined : foodEntry(initial, f.field),
+  )
   const [pickedWrong, setPickedWrong] = useState<Wrong | undefined>(undefined)
   // Two cards side by side on a phone, three on a desktop's sheet.
   const cards = useDesktop() ? 3 : 2
@@ -121,15 +135,19 @@ export function Finder({
   // the lists leave out.
   const suggested = q === '' ? ranked.meals.slice(0, Math.min(ranked.ofSlot, cards)) : []
   const meals = ranked.meals.slice(suggested.length)
+  // The food it opened with, while it is picked and nothing is searched
+  // for: first, whether it was eaten lately or not.
+  const pinned = initial !== undefined && picked?.food.id === initial.id ? [picked.food] : []
   const shown: Record<List, { foods: Food[]; meals: Meal[]; pending: boolean }> = {
     all:
       q === ''
         ? {
-            foods: suggestFoods(
-              eaten(recentFoods.data?.foods),
-              recentMeals.data?.meals ?? [],
-              at,
-            ).slice(0, firstFoods),
+            foods: [
+              ...pinned,
+              ...suggestFoods(eaten(recentFoods.data?.foods), recentMeals.data?.meals ?? [], at)
+                .filter((food) => !pinned.some((p) => p.id === food.id))
+                .slice(0, firstFoods),
+            ],
             meals: meals.slice(0, firstMeals),
             pending: recentFoods.isPending || (ingredient === undefined && recentMeals.isPending),
           }
@@ -169,6 +187,7 @@ export function Finder({
     picked?.food.id === food.id ? (
       <Amount
         entry={picked}
+        field={amount}
         wrong={pickedWrong}
         onChange={(e) => {
           setPicked(e)
@@ -265,6 +284,7 @@ export function Finder({
               // The cards have said what there is.
               quiet={suggested.length > 0}
               picked={picked?.food.id}
+              pinned={pinned[0]?.id}
               pickedRow={pickedRow}
               onPick={(food) => {
                 if (picked?.food.id === food.id) {
@@ -355,6 +375,7 @@ function Results({
   onAdd,
   onRepeat,
   ingredient,
+  pinned,
 }: {
   foods: Food[]
   meals: Meal[]
@@ -370,6 +391,8 @@ function Results({
   onRepeat: (meal: Meal) => void
   // Of a recipe's ingredients, which are foods alone.
   ingredient: boolean
+  // The food the finder opened with, first of all while it is picked.
+  pinned?: string | undefined
 }) {
   const t = useMessages()
   const searched = query !== ''
@@ -413,7 +436,13 @@ function Results({
     <ul aria-label={t.log.results} className="space-y-0.5">
       {/* Nothing searched for, the meals of before come first: one is
           repeated in a tap. */}
-      {searched ? [...foodRows, ...mealRows] : [...mealRows, ...foodRows]}
+      {searched
+        ? [...foodRows, ...mealRows]
+        : [
+            ...foodRows.filter((r) => r.key === pinned),
+            ...mealRows,
+            ...foodRows.filter((r) => r.key !== pinned),
+          ]}
     </ul>
   )
 }
@@ -470,6 +499,10 @@ function FoodResult({
   const f = useFormat()
   const id = useId()
   const lastAmount = lastAmountOf(food, t, f)
+  // A recipe divided says a portion's energy, as it is eaten; one not
+  // weighed, per 100 g about so.
+  const portion = food.recipe?.portion
+  const about = isRecipe(food) && portion === undefined && food.recipe?.yield_g === undefined
 
   return (
     <li className={cn('rounded-lg', open && 'bg-surface-2/60')}>
@@ -488,17 +521,22 @@ function FoodResult({
             {initials(food.name)}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">
-              <Marked text={food.name} query={query} />
-              {food.brand && (
-                <span className="text-muted-foreground">
-                  {' · '}
-                  <Marked text={food.brand} query={query} />
-                </span>
-              )}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate font-medium">
+                <Marked text={food.name} query={query} />
+                {food.brand && (
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    <Marked text={food.brand} query={query} />
+                  </span>
+                )}
+              </span>
+              {isRecipe(food) && <Badge tone="primary">{t.recipes.mark}</Badge>}
             </span>
             <span className="block text-caption text-muted-foreground">
-              {t.unit.kcal(f.number(food.nutrients.kcal))} {t.foods.per[food.basis]}
+              {about && '≈ '}
+              {t.unit.kcal(f.number((portion ?? food.nutrients).kcal))}{' '}
+              {portion ? t.recipes.perPortion : t.foods.per[food.basis]}
               {lastAmount !== undefined && ` · ${t.log.lastAmount(lastAmount)}`}
             </span>
           </span>
@@ -524,16 +562,33 @@ function FoodResult({
   )
 }
 
+// approx marks a number about so, when it is.
+const approx = (on: boolean) => (on ? '≈ ' : '')
+
+// The shares of a recipe its chips give, of the whole dish.
+const shares: readonly [string, number][] = [
+  ['1/2', 1 / 2],
+  ['1/3', 1 / 3],
+  ['1/4', 1 / 4],
+]
+
 // Amount is a food picked, in an amount to add: typed, in a unit of the
 // food's, which works the amount out anew, or one of its servings in a
-// tap; with what it brings.
+// tap; with what it brings. A recipe is given in a portion (when
+// divided), a share of the whole dish or grams, its chips a portion, ½,
+// ⅓ or ¼ of it, and 1/…, which types 1/ for the denominator to follow; a
+// share is typed as a fraction (1/10) or a number. Grams of a recipe not
+// weighed are about so (≈), its portions and shares never. field is the
+// amount's field, which takes the focus as it comes.
 export function Amount({
   entry,
+  field: given,
   wrong,
   onChange,
   onAdd,
 }: {
   entry: FoodEntry
+  field?: RefObject<HTMLInputElement | null> | undefined
   wrong: Wrong | undefined
   onChange: (entry: FoodEntry) => void
   onAdd: (entry: FoodEntry) => void
@@ -541,17 +596,39 @@ export function Amount({
   const t = useMessages()
   const f = useFormat()
   const id = useId()
-  const field = useRef<HTMLInputElement>(null)
+  const own = useRef<HTMLInputElement>(null)
+  const field = given ?? own
   useEffect(() => {
     field.current?.focus()
-  }, [])
+  }, [field])
   const food = entry.food
   const name = nameOf(food)
   const values = entryValues(entry, f.parse)
-  // A food by the portion takes no serving.
-  const servings = food.basis === 'portion' ? [] : (food.servings ?? []).slice(0, 3)
+  const n = entryAmount(entry, f.parse)
+  const recipe = isRecipe(food)
+  // A recipe not weighed: its grams stand for the raw ingredients'.
+  const unweighed = recipe && food.recipe?.yield_g === undefined
+  const portionUnit = `serving:${portionServing}`
+  const shareUnit = `serving:${wholeServing}`
+  const portionGrams = recipe ? unitGrams(food, portionUnit) : undefined
+  // A food by the portion takes no serving; a recipe's are its chips.
+  const servings = food.basis === 'portion' || recipe ? [] : (food.servings ?? []).slice(0, 3)
   const unitOfServing = (grams: number) =>
     food.basis === '100ml' ? t.unit.ml(f.number(grams)) : t.unit.g(f.number(grams))
+  // A unit and an amount in a tap: what a unit chosen worked out is no
+  // more.
+  const set = (unit: string, amount: string) => {
+    const { exact: _was, ...rest } = entry
+    onChange({ ...rest, unit, amount })
+  }
+  const pressed = (unit: string, of: number) =>
+    entry.unit === unit && n !== undefined && Math.abs(n - of) < 1e-9
+  // The grams a recipe's portion or share weighs, said after what it
+  // brings.
+  const grams =
+    recipe && entry.unit !== 'g' && n !== undefined ? unitGrams(food, entry.unit) : undefined
+  // A share waiting for its denominator: 1/.
+  const waiting = isShare(food, entry.unit) && /\/\s*$/.test(entry.amount)
 
   return (
     <div className="space-y-2">
@@ -562,7 +639,8 @@ export function Amount({
           aria-invalid={wrong !== undefined}
           aria-describedby={wrong ? `${id}-wrong` : undefined}
           value={entry.amount}
-          inputMode="decimal"
+          // A recipe's share is a fraction, whose / a keyboard of digits lacks.
+          inputMode={recipe ? 'text' : 'decimal'}
           autoComplete="off"
           className={cn(inputClass, 'w-24 tabular-nums')}
           onChange={(e) => {
@@ -589,7 +667,7 @@ export function Amount({
         >
           {unitsOf(food).map((u) => (
             <option key={u} value={u}>
-              {entryUnitLabel(food, u, f.parse(entry.amount) ?? Number.NaN, t)}
+              {entryUnitLabel(food, u, n ?? Number.NaN, t)}
             </option>
           ))}
         </select>
@@ -604,6 +682,55 @@ export function Amount({
           <Check aria-hidden />
         </Button>
       </div>
+      {recipe && (
+        <fieldset aria-label={t.recipes.quick} className="flex flex-wrap gap-1.5">
+          {portionGrams !== undefined && (
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={pressed(portionUnit, 1)}
+              onClick={() => {
+                set(portionUnit, f.field(1))
+              }}
+            >
+              {t.log.serving(
+                t.recipes.onePortion,
+                `${approx(unweighed)}${t.unit.g(f.number(portionGrams))}`,
+              )}
+            </Button>
+          )}
+          {shares.map(([typed, of]) => (
+            <Button
+              key={typed}
+              variant="outline"
+              size="sm"
+              className="min-w-11"
+              aria-label={t.recipes.ofRecipe(shareOf(of, f.number))}
+              aria-pressed={pressed(shareUnit, of)}
+              onClick={() => {
+                set(shareUnit, typed)
+              }}
+            >
+              {shareOf(of, f.number)}
+            </Button>
+          ))}
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={t.recipes.denominator}
+            onClick={() => {
+              flushSync(() => {
+                set(shareUnit, '1/')
+              })
+              const input = field.current
+              input?.focus()
+              input?.setSelectionRange(2, 2)
+            }}
+          >
+            1/…
+          </Button>
+        </fieldset>
+      )}
       {servings.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {servings.map((s) => (
@@ -612,8 +739,7 @@ export function Amount({
               variant="outline"
               size="sm"
               onClick={() => {
-                const { exact: _was, ...rest } = entry
-                onChange({ ...rest, unit: `serving:${s.name}`, amount: f.field(1) })
+                set(`serving:${s.name}`, f.field(1))
               }}
             >
               {t.log.serving(s.name, unitOfServing(s.amount))}
@@ -622,9 +748,21 @@ export function Amount({
         </div>
       )}
       <p aria-live="polite" className="text-caption text-muted-foreground">
-        {values !== undefined &&
-          `= ${t.unit.kcal(f.number(values.kcal))} · ${t.day.short.protein} ${f.grams(values.protein)} · ${t.day.short.carbs} ${f.grams(values.carbs)} · ${t.day.short.fat} ${f.grams(values.fat)}`}
+        {values !== undefined
+          ? [
+              `= ${approx(unweighed && entry.unit === 'g')}${t.unit.kcal(f.number(values.kcal))}`,
+              `${t.day.short.protein} ${f.grams(values.protein)}`,
+              `${t.day.short.carbs} ${f.grams(values.carbs)}`,
+              `${t.day.short.fat} ${f.grams(values.fat)}`,
+              ...(grams === undefined || n === undefined
+                ? []
+                : [`${approx(unweighed)}${t.unit.g(f.number(n * grams))}`]),
+            ].join(' · ')
+          : waiting && t.recipes.denominatorHint}
       </p>
+      {unweighed && entry.unit === 'g' && (
+        <p className="text-caption text-muted-foreground">≈ {t.recipes.gramsApprox}</p>
+      )}
       {wrong && (
         <p id={`${id}-wrong`} role="alert" className="text-sm text-destructive">
           {sayWrong(wrong, t, f.number)}

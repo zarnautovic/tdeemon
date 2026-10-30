@@ -3,7 +3,7 @@ import { expect, test } from 'vitest'
 
 import type { Ingredient } from '@/api/recipes'
 import type { Food } from '@/api/types'
-import type { FoodEntry } from '@/components/day/meal-entries'
+import { lastAmountOf, type FoodEntry } from '@/components/day/meal-entries'
 import {
   dishOf,
   dishWrong,
@@ -11,9 +11,7 @@ import {
   ingredientAmount,
   ingredientEntry,
   itemsOf,
-  lastShareOf,
   portionsOf,
-  shareOf,
   yieldOf,
 } from '@/components/recipes/recipe-values'
 import { potOf, weighingOf, weighingWrong, withPot } from '@/components/recipes/weighing'
@@ -22,7 +20,7 @@ import { useFormat } from '@/i18n/format'
 
 // The app's formats, in English.
 const f = renderHook(() => useFormat()).result.current
-const { parse, number } = f
+const { parse } = f
 const field = (n: number) => f.field(n)
 
 const rice: Food = {
@@ -48,13 +46,6 @@ const egg: Food = {
 function entry(food: Food, amount: string, unit: string): FoodEntry {
   return { key: `${food.id}-${unit}`, kind: 'food', food, amount, unit }
 }
-
-test('a share of a recipe is a fraction a person writes', () => {
-  expect(shareOf(0.25, number)).toBe('¼')
-  expect(shareOf(0.1, number)).toBe('⅒')
-  expect(shareOf(1 / 12, number)).toBe('1/12')
-  expect(shareOf(1.5, number)).toBe('1.5')
-})
 
 test('an ingredient weighs as the server weighs it', () => {
   expect(entryGrams(entry(rice, '2', 'serving:cup'), parse)).toBe(360)
@@ -186,7 +177,7 @@ function eatenAs(quantity: NonNullable<Food['last_use']>['quantity']): Food {
 }
 
 test('a recipe eaten last is said as a share of it, or portions', () => {
-  expect(lastShareOf(eatenAs({ servings: 0.1, serving: 'recipe' }), en, f)).toBe('⅒ of the recipe')
-  expect(lastShareOf(eatenAs({ servings: 1, serving: 'portion' }), en, f)).toBe('1 portion')
-  expect(lastShareOf(eatenAs({ amount: 100, unit: 'g' }), en, f)).toBe('100 g')
+  expect(lastAmountOf(eatenAs({ servings: 0.1, serving: 'recipe' }), en, f)).toBe('⅒ of the recipe')
+  expect(lastAmountOf(eatenAs({ servings: 1, serving: 'portion' }), en, f)).toBe('1 portion')
+  expect(lastAmountOf(eatenAs({ amount: 100, unit: 'g' }), en, f)).toBe('100 g')
 })
