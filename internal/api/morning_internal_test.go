@@ -169,3 +169,47 @@ func TestMorningTextSaysAProposalWaits(t *testing.T) {
 		}
 	}
 }
+
+// The morning summary's line for a device says yesterday's kcal, the
+// weight and the sleep, and a proposal that waits; what did not come is
+// left out.
+func TestMorningShort(t *testing.T) {
+	t.Parallel()
+
+	today := day.Date{Year: 2026, Month: 10, Day: 30}
+	for _, tc := range []struct {
+		name, locale string
+		m            morningData
+		want         string
+	}{
+		{
+			name: "everything", locale: "hr",
+			m: morningData{
+				date:  today,
+				td:    dayBody{Metrics: metrics("sleep_h", 7.17, "weight", 82.06)},
+				yd:    dayBody{Meals: []MealBody{{}}, Total: nutrientsBody{Kcal: 2140.4}, Target: &dayTargetBody{Kcal: 2300}},
+				waits: today.AddDays(6),
+			},
+			want: "Jučer 2140/2300 kcal · 82,1 kg · san 7 h 10 min · promjena plana čeka",
+		},
+		{
+			name: "no target", locale: "en",
+			m:    morningData{date: today, yd: dayBody{Meals: []MealBody{{}}, Total: nutrientsBody{Kcal: 1980}}},
+			want: "Yesterday 1980 kcal",
+		},
+		{
+			name: "nothing came", locale: "en",
+			m:    morningData{date: today},
+			want: "Yesterday: nothing logged",
+		},
+	} {
+		if got := morningShort(tc.m, tc.locale); got != tc.want {
+			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
+		}
+	}
+	n := morningNote(morningData{date: today}, "hr")
+	if n.Push.Title != "Jutarnji sažetak" || n.Push.URL != "/?summary=2026-10-30" || n.Push.Tag != "morning" ||
+		n.Message.Topic != "morning" || n.Message.TTL != morningTTL || !strings.HasPrefix(n.Text, "Jutarnji sažetak, petak 30. 10.") {
+		t.Errorf("the note: %+v", n)
+	}
+}

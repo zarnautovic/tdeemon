@@ -17,6 +17,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
@@ -171,5 +172,92 @@ func TestMorningSummaryJobLateDay(t *testing.T) {
 	}
 	if err := job.Run(t.Context(), ana, "2026-10-22", now); err != nil {
 		t.Errorf("a chat that blocked the bot: %v", err)
+	}
+}
+
+// A user with a device and no chat gets the morning summary by push, with
+// no bot at all.
+func TestMorningSummaryJobByPush(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	zagreb, _ := time.LoadLocation("Europe/Zagreb")
+	now := time.Date(2026, 10, 23, 10, 5, 0, 0, zagreb)
+	ana := user.User{
+		ID: uuid.NewV7(), Email: "ana@example.com", Name: "Ana", Role: user.RoleUser, Locale: "hr",
+		TimeZone: "Europe/Zagreb", DayStartHour: 4, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.CreateUser(t.Context(), ana, ""); err != nil {
+		t.Fatal(err)
+	}
+	p256dh, secret := browserKeys(t)
+	if _, err := db.SavePushSubscription(t.Context(), ana.ID, store.PushSubscription{
+		ID: uuid.NewV7(), Endpoint: "https://web.push.apple.com/phone", P256dh: p256dh, Auth: secret, Device: "iPhone · Safari",
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	sender, err := push.NewSender([]byte("a test secret of thirty-two bytes!"), "https://tdeemon.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	services := &pushServices{}
+	sender.Client = &http.Client{Transport: services}
+	job := api.MorningSummaryJob(api.Config{DB: db, Logger: slog.New(slog.DiscardHandler), Push: sender}, nil)
+	if err := job.Run(t.Context(), ana, "2026-10-23", now); err != nil {
+		t.Fatal(err)
+	}
+	if got := services.endpoints(); len(got) != 1 || got[0] != "https://web.push.apple.com/phone" {
+		t.Errorf("pushed to %v, want Ana's phone", got)
+	}
+}
+
+type morningAnswer struct {
+	Date, Title, Text, Short string
+}
+
+func getMorning(t *testing.T, in *instance, session *http.Cookie, query string) morningAnswer {
+	t.Helper()
+	var got morningAnswer
+	rec := in.do(t, http.MethodGet, "/api/v1/morning"+query, "", []*http.Cookie{session}, nil)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
+		t.Fatalf("the morning%s: %d %s", query, rec.Code, rec.Body.String())
+	}
+	return got
+}
+
+// The morning summary of today reads now; one of before, that morning;
+// one to come is refused.
+func TestGetMorning(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	cookies := []*http.Cookie{session}
+	now := in.clock.Now()
+	today := day.DateOf(now)
+	if _, err := in.db.MergeMetrics(t.Context(), in.user.ID, isolationActor, today, []metric.Value{
+		{Kind: metric.Weight, Value: 81.2, Source: metric.Import},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	got := getMorning(t, in, session, "")
+	if got.Date != today.String() || got.Title != "Jutarnji sažetak" || !strings.Contains(got.Text, "Težina: 81,2 kg") ||
+		got.Short != "Jučer: ništa upisano · 81,2 kg" {
+		t.Errorf("today: %+v", got)
+	}
+	before := today.AddDays(-3)
+	if got = getMorning(t, in, session, "?date="+before.String()); got.Date != before.String() || strings.Contains(got.Text, "81,2") {
+		t.Errorf("3 days before: %+v", got)
+	}
+	for _, q := range []string{today.AddDays(1).String(), "2026-13-01", "yesterday"} {
+		if rec := in.do(t, http.MethodGet, "/api/v1/morning?date="+q, "", cookies, nil); rec.Code != http.StatusUnprocessableEntity {
+			t.Errorf("%s: %d, want 422", q, rec.Code)
+		}
+	}
+	tok, created := in.createToken(t, session, `{"name":"phone","scopes":["read"]}`)
+	if created.Code != http.StatusCreated {
+		t.Fatal(created.Body.String())
+	}
+	if rec := in.do(t, http.MethodGet, "/api/v1/morning", "", nil, bearer(tok.Token)); rec.Code != http.StatusForbidden {
+		t.Errorf("with a token: %d, want 403", rec.Code)
 	}
 }

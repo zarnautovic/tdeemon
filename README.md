@@ -270,8 +270,9 @@ reaches it; no other program may poll the same bot.
 
 **The morning summary** comes at 10:00 on the user's clock (or later
 that morning, if the server was down at 10:00), once a day, without an
-LLM. In the user's language (English, or Croatian for `hr`), it has a
-line for each of these that came:
+LLM, to the chat and to the user's devices. In the user's language
+(English, or Croatian for `hr`), it has a line for each of these that
+came:
 
 - last night's sleep (the night that ended this morning, never the one
   before, whatever hour the user's day starts);
@@ -298,7 +299,8 @@ no user's gets no answer, and neither does a command older than 5
 minutes (one sent while the server was down). A command changes
 nothing: the morning summary still comes at 10:00.
 
-**The watchdog** looks each hour and tells the user, in the same chat,
+**The watchdog** looks each hour and tells the user, in the same chat
+and on their devices ([Web Push](#notifications-on-a-device-web-push)),
 when their data stop coming:
 
 - no new or changed metric for more than 26 hours: a day of syncs
@@ -312,6 +314,22 @@ Each stop alarms once (and a chat that blocked the bot, not at all); it
 alarms again only after data have come and stopped again. A group chat
 that Telegram turns into a supergroup is followed to its new id, at the
 change's message or at the next send.
+
+### Notifications on a device (Web Push)
+
+The morning summary and the watchdog's alarms also go to each device a
+user turns the notifications on for in the web app, by Web Push: the
+browser's push service (Apple's, Google's, Mozilla's or Microsoft's)
+takes them to the device, installed as an app on iOS. Nothing needs
+setting up: the instance's key (VAPID) is derived from
+`TDEEMON_SECRET_KEY`, and a new secret key makes every device subscribe
+again. The server must reach the push services over HTTPS.
+
+A device shows the summary in a line (yesterday's kcal against the
+target, the weight, the sleep); a tap opens the whole in the app. An
+alarm opens the devices in the settings. A notification goes to every
+channel the user has, Telegram's chat and each device, and is sent
+again later only when none took it.
 
 ### Single sign-on (OpenID Connect)
 

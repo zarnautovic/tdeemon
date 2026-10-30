@@ -2056,6 +2056,38 @@
         ],
         "type": "object"
       },
+      "MorningOutputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "description": "The morning's date.",
+            "format": "date",
+            "type": "string"
+          },
+          "short": {
+            "description": "The summary in a line, as a device's notification shows it.",
+            "type": "string"
+          },
+          "text": {
+            "description": "The summary whole, a part a line, as the Telegram chat gets it; its first line is the title and the date.",
+            "type": "string"
+          },
+          "title": {
+            "description": "What the summary is, in the user's language.",
+            "examples": [
+              "Morning summary"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "title",
+          "text",
+          "short"
+        ],
+        "type": "object"
+      },
       "NeedBody": {
         "additionalProperties": false,
         "properties": {
@@ -7754,6 +7786,98 @@
         "summary": "Change a meal",
         "tags": [
           "tools"
+        ]
+      }
+    },
+    "/api/v1/morning": {
+      "get": {
+        "description": "Needs a web session. The morning summary of a date, whole and in a line, as the notifications send it at 10:00, read now: with what was logged since.",
+        "operationId": "get-morning-summary",
+        "parameters": [
+          {
+            "description": "The morning whose summary, on the user's calendar; today when absent.",
+            "explode": false,
+            "in": "query",
+            "name": "date",
+            "schema": {
+              "description": "The morning whose summary, on the user's calendar; today when absent.",
+              "format": "date",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MorningOutputBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get the morning summary",
+        "tags": [
+          "summary"
         ]
       }
     },

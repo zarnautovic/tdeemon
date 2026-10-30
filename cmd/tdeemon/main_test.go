@@ -18,6 +18,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/config"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -279,8 +280,8 @@ func TestRunTrustsTheConfiguredProxies(t *testing.T) {
 	}
 }
 
-// The scheduler has the morning summary and the watchdog only with a
-// Telegram bot to send them.
+// The scheduler has the morning summary and the watchdog with a Telegram
+// bot or Web Push to send them, and not without either.
 func TestJobs(t *testing.T) {
 	t.Parallel()
 
@@ -297,5 +298,12 @@ func TestJobs(t *testing.T) {
 	js := jobs(api.Config{}, bot)
 	if len(js) != 2 || js[0].Name != "morning_summary" || js[1].Name != "watchdog" {
 		t.Errorf("jobs with a bot = %v", js)
+	}
+	sender, err := push.NewSender([]byte(strings.Repeat("k", 32)), "https://tdeemon.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if js := jobs(api.Config{Push: sender}, nil); len(js) != 2 {
+		t.Errorf("jobs with push alone = %v", js)
 	}
 }

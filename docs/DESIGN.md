@@ -947,17 +947,29 @@ the first spec.
 - **Morning summary:** a deterministic template (sleep, yesterday vs
   target, weight trend, calibration line, a proposal of the plan that
   waits for an answer, recovery flags), the
-  scheduler's job at 10:00 on the user's clock, sent to their Telegram
-  chat (`internal/api/morning.go`, from the same reads as `get_day` and
-  `get_summary`). The sleep is only the night that ended today; what did
-  not come is left out. In the user's language: English, or Croatian
-  for `hr`. Delivered by
-  Telegram send (no LLM), web push or ntfy. An optional AI comment is
-  off by default.
+  scheduler's job at 10:00 on the user's clock, sent whole to their
+  Telegram chat and in a line to each device by Web Push
+  (`internal/api/morning.go`, from the same reads as `get_day` and
+  `get_summary`); a device's tap opens the whole on the day
+  (`/?summary=date`, `GET /morning`, read when opened, so not stored).
+  The sleep is only the night that ended today; what did not come is
+  left out. In the user's language: English, or Croatian for `hr`. No
+  LLM; an optional AI comment is off by default.
+- **Web Push** (`internal/push`): a device's subscription is in
+  `push_subscriptions`, one per endpoint, of the user signed in when it
+  subscribed. The message is encrypted for it (RFC 8291) and signed by
+  the instance's VAPID key (RFC 8292), derived from the secret key; it
+  goes only to the push services' hosts, following no redirect, and a
+  subscription they no longer have (404, 410) is deleted.
+  `internal/notify` sends a notification to every channel of a user's,
+  Telegram's chat and each device, and fails (so the scheduler tries
+  again) only when none took it. An inbox of the notifications comes
+  when there are more kinds of them.
 - **Watchdog** (`internal/watchdog`), the scheduler's job each hour: no
   metric for more than 26 h, an ingest token unused for more than 3
-  days. It goes out through the same channel (`internal/notify`, which
-  follows a group to its supergroup), once per stop: the stop is
+  days. It goes out through the same channels (`internal/notify`, which
+  follows a group to its supergroup), a tap on a device opening the
+  devices in the settings, once per stop: the stop is
   recorded by when the data last came. Later, configurable per user, and
   nothing logged by a set hour.
 - **Deploy:**

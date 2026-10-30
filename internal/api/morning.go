@@ -5,24 +5,35 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/notify"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
 
+// morningTTL is how long a push service keeps the morning summary for a
+// device that is off: past the evening it is old news.
+const morningTTL = 12 * time.Hour
+
 // MorningSummaryJob is the morning summary, the scheduler's job: at
 // 10:00 on each user's clock (or up to 4 hours later, a server down then
-// catching up), it sends a user with a Telegram chat the summary of last
-// night and yesterday (morningText). A user without a chat gets nothing.
+// catching up), it sends the summary of last night and yesterday to each
+// channel of a user's (notify.Channels): the whole of it to their
+// Telegram chat (morningText), its short form to their devices
+// (morningShort), a tap on which opens the whole in the app. A user
+// without a channel gets nothing.
 func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
@@ -31,18 +42,19 @@ func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 		cfg.Logger = slog.Default()
 	}
 	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, instance: cfg.Limits}
+	channels := notify.Channels{DB: cfg.DB, Bot: bot, Push: cfg.Push, Logger: cfg.Logger}
 	return scheduler.Job{
 		Name: "morning_summary",
 		Due:  scheduler.DailyAt(10*time.Hour, 4*time.Hour),
 		Run: func(ctx context.Context, u user.User, _ string, now time.Time) error {
-			if _, ok, err := s.db.TelegramChat(ctx, u.ID); err != nil || !ok {
+			if ok, err := channels.Has(ctx, u); err != nil || !ok {
 				return err
 			}
-			text, err := s.morning(ctx, u, now)
+			m, err := s.morningOf(ctx, u, now)
 			if err != nil {
 				return err
 			}
-			_, err = notify.Send(ctx, s.db, bot, u, text, now)
+			_, err = channels.Send(ctx, u, morningNote(m, u.Locale), now)
 			if notify.Blocked(err) {
 				// The user blocked the bot: trying again would not help.
 				s.logger.Warn("the morning summary's chat refuses the bot", "user_id", u.ID, "error", err)
@@ -53,39 +65,99 @@ func MorningSummaryJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 	}
 }
 
-// morning reads what the morning summary of u shows at now, and writes it.
-// Last night's sleep and this morning's weighing are of the calendar date
-// now, as a night is dated by the morning it ends: the logical day may be
+// morningData is what the morning summary shows: today so far (last
+// night's sleep and this morning's weighing), yesterday, the summary, and
+// the day a proposal of the plan waits for the user's answer until (the
+// zero Date for none).
+type morningData struct {
+	date   day.Date
+	td, yd dayBody
+	sum    summaryBody
+	waits  day.Date
+}
+
+// morning reads what the morning summary of u shows at now, and writes it
+// whole.
+func (s *sessions) morning(ctx context.Context, u user.User, now time.Time) (string, error) {
+	m, err := s.morningOf(ctx, u, now)
+	if err != nil {
+		return "", err
+	}
+	return morningText(m.date, m.td, m.yd, m.sum, m.waits, u.Locale), nil
+}
+
+// morningOf reads what the morning summary of u shows at now. Last
+// night's sleep and this morning's weighing are of the calendar date now,
+// as a night is dated by the morning it ends: the logical day may be
 // still yesterday's for a day that starts late. Yesterday is the last
 // day that ended.
-func (s *sessions) morning(ctx context.Context, u user.User, now time.Time) (string, error) {
+func (s *sessions) morningOf(ctx context.Context, u user.User, now time.Time) (morningData, error) {
 	p := auth.Principal{User: u}
 	cal, today, err := userDay(p, now)
 	if err != nil {
-		return "", err
+		return morningData{}, err
 	}
-	date := day.DateOf(now.In(cal.Location))
-	td, err := s.readDay(ctx, p, date, now)
-	if err != nil {
-		return "", err
+	m := morningData{date: day.DateOf(now.In(cal.Location))}
+	if m.td, err = s.readDay(ctx, p, m.date, now); err != nil {
+		return morningData{}, err
 	}
-	yd, err := s.readDay(ctx, p, today.AddDays(-1), now)
-	if err != nil {
-		return "", err
+	if m.yd, err = s.readDay(ctx, p, today.AddDays(-1), now); err != nil {
+		return morningData{}, err
 	}
-	sum, err := s.summary(ctx, p, 1, now)
-	if err != nil {
-		return "", err
+	if m.sum, err = s.summary(ctx, p, 1, now); err != nil {
+		return morningData{}, err
 	}
-	var waits day.Date
 	pending, err := s.db.Proposals(ctx, u.ID, 1, now, proposal.Pending)
 	if err != nil {
-		return "", err
+		return morningData{}, err
 	}
 	if len(pending) > 0 && pending[0].Status == proposal.Pending {
-		waits = day.DateOf(pending[0].ExpiresAt.In(cal.Location))
+		m.waits = day.DateOf(pending[0].ExpiresAt.In(cal.Location))
 	}
-	return morningText(date, td, yd, sum, waits, u.Locale), nil
+	return m, nil
+}
+
+// morningNote is the morning summary of m as a notification, in the
+// language of locale: whole for Telegram, short for a device, whose tap
+// opens the whole on the day (the web app's /?summary=date). A newer one
+// replaces it at the push service and on the device.
+func morningNote(m morningData, locale string) notify.Note {
+	w := writer{phrasesOf(locale)}
+	return notify.Note{
+		Text: morningText(m.date, m.td, m.yd, m.sum, m.waits, locale),
+		Push: push.Notification{
+			Title: w.title, Body: morningShort(m, locale), URL: "/?summary=" + m.date.String(), Tag: "morning",
+		},
+		Message: push.Message{TTL: morningTTL, Topic: "morning"},
+	}
+}
+
+// morningShort is the morning summary in a line, for a notification a
+// device shows in a few: yesterday's kcal against the target, this
+// morning's weight, last night's sleep, and a proposal that waits; what
+// did not come is left out.
+func morningShort(m morningData, locale string) string {
+	w := writer{phrasesOf(locale)}
+	var parts []string
+	switch {
+	case len(m.yd.Meals) == 0:
+		parts = append(parts, w.yesterday+": "+w.nothingLogged)
+	case m.yd.Target != nil:
+		parts = append(parts, w.yesterday+" "+w.num(m.yd.Total.Kcal, 0)+"/"+w.num(m.yd.Target.Kcal, 0)+" kcal")
+	default:
+		parts = append(parts, w.yesterday+" "+w.num(m.yd.Total.Kcal, 0)+" kcal")
+	}
+	if kg, ok := metricOf(m.td, "weight"); ok {
+		parts = append(parts, w.num(kg, 1)+" kg")
+	}
+	if h, ok := metricOf(m.td, "sleep_h"); ok {
+		minutes := int(math.Round(h * 60))
+		parts = append(parts, fmt.Sprintf("%s %d h %02d min", strings.ToLower(w.sleep), minutes/60, minutes%60))
+	}
+	if !m.waits.IsZero() {
+		parts = append(parts, w.proposalWaits)
+	}
+	return strings.Join(parts, " · ")
 }
 
 // morningText is the morning summary of today, from today so far (last
@@ -116,7 +188,7 @@ type phrases struct {
 	activity, steps, active, exercise                      string
 	calibration, noPlan, noEstimate, pace, perWeek, target string
 	onTarget, below, above, proposal, perDay               string
-	plan, waits                                            string
+	plan, waits, proposalWaits                             string
 	moreProteinOrKcal, smallerSurplus, toMaintenance       string
 	recovery, shortSleep, average, highRestingHR, lowHRV   string
 	weekdays                                               [7]string
@@ -132,7 +204,7 @@ var english = phrases{
 	calibration: "Calibration", noPlan: "no plan (a phase and a target), so no rate to judge",
 	noEstimate: "no estimate to trust yet", pace: "rate", perWeek: "%/wk", target: "target",
 	onTarget: "on plan", below: "below plan", above: "above plan", proposal: "proposed", perDay: "kcal/day",
-	plan: "Plan", waits: "a proposed change waits for your answer, until",
+	plan: "Plan", waits: "a proposed change waits for your answer, until", proposalWaits: "a change of the plan waits",
 	moreProteinOrKcal: "more protein or kcal", smallerSurplus: "a smaller surplus", toMaintenance: "move to maintenance",
 	recovery: "Recovery", shortSleep: "short sleep", average: "average", highRestingHR: "high resting heart rate", lowHRV: "low HRV",
 	weekdays: [7]string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"},
@@ -149,7 +221,7 @@ var croatian = phrases{
 	calibration: "Kalibracija", noPlan: "nema plana (faze i cilja), pa nema tempa za ocijeniti",
 	noEstimate: "još nema pouzdane procjene", pace: "tempo", perWeek: "%/tj", target: "cilj",
 	onTarget: "u planu", below: "ispod plana", above: "iznad plana", proposal: "prijedlog", perDay: "kcal/dan",
-	plan: "Plan", waits: "prijedlog promjene čeka tvoj odgovor, do",
+	plan: "Plan", waits: "prijedlog promjene čeka tvoj odgovor, do", proposalWaits: "promjena plana čeka",
 	moreProteinOrKcal: "više proteina ili kcal", smallerSurplus: "manji suficit", toMaintenance: "prijeđi na održavanje",
 	recovery: "Oporavak", shortSleep: "kratak san", average: "prosjek", highRestingHR: "povišen puls u mirovanju", lowHRV: "nizak HRV",
 	weekdays:     [7]string{"nedjelja", "ponedjeljak", "utorak", "srijeda", "četvrtak", "petak", "subota"},
@@ -364,4 +436,68 @@ func (w writer) signed(v float64, prec int) string {
 
 func weekday(d day.Date) time.Weekday {
 	return time.Date(d.Year, d.Month, d.Day, 12, 0, 0, 0, time.UTC).Weekday()
+}
+
+type morningInput struct {
+	Date string `query:"date" format:"date" doc:"The morning whose summary, on the user's calendar; today when absent."`
+}
+
+type morningOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         struct {
+		Date  string `json:"date" format:"date" doc:"The morning's date."`
+		Title string `json:"title" example:"Morning summary" doc:"What the summary is, in the user's language."`
+		Text  string `json:"text" doc:"The summary whole, a part a line, as the Telegram chat gets it; its first line is the title and the date."`
+		Short string `json:"short" doc:"The summary in a line, as a device's notification shows it."`
+	}
+}
+
+// getMorning writes the morning summary of a date as it reads now: what
+// a tap on the morning's notification opens. Today's is of now; one of
+// before is of 10:00 that morning, as the job wrote it, with what was
+// logged since.
+func (s *sessions) getMorning(ctx context.Context, in *morningInput) (*morningOutput, error) {
+	p, err := requireSession(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cal, _, err := userDay(p, s.now())
+	if err != nil {
+		return nil, internalError("reading the user's calendar failed", err)
+	}
+	now := s.now()
+	today := day.DateOf(now.In(cal.Location))
+	at := now
+	if in.Date != "" {
+		d, err := day.ParseDate(in.Date)
+		switch {
+		case err != nil:
+			return nil, huma.Error422UnprocessableEntity("the date is not a date")
+		case today.Before(d):
+			return nil, huma.Error422UnprocessableEntity("the morning of " + in.Date + " has not come yet")
+		case d.Before(today):
+			at = time.Date(d.Year, d.Month, d.Day, 10, 0, 0, 0, cal.Location)
+		}
+	}
+	m, err := s.morningOf(ctx, p.User, at)
+	if err != nil {
+		return nil, internalError("reading the morning summary failed", err)
+	}
+	n := morningNote(m, p.User.Locale)
+	out := &morningOutput{CacheControl: "no-store"}
+	out.Body.Date, out.Body.Title, out.Body.Text, out.Body.Short = m.date.String(), n.Push.Title, n.Text, n.Push.Body
+	return out, nil
+}
+
+func (s *sessions) registerMorning(a huma.API) {
+	huma.Register(a, huma.Operation{
+		OperationID: "get-morning-summary",
+		Method:      http.MethodGet,
+		Path:        Prefix + "/morning",
+		Summary:     "Get the morning summary",
+		Description: "Needs a web session. The morning summary of a date, whole and in a line, as the notifications send it at 10:00, " +
+			"read now: with what was logged since.",
+		Tags:   []string{"summary"},
+		Errors: []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusUnprocessableEntity},
+	}, s.getMorning)
 }

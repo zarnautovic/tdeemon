@@ -22,6 +22,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
+	"github.com/zarnautovic/tdeemon/internal/notify"
 	"github.com/zarnautovic/tdeemon/internal/off"
 	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
@@ -232,13 +233,15 @@ func telegramBot(cfg config.Config) *telegram.Bot {
 	return &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
 }
 
-// jobs are the scheduler's: the morning summary and the watchdog, with a
-// Telegram bot to send them; none without one.
+// jobs are the scheduler's: the morning summary and the watchdog, sent to
+// each user's Telegram chat (with a bot) and devices (by Web Push); none
+// with neither.
 func jobs(apiCfg api.Config, bot *telegram.Bot) []scheduler.Job {
-	if bot == nil {
+	if bot == nil && apiCfg.Push == nil {
 		return nil
 	}
-	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(apiCfg.DB, bot, apiCfg.Logger)}
+	channels := notify.Channels{DB: apiCfg.DB, Bot: bot, Push: apiCfg.Push, Logger: apiCfg.Logger}
+	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(channels, apiCfg.Logger)}
 }
 
 // listen sets the bot's commands in Telegram's menu and answers them

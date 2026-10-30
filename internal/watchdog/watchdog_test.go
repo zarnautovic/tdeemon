@@ -1,7 +1,10 @@
 package watchdog_test
 
 import (
+	"crypto/ecdh"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -17,6 +20,8 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/notify"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
@@ -86,7 +91,7 @@ func TestNoMetrics(t *testing.T) {
 	db := storetest.Open(t)
 	bot, sent := fakeBot(t)
 	u := newUser(t, db, "ana@example.com", "hr", 853)
-	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	job := watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))
 	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
 	weigh(t, db, u, 80, last)
 	run := func(at time.Time) {
@@ -138,7 +143,7 @@ func TestTokenUnused(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	job := watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))
 	if err := job.Run(t.Context(), u, "", created.Add(24*time.Hour+watchdog.TokenUnusedAfter)); err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +166,7 @@ func TestTokenUnused(t *testing.T) {
 func TestDue(t *testing.T) {
 	t.Parallel()
 
-	job := watchdog.Job(nil, nil, nil)
+	job := watchdog.Job(notify.Channels{}, nil)
 	a, _ := job.Due(user.User{}, time.Date(2026, 10, 23, 10, 5, 0, 0, time.UTC))
 	b, _ := job.Due(user.User{}, time.Date(2026, 10, 23, 10, 55, 0, 0, time.UTC))
 	c, ok := job.Due(user.User{}, time.Date(2026, 10, 23, 11, 0, 0, 0, time.UTC))
@@ -180,7 +185,7 @@ func TestAlarmAfterAChatIsSet(t *testing.T) {
 	u := newUser(t, db, "ana@example.com", "en", 0)
 	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
 	weigh(t, db, u, 80, last)
-	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	job := watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))
 	at := last.Add(watchdog.NoMetricsAfter + time.Hour)
 	if err := job.Run(t.Context(), u, "", at); err != nil {
 		t.Fatal(err)
@@ -209,7 +214,7 @@ func TestTokenNeverUsed(t *testing.T) {
 	if err := db.CreateAPIToken(t.Context(), tok, strings.Repeat("0", 64)); err != nil {
 		t.Fatal(err)
 	}
-	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	job := watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))
 	for _, at := range []time.Time{created.Add(time.Hour), created.Add(watchdog.TokenUnusedAfter), created.Add(21*24*time.Hour + time.Hour)} {
 		if err := job.Run(t.Context(), u, "", at); err != nil {
 			t.Fatal(err)
@@ -230,7 +235,7 @@ func TestBlockedBot(t *testing.T) {
 	u := newUser(t, db, "ana@example.com", "en", 853)
 	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
 	weigh(t, db, u, 80, last)
-	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	job := watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))
 	for h := range 3 {
 		if err := job.Run(t.Context(), u, "", last.Add(watchdog.NoMetricsAfter+time.Duration(h+1)*time.Hour)); err != nil {
 			t.Fatalf("run %d: %v", h, err)
@@ -258,7 +263,7 @@ func TestAlarmRecordFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job := watchdog.Job(db, bot, slog.New(slog.DiscardHandler))
+	job := watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))
 	for h := range 3 {
 		if err := job.Run(t.Context(), u, "", last.Add(watchdog.NoMetricsAfter+time.Duration(h+1)*time.Hour)); err != nil {
 			t.Fatalf("run %d: %v", h, err)
@@ -280,7 +285,7 @@ func TestOneStopOverDays(t *testing.T) {
 	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
 	weigh(t, db, u, 80, last)
 	s := &scheduler.Scheduler{
-		DB: db, Jobs: []scheduler.Job{watchdog.Job(db, bot, slog.New(slog.DiscardHandler))},
+		DB: db, Jobs: []scheduler.Job{watchdog.Job(notify.Channels{DB: db, Bot: bot}, slog.New(slog.DiscardHandler))},
 		Logger: slog.New(slog.DiscardHandler),
 	}
 	at := last
@@ -298,5 +303,53 @@ func TestOneStopOverDays(t *testing.T) {
 	recent, _ := db.JobRan(t.Context(), u.ID, "watchdog", at.Add(-time.Hour).UTC().Format("2006-01-02T15"))
 	if old || !recent {
 		t.Errorf("runs kept: the first %v, the last but one %v", old, recent)
+	}
+}
+
+// pushes is a push service that counts the messages it took.
+type pushes struct {
+	mu sync.Mutex
+	n  int
+}
+
+func (p *pushes) RoundTrip(r *http.Request) (*http.Response, error) {
+	p.mu.Lock()
+	p.n++
+	p.mu.Unlock()
+	return &http.Response{StatusCode: http.StatusCreated, Body: io.NopCloser(strings.NewReader("")), Header: http.Header{}, Request: r}, nil
+}
+
+// A user with a device and no chat gets the alarm by push, once.
+func TestAlarmByPush(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	u := newUser(t, db, "ana@example.com", "en", 0)
+	key, err := ecdh.P256().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SavePushSubscription(t.Context(), u.ID, store.PushSubscription{
+		ID: uuid.NewV7(), Endpoint: "https://web.push.apple.com/phone", Device: "iPhone · Safari",
+		P256dh: base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes()), Auth: "AAAAAAAAAAAAAAAAAAAAAA",
+	}, u.CreatedAt); err != nil {
+		t.Fatal(err)
+	}
+	sender, err := push.NewSender([]byte("a secret of at least thirty-two bytes"), "https://tdeemon.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &pushes{}
+	sender.Client = &http.Client{Transport: service}
+	job := watchdog.Job(notify.Channels{DB: db, Push: sender}, slog.New(slog.DiscardHandler))
+	last := time.Date(2026, 10, 22, 6, 0, 0, 0, time.UTC)
+	weigh(t, db, u, 80, last)
+	for _, at := range []time.Time{last.Add(27 * time.Hour), last.Add(28 * time.Hour)} {
+		if err := job.Run(t.Context(), u, "", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if service.n != 1 {
+		t.Errorf("%d pushes, want the alarm once", service.n)
 	}
 }
