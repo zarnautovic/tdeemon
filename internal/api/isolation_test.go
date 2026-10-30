@@ -24,6 +24,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
+	"github.com/zarnautovic/tdeemon/internal/domain/recipe"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
@@ -102,6 +103,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 			t.Fatalf("%s's token: %d", p.user.Name, rec.Code)
 		}
 		p.bread = saveIsolationFoods(t, in.db, p.user, now)
+		saveIsolationRecipe(t, in.db, p.user, p.bread, now)
 		p.meal = saveIsolationMeals(t, in.db, p.user, p.bread, now)
 		saveIsolationMetrics(t, in.db, p.user, now)
 		p.applied, p.pending = saveIsolationPlan(t, in.db, p.user, now)
@@ -198,6 +200,22 @@ func saveIsolationFoods(t *testing.T, db *store.DB, u user.User, now time.Time) 
 		t.Fatalf("archive %s's food: %v", u.Name, err)
 	}
 	return bread
+}
+
+// saveIsolationRecipe gives u a recipe of bread, in portions.
+func saveIsolationRecipe(t *testing.T, db *store.DB, u user.User, bread food.Food, now time.Time) {
+	t.Helper()
+	crumbs, err := meal.FromFood(bread, meal.Quantity{Amount: 300, Unit: "g"}, u.Name+"'s crumbs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pudding := recipe.Recipe{
+		Food:  food.Food{ID: uuid.NewV7(), Name: u.Name + "'s bread pudding"},
+		Items: []meal.Item{crumbs}, Yield: 450, Portions: 3, Pot: 900,
+	}
+	if _, err := db.SaveRecipe(t.Context(), u.ID, isolationActor, pudding, nil, now); err != nil {
+		t.Fatalf("save %s's recipe: %v", u.Name, err)
+	}
 }
 
 // saveIsolationMeals gives u a meal of bread and a one-off estimate, and

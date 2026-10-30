@@ -597,6 +597,7 @@ export const en = {
     actions: {
       'food.save': 'a food saved',
       'food.archive': 'a food archived',
+      'recipe.save': 'a recipe saved',
       'meal.create': 'a meal logged',
       'meal.replace': 'a meal changed',
       'meal.delete': 'a meal deleted',
@@ -763,6 +764,7 @@ export const en = {
       user: 'Me',
       dish: 'Dish',
       off: 'Open Food Facts',
+      recipe: 'Recipe',
     },
     note: 'Note',
     save: 'Save the food',

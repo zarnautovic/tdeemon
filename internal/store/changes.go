@@ -11,6 +11,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
+	"github.com/zarnautovic/tdeemon/internal/domain/recipe"
 )
 
 // MaxRecentChanges bounds RecentChanges.
@@ -22,8 +23,8 @@ const MaxRecentChanges = 50
 type RecentChange struct {
 	Event event.Event
 	// Name is a meal's description and Items its items' names, as the
-	// change left the meal (as it was, for a delete); or a food's name
-	// and Brand its brand, as the change left it (as it is now, for one
+	// change left the meal (as it was, for a delete); or a recipe's name;
+	// or a food's name and Brand its brand, as the change left it (as it is now, for one
 	// archived or brought back, whose change records no name).
 	Name, Brand string
 	Items       []string
@@ -103,6 +104,11 @@ func nameChange(ctx context.Context, tx *sql.Tx, userID uuid.UUID, c *RecentChan
 		var f food.Food
 		if readState(e, &f) {
 			c.Name, c.Brand = f.Name, f.Brand
+		}
+	case event.RecipeSave:
+		var r recipe.Recipe
+		if readState(e, &r) {
+			c.Name = r.Food.Name
 		}
 	case event.FoodArchive:
 		var s archivedState

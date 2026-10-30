@@ -521,6 +521,7 @@ export const hr: Messages = {
     failed: (why: string) => `Nije poništeno. ${why}`,
     actions: {
       'food.save': 'spremljena namirnica',
+      'recipe.save': 'spremljen recept',
       'food.archive': 'arhivirana namirnica',
       'meal.create': 'upisan obrok',
       'meal.replace': 'promijenjen obrok',
@@ -670,6 +671,7 @@ export const hr: Messages = {
       user: 'mog unosa',
       dish: 'jela',
       off: 'Open Food Factsa',
+      recipe: 'recepta',
     },
     note: 'Napomena',
     save: 'Spremi namirnicu',

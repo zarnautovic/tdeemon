@@ -64,10 +64,14 @@ const (
 	// label's values as people typed them in, which the user saw before
 	// saving.
 	OpenFoodFacts Source = "off"
+	// Recipe is a stored recipe's food: its values are worked out of its
+	// ingredients and the weight of the cooked dish (package recipe), and
+	// change only with the recipe.
+	Recipe Source = "recipe"
 )
 
 // Sources lists every source.
-func Sources() []Source { return []Source{Label, Estimate, User, Dish, OpenFoodFacts} }
+func Sources() []Source { return []Source{Label, Estimate, User, Dish, OpenFoodFacts, Recipe} }
 
 // Limits on a food's fields.
 const (
@@ -137,7 +141,7 @@ func (f Food) Validate() error {
 	errs = append(errs, text.Check("name", f.Name, MaxNameLen, true), text.Check("brand", f.Brand, MaxBrandLen, false),
 		text.CheckLines("note", f.Note, MaxNoteLen, false))
 	if !validSource(f.Source) {
-		errs = append(errs, fmt.Errorf("source %q: want one of label, estimate, user, dish, off", f.Source))
+		errs = append(errs, fmt.Errorf("source %q: want one of label, estimate, user, dish, off, recipe", f.Source))
 	}
 	switch f.Basis {
 	case Per100g, Per100ml:

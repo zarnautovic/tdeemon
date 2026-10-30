@@ -16,7 +16,7 @@ import (
 
 // undoneBody is a change undo took back.
 type undoneBody struct {
-	Action string    `json:"action" doc:"What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge or notes.set."`
+	Action string    `json:"action" doc:"What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge or notes.set."`
 	Entity string    `json:"entity" doc:"What it changed: a food's or a meal's id, a day (YYYY-MM-DD), a day and a metric (2026-10-21/weight), or notes."`
 	At     time.Time `json:"at" doc:"When the change was made."`
 	Client string    `json:"client" doc:"What it came through: web, api, mcp."`

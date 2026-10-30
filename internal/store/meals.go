@@ -96,8 +96,7 @@ func (db *DB) CreateMealWithFoods(ctx context.Context, userID uuid.UUID, a event
 		stored, err = mealInTx(ctx, tx, userID, m.ID)
 		return err
 	})
-	if errors.Is(err, ErrMealConflict) || errors.Is(err, ErrMealDeleted) || errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) ||
-		errors.Is(err, ErrBarcodeTaken) {
+	if errors.Is(err, ErrMealConflict) || errors.Is(err, ErrMealDeleted) || refusedFood(err) {
 		return meal.Meal{}, false, err
 	}
 	if err != nil {
@@ -332,8 +331,7 @@ func (db *DB) UpdateMeal(ctx context.Context, userID uuid.UUID, a event.Actor, i
 	switch {
 	case changeErr != nil:
 		return meal.Meal{}, changeErr
-	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) || errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) ||
-		errors.Is(err, ErrBarcodeTaken):
+	case errors.Is(err, ErrNotFound) || errors.Is(err, ErrMealConflict) || refusedFood(err):
 		return meal.Meal{}, err
 	case err != nil:
 		return meal.Meal{}, fmt.Errorf("update meal: %w", err)
