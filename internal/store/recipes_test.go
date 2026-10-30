@@ -420,3 +420,74 @@ func TestUndoRecipeIntoACycle(t *testing.T) {
 		t.Errorf("the dish after = %+v, %v; want it as it was, of the chicken alone", got, err)
 	}
 }
+
+// A recipe saved again keeps the barcodes its food was given.
+func TestSaveRecipeKeepsItsBarcodes(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := saveFood(t, db, ana, kefir())
+	r := saveRecipe(t, db, ana, curryOf(t, chicken, k))
+	f := r.Food
+	f.Barcodes = []string{"4006381333931"}
+	if _, err := db.SaveFood(t.Context(), ana, testActor, f, t0); err != nil {
+		t.Fatal(err)
+	}
+	again := curryOf(t, chicken, k)
+	again.Portions = 2
+	if got := saveRecipe(t, db, ana, again); len(got.Food.Barcodes) != 1 || got.Portions != 2 {
+		t.Errorf("saved again: barcodes %v, portions %d; want the barcode kept", got.Food.Barcodes, got.Portions)
+	}
+}
+
+// A recipe saved as it was, but with an archived food it brings back,
+// is one change: undo takes the food back to the archive with it.
+func TestSaveRecipeUnchangedWithAFoodBroughtBack(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := saveFood(t, db, ana, kefir())
+	r := saveRecipe(t, db, ana, curryOf(t, chicken, k))
+	if err := db.SetFoodArchived(t.Context(), ana, testActor, k.ID, true, t0); err != nil {
+		t.Fatal(err)
+	}
+	sent := kefir()
+	again := curryOf(t, chicken, sent)
+	again.Food.ID = r.Food.ID
+	saveRecipe(t, db, ana, again, sent)
+	if e := undo(t, db, ana); e.Action != event.RecipeSave {
+		t.Fatalf("undone %s, want the recipe's save", e.Action)
+	}
+	if got, err := db.FoodByID(t.Context(), ana, k.ID); err != nil || !got.Archived {
+		t.Errorf("the kefir after the undo: %+v, %v; want it archived again", got, err)
+	}
+}
+
+// A new ingredient of the recipe's name is in the way of the recipe.
+func TestSaveRecipeOfANewIngredientsName(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := kefir()
+	k.Name = "Chicken curry"
+	if _, err := db.SaveRecipe(t.Context(), ana, testActor, curryOf(t, chicken, k), []food.Food{k}, t0); !errors.Is(err, store.ErrNameTaken) {
+		t.Errorf("SaveRecipe = %v, want ErrNameTaken", err)
+	}
+}
+
+// Correcting a recipe by the id of a food that is none is ErrNotFound.
+func TestCorrectRecipeOfAFood(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := saveFood(t, db, ana, kefir())
+	r := curryOf(t, chicken, k)
+	r.Food.ID = saveFood(t, db, ana, bar()).ID
+	if _, err := db.CorrectRecipe(t.Context(), ana, testActor, r, nil, t0); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("CorrectRecipe of a food's id = %v, want ErrNotFound", err)
+	}
+}

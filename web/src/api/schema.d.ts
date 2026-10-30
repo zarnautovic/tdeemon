@@ -265,7 +265,7 @@ export interface paths {
         };
         /**
          * Get a food
-         * @description A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).
+         * @description A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409); a recipe's with its recipe whole, each ingredient marked changed whose food gives another amount now.
          */
         get: operations["get-food"];
         put?: never;
@@ -776,6 +776,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Save a recipe
+         * @description Saves a recipe, a dish cooked again, or corrects one: the recipe with the id (404 for an id the user has no recipe of), or else the one of the name; else a new one. A recipe is a food (source recipe, by weight), found and logged as any: its values per 100 g of the cooked dish come from its ingredients and the dish's weight (yield_g), and its servings are recipe, the whole dish, and portion, one of its portions: a tenth of the pot is 0.1 of recipe. Not weighed, the raw ingredients' weight stands for the dish's. A save replaces the whole recipe, its ingredients taking their foods' values now: correct it from what get_food gave. A food of the name that is no recipe, or an alias another food has, is refused (409), naming it; so is an ingredient that is the recipe, at any depth (422). The answer holds its food with the recipe, and warnings: a weight far off the raw ingredients', or values of a new food that do not add up.
+         */
+        post: operations["upsert-recipe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/recipes/new": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a new recipe
+         * @description Needs a web session. Saves a new recipe: a food you have of its name, archived too, is refused (409), naming it, and so is an alias another food has; upsert_recipe corrects a recipe instead. Answers as upsert_recipe does.
+         */
+        post: operations["create-recipe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/summary": {
         parameters: {
             query?: never;
@@ -1232,6 +1272,8 @@ export interface components {
             portion_grams?: number;
             /** @description The queries of find_foods that found the food, of those it was sent. */
             queries?: string[];
+            /** @description A recipe's food's recipe (source recipe): upsert_recipe changes it. */
+            recipe?: components["schemas"]["RecipeBody"];
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
@@ -1432,6 +1474,29 @@ export interface components {
             reason: string;
             /** Format: double */
             value: number;
+        };
+        IngredientBody: {
+            /**
+             * Format: double
+             * @description How much, in unit.
+             */
+            amount: number;
+            brand?: string;
+            /** @description Its food's values give another amount now: the recipe saved again takes them. */
+            changed?: boolean;
+            /** Format: uuid */
+            food_id: string;
+            /** @description The food's name when the recipe was saved. */
+            name: string;
+            note?: string;
+            /** @description What it brought when the recipe was saved. */
+            nutrients: components["schemas"]["NutrientsBody"];
+            /** @description How much, as it was given. */
+            quantity: components["schemas"]["QuantityBody"];
+            /** @enum {string} */
+            source: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
+            /** @enum {string} */
+            unit: "g" | "ml" | "portion";
         };
         ItemBody: {
             /**
@@ -2148,6 +2213,79 @@ export interface components {
             /** @description The latest first. */
             meals: components["schemas"]["RecentMealBody"][];
         };
+        RecipeAnswerBody: {
+            /** @description The recipe's food, with its recipe. */
+            food: components["schemas"]["FoodBody"];
+            warnings: components["schemas"]["RecipeWarningBody"][];
+        };
+        RecipeBody: {
+            /** @description The ingredients, with the values each brought when the recipe was saved; get_food gives them. */
+            items?: components["schemas"]["IngredientBody"][];
+            /** @description A portion's, when divided. */
+            portion?: components["schemas"]["NutrientsBody"];
+            /**
+             * Format: int64
+             * @description How many portions the dish is divided into.
+             */
+            portions?: number;
+            /**
+             * Format: double
+             * @description The empty pot's weight in g.
+             */
+            pot_g?: number;
+            /**
+             * Format: double
+             * @description The raw ingredients' weight in g (ml as g); absent when one's is not known.
+             */
+            raw_weight?: number;
+            /** @description The whole dish's. */
+            total: components["schemas"]["NutrientsBody"];
+            /**
+             * Format: double
+             * @description The cooked dish's weight in g: yield_g, or the raw ingredients' when not weighed. The serving recipe is the whole dish, portion a portion of it.
+             */
+            weight: number;
+            /**
+             * Format: double
+             * @description The cooked dish's weight as weighed; absent when not weighed: a share of the dish is exact, its grams not.
+             */
+            yield_g?: number;
+        };
+        RecipeFields: {
+            /** @description Other names search finds. */
+            aliases?: string[];
+            /** @description The ingredients, as log_meal's items but no estimates: a food_id or a new food, with its quantity; a new food is saved. */
+            items: components["schemas"]["ItemInput"][];
+            /**
+             * @description A recipe's name is its food's: the same name is the same recipe.
+             * @example Chicken curry
+             */
+            name: string;
+            note?: string;
+            /**
+             * Format: int64
+             * @description How many portions the dish is divided into.
+             */
+            portions?: number;
+            /**
+             * Format: double
+             * @description The empty pot's weight in g, kept for the next weighing.
+             */
+            pot_g?: number;
+            /**
+             * Format: double
+             * @description The cooked dish's weight in g. Left out when not weighed: the raw ingredients' weight stands for it, so a share of the dish is exact and its grams not.
+             */
+            yield_g?: number;
+        };
+        RecipeWarningBody: {
+            /**
+             * @description What kind of warning it is: of a new food's values, or yield_low and yield_high of a weight far off the raw ingredients'.
+             * @enum {string}
+             */
+            code: "atwater" | "saturated_fat" | "sugars" | "polyols" | "food_kept" | "yield_low" | "yield_high";
+            message: string;
+        };
         RecoveryBody: {
             /** @description What falls short, judged on the averages as shown: short_sleep (under 6.5 hours), high_resting_hr (5 % over its base), low_hrv (15 % under its base). */
             flags: string[];
@@ -2580,6 +2718,40 @@ export interface components {
              * @enum {string}
              */
             source: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
+        };
+        UpsertRecipeInputBody: {
+            /** @description Other names search finds. */
+            aliases?: string[];
+            /** @description Archives the recipe's food; left out, a save brings it back. */
+            archived?: boolean;
+            /**
+             * Format: uuid
+             * @description The recipe to correct; without it, the recipe of the name, or a new one.
+             */
+            id?: string;
+            /** @description The ingredients, as log_meal's items but no estimates: a food_id or a new food, with its quantity; a new food is saved. */
+            items: components["schemas"]["ItemInput"][];
+            /**
+             * @description A recipe's name is its food's: the same name is the same recipe.
+             * @example Chicken curry
+             */
+            name: string;
+            note?: string;
+            /**
+             * Format: int64
+             * @description How many portions the dish is divided into.
+             */
+            portions?: number;
+            /**
+             * Format: double
+             * @description The empty pot's weight in g, kept for the next weighing.
+             */
+            pot_g?: number;
+            /**
+             * Format: double
+             * @description The cooked dish's weight in g. Left out when not weighed: the raw ingredients' weight stands for it, so a share of the dish is exact and its grams not.
+             */
+            yield_g?: number;
         };
         UserBody: {
             /**
@@ -6720,6 +6892,243 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "upsert-recipe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpsertRecipeInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipeAnswerBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "create-recipe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipeFields"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipeAnswerBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -67,6 +67,19 @@ token only reads: say so.
   `delete_meal`. Never log a meal again.
 - "Undo" is `undo_last`, under a new `id` each time, as a meal's.
 
+## Recipes
+
+- A dish the user cooks to eat over days is `upsert_recipe`: what went
+  in as `log_meal`'s items, `yield_g` the cooked dish's weight when
+  weighed, `portions` when divided. From a description or a photo, the
+  same, a part you estimate a new food of `source` estimate.
+- A recipe is a food (`recipe` beside it in `find_foods`): "a tenth of
+  it" is `"servings": 0.1, "serving": "recipe"`, a portion
+  `"servings": 1, "serving": "portion"`, grams as any food's, only
+  approximate when it was not weighed: say so.
+- Cooked again: `get_food`, then `upsert_recipe` of it with what
+  changed. Meals logged keep their values.
+
 ## Measurements and the day
 
 - A weighing ("72.5 this morning") is `log_metric`, `kind` weight in kg,

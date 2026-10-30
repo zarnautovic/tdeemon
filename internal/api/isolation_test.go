@@ -751,6 +751,32 @@ func isolateUpsertFood(t *testing.T, e isolationEnv) {
 	}
 }
 
+// isolateUpsertRecipe is upsert-recipe's case: the other saves a recipe
+// of their own food, with a token, and the owner's foods stay as they
+// were. (TestUpsertRecipeOfAnotherUsersFood tries the owner's food as an
+// ingredient, whose id this case cannot send: its answer would show it.)
+func isolateUpsertRecipe(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := fmt.Sprintf(`{"name": "%s's croutons", "items": [{"food_id": %q, "amount": 200, "unit": "g"}], "yield_g": 150}`,
+		e.other.user.Name, e.other.bread.ID)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/recipes", body, nil, bearer(e.other.token.Token))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), e.other.user.Name+"'s croutons") {
+		t.Errorf("the other's recipe: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// isolateCreateRecipe is create-recipe's case: the other makes a recipe
+// of their own food, and the owner's stay as they were.
+func isolateCreateRecipe(t *testing.T, e isolationEnv) {
+	t.Helper()
+	body := fmt.Sprintf(`{"name": "%s's toast pudding", "items": [{"food_id": %q, "servings": 4, "serving": "slice"}], "portions": 2}`,
+		e.other.user.Name, e.other.bread.ID)
+	rec := e.in.do(t, http.MethodPost, "/api/v1/recipes/new", body, []*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), e.other.user.Name+"'s toast pudding") {
+		t.Errorf("the other's recipe: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // isolateListFoods is list-foods' case: the other's foods, of both lists,
 // and none of the owner's.
 func isolateListFoods(t *testing.T, e isolationEnv) {
@@ -959,6 +985,8 @@ func isolationCases() map[string]isolationCase {
 		}),
 		"upsert-food":    isolateUpsertFood,
 		"create-food":    isolateCreateFood,
+		"upsert-recipe":  isolateUpsertRecipe,
+		"create-recipe":  isolateCreateRecipe,
 		"get-food":       isolateGetFood,
 		"lookup-barcode": isolateLookupBarcode,
 		"get-food-use":   isolateGetFoodUse,

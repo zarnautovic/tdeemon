@@ -125,6 +125,14 @@ const MaxEvents = 100
 func record(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, action event.Action, entity string,
 	before, after any, now time.Time,
 ) (uuid.UUID, error) {
+	return recordEvent(ctx, tx, userID, a, action, entity, before, after, false, now)
+}
+
+// recordEvent is record, which records a write that left the state as it
+// was too when always: a change whose parts wrote (markParts).
+func recordEvent(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, action event.Action, entity string,
+	before, after any, always bool, now time.Time,
+) (uuid.UUID, error) {
 	b, err := stateJSON(before)
 	if err != nil {
 		return uuid.Nil(), fmt.Errorf("event %s: %w", action, err)
@@ -133,7 +141,7 @@ func record(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, ac
 	if err != nil {
 		return uuid.Nil(), fmt.Errorf("event %s: %w", action, err)
 	}
-	if b == af && action != event.Undo {
+	if b == af && action != event.Undo && !always {
 		return uuid.Nil(), nil
 	}
 	id := uuid.NewV7()

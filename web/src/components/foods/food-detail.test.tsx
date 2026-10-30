@@ -275,3 +275,32 @@ test('a food archived says so, and its toast takes it back', async () => {
     { id: expect.any(String) as unknown, last: { action: 'food.save', entity: id } },
   ])
 })
+
+test("a recipe's food is archived without its recipe", async () => {
+  const curry: Food = {
+    id,
+    name: 'Chicken curry',
+    basis: '100g',
+    source: 'recipe',
+    archived: false,
+    nutrients: { kcal: 81, protein: 14, carbs: 1.4, fat: 2.6 },
+    servings: [
+      { name: 'recipe', amount: 1000 },
+      { name: 'portion', amount: 250 },
+    ],
+    recipe: {
+      weight: 1000,
+      yield_g: 1000,
+      portions: 4,
+      total: { kcal: 810, protein: 140, carbs: 14, fat: 26 },
+    },
+  }
+  const server = foodServer({ food: curry })
+  renderAt(`/foods/${id}`)
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Archive' }))
+
+  expect(await screen.findByText('Archived: Chicken curry')).toBeDefined()
+  const { recipe: _recipe, ...fields } = curry
+  expect(server.sent.map((s) => s.body)).toEqual([{ ...fields, archived: true }])
+})

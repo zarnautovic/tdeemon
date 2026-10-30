@@ -264,9 +264,10 @@ duplicate food would stay in the list.
 | `log_meal(id?, eaten_at?, description, items[], note?)` | stores the meal under the client's UUIDv7 (a retry returns it, §9), or one the server makes for a client that cannot (a model without a clock: that meal sent again is another); a meal is logged once eaten, so a time still to come (past the few minutes a clock may be ahead) is refused; returns breakdown + day status |
 | `update_meal(id, eaten_at?, description?, note?, ops[])` | add/replace/remove items, give an item a note (a note op, which changes nothing else of it), change the time (not to one still to come) and the words; an add carries its item's id, made by the client, so one sent again adds once; an item no op touches keeps what it brought when logged; changes sent at once are each kept; returns breakdown + day status |
 | `delete_meal(id)` / `undo_last(id?)` | `undo_last` (under an id the client makes, a UUIDv7 as a meal's, so the same undo sent again takes back no other change, §9; or one the server makes for a client that cannot, whose undo sent again takes back another) takes back the user's latest change not undone yet (an import's writes are left, and so are changes of the plan: the profile and the user's limits, which only a web session makes, and the phases, targets and training weekdays, which go back as a `revert` that `Validate` checks against the limits as they are now), newest first: undoing again goes further back, it does not redo. A meal logged or changed with new foods (an estimate saved as a food, too) is one change: its undo takes the foods back with it, whole or not at all. A change whose entity is no longer as it left it is not taken back (an import wrote it, and undoing would lose the import; or a later change undo passed over), nor one that would clash with what came since (another food took the name, an alias or a barcode, another meal an item) or that cannot be read or put back: the answer says why, and the next undo goes on to the change before. A failure of the database passes over nothing, so the next undo tries the same change |
-| `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from |
+| `get_food(id)` | a food by its id, archived too: what correcting the food in the way of a save starts from; a recipe's with its recipe whole (the dish's weight, raw and as weighed, its portions, the pot, the totals of the dish and of a portion, and its ingredients, each marked `changed` whose food gives another amount now), which `find_foods` and the list give without the ingredients |
 | `lookup_barcode(code)` | what a barcode is ("Barcodes" in §4): the user's food of it (`food`), or Open Food Facts' product as a new food, not saved (`open_food_facts`), with the user's food of its name and brand (`named_food`); the instructions say how to log each, and that a code read off a photo by its digits can be misread past its check digit |
 | `upsert_food(...)` | save or correct a food (label values); the same name and brand are the same food, and a name, alias or barcode another food has is refused naming that food; a barcode the user says is a food's goes in its barcodes |
+| `upsert_recipe(id?, name, aliases?, items[], yield_g?, portions?, pot_g?, note?, archived?)` | save or correct a recipe ("Recipes" in §4): by its id (404 for none of the user's), or else its name, or a new one; its ingredients are `log_meal`'s items but estimates, a new food saved with it; a save replaces it whole, each ingredient taking its food's values now; a food of the name that is no recipe, or an alias another food has, is refused (409) naming it, and so is an ingredient that is the recipe at any depth (422); answers its food with the recipe, and warnings (a weight far off the raw ingredients', a new food's values that do not add up). `upsert_food` refuses a recipe's food but for archiving it |
 | `get_day(date?)` | meals, totals, targets, remaining, metrics, check-in |
 | `log_metric(kind, value, date?)` / `delete_metric(kind, date?)` | weight and other manual measurements, of today or a day before; a value the user gave counts over an import, and deleting a wrong one lets imports apply again; each answers the day |
 | `checkin(date?, mood?, hunger?, note?, training_day?, excluded_reason?)` | what the user says of a day, each field given and only those: mood and hunger 1–5 (0 clears), a note, the day's type (`training`, `rest`, or `plan`: the training weekdays decide), and an exclusion from calibration with its reason (empty brings the day back); a day to come takes its type and exclusion, not a mood, hunger or note; one event, so one undo takes it back; answers the day |
@@ -325,7 +326,8 @@ takes its `date` as optional, `today` when left out); `get_summary` is
 `GET /api/v1/foods?query=…&query=…`, a query each repeated (MCP sends a
 list of them as the parameter repeated); `get_food` is
 `GET /api/v1/foods/{id}`,
-archived too; `lookup_barcode` is `GET /api/v1/barcodes/{code}`; and
+archived too; `lookup_barcode` is `GET /api/v1/barcodes/{code}`;
+`upsert_recipe` is `POST /api/v1/recipes`; and
 `upsert_food` is `POST /api/v1/foods`, which corrects
 a food by an id it has (404 for another) or by its name and brand, and
 names the food in the way of a name, an alias or a barcode (409),
@@ -342,7 +344,9 @@ amount it offers to log, with `GET /api/v1/foods/{id}/use`, a web
 session's only too; makes a new food with
 `POST /api/v1/foods/new`, also a web session's only, which refuses a
 name and brand the user has (409, naming the food, archived too) where
-`upsert_food` would correct that food; and offers meals to log again
+`upsert_food` would correct that food, and a new recipe with
+`POST /api/v1/recipes/new`, the same of a recipe's name; and offers
+meals to log again
 with `GET /api/v1/meals/recent`, a web session's only too: the latest
 meals of the latest 200, each meal eaten again once (the latest, of the
 same items in amounts within 1 %, as the duplicate warning tells them),

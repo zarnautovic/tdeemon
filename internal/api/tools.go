@@ -310,10 +310,10 @@ func (s *sessions) tools() []tool {
 			Method:      http.MethodGet,
 			Path:        Prefix + "/foods/{id}",
 			Summary:     "Get a food",
-			Description: "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+			Description: "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409); a recipe's with its recipe whole, each ingredient marked changed whose food gives another amount now.",
 			Errors:      []int{http.StatusUnauthorized, http.StatusNotFound},
 		}, s.getFood).
-			briefly("A food by its id, archived too."),
+			briefly("A food by its id, archived too; a recipe's with its ingredients."),
 		newTool("lookup_barcode", readScopes, huma.Operation{
 			OperationID: "lookup-barcode",
 			Method:      http.MethodGet,
@@ -344,6 +344,7 @@ func (s *sessions) tools() []tool {
 		}, s.upsertFood).
 			briefly("Saves a food, or corrects one: by its id, or else its name and brand; else a new one. A save replaces the whole food, " +
 				"so a field left out is cleared: correct from what find_foods or get_food gave. A name, alias or barcode another food has is a 409 naming it.").destroys(),
+		s.recipeTool(),
 		newTool("log_meal", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID:   "log-meal",
 			Method:        http.MethodPost,

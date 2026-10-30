@@ -111,6 +111,12 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 				"nutrients": map[string]any{"kcal": 420, "protein": 10, "carbs": 70, "fat": 10},
 			}
 		}, nil),
+		"upsert_recipe": mcpWorks("upsert_recipe", func(e isolationEnv) map[string]any {
+			return map[string]any{
+				"name":  e.other.user.Name + "'s croutons",
+				"items": []any{map[string]any{"food_id": e.other.bread.ID.String(), "amount": 200, "unit": "g"}},
+			}
+		}, nil),
 		"log_meal": mcpWorks("log_meal", func(e isolationEnv) map[string]any {
 			return map[string]any{
 				"id": meal.NewIDAt(e.in.clock.Now()).String(), "description": e.other.user.Name + "'s dinner",

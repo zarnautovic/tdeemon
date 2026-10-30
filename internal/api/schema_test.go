@@ -371,6 +371,28 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodPost, "/api/v1/foods", `{"name": "Canteen goulash", "basis": "portion", "source": "estimate", "portion_grams": 450,
 				"nutrients": {"kcal": 650, "protein": 40, "carbs": 50, "fat": 30}}`, []*http.Cookie{session}, nil)
 		},
+		"upsert-recipe": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+			// A recipe weighed and divided, with a new food; then one far off
+			// its raw weight, a warning; then a refusal.
+			in.do(t, http.MethodPost, "/api/v1/recipes", fmt.Sprintf(`{"name": "Bread pudding", "aliases": ["pudding"], "note": "Sunday's",
+				"items": [{"food_id": %q, "servings": 4, "serving": "slice"},
+					{"food": {"name": "Milk", "basis": "100ml", "source": "label", "nutrients": {"kcal": 64, "protein": 3.3, "carbs": 4.8, "fat": 3.5}}, "amount": 300, "unit": "ml"}],
+				"yield_g": 420, "portions": 4, "pot_g": 800}`, bread.ID), []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPost, "/api/v1/recipes", fmt.Sprintf(`{"name": "Bread soup",
+				"items": [{"food_id": %q, "amount": 100, "unit": "g"}], "yield_g": 900}`, bread.ID), []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPost, "/api/v1/recipes", `{"name": "Nothing", "items": [{"name": "A plate", "nutrients": {"kcal": 500, "protein": 20, "carbs": 50, "fat": 20}}]}`,
+				[]*http.Cookie{session}, nil)
+			in.do(t, http.MethodGet, "/api/v1/foods?query=bread", "", []*http.Cookie{session}, nil)
+		},
+		"create-recipe": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+			body := fmt.Sprintf(`{"name": "Croutons", "items": [{"food_id": %q, "amount": 200, "unit": "g"}]}`, bread.ID)
+			in.do(t, http.MethodPost, "/api/v1/recipes/new", body, []*http.Cookie{session}, nil)
+			in.do(t, http.MethodPost, "/api/v1/recipes/new", body, []*http.Cookie{session}, nil)
+		},
 		"get-me": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			saveIsolationPlan(t, in.db, in.user, in.clock.Now())
