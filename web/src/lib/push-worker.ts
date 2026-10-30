@@ -23,6 +23,7 @@ export function noteOf(data: { json: () => unknown } | null): Note {
   }
   if (typeof v === 'object' && v !== null && 'title' in v && typeof v.title === 'string') {
     const body = 'body' in v && typeof v.body === 'string' ? v.body : ''
+    // A path of the app's; the tap reads it again (urlOf).
     const url = 'url' in v && typeof v.url === 'string' && v.url.startsWith('/') ? v.url : '/'
     const tag = 'tag' in v && typeof v.tag === 'string' && v.tag !== '' ? v.tag : undefined
     return { title: v.title, body, url, tag }
@@ -50,13 +51,26 @@ export function showOptions(n: Note): ShowOptions {
   }
 }
 
-// urlOf is the page a notification's tap opens: its own, a path of the
-// app's, or the app's start.
-export function urlOf(data: unknown): string {
-  if (typeof data === 'object' && data !== null && 'url' in data && typeof data.url === 'string') {
-    return data.url.startsWith('/') && !data.url.startsWith('//') ? data.url : '/'
+// urlOf is the page a notification's tap opens, a path of the app at
+// origin: its own, as the URL reads it, or the app's start for one that
+// leads elsewhere (another site, or a path a browser reads as one, such
+// as //site or /\site).
+export function urlOf(data: unknown, origin: string): string {
+  if (
+    typeof data !== 'object' ||
+    data === null ||
+    !('url' in data) ||
+    typeof data.url !== 'string'
+  ) {
+    return '/'
   }
-  return '/'
+  let u: URL
+  try {
+    u = new URL(data.url, origin)
+  } catch {
+    return '/'
+  }
+  return u.origin === origin ? u.pathname + u.search + u.hash : '/'
 }
 
 // WindowClient is what of an open window of the app a tap takes.
@@ -76,16 +90,22 @@ export interface Clients {
 }
 
 // open takes a tap to url in the app: a window of the app's already open
-// goes there and comes to the front, or a new one opens.
+// goes there and comes to the front, or a new one opens, as for a window
+// the worker does not control yet (the first one after it installed),
+// which cannot be navigated.
 export async function open(clients: Clients, origin: string, url: string): Promise<void> {
   const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true })
   const app = windows.find((w) => new URL(w.url).origin === origin)
-  if (app === undefined) {
-    await clients.openWindow(url)
-    return
+  if (app !== undefined) {
+    try {
+      await app.navigate(new URL(url, origin).href)
+      await app.focus()
+      return
+    } catch {
+      // A new window, below.
+    }
   }
-  await app.focus()
-  await app.navigate(new URL(url, origin).href)
+  await clients.openWindow(url)
 }
 
 // SubscriptionJSON is a subscription as PushSubscription.toJSON() gives

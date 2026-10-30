@@ -966,7 +966,8 @@ the first spec.
   a subscription; the app turns them on at a tap (the browser's
   permission asked then), and tells the server of the subscription each
   time it opens, as iOS can drop one. A device turned off is remembered
-  in the browser, as the permission stays given.
+  in the browser, as the permission stays given; signing out turns the
+  device off first, at the server and in the browser.
   `internal/notify` sends a notification to every channel of a user's,
   Telegram's chat and each device, and fails (so the scheduler tries
   again) only when none took it. An inbox of the notifications comes

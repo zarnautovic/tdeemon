@@ -52,10 +52,19 @@ function thisBrowser(): Browser {
   return {
     push: can
       ? {
+          // The registration there is, not ready's, which waits for one
+          // forever where the worker did not register (a test's browser,
+          // a policy's).
           getSubscription: async () =>
-            (await navigator.serviceWorker.ready).pushManager.getSubscription(),
-          subscribe: async (options) =>
-            (await navigator.serviceWorker.ready).pushManager.subscribe(options),
+            (await navigator.serviceWorker.getRegistration())?.pushManager.getSubscription() ??
+            null,
+          subscribe: async (options) => {
+            const reg = await navigator.serviceWorker.getRegistration()
+            if (reg === undefined) {
+              throw new Error('no service worker to subscribe with')
+            }
+            return reg.pushManager.subscribe(options)
+          },
         }
       : undefined,
     permission: () => (can ? Notification.permission : 'denied'),
@@ -138,7 +147,13 @@ export async function sync(from = thisBrowser()): Promise<State> {
   if (kept === null && from.turnedOff()) {
     return { kind: 'off' }
   }
-  return { kind: 'on', id: await save(kept ?? (await subscribeWith(from.push))) }
+  const sub = kept ?? (await subscribeWith(from.push))
+  // Turned off meanwhile, in another tab: the one just made goes.
+  if (kept === null && from.turnedOff()) {
+    await sub.unsubscribe()
+    return { kind: 'off' }
+  }
+  return { kind: 'on', id: await save(sub) }
 }
 
 // turnOn asks for the permission, at the user's tap, and subscribes.
@@ -168,4 +183,22 @@ export async function turnOff(id: string, from = thisBrowser()): Promise<State> 
   from.setTurnedOff(true)
   await (await from.push?.getSubscription())?.unsubscribe()
   return { kind: 'off' }
+}
+
+// leave ends this device's notifications as its user signs out, so the
+// next to sign in here gets none of theirs: at the server, in the
+// session that is ending, and in the browser, the device turned off
+// until someone turns it on. It never fails the sign-out: a subscription
+// the server keeps of it is deleted at its next push.
+export async function leave(state: State | undefined, from = thisBrowser()): Promise<void> {
+  try {
+    if (state?.kind === 'on') {
+      await turnOff(state.id, from)
+      return
+    }
+    from.setTurnedOff(true)
+    await (await from.push?.getSubscription())?.unsubscribe()
+  } catch {
+    // See above.
+  }
 }

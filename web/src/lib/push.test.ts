@@ -2,7 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 
 import { fakeServer, problem } from '@/test/app'
 
-import { sync, turnOff, turnOn, type Browser, type Subscription } from './push'
+import { leave, sync, turnOff, turnOn, type Browser, type Subscription } from './push'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -132,4 +132,40 @@ test('a server that refuses the key or the subscription fails the sync', async (
   await expect(sync(browser('granted', null))).rejects.toThrow('503')
   fakeServer({ 'PUT /api/v1/push/subscriptions': () => problem(422) })
   await expect(sync(browser('granted', subscription()))).rejects.toThrow('422')
+})
+
+test('turned off in another tab while one was made, the one made goes', async () => {
+  const server = pushServer()
+  const made = subscription('https://fcm.googleapis.com/fcm/send/new')
+  const b = browser('granted', null)
+  b.push = {
+    getSubscription: () => Promise.resolve(null),
+    subscribe: () => {
+      b.off = true
+      return Promise.resolve(made)
+    },
+  }
+  expect(await sync(b)).toEqual({ kind: 'off' })
+  expect(made.unsubscribe).toHaveBeenCalled()
+  expect(server.put).toEqual([])
+})
+
+test("signing out ends this device's notifications, and never fails", async () => {
+  const server = pushServer()
+  const kept = subscription()
+  const on = browser('granted', kept)
+  await leave({ kind: 'on', id: 'this-device' }, on)
+  expect(server.deleted).toEqual(['this-device'])
+  expect(kept.unsubscribe).toHaveBeenCalled()
+  expect(on.off).toBe(true)
+
+  // Off already, the browser's subscription goes all the same.
+  const stray = subscription()
+  const off = browser('granted', stray)
+  await leave({ kind: 'off' }, off)
+  expect(stray.unsubscribe).toHaveBeenCalled()
+  expect(off.off).toBe(true)
+  await expect(
+    leave({ kind: 'on', id: 'down' }, browser('granted', subscription())),
+  ).resolves.toBeUndefined()
 })

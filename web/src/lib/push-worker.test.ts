@@ -58,15 +58,22 @@ test('a note shows with its page, for a tap', () => {
     data: { url: '/settings' },
   })
   expect(showOptions({ title: 't', body: 'b', url: '/' })).not.toHaveProperty('tag')
-  expect(urlOf({ url: '/settings/devices' })).toBe('/settings/devices')
+  const origin = 'https://tdeemon.example.com'
+  expect(urlOf({ url: '/settings/devices' }, origin)).toBe('/settings/devices')
+  expect(urlOf({ url: '/?summary=2026-10-30' }, origin)).toBe('/?summary=2026-10-30')
+  expect(urlOf({ url: `${origin}/foods#x` }, origin)).toBe('/foods#x')
+  // What a browser reads as another site.
   for (const d of [
     undefined,
     null,
     {},
     { url: '//evil.example/' },
+    { url: '/\\evil.example/' },
+    { url: '/\n/evil.example/' },
     { url: 'https://evil.example/' },
+    { url: 'javascript:alert(1)' },
   ]) {
-    expect(urlOf(d)).toBe('/')
+    expect(urlOf(d, origin)).toBe('/')
   }
 })
 
@@ -94,6 +101,17 @@ test("a tap takes the app's window there, or opens one", async () => {
 
   await open(
     { matchAll: () => Promise.resolve([other]), openWindow },
+    'https://tdeemon.example.com',
+    '/settings',
+  )
+  expect(openWindow).toHaveBeenCalledWith('/settings')
+
+  // A window the worker does not control yet cannot be navigated.
+  openWindow.mockClear()
+  const uncontrolled = window('https://tdeemon.example.com/')
+  uncontrolled.navigate = () => Promise.reject(new TypeError('not controlled'))
+  await open(
+    { matchAll: () => Promise.resolve([uncontrolled]), openWindow },
     'https://tdeemon.example.com',
     '/settings',
   )

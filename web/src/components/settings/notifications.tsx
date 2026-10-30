@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { BellRing, Smartphone } from 'lucide-react'
+import { useEffect } from 'react'
 
-import { $api } from '@/api/client'
+import { $api, fetchClient } from '@/api/client'
+import { HttpError } from '@/api/errors'
 import { pushDeviceQuery } from '@/api/push'
 import { sessionQuery } from '@/api/session'
 import { LoadError } from '@/components/load-error'
@@ -32,19 +34,42 @@ export function Notifications() {
     queryClient.setQueryData(pushDeviceQuery.queryKey, state)
     await queryClient.invalidateQueries({ queryKey: subscriptions })
   }
+  // Run at once, never held for the network: the browser asks for the
+  // permission only within the tap.
   const toggle = useMutation({
     mutationFn: (state: State) => (state.kind === 'on' ? turnOff(state.id) : turnOn()),
     onSuccess: changed,
+    networkMode: 'always',
   })
-  const remove = $api.useMutation('delete', '/api/v1/push/subscriptions/{id}', {
-    onSettled: async (_, __, vars) => {
-      // This device's own, removed in the list, is off here too.
-      if (device.data?.kind === 'on' && device.data.id === vars.params.path.id) {
-        queryClient.setQueryData(pushDeviceQuery.queryKey, { kind: 'off' })
+  // This device's own, removed in the list, is turned off here too, so it
+  // does not come back as the app opens.
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      if (device.data?.kind === 'on' && device.data.id === id) {
+        return turnOff(id)
+      }
+      const { response } = await fetchClient.DELETE('/api/v1/push/subscriptions/{id}', {
+        params: { path: { id } },
+      })
+      if (!response.ok && response.status !== 404) {
+        throw new HttpError(response.status)
+      }
+      return undefined
+    },
+    onSuccess: async (state) => {
+      if (state !== undefined) {
+        queryClient.setQueryData(pushDeviceQuery.queryKey, state)
       }
       await queryClient.invalidateQueries({ queryKey: subscriptions })
     },
   })
+  // A sync that subscribed this device after the list came lists it.
+  const synced = device.dataUpdatedAt
+  useEffect(() => {
+    if (synced > 0) {
+      void queryClient.invalidateQueries({ queryKey: subscriptions })
+    }
+  }, [synced, queryClient])
   const test = $api.useMutation('post', '/api/v1/push/test', {
     onSettled: () => queryClient.invalidateQueries({ queryKey: subscriptions }),
   })
@@ -116,7 +141,7 @@ export function Notifications() {
               aria-label={n.remove(d.device)}
               disabled={remove.isPending}
               onClick={() => {
-                remove.mutate({ params: { path: { id: d.id } } })
+                remove.mutate(d.id)
               }}
             >
               {n.removeShort}
@@ -148,7 +173,7 @@ export function Notifications() {
           {n.thisDevice}
         </h2>
         {here}
-        {toggle.isError && (
+        {(toggle.isError || remove.isError) && (
           <p role="alert" className="text-small">
             {n.failed}
           </p>

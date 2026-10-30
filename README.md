@@ -331,7 +331,9 @@ each removed apart, and send a test to them all. On an iPhone or iPad
 they come to the app added to the home screen (Safari's Share, Add to
 Home Screen), from iOS 16.4; Safari itself cannot get them. The app
 tells the server of the device's subscription each time it opens, as
-iOS can drop one without a word.
+iOS can drop one without a word. Signing out turns the device off, so
+whoever signs in next on it gets none of the notifications before
+turning them on.
 
 A device shows the summary in a line (yesterday's kcal against the
 target, the weight, the sleep); a tap opens the whole in the app. An

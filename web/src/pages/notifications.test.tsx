@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { components } from '@/api/schema'
@@ -37,7 +37,7 @@ function withPush() {
   }
   Object.defineProperty(navigator, 'serviceWorker', {
     configurable: true,
-    value: { ready: Promise.resolve({ pushManager }) },
+    value: { getRegistration: () => Promise.resolve({ pushManager }) },
   })
   // Only that there is one counts.
   vi.stubGlobal('PushManager', Object)
@@ -121,8 +121,8 @@ test('turned on at a tap, this device is listed as such, gets the test, and is t
   expect(screen.queryByText('Mac · Chrome')).toBeNull()
 })
 
-test('this device removed from the list is off here too, in Croatian', async () => {
-  withPush()
+test('this device removed from the list is off here too, and stays so, in Croatian', async () => {
+  const { unsubscribe } = withPush()
   notifyServer([], 'hr')
   renderAt('/settings/notifications')
 
@@ -132,6 +132,35 @@ test('this device removed from the list is off here too, in Croatian', async () 
   )
   expect(await screen.findByText('Isključene')).toBeTruthy()
   expect(await screen.findByText('Još ih nijedan uređaj ne prima.')).toBeTruthy()
+  expect(unsubscribe).toHaveBeenCalled()
+  expect(localStorage.getItem('tdeemon.push.off')).toBe('1')
+})
+
+test('signing out turns this device off at the server first', async () => {
+  const { unsubscribe } = withPush()
+  const calls: string[] = []
+  notifyServer()
+  const fetch = globalThis.fetch
+  vi.stubGlobal('fetch', async (input: Request) => {
+    calls.push(`${input.method} ${new URL(input.url).pathname}`)
+    return new URL(input.url).pathname === '/api/v1/auth/logout'
+      ? new Response(null, { status: 204 })
+      : fetch(input)
+  })
+  renderAt('/settings/notifications')
+  fireEvent.click(await screen.findByRole('button', { name: 'Turn on' }))
+  expect(await screen.findByText('On')).toBeTruthy()
+
+  renderAt('/settings')
+  fireEvent.click(await screen.findByRole('button', { name: /Sign out/ }))
+  await waitFor(() => {
+    expect(calls).toContain('POST /api/v1/auth/logout')
+  })
+  expect(calls.indexOf('DELETE /api/v1/push/subscriptions/this-device')).toBeGreaterThan(-1)
+  expect(calls.indexOf('DELETE /api/v1/push/subscriptions/this-device')).toBeLessThan(
+    calls.indexOf('POST /api/v1/auth/logout'),
+  )
+  expect(unsubscribe).toHaveBeenCalled()
 })
 
 test("the settings' row says how many devices get them", async () => {

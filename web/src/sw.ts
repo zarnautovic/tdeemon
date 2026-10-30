@@ -40,11 +40,12 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  event.waitUntil(open(self.clients, self.location.origin, urlOf(event.notification.data)))
+  const origin = self.location.origin
+  event.waitUntil(open(self.clients, origin, urlOf(event.notification.data, origin)))
 })
 
 // Not in TypeScript's lib: Chrome and Firefox fire it when they renew a
-// subscription, Safari not yet.
+// subscription, Safari not yet. A device turned off has none to renew.
 self.addEventListener('pushsubscriptionchange', (event) => {
   ;(event as ExtendableEvent).waitUntil(
     resubscribe(self.registration.pushManager, (input, init) => fetch(input, init)),
