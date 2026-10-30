@@ -53,6 +53,7 @@ function said(change: Change, t: Messages): string {
     case 'meal.delete':
       return t.toast.deleted(meal)
     case 'food.save':
+    case 'recipe.save':
       return t.toast.savedOf(food)
     case 'food.archive':
       return change.archived === false ? t.toast.inUse(food) : t.toast.archived(food)

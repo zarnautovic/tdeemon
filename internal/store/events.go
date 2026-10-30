@@ -586,6 +586,8 @@ func stateNow(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event) 
 	switch e.Action {
 	case event.FoodSave, event.FoodArchive:
 		return foodStateNow(ctx, tx, userID, e)
+	case event.RecipeSave:
+		return recipeStateNow(ctx, tx, userID, e)
 	case event.MealCreate, event.MealReplace, event.MealDelete:
 		id, err := entityID(e)
 		if err != nil {
@@ -623,6 +625,8 @@ func takeBack(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, 
 	switch e.Action {
 	case event.FoodSave, event.FoodArchive:
 		return takeBackFood(ctx, tx, userID, e, now)
+	case event.RecipeSave:
+		return takeBackRecipe(ctx, tx, userID, e, now)
 	case event.MealCreate, event.MealReplace, event.MealDelete:
 		return takeBackMeal(ctx, tx, userID, e, now)
 	case event.DayExclude, event.DayInclude:

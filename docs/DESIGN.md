@@ -92,11 +92,11 @@ store layer and covered by tests that run every query as the wrong user.
 | `sessions` | id (SHA-256 of the cookie's token), user_id, created_at, last_seen_at, expires_at | web sessions; 30 days from sign-in |
 | `user_identities` | issuer, subject, user_id | OpenID Connect identities (Authentik…); linked once by a verified email, then by subject |
 | `api_tokens` | id, user_id, name, hash, scopes, last_used_at | scopes: `ingest` (phone), `tools` (MCP/clients), `read` |
-| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish/off, later recipe), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a food by the piece; one food, never a dish ("Foods" below); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
+| `foods` | id, user_id, name, brand, basis (100g/100ml/portion), kcal, protein, carbs, fat, optional fiber/saturated_fat/sugars/salt/polyols/alcohol, portion_g?, source (label/estimate/user/dish/off/recipe), note, archived | the user's food DB; values per 100 g or 100 ml, or per portion for a food by the piece; one food, never a dish ("Foods" below); "same name + same brand" is the same food, which `upsert_food` corrects in place and a new food sent with a meal takes as it is |
 | `food_servings` | food_id, user_id, name, amount | named amounts of a food by weight or volume: "piece" = 60 g of egg, "slice" = 40 g of bread |
 | `food_aliases` | food_id, user_id, alias | "the dessert from last Sunday", "my bread" |
 | `food_barcodes` | food_id, user_id, code | the product's barcodes, one for each size of its package, a scan of one finding the food; a barcode leads to one food of the user's; an EAN-13, EAN-8 or GTIN-14 by its digits, checked by its check digit, a UPC-A kept as its EAN-13 (a 0 before it) and a GTIN-14 of a 0 first as that EAN-13, so any form a scan reads finds it |
-| `recipes` / `recipe_items` | recipe → food_id + grams, yield_g | batch cooking; exposed as a food with computed per-100 g values |
+| `recipes` / `recipe_items` | food_id (the recipe's food), yield_g?, portions?, pot_g?; its ingredients as a meal's items (food_id, quantity as given, amount + unit, the nutrients) | batch cooking: a recipe is a food of `source: recipe` whose values per 100 g of the cooked dish are worked out of its ingredients and the dish's weight ("Recipes" below) |
 | `meals` | id, user_id, day, eaten_at, description, client (mcp/chat/web/telegram/import), note, fingerprint | the fingerprint of the create, for idempotent retries (§9) |
 | `meal_items` | id, meal_id, user_id, food_id?, name, brand (the food's, apart from its name), quantity as given (amount with its unit g/ml or without it for the food's own, or servings × serving, the serving left out for the food's one, or portions), amount + unit (g/ml/portion), the nutrients, source, note | **snapshot at log time**; editing a food later does not silently rewrite history |
 | `metrics` | user_id, day, metric, value, source, updated_at | long format: weight, body_fat, lean_mass, steps, active_kcal, basal_kcal, sleep_h, rhr, hrv, vo2max, exercise_min |
@@ -138,11 +138,35 @@ item's name ("Steak ~250 g"), and its estimate of the plate as one item
 when the user names no part; it asks no amount nobody weighed (decided
 on 26 October 2026: a part's estimate is no worse than the plate's, and
 says what it took, so a correction changes that part alone); a dish the
-user already has as a food is used as it is. Recipes, later, are for a dish cooked
+user already has as a food is used as it is. Recipes are for a dish cooked
 again: a recipe stores its ingredients and produces a food
-of its own, with `source: recipe`. A food of `source: dish` or a dish
+of its own, with `source: recipe` (below). A food of `source: dish` or a dish
 per portion, which the code still takes, is what an earlier client or
 an import may have saved.
+
+**Recipes.** A recipe is a food of the user's (`source: recipe`, by
+weight), so search finds it and a meal logs it as any food; its values
+per 100 g of the cooked dish are worked out of its ingredients and the
+dish's weight (`internal/domain/recipe`), and change only with the
+recipe: a save of its food as a food is refused, and so is a food of
+`source: recipe` without one. Its ingredients are a meal's items, of
+foods of the user's (no estimates), each with the values its food
+brought when the recipe was saved: correcting a food later does not
+change the recipe until it is saved again, and a meal logged keeps what
+it had (decided October 2026). The dish's weight is optional, as a pot
+may be too big for the scale: without it the raw ingredients' weight
+(ml as g) stands for it, which makes a share of the dish exact and its
+grams an approximation; one below 30 % or above three times the raw
+weight is warned of, not refused. Its food has the serving `recipe`, the
+whole dish, and `portion`, the dish divided into the portions the recipe
+says, so "a tenth of the curry" is 0.1 of `recipe`. The empty pot's
+weight is kept for the next weighing. A recipe may be an ingredient of
+another, never of itself at any depth. Saving it again by its name
+corrects it, as a food's does; the save is one event (`recipe.save`)
+with the recipe whole before and after, and the new foods it brings are
+part of it, so undo takes it back whole, its food kept, archived, while
+a meal or another recipe has it. Tracking what is left of the pot is
+for later.
 
 The same name and brand (compared without regard to case or runs of
 space) are the same food: saving it again (`upsert_food`) corrects it

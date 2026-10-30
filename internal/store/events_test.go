@@ -934,6 +934,19 @@ func TestUndoOfEveryKindThatDoesNotDecode(t *testing.T) {
 			t.Helper()
 			return db.SetFoodArchived(t.Context(), userID, testActor, saveFood(t, db, userID, bar()).ID, true, t0)
 		}},
+		{"recipe save", before, `{"Items": 5}`, func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			r := curryOf(t, saveFood(t, db, userID, chickenBreast()), saveFood(t, db, userID, kefir()))
+			saveRecipe(t, db, userID, r)
+			r.Portions = 2
+			_, err := db.SaveRecipe(t.Context(), userID, testActor, r, nil, t0)
+			return err
+		}},
+		{"recipe create", entity, "not a food id", func(t *testing.T, db *store.DB, userID uuid.UUID) error {
+			t.Helper()
+			saveRecipe(t, db, userID, curryOf(t, saveFood(t, db, userID, chickenBreast()), saveFood(t, db, userID, kefir())))
+			return nil
+		}},
 		{"meal create", entity, "not a meal id", func(t *testing.T, db *store.DB, userID uuid.UUID) error {
 			t.Helper()
 			createMeal(t, db, userID, breakfast(t, saveFood(t, db, userID, bar()), t0))

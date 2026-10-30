@@ -57,7 +57,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status.",
+            "description": "What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status.",
             "type": "string"
           },
           "archived": {
@@ -109,7 +109,7 @@
             "type": "string"
           },
           "name": {
-            "description": "A meal's description, or a food's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back).",
+            "description": "A meal's description, or a food's or a recipe's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back).",
             "type": "string"
           },
           "next": {
@@ -838,13 +838,14 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from; dish is an earlier client's, for no new food.",
+            "description": "Where the values come from; dish is an earlier client's, for no new food; recipe a recipe's, which changes only with it.",
             "enum": [
               "label",
               "estimate",
               "user",
               "dish",
-              "off"
+              "off",
+              "recipe"
             ],
             "type": "string"
           }
@@ -923,13 +924,14 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from; dish is an earlier client's, for no new food.",
+            "description": "Where the values come from; dish is an earlier client's, for no new food; recipe a recipe's, which changes only with it.",
             "enum": [
               "label",
               "estimate",
               "user",
               "dish",
-              "off"
+              "off",
+              "recipe"
             ],
             "type": "string"
           }
@@ -1393,7 +1395,8 @@
               "estimate",
               "user",
               "dish",
-              "off"
+              "off",
+              "recipe"
             ],
             "type": "string"
           },
@@ -3718,7 +3721,7 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "description": "What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge or notes.set.",
+            "description": "What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge or notes.set.",
             "type": "string"
           },
           "at": {
@@ -3893,13 +3896,14 @@
             "type": "array"
           },
           "source": {
-            "description": "Where the values come from; dish is an earlier client's, for no new food.",
+            "description": "Where the values come from; dish is an earlier client's, for no new food; recipe a recipe's, which changes only with it.",
             "enum": [
               "label",
               "estimate",
               "user",
               "dish",
-              "off"
+              "off",
+              "recipe"
             ],
             "type": "string"
           }
@@ -5731,18 +5735,19 @@
             }
           },
           {
-            "description": "The foods whose values come from it alone, such as the estimates to check.",
+            "description": "The foods whose values come from it alone, such as the estimates to check or the recipes.",
             "explode": false,
             "in": "query",
             "name": "source",
             "schema": {
-              "description": "The foods whose values come from it alone, such as the estimates to check.",
+              "description": "The foods whose values come from it alone, such as the estimates to check or the recipes.",
               "enum": [
                 "label",
                 "estimate",
                 "user",
                 "dish",
-                "off"
+                "off",
+                "recipe"
               ],
               "type": "string"
             }

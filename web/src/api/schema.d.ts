@@ -889,7 +889,7 @@ export interface components {
             open_food_facts?: components["schemas"]["OpenFoodFactsBody"];
         };
         ChangeBody: {
-            /** @description What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status. */
+            /** @description What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status. */
             action: string;
             /** @description Of food.archive: true when it archived the food, false when it brought it back in use. */
             archived?: boolean;
@@ -917,7 +917,7 @@ export interface components {
             metric?: string;
             /** @description The AI model that made it for the user, when one said so. */
             model?: string;
-            /** @description A meal's description, or a food's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back). */
+            /** @description A meal's description, or a food's or a recipe's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back). */
             name?: string;
             /** @description Undo takes it back next: POST /api/v1/undo naming it (last) takes it back while it stays the latest. At most one change is next, and none when undo has nothing to take back. */
             next?: boolean;
@@ -1235,10 +1235,10 @@ export interface components {
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from; dish is an earlier client's, for no new food.
+             * @description Where the values come from; dish is an earlier client's, for no new food; recipe a recipe's, which changes only with it.
              * @enum {string}
              */
-            source: "label" | "estimate" | "user" | "dish" | "off";
+            source: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
         };
         FoodFields: {
             /** @description Other names search finds. */
@@ -1264,10 +1264,10 @@ export interface components {
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from; dish is an earlier client's, for no new food.
+             * @description Where the values come from; dish is an earlier client's, for no new food; recipe a recipe's, which changes only with it.
              * @enum {string}
              */
-            source: "label" | "estimate" | "user" | "dish" | "off";
+            source: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
         };
         FoodListOutputBody: {
             foods: components["schemas"]["FoodBody"][];
@@ -1455,7 +1455,7 @@ export interface components {
             /** @description How much, as it was given. */
             quantity: components["schemas"]["QuantityBody"];
             /** @enum {string} */
-            source: "label" | "estimate" | "user" | "dish" | "off";
+            source: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
             /** @enum {string} */
             unit: "g" | "ml" | "portion";
         };
@@ -2502,7 +2502,7 @@ export interface components {
             undone: components["schemas"]["UndoneBody"];
         };
         UndoneBody: {
-            /** @description What the change did: food.save, food.archive, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge or notes.set. */
+            /** @description What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge or notes.set. */
             action: string;
             /**
              * Format: date-time
@@ -2576,10 +2576,10 @@ export interface components {
             /** @description Named amounts: a piece, a slice. */
             servings?: components["schemas"]["ServingBody"][];
             /**
-             * @description Where the values come from; dish is an earlier client's, for no new food.
+             * @description Where the values come from; dish is an earlier client's, for no new food; recipe a recipe's, which changes only with it.
              * @enum {string}
              */
-            source: "label" | "estimate" | "user" | "dish" | "off";
+            source: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
         };
         UserBody: {
             /**
@@ -3852,8 +3852,8 @@ export interface operations {
             query?: {
                 /** @description The archived foods instead of the others. */
                 archived?: boolean;
-                /** @description The foods whose values come from it alone, such as the estimates to check. */
-                source?: "label" | "estimate" | "user" | "dish" | "off";
+                /** @description The foods whose values come from it alone, such as the estimates to check or the recipes. */
+                source?: "label" | "estimate" | "user" | "dish" | "off" | "recipe";
                 /** @description name: by name, then brand; use: the food a meal had last first, and those no meal had after the others, by name; frequent: the food the most of your latest 100 meals had first, then as use. */
                 order?: "name" | "use" | "frequent";
                 /** @description The most foods of the page. */

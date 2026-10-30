@@ -27,6 +27,14 @@ var (
 	ErrBarcodeTaken = errors.New("another food has this barcode")
 )
 
+// refusedFood reports whether err is a save of a food refused for what
+// the user's foods have: a name, an alias or a barcode another food
+// has, or a recipe's food (ErrRecipeFood).
+func refusedFood(err error) bool {
+	return errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) || errors.Is(err, ErrBarcodeTaken) ||
+		errors.Is(err, ErrRecipeFood)
+}
+
 // FoodConflictError is a save SaveFood refuses because another of the
 // user's foods is in the way: it has the name and brand (ErrNameTaken),
 // goes by Alias (ErrAliasTaken) or has Barcode (ErrBarcodeTaken). Food is
@@ -194,7 +202,7 @@ func (db *DB) saveFood(ctx context.Context, userID uuid.UUID, a event.Actor, f f
 		stored, _, err = saveFoodInTx(ctx, tx, userID, a, f, mode, now)
 		return err
 	})
-	if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrAliasTaken) || errors.Is(err, ErrBarcodeTaken) {
+	if refusedFood(err) {
 		return food.Food{}, err
 	}
 	if err != nil {
@@ -226,6 +234,11 @@ func saveFoodInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Act
 			return food.Food{}, uuid.Nil(), err
 		}
 		before = &old
+	}
+	if err := checkRecipeFood(before, f); err != nil {
+		return food.Food{}, uuid.Nil(), err
+	}
+	if exists {
 		if err := updateFood(ctx, tx, userID, f, nameKey, brandKey, now); err != nil {
 			return food.Food{}, uuid.Nil(), err
 		}
@@ -747,8 +760,8 @@ func setArchived(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, archived
 }
 
 // takeBackFood puts the food of e back as it was: archived or not as
-// before, or as saved before. A food that e added goes, unless a meal
-// uses it, which keeps it, archived.
+// before, or as saved before. A food that e added goes, unless a meal or
+// a recipe uses it, which keeps it, archived.
 func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Event, now time.Time) error {
 	id, err := entityID(e)
 	if err != nil {
@@ -762,22 +775,32 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 		}
 		return setArchived(ctx, tx, userID, id, s.Archived, now)
 	case e.Before == nil:
-		var used int
-		if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM meal_items WHERE user_id = ? AND food_id = ?",
-			userID.String(), id.String()).Scan(&used); err != nil {
+		used, err := foodInUse(ctx, tx, userID, id)
+		if err != nil {
 			return err
 		}
-		if used > 0 {
+		if used {
 			return setArchived(ctx, tx, userID, id, true, now)
 		}
-		_, err := tx.ExecContext(ctx, "DELETE FROM foods WHERE user_id = ? AND id = ?", userID.String(), id.String())
+		_, err = tx.ExecContext(ctx, "DELETE FROM foods WHERE user_id = ? AND id = ?", userID.String(), id.String())
 		return err
 	}
 	var f food.Food
 	if err := decode(e.Before, &f); err != nil {
 		return err
 	}
-	// Another food may have taken the name, an alias or a barcode since.
+	if err := checkFoodClash(ctx, tx, userID, f); err != nil {
+		return err
+	}
+	if err := updateFood(ctx, tx, userID, f, food.Key(f.Name), food.Key(f.Brand), now); err != nil {
+		return err
+	}
+	return replaceFoodChildren(ctx, tx, userID, f)
+}
+
+// checkFoodClash refuses to put food f back when another food has taken
+// its name, an alias or a barcode since, a clash undo passes over.
+func checkFoodClash(ctx context.Context, tx *sql.Tx, userID uuid.UUID, f food.Food) error {
 	var other int
 	if err := tx.QueryRowContext(ctx, "SELECT count(*) FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = ? AND id <> ?",
 		userID.String(), food.Key(f.Name), food.Key(f.Brand), f.ID.String()).Scan(&other); err != nil {
@@ -796,10 +819,7 @@ func takeBackFood(ctx context.Context, tx *sql.Tx, userID uuid.UUID, e event.Eve
 	} else if err != nil {
 		return err
 	}
-	if err := updateFood(ctx, tx, userID, f, food.Key(f.Name), food.Key(f.Brand), now); err != nil {
-		return err
-	}
-	return replaceFoodChildren(ctx, tx, userID, f)
+	return nil
 }
 
 // foodStateNow returns the state of e's food now, as e's kind of event
