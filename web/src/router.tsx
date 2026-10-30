@@ -28,6 +28,7 @@ import { LoginPage } from '@/pages/login'
 import { NewFoodPage } from '@/pages/new-food'
 import { NotFoundPage } from '@/pages/not-found'
 import { NotesPage } from '@/pages/notes'
+import { NotificationsPage } from '@/pages/notifications'
 import { PlanPage } from '@/pages/plan'
 import { ProfilePage } from '@/pages/profile'
 import { RootLayout } from '@/pages/root-layout'
@@ -242,6 +243,11 @@ const devicesRoute = createRoute({
   }),
   component: DevicesPage,
 })
+const notificationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings/notifications',
+  component: NotificationsPage,
+})
 // The addresses of before, the charts' and the plan's under the settings,
 // lead where they are now.
 const chartsRoute = createRoute({
@@ -275,6 +281,7 @@ const routeTree = rootRoute.addChildren([
     appearanceRoute,
     accountRoute,
     devicesRoute,
+    notificationsRoute,
   ]),
   loginRoute,
   chartsRoute,

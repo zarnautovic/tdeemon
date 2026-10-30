@@ -119,6 +119,7 @@ export function signedIn(locale: Locale = 'en'): Record<string, Handler> {
     'GET /api/v1/me': () => Response.json(me()),
     'GET /api/v1/days/today': () => Response.json(day()),
     'GET /api/v1/tokens': () => Response.json({ tokens: [] }),
+    'GET /api/v1/push/subscriptions': () => Response.json({ subscriptions: [] }),
   }
 }
 

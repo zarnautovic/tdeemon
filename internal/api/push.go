@@ -176,7 +176,7 @@ func (s *sessions) testPush(ctx context.Context, _ *struct{}) (*testPushOutput, 
 	if words.Title == "" {
 		words = testPushWords["en"]
 	}
-	words.URL, words.Tag = "/settings", "test"
+	words.URL, words.Tag = "/settings/notifications", "test"
 	r := notify.Push(ctx, s.db, sender, p.User, words, push.Message{TTL: testPushTTL, Urgency: push.UrgencyHigh}, s.now())
 	if r.Err != nil {
 		if r.Sent+r.Gone+r.Failed == 0 {

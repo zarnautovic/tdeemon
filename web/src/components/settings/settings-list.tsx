@@ -1,15 +1,18 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Globe, History, LogOut, Palette, Smartphone } from 'lucide-react'
+import { Bell, Globe, History, LogOut, Palette, Smartphone } from 'lucide-react'
 import { useState } from 'react'
 
-import { $api } from '@/api/client'
+import { $api, fetchClient } from '@/api/client'
+import { HttpError } from '@/api/errors'
+import { pushDeviceQuery } from '@/api/push'
 import { sessionQuery } from '@/api/session'
 import { ListGroup } from '@/components/list-group'
 import { ListRow } from '@/components/list-row'
 import { RecentChanges } from '@/components/recent-changes'
 import { locales } from '@/i18n/locale'
 import { useMessages } from '@/i18n/messages'
+import { leave } from '@/lib/push'
 import { useTheme } from '@/lib/theme'
 
 // SettingsList is the user's settings, each a row to its page with its
@@ -30,11 +33,20 @@ export function SettingsList({
   const session = useQuery(sessionQuery)
   const user = session.data?.user
   const tokens = $api.useQuery('get', '/api/v1/tokens')
+  const notified = $api.useQuery('get', '/api/v1/push/subscriptions')
   const info = $api.useQuery('get', '/api/v1/info')
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [changes, setChanges] = useState(false)
-  const signOut = $api.useMutation('post', '/api/v1/auth/logout', {
+  const signOut = useMutation({
+    // This device's notifications end first, in the session that ends.
+    mutationFn: async () => {
+      await leave(queryClient.getQueryData(pushDeviceQuery.queryKey))
+      const { response } = await fetchClient.POST('/api/v1/auth/logout')
+      if (!response.ok) {
+        throw new HttpError(response.status)
+      }
+    },
     // Nothing of this user stays in the app for whoever signs in next.
     onSuccess: async () => {
       queryClient.clear()
@@ -93,6 +105,12 @@ export function SettingsList({
         summary={tokens.data && s.devicesSummary(tokens.data.tokens.length)}
       />
       <ListRow
+        icon={Bell}
+        title={s.notifications.title}
+        to="/settings/notifications"
+        summary={notified.data && s.notifications.summary(notified.data.subscriptions.length)}
+      />
+      <ListRow
         icon={History}
         title={t.changes.title}
         summary={t.changes.summary}
@@ -107,7 +125,7 @@ export function SettingsList({
         summary={user && s.signedInAs(user.name, user.email)}
         disabled={signOut.isPending}
         onClick={() => {
-          signOut.mutate({})
+          signOut.mutate()
         }}
       />
     </ListGroup>

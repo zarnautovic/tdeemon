@@ -21,10 +21,15 @@ export default defineConfig({
     // server, and a sign-in's redirects with them. The app registers the
     // worker itself (src/lib/service-worker.ts), and a new version waits
     // for the user's Reload (UpdatePrompt), not reloading the page under
-    // them. web/icons/generate.sh draws the icons.
+    // them. The worker is the app's own (src/sw.ts), which shows the
+    // notifications the server pushes too. web/icons/generate.sh draws
+    // the icons.
     VitePWA({
       registerType: 'prompt',
       injectRegister: false,
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       manifest: {
         id: '/',
         name: 'tdeemon',
@@ -44,15 +49,12 @@ export default defineConfig({
       },
       // The icons are among the PNGs below.
       includeManifestIcons: false,
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{html,js,css,woff2,svg,png}'],
         // A file over it is left out of the precache with only a warning,
         // and the app would not open without a network: the main chunk,
         // about 1.2 MB, is near Workbox's 2 MiB.
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/mcp/, /^\/healthz/],
-        cleanupOutdatedCaches: true,
       },
     }),
   ],

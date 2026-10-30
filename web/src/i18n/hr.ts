@@ -857,6 +857,38 @@ export const hr: Messages = {
     notesHint: 'Što AI trener treba znati o tebi: ozljeda, što ne jedeš, kako treniraš.',
     notesPlaceholder: 'Koljena: bez trčanja. Bez laktoze.',
     noNotes: 'Još nema',
+    notifications: {
+      title: 'Obavijesti',
+      hint: 'Jutarnji sažetak u 10:00 i upozorenje kad tvoji podaci prestanu stizati.',
+      summary: (n: number) =>
+        n === 0
+          ? 'Isključene'
+          : `${String(n)} ${plural('hr', n, { one: 'uređaj', few: 'uređaja', other: 'uređaja' })}`,
+      thisDevice: 'Ovaj uređaj',
+      on: 'Uključene',
+      off: 'Isključene',
+      turnOn: 'Uključi',
+      turnOff: 'Isključi',
+      unsupported: 'Ovaj preglednik ne može primati obavijesti.',
+      install:
+        'Na iPhoneu i iPadu obavijesti stižu instaliranoj aplikaciji. U Safariju dodirni Dijeli, pa Dodaj na početni zaslon, i otvori tdeemon odande.',
+      blocked:
+        'Obavijesti za tdeemon blokirane su u postavkama ovog preglednika. Dopusti ih ondje pa se vrati.',
+      failed: 'Obavijesti se nisu mogle promijeniti. Pokušaj ponovo.',
+      devices: 'Uređaji s obavijestima',
+      noDevices: 'Još ih nijedan uređaj ne prima.',
+      lastSent: (when: string) => `Zadnja obavijest ${when}`,
+      neverSent: 'Još ništa poslano',
+      remove: (name: string) => `Prestani slati obavijesti na ${name}`,
+      removeShort: 'Ukloni',
+      test: 'Pošalji test',
+      tested: (sent: number, failed: number) =>
+        failed === 0
+          ? `Poslano na ${String(sent)} ${plural('hr', sent, { one: 'uređaj', few: 'uređaja', other: 'uređaja' })}.`
+          : `Poslano na ${String(sent)}, na ${String(failed)} nije: push servis ga nije primio.`,
+      testNone: 'Nijedan uređaj ga nije primio: prvo uključi obavijesti.',
+      testFailed: 'Test se nije mogao poslati. Pokušaj ponovo.',
+    },
     devices: 'Uređaji i AI treneri',
     devicesHint: 'Svaki uređaj i AI trener prijavljuje se svojim pristupnim ključem.',
     devicesSummary: (n: number) =>

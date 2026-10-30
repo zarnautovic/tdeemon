@@ -1,6 +1,8 @@
+import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate } from '@tanstack/react-router'
 import { useRef, useState } from 'react'
 
+import { pushDeviceQuery } from '@/api/push'
 import { AppNav } from '@/components/app-nav'
 import { LogToday } from '@/components/day/log-today'
 import { ShortcutsDialog } from '@/components/shortcuts-dialog'
@@ -27,6 +29,9 @@ export function AppLayout() {
   const main = useRef<HTMLElement>(null)
   const [shortcuts, setShortcuts] = useState(false)
   const latest = useUndoLatest()
+  // This device's notifications, told to the server again as the app
+  // opens: iOS can drop a subscription without a word.
+  useQuery(pushDeviceQuery)
   const [logging, setLogging] = useState(false)
   // What opened the meal to log, which the focus goes back to.
   const opener = useRef<HTMLElement | null>(null)

@@ -27,5 +27,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // The service worker is a worker's, not a page's: tsconfig.sw.json.
+  "exclude": ["src/sw.ts"]
 }
