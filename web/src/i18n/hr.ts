@@ -186,6 +186,11 @@ export const hr: Messages = {
     previous: 'Dan prije',
     next: 'Dan poslije',
     toToday: 'Natrag na danas',
+    morning: {
+      title: 'Jutarnji sažetak',
+      open: 'Jutarnji sažetak',
+      failed: 'Jutarnji sažetak se nije učitao',
+    },
     training: 'Dan treninga',
     rest: 'Dan odmora',
     excluded: (reason: string) => (reason ? `Izvan kalibracije: ${reason}` : 'Izvan kalibracije'),

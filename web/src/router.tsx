@@ -103,7 +103,8 @@ const loginRoute = createRoute({
 // The day's date, YYYY-MM-DD; without it, with one that is no date
 // (2026-02-31), or one before the first day a history is of (1900-01-01,
 // limits.json), today. log opens the form to log a meal (the app's Log a
-// meal), which takes it out of the address once open.
+// meal), which takes it out of the address once open; summary, a date,
+// that morning's summary over the day (the morning's notification).
 const dayRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
@@ -115,6 +116,8 @@ const dayRoute = createRoute({
         ? search.date
         : undefined,
     log: search.log === true || search.log === 'true' ? true : undefined,
+    summary:
+      typeof search.summary === 'string' && isDate(search.summary) ? search.summary : undefined,
   }),
   component: DayPage,
 })
@@ -341,6 +344,7 @@ declare module '@tanstack/react-router' {
 export interface DaySearch {
   date?: string | undefined
   log?: true | undefined
+  summary?: string | undefined
 }
 
 // FoodsSearch is what the foods page shows: its search, its list (in use

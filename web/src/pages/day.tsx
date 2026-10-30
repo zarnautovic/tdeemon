@@ -18,6 +18,7 @@ import { FirstSteps } from '@/components/day/first-steps'
 import { kcalLeft } from '@/components/day/left'
 import { MealList } from '@/components/day/meal-list'
 import { slotAt } from '@/components/day/meal-slot'
+import { MorningLine, MorningSummary } from '@/components/day/morning-summary'
 import { QuickAdd } from '@/components/day/quick-add'
 import { QuickChips } from '@/components/day/quick-chips'
 import { WeekCard } from '@/components/day/week-card'
@@ -33,6 +34,7 @@ import limits from '@/lib/limits.json'
 import { LogHereContext } from '@/lib/log-here'
 import { useDesktop } from '@/lib/media'
 import { useShortcuts } from '@/lib/shortcuts'
+import { dateAt } from '@/lib/zoned'
 import type { DaySearch } from '@/router'
 
 // DayKeys moves a day back or ahead by the keyboard's arrows, as the
@@ -67,11 +69,12 @@ function DayKeys({
 // two columns, the meals a table), takes the day's type, the check-in
 // and the measurements, logs a meal (QuickAdd), and moves a day back or
 // ahead, up to today. /?log=true opens the meal to log on today (the
-// app's Log a meal).
+// app's Log a meal); /?summary=YYYY-MM-DD that morning's summary, which
+// the morning's notification opens, and today's header a tap away.
 export function DayPage() {
   const t = useMessages()
   const f = useFormat()
-  const { date, log } = useSearch({ from: '/app/' })
+  const { date, log, summary } = useSearch({ from: '/app/' })
   const navigate = useNavigate()
   const day = $api.useQuery(
     'get',
@@ -96,6 +99,9 @@ export function DayPage() {
   // The meals' heading, which a meal deleted in its editor leaves the
   // focus to.
   const mealsHeading = useRef<HTMLHeadingElement>(null)
+  // The line that opens this morning's summary, which its sheet gives the
+  // focus back to.
+  const morningOpener = useRef<HTMLButtonElement>(null)
   // A meal just logged or repeated, whose row takes the focus once it
   // shows, and a screen reader says it: at once, or as the quick add's
   // sheet closes, which gives the focus back to its opener.
@@ -274,11 +280,22 @@ export function DayPage() {
       </header>
     )
   }
+  // The keys, and the morning summary asked for by the address, over
+  // the day whether it came or not.
   const keys = (
-    <DayKeys
-      before={before === undefined ? undefined : searchOf(before)}
-      after={after === undefined ? undefined : searchOf(after)}
-    />
+    <>
+      <DayKeys
+        before={before === undefined ? undefined : searchOf(before)}
+        after={after === undefined ? undefined : searchOf(after)}
+      />
+      <MorningSummary
+        date={summary}
+        finalFocus={morningOpener}
+        onClose={() => {
+          void navigate({ to: '/', search: (s) => ({ ...s, summary: undefined }), replace: true })
+        }}
+      />
+    </>
   )
   // Until the day comes, its skeleton under the header; or why it did
   // not come, with a way to ask again.
@@ -349,6 +366,17 @@ export function DayPage() {
           </FirstSteps>
           {/* A proposal that waits, under the day's hero. */}
           {isToday && <ProposalNudge />}
+          {/* This morning's summary: of the calendar's date, as its
+              notification's, not the day's, which may still be yesterday
+              for a day that starts late. */}
+          {isToday && (
+            <MorningLine
+              ref={morningOpener}
+              onOpen={() => {
+                void navigate({ to: '/', search: { summary: dateAt(Date.now(), timeZone) } })
+              }}
+            />
+          )}
           {isToday && (
             <QuickChips
               date={day.data.date}
