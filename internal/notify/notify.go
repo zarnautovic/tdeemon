@@ -1,5 +1,6 @@
-// Package notify sends a user a notification in their Telegram chat:
-// the morning summary, the watchdog's alarms.
+// Package notify sends a user a notification, the morning summary or the
+// watchdog's alarms: in their Telegram chat, or by Web Push to their
+// devices.
 package notify
 
 import (

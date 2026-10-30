@@ -17,6 +17,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 )
@@ -40,6 +41,8 @@ type instance struct {
 	user  user.User
 	// logs is what the handler logged, as JSON lines.
 	logs *lockedBuffer
+	// pushes are the push services' side of the notifications sent.
+	pushes *pushServices
 
 	mu sync.Mutex
 	// succeeded are the operations whose success do checked against the
@@ -91,11 +94,20 @@ func newInstance(t *testing.T, baseURL, hash string) *instance {
 		t.Fatalf("parse %s: %v", baseURL, err)
 	}
 	logs := &lockedBuffer{}
-	h, err := api.NewHandler(api.Config{Info: testInfo, DB: db, BaseURL: base, Logger: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), Now: c.Now})
+	pushes := &pushServices{}
+	sender, err := push.NewSender([]byte("a test secret of thirty-two bytes!"), baseURL)
+	if err != nil {
+		t.Fatalf("NewSender: %v", err)
+	}
+	sender.Client = &http.Client{Transport: pushes}
+	h, err := api.NewHandler(api.Config{
+		Info: testInfo, DB: db, BaseURL: base, Logger: slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})), Now: c.Now,
+		Push: sender,
+	})
 	if err != nil {
 		t.Fatalf("NewHandler: %v", err)
 	}
-	return &instance{h: h, db: db, clock: c, user: u, logs: logs}
+	return &instance{h: h, db: db, clock: c, user: u, logs: logs, pushes: pushes}
 }
 
 // passwordHash hashes password, the password of the test user.

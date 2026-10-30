@@ -96,7 +96,7 @@ All settings come from environment variables:
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `TDEEMON_BASE_URL` | — (required) | public URL of the instance, without a path (tdeemon is served at the root of its host), e.g. `https://tdeemon.example.com` |
-| `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; seals the single sign-on state, and will encrypt stored secrets (sessions do not depend on it) |
+| `TDEEMON_SECRET_KEY` | — (required) | at least 32 bytes; seals the single sign-on state, derives the Web Push (VAPID) key, and will encrypt stored secrets (sessions do not depend on it; a new one makes every device subscribe to notifications again) |
 | `TDEEMON_LISTEN` | `:8080` | address the HTTP server binds |
 | `TDEEMON_DATA_DIR` | `./data` | database (`tdeemon.db`), backups and archives; keep it on a local disk, never NFS |
 | `TDEEMON_BACKUP_KEEP` | `7` | how many daily snapshots of the database to keep in `TDEEMON_DATA_DIR/backups`, up to 366; `0` takes none ([Data](#data)) |

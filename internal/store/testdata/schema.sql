@@ -356,6 +356,22 @@ CREATE TABLE proposals (
     CHECK ((status = 'reverted') = (reverted_by IS NOT NULL))
 ) STRICT;
 
+CREATE TABLE push_subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE CHECK (endpoint LIKE 'https://%'),
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    -- What the device is, from its user agent ("iPhone · Safari"), for the
+    -- list of devices.
+    device TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_sent_at TEXT
+) STRICT;
+
+CREATE INDEX push_subscriptions_user ON push_subscriptions (user_id);
+
 CREATE TABLE schema_migrations (
 	version    INTEGER PRIMARY KEY,
 	name       TEXT    NOT NULL,

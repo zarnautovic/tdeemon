@@ -23,6 +23,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/config"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
 	"github.com/zarnautovic/tdeemon/internal/off"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/server"
 	"github.com/zarnautovic/tdeemon/internal/store"
@@ -193,6 +194,11 @@ func serve(ctx context.Context, lookup config.LookupFunc, logOut io.Writer) erro
 			BaseURL:   cfg.OpenFoodFactsURL,
 			UserAgent: "tdeemon/" + serverVersion + " (https://github.com/zarnautovic/tdeemon)",
 		}
+	}
+	// The VAPID key is the secret key's: the browsers' subscriptions hold
+	// as long as it does.
+	if apiCfg.Push, err = push.NewSender(cfg.SecretKey, cfg.BaseURL.String()); err != nil {
+		return fmt.Errorf("push: %w", err)
 	}
 	handler, err := api.NewHandler(apiCfg)
 	if err != nil {

@@ -28,6 +28,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/limits"
 	"github.com/zarnautovic/tdeemon/internal/ingest"
 	"github.com/zarnautovic/tdeemon/internal/off"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/store"
 )
 
@@ -77,6 +78,9 @@ type Config struct {
 	// OpenFoodFacts looks up a barcode none of a user's foods has; none
 	// when nil.
 	OpenFoodFacts *off.Client
+	// Push sends the notifications by Web Push; none when nil, and the
+	// push operations answer 503.
+	Push *push.Sender
 }
 
 // NewHandler returns the root HTTP handler with every route registered.
@@ -442,6 +446,7 @@ func register(a huma.API, info infoBody, s *sessions, o *oidcLogin) {
 	s.registerMeals(a)
 	s.registerChanges(a)
 	s.registerSettings(a)
+	s.registerPush(a)
 	s.registerIngest(a)
 	registerTools(a, s.tools())
 	registerMethods(a, o)

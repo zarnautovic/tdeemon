@@ -48,6 +48,9 @@ type party struct {
 	// applied and pending are their proposals: one applied, a target
 	// from tomorrow, and one that waits.
 	applied, pending uuid.UUID
+	// push is their phone's push subscription, at pushEndpoint.
+	push         uuid.UUID
+	pushEndpoint string
 }
 
 // tokenName is the name of the party's token, which only they may see.
@@ -102,6 +105,7 @@ func newIsolationEnv(t *testing.T, adminActs bool) isolationEnv {
 		p.meal = saveIsolationMeals(t, in.db, p.user, p.bread, now)
 		saveIsolationMetrics(t, in.db, p.user, now)
 		p.applied, p.pending = saveIsolationPlan(t, in.db, p.user, now)
+		p.push, p.pushEndpoint = saveIsolationPush(t, in.db, p.user, now)
 		identity := store.Identity{Issuer: "https://idp.example", Subject: "subject-of-" + p.user.Name, Email: p.user.Email, EmailVerified: true}
 		if _, err := in.db.SignInWithIdentity(t.Context(), identity, now); err != nil {
 			t.Fatalf("link %s's identity: %v", p.user.Name, err)
@@ -785,6 +789,59 @@ func isolateRevokeTokens(t *testing.T, e isolationEnv) {
 	}
 }
 
+// saveIsolationPush gives u a phone subscribed to the notifications, and
+// returns its subscription's id and endpoint.
+func saveIsolationPush(t *testing.T, db *store.DB, u user.User, now time.Time) (uuid.UUID, string) {
+	t.Helper()
+	p256dh, secret := browserKeys(t)
+	s := store.PushSubscription{
+		ID: uuid.NewV7(), Endpoint: "https://web.push.apple.com/phone-of-" + u.Name,
+		P256dh: p256dh, Auth: secret, Device: "iPhone · Safari",
+	}
+	if _, err := db.SavePushSubscription(t.Context(), u.ID, s, now); err != nil {
+		t.Fatalf("subscribe %s's phone: %v", u.Name, err)
+	}
+	return s.ID, s.Endpoint
+}
+
+// isolateSavePush is save-push-subscription's case: the other subscribes
+// a laptop of their own.
+func isolateSavePush(t *testing.T, e isolationEnv) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodPut, "/api/v1/push/subscriptions", pushBody(t, "https://fcm.googleapis.com/fcm/send/laptop-of-"+e.other.user.Name),
+		[]*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusOK {
+		t.Errorf("the other's laptop: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// isolateDeletePush is delete-push-subscription's case: the owner's
+// subscription answers the other as one that does not exist; their own
+// goes.
+func isolateDeletePush(t *testing.T, e isolationEnv) {
+	t.Helper()
+	session := []*http.Cookie{e.other.session}
+	theirs := e.in.do(t, http.MethodDelete, "/api/v1/push/subscriptions/"+e.owner.push.String(), "", session, nil)
+	none := e.in.do(t, http.MethodDelete, "/api/v1/push/subscriptions/"+uuid.NewV7().String(), "", session, nil)
+	if theirs.Code != http.StatusNotFound || theirs.Body.String() != none.Body.String() {
+		t.Errorf("the owner's subscription: %d %s; one that does not exist: %d %s; want the same 404", theirs.Code, theirs.Body.String(), none.Code, none.Body.String())
+	}
+	if own := e.in.do(t, http.MethodDelete, "/api/v1/push/subscriptions/"+e.other.push.String(), "", session, nil); own.Code != http.StatusNoContent {
+		t.Errorf("their own subscription: %d %s", own.Code, own.Body.String())
+	}
+}
+
+// isolateTestPush is test-push's case: the test goes to the other's phone
+// alone.
+func isolateTestPush(t *testing.T, e isolationEnv) {
+	t.Helper()
+	e.in.pushes.endpoints()
+	rec := e.in.do(t, http.MethodPost, "/api/v1/push/test", "", []*http.Cookie{e.other.session}, nil)
+	if got := e.in.pushes.endpoints(); rec.Code != http.StatusOK || !slices.Equal(got, []string{e.other.pushEndpoint}) {
+		t.Errorf("the other's test: %d %s, sent to %v", rec.Code, rec.Body.String(), got)
+	}
+}
+
 // isolationCases has one case for every operation in the OpenAPI
 // document. TestIsolation checks after each that no answer showed the
 // owner's values, that the case got a 2xx from its operation, that the
@@ -840,14 +897,21 @@ func isolationCases() map[string]isolationCase {
 		"get-profile": read("/api/v1/profile", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"height_cm":%d`, 160+int(e.other.user.Name[0]%20))}
 		}),
-		"set-settings":    isolateSetSettings,
-		"set-notes":       isolateSetNotes,
-		"revoke-tokens":   isolateRevokeTokens,
-		"propose-changes": isolateProposeChanges,
-		"change-plan":     isolateChangePlan,
-		"apply-proposal":  isolateProposal("apply", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
-		"reject-proposal": isolateProposal("reject", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
-		"revert-proposal": isolateProposal("revert", `{"rationale": "Back."}`, func(p party) uuid.UUID { return p.applied }, http.StatusCreated),
+		"set-settings": isolateSetSettings,
+		"get-push-key": read("/api/v1/push/key", false, nil),
+		"list-push-subscriptions": read("/api/v1/push/subscriptions", false, func(e isolationEnv) []string {
+			return []string{e.other.push.String()}
+		}),
+		"save-push-subscription":   isolateSavePush,
+		"delete-push-subscription": isolateDeletePush,
+		"test-push":                isolateTestPush,
+		"set-notes":                isolateSetNotes,
+		"revoke-tokens":            isolateRevokeTokens,
+		"propose-changes":          isolateProposeChanges,
+		"change-plan":              isolateChangePlan,
+		"apply-proposal":           isolateProposal("apply", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
+		"reject-proposal":          isolateProposal("reject", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
+		"revert-proposal":          isolateProposal("revert", `{"rationale": "Back."}`, func(p party) uuid.UUID { return p.applied }, http.StatusCreated),
 		"get-plan": read("/api/v1/plan", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + " trains on weekends now.", e.other.user.Name + "'s trend fell slower than the cut's rate."}
 		}),
