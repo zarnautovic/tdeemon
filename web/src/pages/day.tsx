@@ -18,7 +18,7 @@ import { FirstSteps } from '@/components/day/first-steps'
 import { kcalLeft } from '@/components/day/left'
 import { MealList } from '@/components/day/meal-list'
 import { slotAt } from '@/components/day/meal-slot'
-import { MorningButton, MorningSummary } from '@/components/day/morning-summary'
+import { MorningLine, MorningSummary } from '@/components/day/morning-summary'
 import { QuickAdd } from '@/components/day/quick-add'
 import { QuickChips } from '@/components/day/quick-chips'
 import { WeekCard } from '@/components/day/week-card'
@@ -34,6 +34,7 @@ import limits from '@/lib/limits.json'
 import { LogHereContext } from '@/lib/log-here'
 import { useDesktop } from '@/lib/media'
 import { useShortcuts } from '@/lib/shortcuts'
+import { dateAt } from '@/lib/zoned'
 import type { DaySearch } from '@/router'
 
 // DayKeys moves a day back or ahead by the keyboard's arrows, as the
@@ -98,6 +99,9 @@ export function DayPage() {
   // The meals' heading, which a meal deleted in its editor leaves the
   // focus to.
   const mealsHeading = useRef<HTMLHeadingElement>(null)
+  // The line that opens this morning's summary, which its sheet gives the
+  // focus back to.
+  const morningOpener = useRef<HTMLButtonElement>(null)
   // A meal just logged or repeated, whose row takes the focus once it
   // shows, and a screen reader says it: at once, or as the quick add's
   // sheet closes, which gives the focus back to its opener.
@@ -207,13 +211,6 @@ export function DayPage() {
     dayType = (
       <div inert={waiting} className="flex items-center gap-1">
         <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
-        {isToday && (
-          <MorningButton
-            onOpen={() => {
-              void navigate({ to: '/', search: { summary: day.data.date } })
-            }}
-          />
-        )}
         <ChangesButton />
       </div>
     )
@@ -293,6 +290,7 @@ export function DayPage() {
       />
       <MorningSummary
         date={summary}
+        finalFocus={morningOpener}
         onClose={() => {
           void navigate({ to: '/', search: (s) => ({ ...s, summary: undefined }), replace: true })
         }}
@@ -368,6 +366,17 @@ export function DayPage() {
           </FirstSteps>
           {/* A proposal that waits, under the day's hero. */}
           {isToday && <ProposalNudge />}
+          {/* This morning's summary: of the calendar's date, as its
+              notification's, not the day's, which may still be yesterday
+              for a day that starts late. */}
+          {isToday && (
+            <MorningLine
+              ref={morningOpener}
+              onOpen={() => {
+                void navigate({ to: '/', search: { summary: dateAt(Date.now(), timeZone) } })
+              }}
+            />
+          )}
           {isToday && (
             <QuickChips
               date={day.data.date}

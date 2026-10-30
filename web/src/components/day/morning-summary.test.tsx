@@ -2,7 +2,8 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { setLocale } from '@/i18n/locale'
-import { fakeServer, problem, renderAt, signedIn, today } from '@/test/app'
+import { dateAt } from '@/lib/zoned'
+import { fakeServer, problem, renderAt, session, signedIn, today } from '@/test/app'
 
 afterEach(() => {
   cleanup()
@@ -51,12 +52,46 @@ test("the morning's notification opens its summary over the day, a part a line",
   expect(screen.queryByRole('dialog')).toBeNull()
 })
 
-test("today's header opens this morning's summary", async () => {
+test("today opens this morning's summary, of the calendar's date, and has the focus back", async () => {
   morningServer()
   const router = renderAt('/')
-  fireEvent.click(await screen.findByRole('button', { name: 'Morning summary' }))
-  expect(await screen.findByRole('dialog', { name: 'Morning summary' })).toBeTruthy()
-  expect(router.state.location.search).toEqual({ summary: today })
+  const line = await screen.findByRole('button', { name: 'Morning summary' })
+  fireEvent.click(line)
+  const sheet = await screen.findByRole('dialog', { name: 'Morning summary' })
+  // The calendar's date where the user is, not the day's (today here),
+  // which a day that starts late keeps till noon.
+  expect(router.state.location.search).toEqual({
+    summary: dateAt(Date.now(), session().user.timezone),
+  })
+  fireEvent.keyDown(sheet, { key: 'Escape' })
+  await waitFor(() => {
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+  await waitFor(() => {
+    expect(document.activeElement).toBe(line)
+  })
+})
+
+test('the summary of another date with a day shown keeps the day as the sheet closes', async () => {
+  const asked = morningServer(() =>
+    Response.json({
+      date: '2026-10-21',
+      title: 'Morning summary',
+      text: 'Morning summary, Wednesday Oct 21\nSleep: 6 h\nSleep: 6 h',
+      short: '',
+    }),
+  )
+  const router = renderAt('/?date=2026-10-22&summary=2026-10-21')
+  const sheet = within(await screen.findByRole('dialog', { name: 'Morning summary' }))
+  // Two lines that read the same are both there.
+  await waitFor(() => {
+    expect(sheet.getAllByText('6 h')).toHaveLength(2)
+  })
+  expect(asked).toEqual(['2026-10-21'])
+  fireEvent.click(sheet.getByRole('button', { name: 'Close' }))
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({ date: '2026-10-22' })
+  })
 })
 
 test('a summary that did not load says so, with a way to ask again, in Croatian', async () => {

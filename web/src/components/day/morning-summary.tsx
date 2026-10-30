@@ -1,4 +1,5 @@
-import { Sunrise } from 'lucide-react'
+import { ChevronRight, Sunrise } from 'lucide-react'
+import type { Ref, RefObject } from 'react'
 
 import { $api } from '@/api/client'
 import { LoadError } from '@/components/load-error'
@@ -7,15 +8,18 @@ import { Skeleton } from '@/components/skeleton'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 
-// MorningButton opens this morning's summary (MorningSummary) from the
-// day's header, today's: what the morning's notification says, whole, for
-// a notification gone or never had.
-export function MorningButton({ onOpen }: { onOpen: () => void }) {
+// MorningLine opens this morning's summary (MorningSummary) from today:
+// what the morning's notification says, whole, for a notification gone
+// or never had. A line of its own under the day's hero, which today's
+// header on a phone has no room for.
+export function MorningLine({ onOpen, ref }: { onOpen: () => void; ref?: Ref<HTMLButtonElement> }) {
   const t = useMessages()
 
   return (
-    <Button variant="ghost" size="icon-sm" aria-label={t.day.morning.open} onClick={onOpen}>
+    <Button ref={ref} variant="ghost" className="h-11 w-full justify-start px-3" onClick={onOpen}>
       <Sunrise aria-hidden />
+      <span className="flex-1 text-left">{t.day.morning.open}</span>
+      <ChevronRight aria-hidden className="text-muted-foreground" />
     </Button>
   )
 }
@@ -27,9 +31,13 @@ export function MorningButton({ onOpen }: { onOpen: () => void }) {
 export function MorningSummary({
   date,
   onClose,
+  finalFocus,
 }: {
   date: string | undefined
   onClose: () => void
+  // What opened it, which the focus goes back to: a tap gives a button no
+  // focus in Safari.
+  finalFocus?: RefObject<HTMLElement | null> | undefined
 }) {
   const t = useMessages()
   const open = date !== undefined
@@ -47,10 +55,10 @@ export function MorningSummary({
       <div className="space-y-4">
         <p className="text-small text-muted-foreground">{heading}</p>
         <dl className="space-y-3">
-          {lines.map((line) => {
+          {lines.map((line, i) => {
             const at = line.indexOf(': ')
             return (
-              <div key={line} className="space-y-0.5">
+              <div key={`${String(i)} ${line}`} className="space-y-0.5">
                 <dt className="text-small font-semibold">{at < 0 ? line : line.slice(0, at)}</dt>
                 {at >= 0 && <dd>{line.slice(at + 2)}</dd>}
               </div>
@@ -80,6 +88,7 @@ export function MorningSummary({
         }
       }}
       title={summary.data?.title ?? t.day.morning.title}
+      finalFocus={finalFocus}
     >
       {body}
     </Sheet>
