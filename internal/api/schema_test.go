@@ -185,6 +185,13 @@ func answerCases() map[string]answerCase {
 			in.do(t, http.MethodPut, "/api/v1/me/notes", `{"notes": "Knees: no running."}`, []*http.Cookie{session}, nil)
 		},
 		"get-push-key": get("/api/v1/push/key"),
+		"get-morning-summary": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			now := in.clock.Now()
+			saveIsolationMeals(t, in.db, in.user, saveIsolationFoods(t, in.db, in.user, now), now)
+			saveIsolationMetrics(t, in.db, in.user, now)
+			in.do(t, http.MethodGet, "/api/v1/morning", "", []*http.Cookie{session}, nil)
+		},
 		// A device that was sent to, so its last_sent_at is there.
 		"list-push-subscriptions": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

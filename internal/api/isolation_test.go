@@ -899,6 +899,8 @@ func isolationCases() map[string]isolationCase {
 		}),
 		"set-settings": isolateSetSettings,
 		"get-push-key": read("/api/v1/push/key", false, nil),
+		// The summary holds no text of the user's, as get-summary.
+		"get-morning-summary": read("/api/v1/morning", false, nil),
 		"list-push-subscriptions": read("/api/v1/push/subscriptions", false, func(e isolationEnv) []string {
 			return []string{e.other.push.String()}
 		}),

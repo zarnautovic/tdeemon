@@ -57,13 +57,13 @@ func TestSend(t *testing.T) {
 		return u
 	}
 	ana, ivo := newUser("ana@example.com"), newUser("ivo@example.com")
-	if ok, err := notify.Send(t.Context(), db, bot, ivo, "x", now); ok || err != nil {
+	if ok, err := (notify.Channels{DB: db, Bot: bot}).Send(t.Context(), ivo, notify.Note{Text: "x"}, now); ok || err != nil {
 		t.Errorf("a user without a chat = %v, %v", ok, err)
 	}
 	if err := db.SetTelegramChat(t.Context(), ana.ID, -100, now); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := notify.Send(t.Context(), db, bot, ana, "x", now); !ok || err != nil {
+	if ok, err := (notify.Channels{DB: db, Bot: bot}).Send(t.Context(), ana, notify.Note{Text: "x"}, now); !ok || err != nil {
 		t.Fatalf("to a group that moved = %v, %v", ok, err)
 	}
 	if chat, _, _ := db.TelegramChat(t.Context(), ana.ID); chat != -1001234 {

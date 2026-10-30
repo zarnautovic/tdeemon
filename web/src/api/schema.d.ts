@@ -528,6 +528,26 @@ export interface paths {
         patch: operations["update-meal"];
         trace?: never;
     };
+    "/api/v1/morning": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the morning summary
+         * @description Needs a web session. The morning summary of a date, whole and in a line, as the notifications send it at 10:00, read now: with what was logged since.
+         */
+        get: operations["get-morning-summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/plan": {
         parameters: {
             query?: never;
@@ -1698,6 +1718,22 @@ export interface components {
             unit: string;
             /** Format: double */
             value: number;
+        };
+        MorningOutputBody: {
+            /**
+             * Format: date
+             * @description The morning's date.
+             */
+            date: string;
+            /** @description The summary in a line, as a device's notification shows it. */
+            short: string;
+            /** @description The summary whole, a part a line, as the Telegram chat gets it; its first line is the title and the date. */
+            text: string;
+            /**
+             * @description What the summary is, in the user's language.
+             * @example Morning summary
+             */
+            title: string;
         };
         NeedBody: {
             /** Format: int64 */
@@ -5408,6 +5444,75 @@ export interface operations {
             };
             /** @description Unsupported Media Type */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-morning-summary": {
+        parameters: {
+            query?: {
+                /** @description The morning whose summary, on the user's calendar; today when absent. */
+                date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningOutputBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

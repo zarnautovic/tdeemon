@@ -16,7 +16,9 @@ domain and the database with an event log and undo, the proposals of
 changes of the plan and their life in the domain and the database, the
 API for the profile, the limits, the settings, the notes for a coach,
 the devices subscribed to notifications by Web Push (the key, a
-subscription, their list, a delete and a test), the list of foods, a
+subscription, their list, a delete and a test), the morning summary and
+the watchdog's alarms by push to them, the morning summary of a date
+whole and in a line, the list of foods, a
 new food, the recent meals, the history and the plan, the user's own
 change of the plan (a proposal applied at once), calibration
 (the measured TDEE and the verdict on a phase), the tool registry with
@@ -112,9 +114,9 @@ both themes and languages, exist.
 | `internal/ingest` | what devices and apps send (Health Auto Export, a simple JSON form) turned into a day's metrics: which value a day keeps, units, a check of each value; the days of workouts in Strong's CSV export; the archive of the bodies |
 | `internal/telegram` | the instance's Telegram bot: sends a message, reads the bot's messages (long polling), sets its commands |
 | `internal/off` | looks a product up by its barcode at Open Food Facts and makes a new food of it |
-| `internal/notify` | sends a user a notification in their Telegram chat, following a group to its supergroup, or by Web Push to each of their devices, a gone one deleted |
+| `internal/notify` | sends a user a notification to each of their channels: their Telegram chat, following a group to its supergroup, and by Web Push each of their devices, a gone one deleted; it fails only when none took it |
 | `internal/push` | Web Push: a message encrypted for a browser's subscription (RFC 8291) and signed by the instance's VAPID key, derived from the secret key, to the push services alone |
-| `internal/watchdog` | the alarms when a user's data stop coming: no metric for 26 h, an ingest token unused for 3 days |
+| `internal/watchdog` | the alarms when a user's data stop coming: no metric for 26 h, an ingest token unused for 3 days; to each channel of the user's |
 | `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |

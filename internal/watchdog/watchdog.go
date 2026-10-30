@@ -15,9 +15,9 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/auth"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/notify"
+	"github.com/zarnautovic/tdeemon/internal/push"
 	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/store"
-	"github.com/zarnautovic/tdeemon/internal/telegram"
 )
 
 // NoMetricsAfter is how long without a metric before the alarm: a day of
@@ -35,14 +35,19 @@ const jobName = "watchdog"
 // stop it is of as the occurrence, so each stop alarms once.
 const alarmJob = "watchdog_alarm"
 
-// Job is the watchdog, the scheduler's job each hour. logger takes what
-// it does not return: a chat that blocked the bot. It keeps in memory the
-// alarms it sent whose record failed, so it does not send them again.
-func Job(db *store.DB, bot *telegram.Bot, logger *slog.Logger) scheduler.Job {
+// alarmTTL is how long a push service keeps an alarm for a device that
+// is off: the next hour's run would not send it again.
+const alarmTTL = 24 * time.Hour
+
+// Job is the watchdog, the scheduler's job each hour, its alarms sent to
+// each of a user's channels. logger takes what it does not return: a chat
+// that blocked the bot. It keeps in memory the alarms it sent whose
+// record failed, so it does not send them again.
+func Job(channels notify.Channels, logger *slog.Logger) scheduler.Job {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	w := &watcher{db: db, bot: bot, logger: logger, sent: map[string]bool{}}
+	w := &watcher{db: channels.DB, channels: channels, logger: logger, sent: map[string]bool{}}
 	return scheduler.Job{
 		Name: jobName,
 		// Each hour, by the clock, whatever the user's zone.
@@ -60,9 +65,9 @@ const keepRuns = 48 * time.Hour
 const recordTimeout = 10 * time.Second
 
 type watcher struct {
-	db     *store.DB
-	bot    *telegram.Bot
-	logger *slog.Logger
+	db       *store.DB
+	channels notify.Channels
+	logger   *slog.Logger
 
 	mu sync.Mutex
 	// sent holds the alarms sent whose record failed, by user and key.
@@ -92,7 +97,8 @@ func (w *watcher) run(ctx context.Context, u user.User, _ string, now time.Time)
 }
 
 // raise sends a once: not when it was sent before, nor to a user without
-// a chat, whom it is kept for. A chat that blocked the bot counts it sent.
+// a channel, whom it is kept for. A chat that blocked the bot counts it
+// sent. A tap on it opens the devices, where the one that stopped is.
 func (w *watcher) raise(ctx context.Context, u user.User, a alarm, now time.Time) error {
 	key := u.ID.String() + "/" + a.key
 	w.mu.Lock()
@@ -104,7 +110,11 @@ func (w *watcher) raise(ctx context.Context, u user.User, a alarm, now time.Time
 	if sent, err := w.db.JobRan(ctx, u.ID, alarmJob, a.key); err != nil || sent {
 		return err
 	}
-	sent, err := notify.Send(ctx, w.db, w.bot, u, a.text, now)
+	sent, err := w.channels.Send(ctx, u, notify.Note{
+		Text:    a.text,
+		Push:    push.Notification{Title: "tdeemon", Body: a.text, URL: "/settings/devices", Tag: "watchdog:" + a.key},
+		Message: push.Message{TTL: alarmTTL},
+	}, now)
 	switch {
 	case notify.Blocked(err):
 		w.logger.Warn("the watchdog's chat refuses the bot", "user_id", u.ID, "error", err)
