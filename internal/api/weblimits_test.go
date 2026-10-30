@@ -13,6 +13,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/metric"
 	"github.com/zarnautovic/tdeemon/internal/domain/plan"
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
+	"github.com/zarnautovic/tdeemon/internal/domain/recipe"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 )
 
@@ -40,6 +41,16 @@ type webLimits struct {
 		MaxAliases        int     `json:"maxAliases"`
 		MaxBarcodes       int     `json:"maxBarcodes"`
 	} `json:"food"`
+	// Recipe holds the most ingredients, portions and grams of a recipe,
+	// and the share of its raw ingredients' weight the cooked dish may
+	// weigh before it is warned of.
+	Recipe struct {
+		MaxItems    int     `json:"maxItems"`
+		MaxPortions int     `json:"maxPortions"`
+		MaxWeight   float64 `json:"maxWeight"`
+		LowYield    float64 `json:"lowYield"`
+		HighYield   float64 `json:"highYield"`
+	} `json:"recipe"`
 	Profile struct {
 		MinHeightCm float64 `json:"minHeightCm"`
 		MaxHeightCm float64 `json:"maxHeightCm"`
@@ -79,6 +90,8 @@ func newWebLimits() webLimits {
 	l.Food.MaxKcalPer100, l.Food.MaxKcalPerPortion = food.MaxKcalPer100, food.MaxKcalPerPortion
 	l.Food.MaxGramsPer100g, l.Food.MaxGramsPer100ml = food.MaxGramsPer100g, food.MaxGramsPer100ml
 	l.Food.MaxServings, l.Food.MaxAliases, l.Food.MaxBarcodes = food.MaxServings, food.MaxAliases, food.MaxBarcodes
+	l.Recipe.MaxItems, l.Recipe.MaxPortions, l.Recipe.MaxWeight = recipe.MaxItems, recipe.MaxPortions, recipe.MaxWeight
+	l.Recipe.LowYield, l.Recipe.HighYield = recipe.LowYield, recipe.HighYield
 	l.Profile.MinHeightCm, l.Profile.MaxHeightCm, l.Profile.MaxAge = profile.MinHeightCm, profile.MaxHeightCm, profile.MaxAge
 	l.User.MaxNameLen = user.MaxNameLen
 	l.History.Since = api.HistorySince.String()

@@ -74,8 +74,20 @@ camera's, or its digits typed) a step of its own with one button, or
 a weigh-in from its chip, and the chips that add
 yesterday's meal or a food in a tap),
 the foods (their list by how often they are eaten, grouped by this
-week and earlier, in use, archived or the estimates, searched within
-the list chosen; a food's page with its energy and its split, its
+week and earlier, in use, the recipes, archived or the estimates,
+searched within the list chosen, a recipe marked and its kcal a
+portion's, a new food or recipe a choice of a menu, and before a recipe
+what one is for; a recipe's page with a portion's energy, 100 g's and
+the whole dish's, whether it was weighed said plainly, ≈ on its grams
+alone, its ingredients as given, one whose food changed since marked
+with its new values a tap away, logged, cooked again in a sheet of only
+its amounts, its weight from the pot whose empty weight is remembered
+and its portions, weighed in one, archived with Undo, and edited in a
+page of its own, its ingredients found in a sheet as a meal's are, each
+in its unit, moved or removed, its weight, from the pot or "I can't
+weigh it", warned of when far off its raw ingredients', its portions
+and a note, what it comes to said at its foot as it is typed; a food's
+page with its energy and its split, its
 nutrition per 100 g or a serving, its barcodes, how often it was
 logged, logged again in its last amount, archived with Undo, and
 corrected in its own form, which warns when the kcal and the macros

@@ -24,10 +24,12 @@ const rows = [
 ] as const
 
 // A View is an amount the values are shown for: its words, and its
-// share of the amount the food's values are for.
+// share of the amount the food's values are for; approx when they are
+// approximate (per 100 g of a dish not weighed).
 interface View {
   label: string
   factor: number
+  approx?: true
 }
 
 // viewsOf are the amounts a food's values can be shown for: what they
@@ -36,6 +38,22 @@ interface View {
 // its grams.
 function viewsOf(food: Food, t: Messages, number: (n: number) => string): View[] {
   const unit = food.basis === '100ml' ? 'ml' : 'g'
+  // A recipe's: a portion (when divided), 100 g, and the whole dish.
+  const recipe = food.recipe
+  if (recipe !== undefined && recipe.weight > 0) {
+    const portions = recipe.portions
+    return [
+      ...(portions === undefined
+        ? []
+        : [{ label: t.foods.onePortion, factor: recipe.weight / portions / 100 }]),
+      {
+        label: t.foods.hundred('g'),
+        factor: 1,
+        ...(recipe.yield_g === undefined ? { approx: true as const } : {}),
+      },
+      { label: t.recipes.whole, factor: recipe.weight / 100 },
+    ]
+  }
   const servings = food.servings ?? []
   if (food.basis !== 'portion') {
     return [
@@ -75,11 +93,12 @@ export function NutritionTable({ food }: { food: Food }) {
 
   function value(key: (typeof rows)[number]['key'], v: number): string {
     const scaled = v * factor
+    const approx = view?.approx ? '≈ ' : ''
     if (key === 'kcal') {
-      return t.unit.kcal(f.number(scaled))
+      return `${approx}${t.unit.kcal(f.number(scaled))}`
     }
     // Salt is weighed in hundredths on a label.
-    return t.unit.g(key === 'salt' ? f.number(scaled, 2) : f.grams(scaled))
+    return `${approx}${t.unit.g(key === 'salt' ? f.number(scaled, 2) : f.grams(scaled))}`
   }
 
   return (
@@ -150,6 +169,7 @@ export function NutritionTable({ food }: { food: Food }) {
           })}
         </tbody>
       </table>
+      {view?.approx && <p className="text-small text-muted-foreground">{t.recipes.approx100}</p>}
     </section>
   )
 }

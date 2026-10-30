@@ -26,6 +26,7 @@ import { FoodsIndexPage } from '@/pages/foods-index'
 import { LimitsPage } from '@/pages/limits'
 import { LoginPage } from '@/pages/login'
 import { NewFoodPage } from '@/pages/new-food'
+import { NewRecipePage } from '@/pages/new-recipe'
 import { NotFoundPage } from '@/pages/not-found'
 import { NotesPage } from '@/pages/notes'
 import { NotificationsPage } from '@/pages/notifications'
@@ -121,9 +122,10 @@ const dayRoute = createRoute({
   }),
   component: DayPage,
 })
-// The foods: a search (q), or a list (in use, archived or the estimates),
+// The foods: a search (q), or a list (in use, archived, the estimates or
+// the recipes),
 // by how many meals had them lately, by the last use or by name; and
-// within it a food, or a new one, beside the list on a desktop and
+// within it a food, or a new one, or a new recipe, beside the list on a desktop and
 // instead of it on a phone. The list's search goes with the food's
 // address, so the list beside it, and back from it, is as it was left.
 // archived=true, the archive's address before the lists, leads to the
@@ -145,7 +147,7 @@ const foodsRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): FoodsSearch => ({
     q: typeof search.q === 'string' && search.q !== '' ? search.q : undefined,
     filter:
-      search.filter === 'archived' || search.filter === 'estimates'
+      search.filter === 'archived' || search.filter === 'estimates' || search.filter === 'recipes'
         ? search.filter
         : search.archived === true || search.archived === 'true'
           ? 'archived'
@@ -164,7 +166,12 @@ const newFoodRoute = createRoute({
   path: 'new',
   component: NewFoodPage,
 })
-// A food, read; edit=true corrects it.
+const newRecipeRoute = createRoute({
+  getParentRoute: () => foodsRoute,
+  path: 'new-recipe',
+  component: NewRecipePage,
+})
+// A food, read; edit=true corrects it (a recipe's, its recipe).
 const foodRoute = createRoute({
   getParentRoute: () => foodsRoute,
   path: '$id',
@@ -274,7 +281,7 @@ const oldPlanRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     dayRoute,
-    foodsRoute.addChildren([foodsIndexRoute, newFoodRoute, foodRoute]),
+    foodsRoute.addChildren([foodsIndexRoute, newFoodRoute, newRecipeRoute, foodRoute]),
     progressRoute,
     planRoute,
     profileRoute,
@@ -352,7 +359,7 @@ export interface DaySearch {
 // left out).
 export interface FoodsSearch {
   q?: string | undefined
-  filter?: 'archived' | 'estimates' | undefined
+  filter?: 'archived' | 'estimates' | 'recipes' | undefined
   order?: 'use' | 'name' | undefined
 }
 

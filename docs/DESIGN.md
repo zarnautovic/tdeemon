@@ -166,7 +166,13 @@ corrects it, as a food's does; the save is one event (`recipe.save`)
 with the recipe whole before and after, and the new foods it brings are
 part of it, so undo takes it back whole, its food kept, archived, while
 a meal or another recipe has it. Tracking what is left of the pot is
-for later.
+for later. The web app has the recipes as a list of the foods' own; a
+recipe's page says a portion's energy, and whether the dish was weighed
+(≈ on its grams, and on what is per gram, when not, never on a portion
+or a share); its editor is a page, its ingredients found as Log a meal
+finds foods; "Cooked again" changes only the amounts, the weight (from
+the pot, the empty pot remembered) and the portions, the last weight
+never taken over.
 
 The same name and brand (compared without regard to case or runs of
 space) are the same food: saving it again (`upsert_food`) corrects it
@@ -336,7 +342,8 @@ Beside the tools, the web app lists the foods with
 `GET /api/v1/foods/list`, a web
 session's only: a page (`limit`, `offset`) of the archived foods or the
 others (`archived`), of a source alone when asked (`source=estimate`,
-the estimates to check), by name, by their last use or by how many of
+the estimates to check, or `source=recipe`, the recipes), by name, by
+their last use or by how many of
 the user's latest 100 meals had them (`order=name|use|frequent`), each
 with its last use, and how many there are (`total`); says on a food's
 page how many of the user's meals had it and the last of them, the

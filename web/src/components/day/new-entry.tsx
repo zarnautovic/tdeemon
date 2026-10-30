@@ -30,7 +30,8 @@ export type Making = 'food' | 'estimate' | 'scan'
 // searched for, which the food or the estimate is named to start with; a
 // food may start from more (start, a barcode's product), which said says
 // where it came from. onBack goes back to the search, and onAdd takes the
-// entry, checked.
+// entry, checked. A recipe's ingredient (ingredient) is added to the
+// recipe, in the amount the recipe has.
 export function NewEntry({
   making,
   name,
@@ -38,6 +39,7 @@ export function NewEntry({
   said,
   onBack,
   onAdd,
+  ingredient = false,
 }: {
   making: Exclude<Making, 'scan'>
   name: string
@@ -45,6 +47,7 @@ export function NewEntry({
   said?: ReactNode
   onBack: () => void
   onAdd: (entry: Entry) => void
+  ingredient?: boolean
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -87,6 +90,7 @@ export function NewEntry({
             compact={{
               id: form,
               name,
+              ingredient,
               ...(start === undefined ? {} : { start }),
               // In the unit of what its values are for.
               onAdd: (food, amount) => {
@@ -136,7 +140,7 @@ export function NewEntry({
           disabled={saving}
           focusableWhenDisabled
         >
-          {t.log.addToMeal}
+          {ingredient ? t.recipes.addToRecipe : t.log.addToMeal}
         </Button>
       </div>
     </>

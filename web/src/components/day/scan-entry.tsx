@@ -36,13 +36,15 @@ function nameOf(food: Food): string {
 // for its amount; a barcode nobody has opens a new food of it, its values
 // typed off the label, as one does when the lookup fails. A barcode
 // misread is read again. onBack goes back to the search, and onAdd takes
-// the entry.
+// the entry; a recipe's ingredient (ingredient) goes to the recipe.
 export function ScanEntry({
   onBack,
   onAdd,
+  ingredient = false,
 }: {
   onBack: () => void
   onAdd: (entry: Entry) => void
+  ingredient?: boolean
 }) {
   const t = useMessages()
   const [code, setCode] = useState<string | undefined>(undefined)
@@ -76,6 +78,7 @@ export function ScanEntry({
   if (code !== undefined && (making || status === 404)) {
     return (
       <NewEntry
+        ingredient={ingredient}
         making="food"
         name=""
         start={{ barcodes: [code] }}
@@ -88,6 +91,7 @@ export function ScanEntry({
   if (product !== undefined) {
     return (
       <NewEntry
+        ingredient={ingredient}
         making="food"
         name=""
         start={product.food}

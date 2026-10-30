@@ -13,7 +13,6 @@ import {
   inUnit,
   lastAmountOf,
   sayWrong,
-  servingOf,
   unitsOf,
   type Entry,
   type FoodEntry,
@@ -23,6 +22,7 @@ import { longName, mealName } from '@/components/day/meal-slot'
 import type { Making } from '@/components/day/new-entry'
 import { pastMeals } from '@/components/day/past-meals'
 import { suggestFoods, suggestMeals, type Moment } from '@/components/day/suggest'
+import { entryUnitLabel } from '@/components/recipes/recipe-values'
 import { Button } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
@@ -53,7 +53,9 @@ const firstFoods = 12
 // cards above the search, repeated in a tap. A new food or an estimate
 // is the sheet's next step (onMake, with the button that asks for it).
 // onAdd takes an entry, checked; onRepeat a meal to log again. search is
-// the field the sheet's focus goes to.
+// the field the sheet's focus goes to. For a recipe's ingredients
+// (ingredient), it finds foods alone, never the recipe itself (exclude),
+// and makes no estimate: an ingredient is a food.
 export function Finder({
   search,
   query,
@@ -62,14 +64,16 @@ export function Finder({
   onAdd,
   onRepeat,
   onMake,
+  ingredient,
 }: {
   search: RefObject<HTMLInputElement | null>
   query: string
   onQuery: (query: string) => void
   at: Moment
   onAdd: (entry: Entry) => void
-  onRepeat: (meal: Meal) => void
+  onRepeat?: (meal: Meal) => void
   onMake: (making: Making, button: HTMLElement) => void
+  ingredient?: { exclude?: string | undefined }
 }) {
   const t = useMessages()
   const f = useFormat()
@@ -85,21 +89,29 @@ export function Finder({
     params: { query: { order: 'use', limit: 50 } },
   })
   const frequentFoods = useFrequentFoods(list === 'frequent')
-  const recentMeals = useRecentMeals()
+  const recentMeals = useRecentMeals(ingredient === undefined)
   const q = query.trim()
+  const shownLists = ingredient === undefined ? lists : lists.filter((l) => l !== 'meals')
+  const repeat = (meal: Meal) => {
+    onRepeat?.(meal)
+  }
+  // A food the finder never offers: the recipe its ingredients are of.
+  const offered = (food: Food) => food.id !== ingredient?.exclude
 
   // eaten are the foods of a list eaten before, that the search matches.
   const eaten = (foods: Food[] | undefined) =>
     (foods ?? []).filter(
       (food) =>
-        food.last_use !== undefined && matches(q, [food.name, food.brand, ...(food.aliases ?? [])]),
+        offered(food) &&
+        food.last_use !== undefined &&
+        matches(q, [food.name, food.brand, ...(food.aliases ?? [])]),
     )
   // The meals the search matches, by their words or their items' names
   // and brands, each once: of the meals of the same foods, the latest it
   // matches; those eaten at the meal of the day lately first.
   const ranked = suggestMeals(
     pastMeals(
-      (recentMeals.data?.meals ?? []).filter((m) =>
+      (ingredient === undefined ? (recentMeals.data?.meals ?? []) : []).filter((m) =>
         matches(q, [m.description, ...m.items.flatMap((i) => [i.name, i.brand])]),
       ),
     ),
@@ -119,10 +131,10 @@ export function Finder({
               at,
             ).slice(0, firstFoods),
             meals: meals.slice(0, firstMeals),
-            pending: recentFoods.isPending || recentMeals.isPending,
+            pending: recentFoods.isPending || (ingredient === undefined && recentMeals.isPending),
           }
         : {
-            foods: found.data?.foods ?? [],
+            foods: (found.data?.foods ?? []).filter(offered),
             meals: meals.slice(0, firstMeals),
             pending: found.isPending,
           },
@@ -175,7 +187,7 @@ export function Finder({
           </h3>
           <ul className={cn('grid gap-2', cards === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
             {suggested.map((meal) => (
-              <Suggestion key={meal.id} meal={meal} onRepeat={onRepeat} />
+              <Suggestion key={meal.id} meal={meal} onRepeat={repeat} />
             ))}
           </ul>
         </section>
@@ -229,7 +241,7 @@ export function Finder({
         }}
       >
         <Tabs.List aria-label={t.log.lists} className="flex gap-1.5">
-          {lists.map((l) => (
+          {shownLists.map((l) => (
             <Tabs.Tab
               key={l}
               value={l}
@@ -240,7 +252,7 @@ export function Finder({
             </Tabs.Tab>
           ))}
         </Tabs.List>
-        {lists.map((l) => (
+        {shownLists.map((l) => (
           <Tabs.Panel
             key={l}
             value={l}
@@ -264,23 +276,26 @@ export function Finder({
               onAdd={(food) => {
                 add(foodEntry(food, f.field))
               }}
-              onRepeat={onRepeat}
+              onRepeat={repeat}
+              ingredient={ingredient !== undefined}
             />
           </Tabs.Panel>
         ))}
       </Tabs.Root>
       {/* Side by side while they fit, their words wrapped. */}
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          className="h-auto min-h-11 min-w-0 flex-1 basis-40 border-dashed py-2 whitespace-normal"
-          onClick={(e) => {
-            onMake('estimate', e.currentTarget)
-          }}
-        >
-          <Plus aria-hidden />
-          {t.log.anEstimateOf}
-        </Button>
+        {ingredient === undefined && (
+          <Button
+            variant="outline"
+            className="h-auto min-h-11 min-w-0 flex-1 basis-40 border-dashed py-2 whitespace-normal"
+            onClick={(e) => {
+              onMake('estimate', e.currentTarget)
+            }}
+          >
+            <Plus aria-hidden />
+            {t.log.anEstimateOf}
+          </Button>
+        )}
         <Button
           variant="outline"
           className="h-auto min-h-11 min-w-0 flex-1 basis-40 border-dashed py-2 whitespace-normal"
@@ -339,6 +354,7 @@ function Results({
   onPick,
   onAdd,
   onRepeat,
+  ingredient,
 }: {
   foods: Food[]
   meals: Meal[]
@@ -352,6 +368,8 @@ function Results({
   onPick: (food: Food) => void
   onAdd: (food: Food) => void
   onRepeat: (meal: Meal) => void
+  // Of a recipe's ingredients, which are foods alone.
+  ingredient: boolean
 }) {
   const t = useMessages()
   const searched = query !== ''
@@ -361,7 +379,15 @@ function Results({
     }
     return (
       <p className="py-2 text-sm text-muted-foreground">
-        {pending ? t.loading : searched ? t.log.nothing : t.log.none}
+        {pending
+          ? t.loading
+          : ingredient
+            ? searched
+              ? t.recipes.nothing
+              : t.recipes.noneEaten
+            : searched
+              ? t.log.nothing
+              : t.log.none}
       </p>
     )
   }
@@ -563,9 +589,7 @@ export function Amount({
         >
           {unitsOf(food).map((u) => (
             <option key={u} value={u}>
-              {u === 'portion'
-                ? t.log.portions(f.parse(entry.amount) ?? Number.NaN)
-                : (servingOf(u) ?? u)}
+              {entryUnitLabel(food, u, f.parse(entry.amount) ?? Number.NaN, t)}
             </option>
           ))}
         </select>
