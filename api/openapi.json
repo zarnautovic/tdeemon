@@ -829,6 +829,10 @@
             },
             "type": "array"
           },
+          "recipe": {
+            "$ref": "#/components/schemas/RecipeBody",
+            "description": "A recipe's food's recipe (source recipe): upsert_recipe changes it."
+          },
           "servings": {
             "description": "Named amounts: a piece, a slice.",
             "items": {
@@ -1351,6 +1355,71 @@
           "metric",
           "value",
           "reason"
+        ],
+        "type": "object"
+      },
+      "IngredientBody": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "How much, in unit.",
+            "format": "double",
+            "type": "number"
+          },
+          "brand": {
+            "type": "string"
+          },
+          "changed": {
+            "description": "Its food's values give another amount now: the recipe saved again takes them.",
+            "type": "boolean"
+          },
+          "food_id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "name": {
+            "description": "The food's name when the recipe was saved.",
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "nutrients": {
+            "$ref": "#/components/schemas/NutrientsBody",
+            "description": "What it brought when the recipe was saved."
+          },
+          "quantity": {
+            "$ref": "#/components/schemas/QuantityBody",
+            "description": "How much, as it was given."
+          },
+          "source": {
+            "enum": [
+              "label",
+              "estimate",
+              "user",
+              "dish",
+              "off",
+              "recipe"
+            ],
+            "type": "string"
+          },
+          "unit": {
+            "enum": [
+              "g",
+              "ml",
+              "portion"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "food_id",
+          "name",
+          "quantity",
+          "amount",
+          "unit",
+          "nutrients",
+          "source"
         ],
         "type": "object"
       },
@@ -2991,6 +3060,165 @@
         ],
         "type": "object"
       },
+      "RecipeAnswerBody": {
+        "additionalProperties": false,
+        "properties": {
+          "food": {
+            "$ref": "#/components/schemas/FoodBody",
+            "description": "The recipe's food, with its recipe."
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/RecipeWarningBody"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "food",
+          "warnings"
+        ],
+        "type": "object"
+      },
+      "RecipeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "description": "The ingredients, with the values each brought when the recipe was saved; get_food gives them.",
+            "items": {
+              "$ref": "#/components/schemas/IngredientBody"
+            },
+            "type": "array"
+          },
+          "portion": {
+            "$ref": "#/components/schemas/NutrientsBody",
+            "description": "A portion's, when divided."
+          },
+          "portions": {
+            "description": "How many portions the dish is divided into.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "pot_g": {
+            "description": "The empty pot's weight in g.",
+            "format": "double",
+            "type": "number"
+          },
+          "raw_weight": {
+            "description": "The raw ingredients' weight in g (ml as g); absent when one's is not known.",
+            "format": "double",
+            "type": "number"
+          },
+          "total": {
+            "$ref": "#/components/schemas/NutrientsBody",
+            "description": "The whole dish's."
+          },
+          "weight": {
+            "description": "The cooked dish's weight in g: yield_g, or the raw ingredients' when not weighed. The serving recipe is the whole dish, portion a portion of it.",
+            "format": "double",
+            "type": "number"
+          },
+          "yield_g": {
+            "description": "The cooked dish's weight as weighed; absent when not weighed: a share of the dish is exact, its grams not.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "weight",
+          "total"
+        ],
+        "type": "object"
+      },
+      "RecipeFields": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "description": "Other names search finds.",
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "items": {
+            "description": "The ingredients, as log_meal's items but no estimates: a food_id or a new food, with its quantity; a new food is saved.",
+            "items": {
+              "$ref": "#/components/schemas/ItemInput"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "description": "A recipe's name is its food's: the same name is the same recipe.",
+            "examples": [
+              "Chicken curry"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "portions": {
+            "description": "How many portions the dish is divided into.",
+            "format": "int64",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pot_g": {
+            "description": "The empty pot's weight in g, kept for the next weighing.",
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "yield_g": {
+            "description": "The cooked dish's weight in g. Left out when not weighed: the raw ingredients' weight stands for it, so a share of the dish is exact and its grams not.",
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "items"
+        ],
+        "type": "object"
+      },
+      "RecipeWarningBody": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "description": "What kind of warning it is: of a new food's values, or yield_low and yield_high of a weight far off the raw ingredients'.",
+            "enum": [
+              "atwater",
+              "saturated_fat",
+              "sugars",
+              "polyols",
+              "food_kept",
+              "yield_low",
+              "yield_high"
+            ],
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
       "RecoveryBody": {
         "additionalProperties": false,
         "properties": {
@@ -3913,6 +4141,78 @@
           "basis",
           "nutrients",
           "source"
+        ],
+        "type": "object"
+      },
+      "UpsertRecipeInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "description": "Other names search finds.",
+            "items": {
+              "maxLength": 100,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "archived": {
+            "description": "Archives the recipe's food; left out, a save brings it back.",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "The recipe to correct; without it, the recipe of the name, or a new one.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "items": {
+            "description": "The ingredients, as log_meal's items but no estimates: a food_id or a new food, with its quantity; a new food is saved.",
+            "items": {
+              "$ref": "#/components/schemas/ItemInput"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "type": "array"
+          },
+          "name": {
+            "description": "A recipe's name is its food's: the same name is the same recipe.",
+            "examples": [
+              "Chicken curry"
+            ],
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "note": {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          "portions": {
+            "description": "How many portions the dish is divided into.",
+            "format": "int64",
+            "maximum": 100,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pot_g": {
+            "description": "The empty pot's weight in g, kept for the next weighing.",
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "number"
+          },
+          "yield_g": {
+            "description": "The cooked dish's weight in g. Left out when not weighed: the raw ingredients' weight stands for it, so a share of the dish is exact and its grams not.",
+            "format": "double",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "items"
         ],
         "type": "object"
       },
@@ -6006,7 +6306,7 @@
     },
     "/api/v1/foods/{id}": {
       "get": {
-        "description": "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409).",
+        "description": "A food of yours by its id, archived too: what a correction of a food starts from, such as the one in the way of a save (409); a recipe's with its recipe whole, each ingredient marked changed whose food gives another amount now.",
         "operationId": "get-food",
         "parameters": [
           {
@@ -9283,6 +9583,280 @@
         "summary": "Send a test notification",
         "tags": [
           "push"
+        ]
+      }
+    },
+    "/api/v1/recipes": {
+      "post": {
+        "description": "Saves a recipe, a dish cooked again, or corrects one: the recipe with the id (404 for an id the user has no recipe of), or else the one of the name; else a new one. A recipe is a food (source recipe, by weight), found and logged as any: its values per 100 g of the cooked dish come from its ingredients and the dish's weight (yield_g), and its servings are recipe, the whole dish, and portion, one of its portions: a tenth of the pot is 0.1 of recipe. Not weighed, the raw ingredients' weight stands for the dish's. A save replaces the whole recipe, its ingredients taking their foods' values now: correct it from what get_food gave. A food of the name that is no recipe, or an alias another food has, is refused (409), naming it; so is an ingredient that is the recipe, at any depth (422). The answer holds its food with the recipe, and warnings: a weight far off the raw ingredients', or values of a new food that do not add up.",
+        "operationId": "upsert-recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpsertRecipeInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeAnswerBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Save a recipe",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/api/v1/recipes/new": {
+      "post": {
+        "description": "Needs a web session. Saves a new recipe: a food you have of its name, archived too, is refused (409), naming it, and so is an alias another food has; upsert_recipe corrects a recipe instead. Answers as upsert_recipe does.",
+        "operationId": "create-recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeFields"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeAnswerBody"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "409": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Make a new recipe",
+        "tags": [
+          "foods"
         ]
       }
     },

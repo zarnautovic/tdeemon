@@ -103,6 +103,7 @@ type foodBody struct {
 	Archived bool         `json:"archived" doc:"An archived food stays out of a search, but one of the archived foods, and keeps its name and aliases."`
 	LastUse  *lastUseBody `json:"last_use,omitempty" doc:"The last time a meal used the food; absent when none has."`
 	Queries  []string     `json:"queries,omitempty" nullable:"false" doc:"The queries of find_foods that found the food, of those it was sent."`
+	Recipe   *recipeBody  `json:"recipe,omitempty" doc:"A recipe's food's recipe (source recipe): upsert_recipe changes it."`
 }
 
 func newFoodBody(f *food.Food) foodBody {
@@ -188,6 +189,9 @@ func (s *sessions) findFoods(ctx context.Context, in *findFoodsInput) (*foodsOut
 		}
 		out.Body.Foods = append(out.Body.Foods, b)
 	}
+	if err := s.withRecipes(ctx, p, foods, out.Body.Foods); err != nil {
+		return nil, internalError("finding foods failed", err)
+	}
 	return out, nil
 }
 
@@ -245,6 +249,9 @@ func (s *sessions) listFoods(ctx context.Context, in *listFoodsInput) (*foodList
 			b.LastUse = newLastUseBody(u)
 		}
 		out.Body.Foods = append(out.Body.Foods, b)
+	}
+	if err := s.withRecipes(ctx, p, foods, out.Body.Foods); err != nil {
+		return nil, internalError("listing the foods failed", err)
 	}
 	return out, nil
 }
@@ -308,7 +315,18 @@ func (s *sessions) getFood(ctx context.Context, in *getFoodInput) (*foodOutputNo
 	} else if err != nil {
 		return nil, internalError("reading the food failed", err)
 	}
-	return &foodOutputNoStore{CacheControl: "no-store", Body: newFoodBody(&f)}, nil
+	if f.Source != food.Recipe {
+		return &foodOutputNoStore{CacheControl: "no-store", Body: newFoodBody(&f)}, nil
+	}
+	r, err := s.db.RecipeByID(ctx, p.User.ID, id)
+	if err != nil {
+		return nil, internalError("reading the food failed", err)
+	}
+	b, err := s.recipeFoodBody(ctx, p, &r)
+	if err != nil {
+		return nil, internalError("reading the food failed", err)
+	}
+	return &foodOutputNoStore{CacheControl: "no-store", Body: b}, nil
 }
 
 type foodUseOutput struct {

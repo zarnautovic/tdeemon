@@ -345,8 +345,8 @@ func (db *DB) RecipesOf(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) 
 
 // checkRecipeFood refuses a save of food f, which was before (nil for a
 // new one), when it is or makes a recipe's food: only the recipe changes
-// that, but for barcodes added to it (linkBarcodes), which leave its
-// values as they are.
+// that, but for barcodes added to it (linkBarcodes) and whether it is
+// archived, which leave its values as they are.
 func checkRecipeFood(before *food.Food, f food.Food) error {
 	switch {
 	case before == nil && f.Source == food.Recipe:
@@ -355,7 +355,7 @@ func checkRecipeFood(before *food.Food, f food.Food) error {
 		return nil
 	}
 	had, now := *before, f
-	had.Barcodes, now.Barcodes = nil, nil
+	had.Barcodes, now.Barcodes, had.Archived, now.Archived = nil, nil, false, false
 	if !reflect.DeepEqual(had, now) {
 		return ErrRecipeFood
 	}

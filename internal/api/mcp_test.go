@@ -94,7 +94,7 @@ func TestMCPListsTheTools(t *testing.T) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
 			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "find_foods", "get_food", "lookup_barcode"}, tl.Name)
-			destructive := slices.Contains([]string{"upsert_food", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last", "update_profile_notes", "apply_proposal"}, tl.Name)
+			destructive := slices.Contains([]string{"upsert_food", "upsert_recipe", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last", "update_profile_notes", "apply_proposal"}, tl.Name)
 			// lookup_barcode asks Open Food Facts.
 			outside := tl.Name == "lookup_barcode"
 			if a := tl.Annotations; a == nil || a.ReadOnlyHint != readOnly || a.DestructiveHint == nil || *a.DestructiveHint != destructive ||
@@ -106,7 +106,7 @@ func TestMCPListsTheTools(t *testing.T) {
 		return out
 	}
 	all := names(`"tools"`)
-	for _, want := range []string{"apply_proposal", "checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "lookup_barcode", "propose_changes", "reject_proposal", "revert_proposal", "update_profile_notes", "upsert_food"} {
+	for _, want := range []string{"apply_proposal", "checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "lookup_barcode", "propose_changes", "reject_proposal", "revert_proposal", "update_profile_notes", "upsert_food", "upsert_recipe"} {
 		if !slices.Contains(all, want) {
 			t.Errorf("the tools %v lack %s", all, want)
 		}
@@ -261,11 +261,12 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // 2026, raised for the rules of a meal's parts, then for the coach's
 // history and notes, then for an item's quantities and a search again,
 // then for the coach's plan, then for its proposals, then for the limits
-// they change, then for a food's barcodes and their lookup.
+// they change, then for a food's barcodes and their lookup, then for
+// recipes.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 22200
+	const budget = 24500
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
@@ -511,8 +512,8 @@ func TestMCPInstructions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(got) + len(list); n > 28000 {
-		t.Errorf("the instructions and the tools are %d bytes, want at most 28000", n)
+	if n := len(got) + len(list); n > 29000 {
+		t.Errorf("the instructions and the tools are %d bytes, want at most 29000", n)
 	}
 	known := map[string]bool{}
 	for _, tl := range res.Tools {

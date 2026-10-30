@@ -136,7 +136,7 @@ func TestTokensReachOnlyOperationsOpenToThem(t *testing.T) {
 
 	open := map[string]bool{
 		"get-info": true, "whoami": true, "ingest-hae": true, "ingest-metrics": true, "ingest-strong": true, "get-me": true, "get-day": true, "get-summary": true, "get-history": true, "get-plan": true, "set-notes": true,
-		"find-foods": true, "get-food": true, "upsert-food": true, "lookup-barcode": true,
+		"find-foods": true, "get-food": true, "upsert-food": true, "upsert-recipe": true, "lookup-barcode": true,
 		"log-meal": true, "update-meal": true, "delete-meal": true,
 		"log-metric": true, "delete-metric": true, "check-in": true, "undo-last": true,
 		"propose-changes": true, "apply-proposal": true, "reject-proposal": true, "revert-proposal": true,
