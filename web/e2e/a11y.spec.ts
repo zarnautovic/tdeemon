@@ -268,6 +268,16 @@ const screens: Screen[] = [
       await settled(page)
     },
   })),
+  // This morning's summary, from today's header.
+  {
+    name: 'morning-summary',
+    open: async (page) => {
+      await page.goto('/')
+      await page.getByRole('button', { name: /^(Morning summary|Jutarnji sažetak)$/ }).click()
+      await expect(page.getByRole('dialog').getByRole('definition').first()).toBeVisible()
+      await settled(page)
+    },
+  },
   // An AI coach's access key just made, with the steps to connect it.
   {
     name: 'connect',

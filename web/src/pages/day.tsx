@@ -18,6 +18,7 @@ import { FirstSteps } from '@/components/day/first-steps'
 import { kcalLeft } from '@/components/day/left'
 import { MealList } from '@/components/day/meal-list'
 import { slotAt } from '@/components/day/meal-slot'
+import { MorningButton, MorningSummary } from '@/components/day/morning-summary'
 import { QuickAdd } from '@/components/day/quick-add'
 import { QuickChips } from '@/components/day/quick-chips'
 import { WeekCard } from '@/components/day/week-card'
@@ -67,11 +68,12 @@ function DayKeys({
 // two columns, the meals a table), takes the day's type, the check-in
 // and the measurements, logs a meal (QuickAdd), and moves a day back or
 // ahead, up to today. /?log=true opens the meal to log on today (the
-// app's Log a meal).
+// app's Log a meal); /?summary=YYYY-MM-DD that morning's summary, which
+// the morning's notification opens, and today's header a tap away.
 export function DayPage() {
   const t = useMessages()
   const f = useFormat()
-  const { date, log } = useSearch({ from: '/app/' })
+  const { date, log, summary } = useSearch({ from: '/app/' })
   const navigate = useNavigate()
   const day = $api.useQuery(
     'get',
@@ -205,6 +207,13 @@ export function DayPage() {
     dayType = (
       <div inert={waiting} className="flex items-center gap-1">
         <DayTypeChip key={`type ${day.data.date}`} day={day.data} />
+        {isToday && (
+          <MorningButton
+            onOpen={() => {
+              void navigate({ to: '/', search: { summary: day.data.date } })
+            }}
+          />
+        )}
         <ChangesButton />
       </div>
     )
@@ -274,11 +283,21 @@ export function DayPage() {
       </header>
     )
   }
+  // The keys, and the morning summary asked for by the address, over
+  // the day whether it came or not.
   const keys = (
-    <DayKeys
-      before={before === undefined ? undefined : searchOf(before)}
-      after={after === undefined ? undefined : searchOf(after)}
-    />
+    <>
+      <DayKeys
+        before={before === undefined ? undefined : searchOf(before)}
+        after={after === undefined ? undefined : searchOf(after)}
+      />
+      <MorningSummary
+        date={summary}
+        onClose={() => {
+          void navigate({ to: '/', search: (s) => ({ ...s, summary: undefined }), replace: true })
+        }}
+      />
+    </>
   )
   // Until the day comes, its skeleton under the header; or why it did
   // not come, with a way to ask again.

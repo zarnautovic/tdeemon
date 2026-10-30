@@ -218,6 +218,12 @@ export const en = {
     previous: 'The day before',
     next: 'The day after',
     toToday: 'Back to today',
+    // The morning summary, as its notification sends it.
+    morning: {
+      title: 'Morning summary',
+      open: 'Morning summary',
+      failed: 'The morning summary did not load',
+    },
     training: 'Training day',
     rest: 'Rest day',
     excluded: (reason: string) => (reason ? `Out of calibration: ${reason}` : 'Out of calibration'),

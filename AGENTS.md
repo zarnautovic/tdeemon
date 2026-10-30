@@ -51,8 +51,10 @@ with the TDEE, what is left of it (until there is one, calibration's
 counts toward it) and the phase, the morning's weigh-in asked for in a
 line, a day before the plan saying when it starts, the week's days,
 Monday to Sunday, and their average against the target, whose sheet
-says what the days left can eat, the day's type, the meals as rows that
-open to their items, on a desktop a table with its total beside the
+says what the days left can eat, the day's type, the morning summary
+in a sheet (its notification's tap, or today's header), the meals as
+rows that open to their items, on a desktop a table with its total
+beside the
 week, which the arrows move through, Enter opening a meal's editor, R
 repeating it and Delete deleting it, a meal logged or repeated taking
 the focus, the body, the check-in and the phase, the check-in with
