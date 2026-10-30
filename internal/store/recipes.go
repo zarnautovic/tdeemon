@@ -97,11 +97,7 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 	}
 	var before *recipe.Recipe
 	if exists {
-		had, err := recipeInTx(ctx, tx, userID, target)
-		if errors.Is(err, ErrNotFound) {
-			// A food of the name or id, but no recipe.
-			return recipe.Recipe{}, conflict(ctx, tx, userID, ErrNameTaken, target.String(), "")
-		}
+		had, err := recipeBefore(ctx, tx, userID, target, mode)
 		if err != nil {
 			return recipe.Recipe{}, err
 		}
@@ -117,6 +113,10 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 		return recipe.Recipe{}, err
 	}
 	r.Food.ID = target
+	// A new ingredient may have taken the recipe's name.
+	if err := checkNameFree(ctx, tx, userID, target, nameKey); err != nil {
+		return recipe.Recipe{}, err
+	}
 	if err := checkCycle(ctx, tx, userID, target, r.Items); err != nil {
 		return recipe.Recipe{}, err
 	}
@@ -142,7 +142,10 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 	if err != nil {
 		return recipe.Recipe{}, err
 	}
-	saved, err := record(ctx, tx, userID, a, event.RecipeSave, target.String(), before, stored, now)
+	// A save that changes the recipe not, but its new ingredients (an
+	// archived food brought back), is a change all the same, which undo
+	// takes back with them.
+	saved, err := recordEvent(ctx, tx, userID, a, event.RecipeSave, target.String(), before, stored, len(parts) > 0, now)
 	if err != nil {
 		return recipe.Recipe{}, err
 	}
@@ -187,6 +190,35 @@ func freshItems(ctx context.Context, tx *sql.Tx, userID uuid.UUID, items []meal.
 		}
 	}
 	return out, nil
+}
+
+// recipeBefore returns userID's recipe id, which a save in mode writes
+// to: a food of its id that is no recipe is none to correct
+// (ErrNotFound), and one of its name is in the way.
+func recipeBefore(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, mode saveMode) (recipe.Recipe, error) {
+	had, err := recipeInTx(ctx, tx, userID, id)
+	switch {
+	case errors.Is(err, ErrNotFound) && mode == correctOnly:
+		return recipe.Recipe{}, ErrNotFound
+	case errors.Is(err, ErrNotFound):
+		return recipe.Recipe{}, conflict(ctx, tx, userID, ErrNameTaken, id.String(), "")
+	}
+	return had, err
+}
+
+// checkNameFree refuses the name of name key for userID's recipe id when
+// another food has it, without a brand, as a recipe has none.
+func checkNameFree(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID, nameKey string) error {
+	var other string
+	err := tx.QueryRowContext(ctx, "SELECT id FROM foods WHERE user_id = ? AND name_key = ? AND brand_key = '' AND id <> ?",
+		userID.String(), nameKey, id.String()).Scan(&other)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return conflict(ctx, tx, userID, ErrNameTaken, other, "")
 }
 
 // checkCycle refuses items of the recipe id when one of them is the
