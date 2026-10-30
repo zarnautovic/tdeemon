@@ -413,7 +413,24 @@ func (s *sessions) upsertFood(ctx context.Context, in *upsertFoodInput) (*foodOu
 	case err != nil:
 		return nil, internalError("saving the food failed", err)
 	}
-	return &foodOutput{Body: newFoodBody(&saved)}, nil
+	answer, err := s.foodAnswer(ctx, p, &saved)
+	if err != nil {
+		return nil, internalError("saving the food failed", err)
+	}
+	return &foodOutput{Body: answer}, nil
+}
+
+// foodAnswer is the body of f, a food saved: a recipe's food's with its
+// recipe, as get_food gives it.
+func (s *sessions) foodAnswer(ctx context.Context, p auth.Principal, f *food.Food) (foodBody, error) {
+	if f.Source != food.Recipe {
+		return newFoodBody(f), nil
+	}
+	r, err := s.db.RecipeByID(ctx, p.User.ID, f.ID)
+	if err != nil {
+		return foodBody{}, err
+	}
+	return s.recipeFoodBody(ctx, p, &r)
 }
 
 // food is a new food of b's fields, under a new id.

@@ -257,8 +257,14 @@ func TestUpsertRecipeRefusals(t *testing.T) {
 		t.Errorf("warnings %+v, want food_kept and yield_high", a.Warnings)
 	}
 
-	// A recipe's food as a food: archived and back, but not changed.
-	rec := in.do(t, http.MethodGet, "/api/v1/foods/"+a.Food.ID, "", cookies, nil)
+	recipeFoodAsAFood(t, in, cookies, a.Food.ID)
+}
+
+// recipeFoodAsAFood saves the recipe id's food as a food: archived, which
+// answers with its recipe, but not changed.
+func recipeFoodAsAFood(t *testing.T, in *instance, cookies []*http.Cookie, id string) {
+	t.Helper()
+	rec := in.do(t, http.MethodGet, "/api/v1/foods/"+id, "", cookies, nil)
 	var f map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &f); err != nil {
 		t.Fatal(err)
@@ -269,7 +275,8 @@ func TestUpsertRecipeRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec := in.do(t, http.MethodPost, "/api/v1/foods", string(archived), cookies, nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"archived":true`) {
+	if rec := in.do(t, http.MethodPost, "/api/v1/foods", string(archived), cookies, nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"archived":true`) ||
+		!strings.Contains(rec.Body.String(), `"recipe":{`) {
 		t.Errorf("archive the recipe's food: %d %s", rec.Code, rec.Body.String())
 	}
 	n, ok := f["nutrients"].(map[string]any)
