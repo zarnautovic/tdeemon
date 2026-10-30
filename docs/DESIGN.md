@@ -172,7 +172,18 @@ recipe's page says a portion's energy, and whether the dish was weighed
 or a share); its editor is a page, its ingredients found as Log a meal
 finds foods; "Cooked again" changes only the amounts, the weight (from
 the pot, the empty pot remembered) and the portions, the last weight
-never taken over.
+never taken over. Log a meal finds a recipe as any food, marked, with a
+portion's energy; its amount is a portion (when divided), a share of
+the whole dish or grams, first as it was eaten last, else a portion, or
+a quarter of an undivided one. A share is typed as a fraction ("1/10",
+"2/3") or a number, or chosen in a chip (½, ⅓, ¼, and "1/…", which
+waits for the denominator), and is sent whole: a third is 1/3, not
+0.33. Grams of a dish not weighed are marked ≈, a portion and a share
+never. Log on a recipe's page opens Log a meal on its amount, so the
+share is chosen, not taken over. A share logged reads as the nearest
+fraction of a denominator up to 12 ("⅒ of the recipe"), else a
+number, and portions in the language's plural; a meal does not say
+whether its dish was weighed, so neither shows grams there.
 
 The same name and brand (compared without regard to case or runs of
 space) are the same food: saving it again (`upsert_food`) corrects it

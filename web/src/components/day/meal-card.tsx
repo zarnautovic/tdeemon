@@ -11,6 +11,7 @@ import { itemName, repeatOf, shownAmount } from '@/components/day/meal-entries'
 import { longName, mealName } from '@/components/day/meal-slot'
 import { RepeatStatus } from '@/components/day/repeat-meal'
 import { SaveStatus } from '@/components/day/save-status'
+import { recipeQuantity } from '@/components/recipes/share'
 import { Sheet } from '@/components/sheet'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -165,8 +166,15 @@ export function MealCard({
   }
 
   // amount is how much of an item, in its unit; of a named serving, as
-  // it was given, with that: "2 slices (80 g)", as the editor has it.
+  // it was given, with that: "2 slices (80 g)", as the editor has it. A
+  // share of a recipe or its portions are said alone, exact as they are
+  // ("⅒ of the recipe"): the meal does not tell whether its grams were
+  // weighed or about so.
   function amount(item: Item): string {
+    const ofRecipe = recipeQuantity(item.source, item.quantity, t, f.number)
+    if (ofRecipe !== undefined) {
+      return ofRecipe
+    }
     let inUnit
     if (item.unit === 'portion') {
       // The word's form follows the number shown: 0.999 is "1 portion".

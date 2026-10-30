@@ -22,7 +22,7 @@ import { FoodAvatar } from '@/components/foods/food-avatar'
 import { LogFood } from '@/components/foods/log-food'
 import { NutritionTable } from '@/components/foods/nutrition-table'
 import { CookedAgain } from '@/components/recipes/cooked-again'
-import { ingredientAmount, lastShareOf, warningOf } from '@/components/recipes/recipe-values'
+import { ingredientAmount, warningOf } from '@/components/recipes/recipe-values'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useFormat } from '@/i18n/format'
@@ -193,9 +193,7 @@ export function RecipeDetail({ food, recipe }: { food: Food; recipe: RecipeBody 
         </div>
       </section>
       <div className="grid grid-cols-2 gap-2">
-        {!food.archived && (
-          <LogFood food={eaten} amount={lastShareOf(eaten, t, f)} className="col-span-2" />
-        )}
+        {!food.archived && <LogFood food={eaten} className="col-span-2" />}
         {!food.archived && (
           <Button
             ref={cookedButton}

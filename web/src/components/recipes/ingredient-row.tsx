@@ -2,6 +2,7 @@ import { useId, type ReactNode } from 'react'
 
 import { AmountField } from '@/components/day/amount-field'
 import {
+  entryAmount,
   entryValues,
   inUnit,
   sayWrong,
@@ -38,7 +39,7 @@ export function IngredientRow({
   const id = useId()
   const food = entry.food
   const name = food.brand ? `${food.name} · ${food.brand}` : food.name
-  const n = f.parse(entry.amount)
+  const n = entryAmount(entry, f.parse)
   const values = entryValues(entry, f.parse)
   const grams = entryGrams(entry, f.parse)
   const units = unitsOf(food)

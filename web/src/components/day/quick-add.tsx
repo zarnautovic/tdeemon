@@ -8,6 +8,7 @@ import type { components } from '@/api/schema'
 import type { Food, Meal } from '@/api/types'
 import { Finder } from '@/components/day/finder'
 import {
+  entryAmount,
   entryValues,
   foodEntry,
   itemOf,
@@ -21,6 +22,8 @@ import { NewEntry, type Making } from '@/components/day/new-entry'
 import { SaveStatus } from '@/components/day/save-status'
 import { ScanEntry } from '@/components/day/scan-entry'
 import { WeighInChip } from '@/components/day/weigh-in-chip'
+import { isRecipe } from '@/components/recipes/recipe-values'
+import { recipeQuantity } from '@/components/recipes/share'
 import { Sheet } from '@/components/sheet'
 import { Button } from '@/components/ui/button'
 import { TimeInput } from '@/components/ui/time-input'
@@ -62,7 +65,10 @@ interface Start {
 // timed now (on another day, at noon), and named by what is in it, both
 // of which can be changed. Each opening is a meal anew. The focus goes to
 // the search, but on a touch screen, whose keyboard would cover the
-// lists, until it is tapped. opener is what opened it, which the focus
+// lists, until it is tapped. A food it opens with (initial) is in the
+// meal; a recipe, open for its amount instead, whose field has the
+// focus, so its portion or share is chosen, not taken over. opener is
+// what opened it, which the focus
 // goes back to; onLogged is told the meal logged, before the sheet
 // closes, so the focus may go to the meal's row instead.
 export function QuickAdd({
@@ -78,12 +84,14 @@ export function QuickAdd({
   }) {
   const t = useMessages()
   const search = useRef<HTMLInputElement>(null)
+  const amount = useRef<HTMLInputElement>(null)
+  const choosing = meal.initial !== undefined && isRecipe(meal.initial)
   return (
     <Sheet
       open={open}
       onOpenChange={onOpenChange}
       title={t.log.title}
-      initialFocus={search}
+      initialFocus={choosing ? amount : search}
       tapToType
       finalFocus={opener}
       tall
@@ -92,6 +100,7 @@ export function QuickAdd({
       <Composer
         {...meal}
         search={search}
+        amount={amount}
         onDone={() => {
           onOpenChange(false)
         }}
@@ -112,6 +121,7 @@ function Composer({
   initial,
   onLogged,
   search,
+  amount,
   onDone,
   date,
   today,
@@ -120,6 +130,7 @@ function Composer({
 }: Day &
   Start & {
     search: RefObject<HTMLInputElement | null>
+    amount: RefObject<HTMLInputElement | null>
     onDone: () => void
   }) {
   const t = useMessages()
@@ -144,8 +155,10 @@ function Composer({
     )
     onLogged?.(answer.meal)
   })
+  // A recipe it opens with waits in the finder for its amount.
+  const choosing = initial !== undefined && isRecipe(initial)
   const [entries, setEntries] = useState<Entry[]>(() =>
-    initial === undefined ? [] : [foodEntry(initial, f.field)],
+    initial === undefined || choosing ? [] : [foodEntry(initial, f.field)],
   )
   const [details, setDetails] = useState(false)
   const [description, setDescription] = useState('')
@@ -253,12 +266,21 @@ function Composer({
   }
 
   // amountOf is how much of a food an entry has, as its field says it (a
-  // serving's, servingsOf).
+  // serving's, servingsOf); of a recipe, as a meal's item says it
+  // (recipeQuantity): ⅓ of the recipe.
   function amountOf(entry: Entry & { kind: 'food' }): string {
+    const serving = servingOf(entry.unit)
+    const n = entryAmount(entry, f.parse)
+    const ofRecipe =
+      serving === undefined || n === undefined
+        ? undefined
+        : recipeQuantity(entry.food.source, { servings: n, serving }, t, f.number)
+    if (ofRecipe !== undefined) {
+      return ofRecipe
+    }
     if (entry.unit === 'portion') {
       return `${entry.amount} ${t.log.portions(f.parse(entry.amount) ?? Number.NaN)}`
     }
-    const serving = servingOf(entry.unit)
     return serving === undefined
       ? `${entry.amount} ${entry.unit}`
       : servingsOf(entry.amount, f.parse(entry.amount) ?? Number.NaN, serving)
@@ -357,6 +379,8 @@ function Composer({
             at={{ slot: slotOf, now, timeZone, date }}
             onAdd={added}
             onRepeat={repeat}
+            initial={choosing ? initial : undefined}
+            amount={amount}
             onMake={(m, button) => {
               maker.current = button
               setMaking(m)

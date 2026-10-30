@@ -1,5 +1,11 @@
 import type { components } from '@/api/schema'
 import type { Food, Item, Meal, Nutrients } from '@/api/types'
+import {
+  portionServing,
+  recipeQuantity,
+  shareField,
+  wholeServing,
+} from '@/components/recipes/share'
 import type { Messages } from '@/i18n/en'
 import type { useFormat } from '@/i18n/format'
 import limits from '@/lib/limits.json'
@@ -35,13 +41,58 @@ export type FoodEntry = Entry & { kind: 'food' }
 const servingUnit = 'serving:'
 
 // unitsOf are the units a food is given in: its basis's, the grams of a
-// portion when it has them, and its servings.
+// portion when it has them, and its servings. A recipe's are its portion
+// (when divided), a share of the whole dish and grams, in that order: a
+// recipe is eaten by the portion or the share, grams the last resort.
 export function unitsOf(food: Food): string[] {
   const base = food.basis === '100ml' ? ['ml'] : food.basis === '100g' ? ['g'] : ['portion']
   if (food.basis === 'portion' && food.portion_grams !== undefined) {
     base.push('g')
   }
-  return [...base, ...(food.servings ?? []).map((s) => servingUnit + s.name)]
+  const units = [...base, ...(food.servings ?? []).map((s) => servingUnit + s.name)]
+  if (food.source !== 'recipe') {
+    return units
+  }
+  const first = [servingUnit + portionServing, servingUnit + wholeServing, ...base]
+  return [...first.filter((u) => units.includes(u)), ...units.filter((u) => !first.includes(u))]
+}
+
+// parseAmount reads an amount typed: a number as parse reads it, a
+// fraction of two (1/10, 2/3, 1,5/4), or a whole number and a fraction (1
+// 1/2), as a share of a recipe is written; undefined for anything else,
+// and for a fraction of 0 below it.
+export function parseAmount(
+  s: string,
+  parse: (s: string) => number | undefined,
+): number | undefined {
+  const typed = s.trim()
+  const mixed = /^(\d+)\s+(\d+)\s*\/\s*(\d+)$/.exec(typed)
+  if (mixed) {
+    const [, whole = '', n = '', d = ''] = mixed
+    return Number(d) > 0 ? Number(whole) + Number(n) / Number(d) : undefined
+  }
+  const fraction = /^([^/]+)\/([^/]+)$/.exec(typed)
+  if (fraction) {
+    const n = parse(fraction[1] ?? '')
+    const d = parse(fraction[2] ?? '')
+    return n === undefined || d === undefined || d === 0 ? undefined : n / d
+  }
+  return parse(typed)
+}
+
+// entryAmount is how much of its food an entry has: as a unit chosen
+// worked it out, else as typed (parseAmount); undefined while it is not
+// a number.
+export function entryAmount(
+  entry: { amount: string; exact?: number | undefined },
+  parse: (s: string) => number | undefined,
+): number | undefined {
+  return entry.exact ?? parseAmount(entry.amount, parse)
+}
+
+// isShare tells the unit of a share of a recipe's whole dish.
+export function isShare(food: { source?: string | undefined }, unit: string): boolean {
+  return food.source === 'recipe' && unit === servingUnit + wholeServing
 }
 
 // servingOf is the serving a unit names, or undefined for another unit.
@@ -50,7 +101,10 @@ export function servingOf(unit: string): string | undefined {
 }
 
 // foodEntry is a food added to the meal, in the amount it was eaten in
-// last, or else 100 of its unit, or one portion.
+// last, or else 100 of its unit, or one portion; a recipe, one of its
+// portions, or a quarter of it when it is not divided. A share of a
+// recipe is typed as a fraction (shareField), and keeps every decimal it
+// had: a third is a third, not 0.333.
 export function foodEntry(food: Food, field: (n: number) => string): FoodEntry {
   const key = uuidv7()
   const q = food.last_use?.quantity
@@ -60,7 +114,18 @@ export function foodEntry(food: Food, field: (n: number) => string): FoodEntry {
     q.serving !== undefined &&
     units.includes(servingUnit + q.serving)
   ) {
-    return { key, kind: 'food', food, amount: field(q.servings), unit: servingUnit + q.serving }
+    const unit = servingUnit + q.serving
+    if (isShare(food, unit)) {
+      return {
+        key,
+        kind: 'food',
+        food,
+        amount: shareField(q.servings, field),
+        unit,
+        exact: q.servings,
+      }
+    }
+    return { key, kind: 'food', food, amount: field(q.servings), unit }
   }
   if (q?.portions !== undefined && units.includes('portion')) {
     return { key, kind: 'food', food, amount: field(q.portions), unit: 'portion' }
@@ -81,6 +146,15 @@ export function foodEntry(food: Food, field: (n: number) => string): FoodEntry {
     return { key, kind: 'food', food, amount: field(q.amount), unit }
   }
   const first = units[0] ?? 'g'
+  if (food.source === 'recipe' && first !== 'g') {
+    return {
+      key,
+      kind: 'food',
+      food,
+      amount: isShare(food, first) ? '1/4' : field(1),
+      unit: first,
+    }
+  }
   return { key, kind: 'food', food, amount: first === 'portion' ? '1' : '100', unit: first }
 }
 
@@ -175,7 +249,7 @@ export function entryValues(
   parse: (s: string) => number | undefined,
 ): Values | undefined {
   if (entry.kind === 'food') {
-    const n = entry.exact ?? parse(entry.amount)
+    const n = entryAmount(entry, parse)
     return n === undefined ? undefined : nutrientsIn(entry.food, entry.unit, n)
   }
   const kcal = parse(entry.kcal)
@@ -206,12 +280,15 @@ export function inUnit(
   field: (n: number, digits?: number) => string,
 ): FoodEntry {
   const { exact: _was, ...rest } = entry
-  const base = entry.exact ?? parse(entry.amount)
+  const base = entryAmount(entry, parse)
   const n = base === undefined ? undefined : converted(entry.food, entry.unit, unit, base)
   if (n === undefined) {
     return { ...rest, unit, amount: '' }
   }
-  return { ...rest, unit, amount: shownAmount(n, field), exact: n }
+  // A share of a recipe as its fraction, when it is one: 300 g of 1200 g
+  // are 1/4 of it.
+  const shown = isShare(entry.food, unit) ? shareField(n, field) : shownAmount(n, field)
+  return { ...rest, unit, amount: shown, exact: n }
 }
 
 // quantityIn is n of a food in unit (unitsOf), as an item gives it.
@@ -273,7 +350,7 @@ export function entryWrong(
   parse: (s: string) => number | undefined,
 ): Wrong | undefined {
   if (entry.kind === 'food') {
-    const n = entry.exact ?? parse(entry.amount)
+    const n = entryAmount(entry, parse)
     return n === undefined ? { kind: 'number' } : amountWrong(entry.food, entry.unit, n)
   }
   if (entry.name.trim() === '') {
@@ -306,7 +383,7 @@ export function entryItem(
     return { wrong }
   }
   if (entry.kind === 'food') {
-    const n = entry.exact ?? parse(entry.amount)
+    const n = entryAmount(entry, parse)
     return n === undefined
       ? { wrong: { kind: 'number' } }
       : { item: { id: entry.key, food_id: entry.food.id, ...quantityIn(entry.unit, n) } }
@@ -443,11 +520,16 @@ export function servingsOf(n: string, servings: number, serving: string): string
 }
 
 // lastAmountOf is how much of a food was eaten last, as it was given: "2
-// slice", "1.5 portions", "200 g"; undefined for a food not eaten yet.
+// slice", "1.5 portions", "200 g", of a recipe "⅒ of the recipe" or "1
+// portion" (recipeQuantity); undefined for a food not eaten yet.
 export function lastAmountOf(food: Food, t: Messages, f: Format): string | undefined {
   const last = food.last_use
   if (last === undefined) {
     return undefined
+  }
+  const ofRecipe = recipeQuantity(food.source, last.quantity, t, f.number)
+  if (ofRecipe !== undefined) {
+    return ofRecipe
   }
   const { servings, serving } = last.quantity
   if (servings !== undefined && serving !== undefined) {
