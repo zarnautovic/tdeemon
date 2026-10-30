@@ -6,13 +6,16 @@ import { BackToFoods } from '@/components/foods/back-to-foods'
 import { FoodDetail } from '@/components/foods/food-detail'
 import { FoodForm } from '@/components/foods/food-form'
 import { LoadError } from '@/components/load-error'
+import { RecipeDetail } from '@/components/recipes/recipe-detail'
+import { RecipeEditor } from '@/components/recipes/recipe-editor'
 import { Button } from '@/components/ui/button'
 import { useMessages } from '@/i18n/messages'
 import type { FoodsSearch } from '@/router'
 
 // FoodPage is a food of the user's, read (FoodDetail); with edit=true in
-// the address, its form, to correct it. The form goes back to the food
-// once saved, or given up.
+// the address, its form, to correct it. A recipe's food is its recipe,
+// read (RecipeDetail) or edited (RecipeEditor). The form goes back to the
+// food once saved, or given up.
 export function FoodPage() {
   const t = useMessages()
   const { id } = useParams({ from: '/app/foods/$id' })
@@ -47,6 +50,18 @@ export function FoodPage() {
     body = (
       <LoadError title={t.loadFailed.food} error={food.error} onRetry={() => void food.refetch()} />
     )
+  } else if (edit && food.data.recipe !== undefined) {
+    body = (
+      <>
+        <header className="flex items-center justify-between gap-2">
+          <h1 className="text-h2">{t.recipes.editTitle}</h1>
+          <Button variant="ghost" size="sm" onClick={read}>
+            {t.foods.cancel}
+          </Button>
+        </header>
+        <RecipeEditor key={food.data.id} food={food.data} onSaved={read} />
+      </>
+    )
   } else if (edit) {
     body = (
       <>
@@ -63,6 +78,8 @@ export function FoodPage() {
         </div>
       </>
     )
+  } else if (food.data.recipe !== undefined) {
+    body = <RecipeDetail key={food.data.id} food={food.data} recipe={food.data.recipe} />
   } else {
     body = <FoodDetail key={food.data.id} food={food.data} />
   }

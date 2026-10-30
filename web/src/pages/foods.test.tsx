@@ -166,8 +166,7 @@ test('the list chosen says how many foods it has, its order is a menu, in Croati
     true,
   )
   // Short to the eye, whole to a screen reader.
-  const added = screen.getByRole('link', { name: 'Nova namirnica' })
-  expect(added.getAttribute('href')).toBe('/foods/new')
+  const added = screen.getByRole('button', { name: 'Nova namirnica ili recept' })
   expect(added.textContent).toBe('Nova')
   const earlier = screen.getByRole('list', { name: 'U upotrebi: Ranije' })
   expect(within(earlier).getByRole('link', { name: /^Basmati riža/ }).textContent).toContain(
@@ -204,14 +203,12 @@ test('the archived foods, and the order of the last use, are in the address', as
   ).toBeDefined()
   // The one action of an empty list: the header has none beside it.
   expect(screen.getByRole('link', { name: 'Add a food' }).getAttribute('href')).toBe('/foods/new')
-  expect(screen.queryByRole('link', { name: 'New food' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'New food or recipe' })).toBeNull()
   fireEvent.click(screen.getByRole('radio', { name: 'Archive' }))
   expect(await screen.findByText('No archived foods.')).toBeDefined()
   // The archive's list adds none, and the header does.
   expect(screen.queryByRole('link', { name: 'Add a food' })).toBeNull()
-  expect(screen.getByRole('link', { name: 'New food' }).getAttribute('href')).toMatch(
-    /^\/foods\/new\b/,
-  )
+  expect(screen.getByRole('button', { name: 'New food or recipe' })).toBeDefined()
   fireEvent.click(screen.getByRole('button', { name: 'Order: Most eaten' }))
   fireEvent.click(
     within(await screen.findByRole('menu')).getByRole('menuitemradio', {

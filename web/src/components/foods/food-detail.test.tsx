@@ -298,7 +298,7 @@ test("a recipe's food is archived without its recipe", async () => {
   const server = foodServer({ food: curry })
   renderAt(`/foods/${id}`)
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Archive' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Archive the recipe' }))
 
   expect(await screen.findByText('Archived: Chicken curry')).toBeDefined()
   const { recipe: _recipe, ...fields } = curry

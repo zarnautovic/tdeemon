@@ -60,6 +60,13 @@
     "maxAliases": 20,
     "maxBarcodes": 10
   },
+  "recipe": {
+    "maxItems": 50,
+    "maxPortions": 100,
+    "maxWeight": 10000,
+    "lowYield": 0.3,
+    "highYield": 3
+  },
   "profile": {
     "minHeightCm": 50,
     "maxHeightCm": 275,

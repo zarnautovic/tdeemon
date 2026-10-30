@@ -9,7 +9,8 @@ test('a food is made, logged, found, corrected, archived and brought back', asyn
     .getByRole('link', { name: 'Foods' })
     .click()
 
-  await page.getByRole('link', { name: 'New food' }).click()
+  await page.getByRole('button', { name: 'New food or recipe' }).click()
+  await page.getByRole('menuitem', { name: 'Food' }).click()
   await page.getByLabel('Name', { exact: true }).fill('Buckwheat')
   // A slip of the energy, which the macros tell, and their energy taken.
   await page.getByLabel('Energy (kcal)').fill('34')

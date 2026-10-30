@@ -16,15 +16,21 @@ import type { Food } from './types'
 // A page of the food list.
 export const foodPage = 50
 
-// The lists of the user's foods: those in use, the archived ones, and the
-// estimates in use, whose values are to check.
-export type FoodFilter = 'inUse' | 'archived' | 'estimates'
+// The lists of the user's foods: those in use, the archived ones, the
+// estimates in use, whose values are to check, and the recipes in use.
+export type FoodFilter = 'inUse' | 'archived' | 'estimates' | 'recipes'
+
+// sourceOf is the source a list's foods all have, for those of one.
+function sourceOf(filter: FoodFilter): 'estimate' | 'recipe' | undefined {
+  return filter === 'estimates' ? 'estimate' : filter === 'recipes' ? 'recipe' : undefined
+}
 
 // useFoodList is the user's foods of a list (filter), by name, by their
 // last use or by how many of the latest meals had them, a page at a
 // time: fetchNextPage asks for the next while there are more.
 export function useFoodList(filter: FoodFilter, order: 'name' | 'use' | 'frequent') {
   const archived = filter === 'archived'
+  const source = sourceOf(filter)
   return $api.useInfiniteQuery(
     'get',
     '/api/v1/foods/list',
@@ -32,7 +38,7 @@ export function useFoodList(filter: FoodFilter, order: 'name' | 'use' | 'frequen
       params: {
         query: {
           archived,
-          ...(filter === 'estimates' ? { source: 'estimate' as const } : {}),
+          ...(source === undefined ? {} : { source }),
           order,
           limit: foodPage,
         },
@@ -74,16 +80,17 @@ export function useFindFoods(query: string, archived = false) {
   )
 }
 
-// useFindEstimates is the user's estimates in use a search finds: every
-// one of them, page after page of the list (a search of all the foods
-// stops at its first 50, of which none may be one), narrowed as
-// find_foods narrows, by the start of the words of a name, a brand or
-// another name. A change of a food asks again for the list, and so for
-// them.
-export function useFindEstimates(query: string) {
+// useFindOfList is the user's estimates or recipes in use a search finds
+// (filter): every one of them, page after page of the list (a search of
+// all the foods stops at its first 50, of which none may be one),
+// narrowed as find_foods narrows, by the start of the words of a name, a
+// brand or another name. A change of a food asks again for the list, and
+// so for them.
+export function useFindOfList(filter: 'estimates' | 'recipes', query: string) {
   const q = query.trim()
+  const source = filter === 'estimates' ? 'estimate' : 'recipe'
   return useQuery({
-    queryKey: ['get', '/api/v1/foods/list', 'estimates'],
+    queryKey: ['get', '/api/v1/foods/list', filter],
     queryFn: async ({ signal }) => {
       const all: Food[] = []
       for (;;) {
@@ -91,7 +98,7 @@ export function useFindEstimates(query: string) {
         // oxlint-disable-next-line no-await-in-loop -- each page's offset is the foods before it
         const { data, response } = await fetchClient.GET('/api/v1/foods/list', {
           params: {
-            query: { source: 'estimate', order: 'name', limit: 200, offset: all.length },
+            query: { source, order: 'name', limit: 200, offset: all.length },
           },
           signal,
         })
@@ -128,7 +135,7 @@ export function useFoods(ids: readonly string[]): (Food | undefined)[] {
 
 // keep keeps a food a save answered with, and asks the lists and the
 // searches again.
-async function keep(queryClient: QueryClient, food: Food) {
+export async function keep(queryClient: QueryClient, food: Food) {
   queryClient.setQueryData(
     $api.queryOptions('get', '/api/v1/foods/{id}', { params: { path: { id: food.id } } }).queryKey,
     food,

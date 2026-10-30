@@ -20,11 +20,24 @@ const sizes = [
 const themes = ['light', 'dark'] as const
 const locales = ['en', 'hr'] as const
 
-// What the screens show: a food, a meal of it and an estimate, and a
-// weigh-in, made up, under names of their own each run.
+// What the screens show: a food, a meal of it and an estimate, a recipe
+// of the food, and a weigh-in, made up, under names of their own each
+// run.
 interface Made {
   foodId: string
+  recipeId: string
   meal: string
+}
+
+// idOf is the id of a food an answer holds, itself or as a recipe's.
+function idOf(saved: unknown): string {
+  if (typeof saved !== 'object' || saved === null) {
+    return ''
+  }
+  if ('food' in saved) {
+    return idOf(saved.food)
+  }
+  return 'id' in saved && typeof saved.id === 'string' ? saved.id : ''
 }
 
 async function make(page: Page, tag: string): Promise<Made> {
@@ -39,11 +52,17 @@ async function make(page: Page, tag: string): Promise<Made> {
     },
   })
   expect(food.ok()).toBe(true)
-  const saved: unknown = await food.json()
-  const foodId =
-    typeof saved === 'object' && saved !== null && 'id' in saved && typeof saved.id === 'string'
-      ? saved.id
-      : ''
+  const foodId = idOf(await food.json())
+  // Not weighed, so the page says so, and in portions.
+  const recipe = await api.post('/api/v1/recipes', {
+    data: {
+      name: `Oat bake ${tag}`,
+      items: [{ food_id: foodId, amount: 300, unit: 'g' }],
+      portions: 3,
+    },
+  })
+  expect(recipe.ok()).toBe(true)
+  const recipeId = idOf(await recipe.json())
   const meal = `Overnight oats ${tag}`
   const logged = await api.post('/api/v1/meals', {
     data: {
@@ -72,7 +91,7 @@ async function make(page: Page, tag: string): Promise<Made> {
     },
   })
   expect(before.ok()).toBe(true)
-  return { foodId, meal }
+  return { foodId, recipeId, meal }
 }
 
 // The day of the week whose sheet is checked.
@@ -209,6 +228,47 @@ const screens: Screen[] = [
     name: 'food-form',
     open: async (page, made) => {
       await page.goto(`/foods/${made.foodId}?edit=true`)
+      await settled(page)
+    },
+  },
+  {
+    name: 'recipes',
+    open: async (page) => {
+      await page.goto('/foods?filter=recipes')
+      await settled(page)
+    },
+  },
+  {
+    name: 'recipe',
+    open: async (page, made) => {
+      await page.goto(`/foods/${made.recipeId}`)
+      await settled(page)
+    },
+  },
+  {
+    name: 'cooked-again',
+    open: async (page, made) => {
+      await page.goto(`/foods/${made.recipeId}`)
+      await settled(page)
+      await page.getByRole('button', { name: /^(Cooked again|Skuhano opet)$/ }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await settled(page)
+    },
+  },
+  {
+    name: 'recipe-form',
+    open: async (page, made) => {
+      await page.goto(`/foods/${made.recipeId}?edit=true`)
+      await settled(page)
+    },
+  },
+  {
+    name: 'ingredients',
+    open: async (page) => {
+      await page.goto('/foods/new-recipe')
+      await settled(page)
+      await page.getByRole('button', { name: /^(Add ingredients|Dodaj sastojke)$/ }).click()
+      await expect(page.getByRole('dialog')).toBeVisible()
       await settled(page)
     },
   },

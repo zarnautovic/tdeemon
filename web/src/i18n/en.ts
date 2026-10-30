@@ -795,6 +795,156 @@ export const en = {
     thatFood: 'that food',
     refused: (detail: string) => `The server did not take this food: ${detail}`,
   },
+  // A recipe: a dish cooked again, a food of its own whose values come
+  // from its ingredients and the cooked dish's weight.
+  recipes: {
+    // A recipe's mark beside its name.
+    mark: 'recipe',
+    list: 'Recipes',
+    // The foods' button of something new, a menu of a food or a recipe.
+    newChoice: 'New food or recipe',
+    newShort: 'New',
+    food: 'Food',
+    recipe: 'Recipe',
+    new: 'New recipe',
+    searchHint: 'The name of a recipe',
+    none: 'No recipes yet',
+    noneWhy:
+      'A recipe is a dish you cook again. Add its ingredients once, then log a portion or a share of it.',
+    noneCoach: 'Your AI coach can make one too, from a description or a photo.',
+    noMatch: 'No recipe matches.',
+    // The search of a recipe's ingredients, which finds foods alone.
+    nothing: 'No food of yours matches. Make it a new food.',
+    noneEaten: 'Nothing eaten yet. Find a food, or make a new one.',
+    // A recipe's kcal in a list: 412 kcal /portion.
+    perPortionShort: '/portion',
+    ingredients: (n: number) =>
+      `${String(n)} ${plural('en', n, { one: 'ingredient', other: 'ingredients' })}`,
+    portions: (n: string, count: number) =>
+      `${n} ${plural('en', count, { one: 'portion', other: 'portions' })}`,
+    // A share of the whole dish: ¼ of the recipe.
+    ofRecipe: (share: string) => `${share} of the recipe`,
+    energy: 'Energy of the recipe',
+    kcalPerPortion: 'kcal per portion',
+    kcalPer100: 'kcal per 100 g',
+    portion: 'Portion',
+    per100: 'Per 100 g',
+    whole: 'Whole recipe',
+    weight: 'Weight',
+    weighed: (grams: string) => `Weighed: ${grams}`,
+    // Under the weight: 8 portions of 269 g · 85% of the raw ingredients.
+    portionsOf: (portions: string, grams: string) => `${portions} of ${grams}`,
+    ofRaw: (pct: string) => `${pct} of the raw ingredients`,
+    notWeighed: 'Not weighed',
+    notWeighedWhy: (raw: string) =>
+      `The raw ingredients' sum, ${raw}, stands for the weight. Portions and shares are exact, grams approximate.`,
+    noRaw: 'An ingredient has no weight in grams, so weigh the cooked dish.',
+    weighIt: 'Enter the weight',
+    cookedAgain: 'Cooked again',
+    archive: 'Archive the recipe',
+    archivedNote: 'Archived. Find it among the archived foods; its name stays taken.',
+    ingredientsTitle: 'Ingredients',
+    rawSum: "Raw ingredients' sum",
+    // An ingredient that is a recipe opens it.
+    open: (name: string) => `Open the recipe: ${name}`,
+    changedMark: 'values changed',
+    changed: (names: string) =>
+      `Changed since the recipe was saved: ${names}. The recipe still uses the values it had.`,
+    takeNew: 'Take the new values',
+    valuesOfSave: "The ingredients' values are those the recipe was last saved with.",
+    approx100: 'Per 100 g is approximate: the cooked dish was not weighed.',
+    // A save's toast: Saved: Chicken curry · 412 kcal per portion.
+    savedPer: (name: string, kcal: string, per: string) => `Saved: ${name} · ${kcal} ${per}`,
+    perPortion: 'per portion',
+    per100g: 'per 100 g',
+    warnings: {
+      yield_low: 'The cooked dish weighs far less than its raw ingredients.',
+      yield_high: 'The cooked dish weighs far more than its raw ingredients.',
+    },
+    // The editor.
+    newTitle: 'New recipe',
+    editTitle: 'Edit the recipe',
+    nameHint: 'Chicken curry',
+    count: (n: string, most: string) => `${n} / ${most}`,
+    noIngredients:
+      'No ingredients yet. Add them as you would to a meal. One can be another recipe, such as a sauce.',
+    addIngredients: 'Add ingredients',
+    mostIngredients: (most: string) => `A recipe has at most ${most} ingredients.`,
+    needsIngredient: 'Add at least one ingredient.',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    cooked: 'Cooked dish',
+    optional: 'optional',
+    cookedWeight: 'Weight of the cooked dish',
+    fromPot: 'From the pot',
+    potHint: 'Weigh the full pot. The empty pot is taken off it.',
+    fullPot: 'Full pot',
+    emptyPot: 'Empty pot',
+    remembered: 'remembered',
+    potResult: (grams: string) => `= ${grams} of cooked dish`,
+    potWrong: 'The full pot must weigh more than the empty one.',
+    shareOfRaw: (pct: string, raw: string) => `${pct} of the raw ingredients' sum (${raw})`,
+    lastTime: (weight: string) => `Last time: ${weight}.`,
+    lastNotWeighed: 'Last time it was not weighed.',
+    weighHint: (raw: string) =>
+      `Weigh it if you can, so grams are exact. Otherwise the raw ingredients' sum stands for it: ${raw}.`,
+    yieldLow: (grams: string, pct: string, raw: string) =>
+      `${grams} is ${pct} of the raw ingredients' sum (${raw}). Was the empty pot taken off? It saves anyway.`,
+    yieldHigh: (grams: string, pct: string, raw: string) =>
+      `${grams} is ${pct} of the raw ingredients' sum (${raw}). Check the weight. It saves anyway.`,
+    cantWeigh: "I can't weigh it",
+    cantWeighHint: 'The pot is too big for the scale, say.',
+    cantWeighNote: (raw: string) =>
+      `The raw ingredients' sum, ${raw}, stands for the weight. Portions and shares are exact, grams approximate.`,
+    rawTooHeavy: (most: string) =>
+      `The raw ingredients weigh over ${most} g, so weigh the cooked dish.`,
+    weightWrong: (most: string) => `More than 0, at most ${most} g.`,
+    portionsTitle: 'Portions',
+    fewer: 'One portion fewer',
+    more: 'One portion more',
+    each: (grams: string) => `${grams} each`,
+    undivided: 'not divided',
+    portionsHint:
+      'How many portions the dish makes. Without them, you log a share of the recipe or grams.',
+    portionsWrong: (most: string) => `From 1 to ${most} portions.`,
+    noteHint: 'Simmer for 40 minutes',
+    savesNow: "A save takes the foods' values as they are now. A meal logged never changes.",
+    perPortionLabel: 'Per portion',
+    per100Label: 'Per 100 g',
+    // The editor's foot: Whole recipe 3,296 kcal · ≈ 2,150 g.
+    wholeLine: (kcal: string, grams: string) => `Whole recipe ${kcal} · ${grams}`,
+    save: 'Save the recipe',
+    refused: (detail: string) => `The server did not take this recipe: ${detail}`,
+    // The sheet of ingredients.
+    into: (name: string) => `Into ${name}`,
+    intoNew: 'the new recipe',
+    added: 'Added to the recipe',
+    addedHint: 'Find a food, type its amount, and add it. This stays open for the next one.',
+    done: 'Done',
+    doneAdded: (n: number) => `Done · ${String(n)} added`,
+    addToRecipe: 'Add to the recipe',
+    // The amount of a new food in the recipe, in its unit.
+    inRecipe: {
+      '100g': 'In the recipe (g)',
+      '100ml': 'In the recipe (ml)',
+      portion: 'In the recipe (portions)',
+    },
+    // Cooked again: the same recipe, a new pot.
+    cookedHint: 'Same recipe, a new pot. Change what differs. Meals logged stay as they were.',
+    was: (what: string) => `was ${what}`,
+    otherIngredients: 'An ingredient more or less?',
+    saveCooked: 'Save',
+    weighTitle: 'Weigh the dish',
+    weighSheetHint: 'The same pot, weighed now. With its weight, grams are exact too.',
+    saveWeight: 'Save the weight',
+    enterWeight: 'Enter the weight, or work it out from the pot.',
+    // The servings of a recipe's food, by their names: the whole dish and
+    // a portion.
+    servings: {
+      recipe: (n: number) => plural('en', n, { one: 'recipe', other: 'recipes' }),
+      portion: (n: number) => plural('en', n, { one: 'portion', other: 'portions' }),
+    },
+  },
   charts: {
     title: 'Progress',
     span: 'Period',

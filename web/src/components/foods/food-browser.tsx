@@ -1,10 +1,10 @@
 import { Menu } from '@base-ui/react/menu'
 import { Link, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
-import { Check, ChevronDown, Plus, Search } from 'lucide-react'
+import { Check, ChevronDown, CookingPot, Plus, Search, Utensils } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 
 import { $api } from '@/api/client'
-import { useFindEstimates, useFindFoods, useFoodList, type FoodFilter } from '@/api/foods'
+import { useFindFoods, useFindOfList, useFoodList, type FoodFilter } from '@/api/foods'
 import { eatenThisWeek } from '@/components/foods/eaten'
 import { FoodRow } from '@/components/foods/food-row'
 import { LoadError } from '@/components/load-error'
@@ -14,7 +14,7 @@ import { useFormat } from '@/i18n/format'
 import { useMessages } from '@/i18n/messages'
 import type { FoodsSearch } from '@/router'
 
-const filters = ['inUse', 'archived', 'estimates'] as const
+const filters = ['inUse', 'recipes', 'archived', 'estimates'] as const
 
 // The orders of the list, the first when the address names none.
 const orders = ['frequent', 'use', 'name'] as const
@@ -24,10 +24,11 @@ type Order = (typeof orders)[number]
 const card = 'divide-y overflow-hidden rounded-lg bg-card shadow-card'
 
 // FoodBrowser is the user's foods: a search of them, or a list (those in
-// use, the archived ones, the estimates in use, as chips, the one chosen
+// use, the recipes, the archived ones, the estimates in use, as chips, the one chosen
 // with how many foods it has), by how many of the latest meals had them
 // (those eaten this week first), by when they were eaten last or by name
-// (a menu beside the chips), a page at a time; and a way to add one. A
+// (a menu beside the chips), a page at a time; and a way to add one, or
+// a recipe (a menu of both, but in the recipes, which add a recipe). A
 // search is of the list chosen. What it shows is in the address (q,
 // filter, order), which a food opened from it keeps, so the list beside a
 // food, and back from it, is as it was.
@@ -84,18 +85,14 @@ export function FoodBrowser() {
         </h1>
         {/* Without a food in use, the list's own button is the one way to
             add one. */}
-        {!(filter === 'inUse' && total === 0) && (
-          <Link
-            to="/foods/new"
-            search={from}
-            // Short to the eye, whole to a screen reader.
-            aria-label={t.foods.newSaid}
-            className={buttonVariants({ size: 'sm' })}
-          >
-            <Plus aria-hidden />
-            {t.foods.new}
-          </Link>
-        )}
+        {filter === 'recipes'
+          ? total !== 0 && (
+              <Link to="/foods/new-recipe" search={from} className={buttonVariants({ size: 'sm' })}>
+                <Plus aria-hidden />
+                {t.recipes.new}
+              </Link>
+            )
+          : !(filter === 'inUse' && total === 0) && <NewMenu from={from} />}
       </header>
       <label className="flex h-12 items-center gap-2.5 rounded-lg border-2 border-input bg-card px-3.5 focus-within:border-ring">
         <Search aria-hidden className="size-4.5 shrink-0 text-muted-foreground" />
@@ -106,7 +103,7 @@ export function FoodBrowser() {
           // The shortcut / finds it.
           data-find
           value={typed}
-          placeholder={t.foods.searchHint}
+          placeholder={filter === 'recipes' ? t.recipes.searchHint : t.foods.searchHint}
           autoComplete="off"
           className="h-full min-w-0 flex-1 bg-transparent text-base outline-none"
           onChange={(event) => {
@@ -127,13 +124,16 @@ export function FoodBrowser() {
       <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
         <ChipGroup
           legend={t.foods.lists}
-          options={filters.map((value) => ({
-            value,
-            label:
-              value === filter && total !== undefined
-                ? t.foods.counted(t.foods.filter[value], f.number(total))
-                : t.foods.filter[value],
-          }))}
+          options={filters.map((value) => {
+            const name = listName(value, t)
+            return {
+              value,
+              label:
+                value === filter && total !== undefined
+                  ? t.foods.counted(name, f.number(total))
+                  : name,
+            }
+          })}
           value={filter}
           onChange={(chosen) => {
             void navigate({
@@ -217,17 +217,65 @@ function OrderMenu({ order, onChange }: { order: Order; onChange: (order: Order)
   )
 }
 
+// NewMenu is the way to add a food or a recipe, as a menu whose button
+// is short to the eye and whole to a screen reader.
+function NewMenu({ from }: { from: FoodsSearch }) {
+  const t = useMessages()
+  const navigate = useNavigate()
+  const item =
+    'flex h-11 cursor-default items-center gap-2 rounded-md px-3 text-sm outline-none select-none data-highlighted:bg-muted'
+
+  return (
+    <Menu.Root>
+      <Menu.Trigger aria-label={t.recipes.newChoice} className={buttonVariants({ size: 'sm' })}>
+        <Plus aria-hidden />
+        {t.recipes.newShort}
+        <ChevronDown aria-hidden />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={6} align="end" className="z-40">
+          <Menu.Popup className="min-w-44 rounded-lg border bg-card p-1 shadow-sheet outline-none">
+            <Menu.Item
+              className={item}
+              onClick={() => {
+                void navigate({ to: '/foods/new', search: from })
+              }}
+            >
+              <Utensils aria-hidden className="size-4" />
+              {t.recipes.food}
+            </Menu.Item>
+            <Menu.Item
+              className={item}
+              onClick={() => {
+                void navigate({ to: '/foods/new-recipe', search: from })
+              }}
+            >
+              <CookingPot aria-hidden className="size-4" />
+              {t.recipes.recipe}
+            </Menu.Item>
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  )
+}
+
+// listName is a list's name, as its chip says it.
+function listName(filter: FoodFilter, t: ReturnType<typeof useMessages>): string {
+  return filter === 'recipes' ? t.recipes.list : t.foods.filter[filter]
+}
+
 // Found is what a search of a list finds: of the archived foods, or of
-// those in use, all or their estimates.
+// those in use, all, their estimates or their recipes.
 function Found({ query, filter, from }: { query: string; filter: FoodFilter; from: FoodsSearch }) {
   const t = useMessages()
   const today = $api.useQuery('get', '/api/v1/me').data?.today
-  const estimates = filter === 'estimates'
-  // The estimates are searched in their own list: a search of all the
-  // foods finds 50 at most, which may leave them out.
-  const all = useFindFoods(estimates ? '' : query, filter === 'archived')
-  const guessed = useFindEstimates(estimates ? query : '')
-  const found = estimates ? guessed : all
+  const own = filter === 'estimates' || filter === 'recipes' ? filter : undefined
+  // The estimates and the recipes are searched in their own list: a
+  // search of all the foods finds 50 at most, which may leave them out.
+  const all = useFindFoods(own === undefined ? query : '', filter === 'archived')
+  const listed = useFindOfList(own ?? 'estimates', own === undefined ? '' : query)
+  const found = own === undefined ? all : listed
 
   if (found.isPending) {
     return <Skeleton />
@@ -242,9 +290,13 @@ function Found({ query, filter, from }: { query: string; filter: FoodFilter; fro
       />
     )
   }
-  const foods = estimates ? (guessed.data ?? []) : (all.data?.foods ?? [])
+  const foods = own === undefined ? (all.data?.foods ?? []) : (listed.data ?? [])
   if (foods.length === 0) {
-    return <Empty words={t.foods.noMatch} from={from} />
+    return filter === 'recipes' ? (
+      <Empty words={t.recipes.noMatch} from={from} recipe />
+    ) : (
+      <Empty words={t.foods.noMatch} from={from} />
+    )
   }
   return (
     <ul aria-label={t.foods.found} className={card}>
@@ -282,6 +334,9 @@ function Listed({ filter, order, from }: { filter: FoodFilter; order: Order; fro
     .filter((food) => !seen.has(food.id) && Boolean(seen.add(food.id)))
   const total = list.data.pages.at(-1)?.total ?? foods.length
   if (foods.length === 0) {
+    if (filter === 'recipes') {
+      return <NoRecipes from={from} />
+    }
     return (
       <Empty
         words={
@@ -294,7 +349,7 @@ function Listed({ filter, order, from }: { filter: FoodFilter; order: Order; fro
       />
     )
   }
-  const name = t.foods.filter[filter]
+  const name = listName(filter, t)
   const groups =
     order === 'frequent' && today !== undefined
       ? [
@@ -340,19 +395,59 @@ function Listed({ filter, order, from }: { filter: FoodFilter; order: Order; fro
 }
 
 // Empty is what a list or a search without foods says, with the way to
-// add one.
-function Empty({ words, from, add = true }: { words: string; from: FoodsSearch; add?: boolean }) {
+// add one, or a recipe.
+function Empty({
+  words,
+  from,
+  add = true,
+  recipe = false,
+}: {
+  words: string
+  from: FoodsSearch
+  add?: boolean
+  recipe?: boolean
+}) {
   const t = useMessages()
 
   return (
     <div className="space-y-3 rounded-lg bg-card p-4 text-center shadow-card lg:p-6">
       <p className="text-muted-foreground">{words}</p>
       {add && (
-        <Link to="/foods/new" search={from} className={buttonVariants()}>
+        <Link
+          to={recipe ? '/foods/new-recipe' : '/foods/new'}
+          search={from}
+          className={buttonVariants()}
+        >
           <Plus aria-hidden />
-          {t.foods.add}
+          {recipe ? t.recipes.new : t.foods.add}
         </Link>
       )}
+    </div>
+  )
+}
+
+// NoRecipes is the recipes' list before there is one: what a recipe is
+// for, and the way to write one.
+function NoRecipes({ from }: { from: FoodsSearch }) {
+  const t = useMessages()
+
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg bg-card p-6 text-center shadow-card">
+      <span
+        aria-hidden
+        className="grid size-14 place-items-center rounded-md bg-primary-soft text-primary"
+      >
+        <CookingPot className="size-6" />
+      </span>
+      <div className="max-w-sm space-y-1.5">
+        <h2 className="text-h3">{t.recipes.none}</h2>
+        <p className="text-muted-foreground">{t.recipes.noneWhy}</p>
+        <p className="text-small text-muted-foreground">{t.recipes.noneCoach}</p>
+      </div>
+      <Link to="/foods/new-recipe" search={from} className={buttonVariants()}>
+        <Plus aria-hidden />
+        {t.recipes.new}
+      </Link>
     </div>
   )
 }

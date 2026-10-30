@@ -1,8 +1,6 @@
-import { Link } from '@tanstack/react-router'
 import { Plus, ScanBarcode, TriangleAlert, X } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type ReactNode, type SubmitEvent } from 'react'
 
-import { $api } from '@/api/client'
 import { conflictOf, detailOf, statusOf } from '@/api/errors'
 import { useCreateFood, useSaveFood } from '@/api/foods'
 import type { components } from '@/api/schema'
@@ -11,6 +9,7 @@ import { amountWrong, sayWrong } from '@/components/day/meal-entries'
 import { SaveStatus } from '@/components/day/save-status'
 import { Scanner } from '@/components/day/scanner'
 import { energyOff } from '@/components/foods/energy'
+import { TakenBy } from '@/components/foods/taken-by'
 import { Button } from '@/components/ui/button'
 import { SegmentedControl } from '@/components/ui/segmented'
 import { useFormat } from '@/i18n/format'
@@ -104,6 +103,8 @@ interface Compact {
   // The rest to start with: a product a barcode found, or the barcode
   // alone.
   start?: Partial<FoodFields>
+  // Of a recipe's ingredient: its amount is the recipe's, not eaten now.
+  ingredient?: boolean
   onAdd: (food: Food, amount: number) => void
 }
 
@@ -794,7 +795,7 @@ export function FoodForm({
         <div className="grid grid-cols-2 gap-3">
           {text(
             'eaten',
-            t.log.eatenNow[draft.basis],
+            (compact.ingredient === true ? t.recipes.inRecipe : t.log.eatenNow)[draft.basis],
             eaten,
             (typed) => {
               setEaten(typed)
@@ -898,24 +899,5 @@ export function FoodForm({
       </Button>
       {saveStatus}
     </form>
-  )
-}
-
-// TakenBy says that another food of the user's has a name and brand, or
-// an other name, and which, with a link to it.
-function TakenBy({ foodId, by }: { foodId: string; by: 'name' | 'alias' | 'barcode' }) {
-  const t = useMessages()
-  const other = $api.useQuery('get', '/api/v1/foods/{id}', { params: { path: { id: foodId } } })
-  const name = other.data
-    ? [other.data.name, other.data.brand].filter(Boolean).join(' · ')
-    : t.foods.thatFood
-  return (
-    <>
-      {{ name: t.foods.nameTaken, alias: t.foods.aliasTaken, barcode: t.foods.barcodeTaken }[by]}{' '}
-      <Link to="/foods/$id" params={{ id: foodId }} className="underline underline-offset-2">
-        {name}
-      </Link>
-      {other.data?.archived && ` (${t.foods.archivedMark})`}
-    </>
   )
 }

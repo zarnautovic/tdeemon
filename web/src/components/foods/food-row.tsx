@@ -13,7 +13,8 @@ import type { FoodsSearch } from '@/router'
 // this week and grey when not, its name and brand, whether its values are
 // an estimate, its macros as a bar and in grams, how long ago it was
 // eaten when not this week, and its kcal for its basis (/100 g); a link
-// to the food, marked while it is the one open beside the list.
+// to the food, marked while it is the one open beside the list. A
+// recipe is marked so, and gives its kcal for a portion when divided.
 export function FoodRow({
   food,
   from,
@@ -28,7 +29,8 @@ export function FoodRow({
 }) {
   const t = useMessages()
   const f = useFormat()
-  const n = food.nutrients
+  const portion = food.recipe?.portion
+  const n = portion ?? food.nutrients
   const recent = eatenThisWeek(food, today)
   const days = daysSinceEaten(food, today)
 
@@ -57,6 +59,7 @@ export function FoodRow({
               )}
             </span>
             {food.source === 'estimate' && <Badge tone="warning">{t.meal.estimate}</Badge>}
+            {food.source === 'recipe' && <Badge tone="primary">{t.recipes.mark}</Badge>}
           </span>
           <span className="flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
             <MacroSplit nutrients={n} />
@@ -72,7 +75,7 @@ export function FoodRow({
             {t.unit.kcal(f.number(n.kcal))}
           </span>
           <span className="block text-caption text-muted-foreground">
-            {t.foods.perShort[food.basis]}
+            {portion ? t.recipes.perPortionShort : t.foods.perShort[food.basis]}
           </span>
         </span>
       </Link>
