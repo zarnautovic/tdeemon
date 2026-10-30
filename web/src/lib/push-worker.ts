@@ -3,6 +3,19 @@
 // tapped, and subscribes again when the browser renews the subscription.
 // It takes what it needs of the worker, so a test gives its own.
 
+// skipsWaiting reports whether a message to the worker is the app's
+// Reload of a new version (lib/service-worker.ts): SKIP_WAITING, from a
+// page of the app's origin.
+export function skipsWaiting(data: unknown, from: string, origin: string): boolean {
+  return (
+    from === origin &&
+    typeof data === 'object' &&
+    data !== null &&
+    'type' in data &&
+    data.type === 'SKIP_WAITING'
+  )
+}
+
 // Note is what the server pushes: push.Notification.
 export interface Note {
   title: string

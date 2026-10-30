@@ -7,6 +7,7 @@ import {
   open,
   resubscribe,
   showOptions,
+  skipsWaiting,
   urlOf,
   type PushManager,
   type WindowClient,
@@ -160,4 +161,14 @@ test('a renewed subscription is told to the server', async () => {
   )
   expect(subscribe).not.toHaveBeenCalled()
   expect(bodyOf({})).toEqual({ endpoint: '', keys: { p256dh: '', auth: '' } })
+})
+
+test("the app's Reload is a message of its origin's alone", () => {
+  const origin = 'https://tdeemon.example.com'
+  expect(skipsWaiting({ type: 'SKIP_WAITING' }, origin, origin)).toBe(true)
+  expect(skipsWaiting({ type: 'SKIP_WAITING' }, 'https://evil.example', origin)).toBe(false)
+  expect(skipsWaiting({ type: 'SKIP_WAITING' }, '', origin)).toBe(false)
+  for (const message of [null, 'SKIP_WAITING', { type: 'OTHER' }]) {
+    expect(skipsWaiting(message, origin, origin)).toBe(false)
+  }
 })

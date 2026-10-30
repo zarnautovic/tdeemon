@@ -10,7 +10,7 @@ import {
 } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
 
-import { noteOf, open, resubscribe, showOptions, urlOf } from './lib/push-worker'
+import { noteOf, open, resubscribe, showOptions, skipsWaiting, urlOf } from './lib/push-worker'
 
 declare const self: ServiceWorkerGlobalScope
 
@@ -25,10 +25,17 @@ registerRoute(
   }),
 )
 
-// The app's Reload of a new version (lib/service-worker.ts).
+// The app's Reload of a new version (lib/service-worker.ts), from a
+// page of its own: a browser sends a worker only its origin's messages,
+// and the worker holds to it too.
 self.addEventListener('message', (event) => {
-  const data: unknown = event.data
-  if (typeof data === 'object' && data !== null && 'type' in data && data.type === 'SKIP_WAITING') {
+  // The page's origin, or its URL's where a browser leaves origin empty.
+  const source = event.source
+  const from =
+    event.origin !== '' || source === null || !('url' in source)
+      ? event.origin
+      : new URL(source.url).origin
+  if (skipsWaiting(event.data, from, self.location.origin)) {
     void self.skipWaiting()
   }
 })
