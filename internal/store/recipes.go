@@ -106,6 +106,11 @@ func saveRecipeInTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.A
 			return recipe.Recipe{}, err
 		}
 		before = &had
+		// A recipe's food keeps the barcodes a save of the recipe does not
+		// name: they are its food's, added as any food's are.
+		if r.Food.Barcodes == nil {
+			r.Food.Barcodes = had.Food.Barcodes
+		}
 	}
 	var parts []uuid.UUID
 	if r.Items, parts, err = ingredients(ctx, tx, userID, a, r.Items, foods, now); err != nil {

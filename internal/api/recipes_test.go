@@ -313,3 +313,28 @@ func TestUpsertRecipeOfAnotherUsersFood(t *testing.T) {
 		t.Errorf("another's food: %d %s; none: %d %s; want the same 422", other.Code, other.Body.String(), none.Code, none.Body.String())
 	}
 }
+
+// A recipe as an ingredient, reweighed, brings as much but weighs
+// another amount: the ingredient is marked changed.
+func TestRecipeIngredientReweighed(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	cookies := []*http.Cookie{session}
+	bread := saveIsolationFoods(t, in.db, in.user, in.clock.Now())
+	inner := decodeRecipe(t, in.do(t, http.MethodPost, "/api/v1/recipes", pudding(bread), cookies, nil).Body.Bytes())
+	outer := fmt.Sprintf(`{"name": "Pudding trifle", "items": [{"food_id": %q, "servings": 1, "serving": "recipe"}]}`, inner.Food.ID)
+	a := decodeRecipe(t, in.do(t, http.MethodPost, "/api/v1/recipes", outer, cookies, nil).Body.Bytes())
+	if a.Food.Recipe == nil || len(a.Food.Recipe.Items) != 1 || a.Food.Recipe.Items[0].Changed {
+		t.Fatalf("the trifle: %+v", a.Food.Recipe)
+	}
+	reweighed := strings.Replace(pudding(bread), `"yield_g": 420`, `"yield_g": 400`, 1)
+	if rec := in.do(t, http.MethodPost, "/api/v1/recipes", reweighed, cookies, nil); rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	rec := in.do(t, http.MethodGet, "/api/v1/foods/"+a.Food.ID, "", cookies, nil)
+	f := decodeRecipe(t, []byte(`{"food": `+rec.Body.String()+`}`))
+	if r := f.Food.Recipe; r == nil || len(r.Items) != 1 || !r.Items[0].Changed {
+		t.Errorf("get_food of the trifle: %s, want the pudding marked changed", rec.Body.String())
+	}
+}

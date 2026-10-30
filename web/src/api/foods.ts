@@ -158,8 +158,9 @@ export function useCreateFood() {
 }
 
 // fieldsOf is a food as the server keeps it, to save it again as it is:
-// archived, or brought back.
+// archived, or brought back. A recipe's food goes without its recipe,
+// which the server answers with and a save of the food does not take.
 export function fieldsOf(food: Food): components['schemas']['UpsertFoodInputBody'] {
-  const { last_use: _lastUse, queries: _queries, ...fields } = food
+  const { last_use: _lastUse, queries: _queries, recipe: _recipe, ...fields } = food
   return fields
 }

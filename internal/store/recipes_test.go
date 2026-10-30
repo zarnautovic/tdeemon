@@ -420,3 +420,23 @@ func TestUndoRecipeIntoACycle(t *testing.T) {
 		t.Errorf("the dish after = %+v, %v; want it as it was, of the chicken alone", got, err)
 	}
 }
+
+// A recipe saved again keeps the barcodes its food was given.
+func TestSaveRecipeKeepsItsBarcodes(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := saveFood(t, db, ana, kefir())
+	r := saveRecipe(t, db, ana, curryOf(t, chicken, k))
+	f := r.Food
+	f.Barcodes = []string{"4006381333931"}
+	if _, err := db.SaveFood(t.Context(), ana, testActor, f, t0); err != nil {
+		t.Fatal(err)
+	}
+	again := curryOf(t, chicken, k)
+	again.Portions = 2
+	if got := saveRecipe(t, db, ana, again); len(got.Food.Barcodes) != 1 || got.Portions != 2 {
+		t.Errorf("saved again: barcodes %v, portions %d; want the barcode kept", got.Food.Barcodes, got.Portions)
+	}
+}
