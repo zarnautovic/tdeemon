@@ -92,10 +92,11 @@ func TestPush(t *testing.T) {
 
 // channelUsers are users with each mix of channels: a Telegram chat that
 // blocked the bot beside a device that takes it, the chat alone, a device
-// that is down alone, and none; and the channels, both on.
+// that is down alone, none, and the blocked chat beside a device that is
+// down; and the channels, both on.
 type channelUsers struct {
-	both, chatOnly, downOnly, none user.User
-	c                              notify.Channels
+	both, chatOnly, downOnly, none, chatAndDown user.User
+	c                                           notify.Channels
 }
 
 func newChannelUsers(t *testing.T) channelUsers {
@@ -126,10 +127,11 @@ func newChannelUsers(t *testing.T) channelUsers {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sender.Client = &http.Client{Transport: answerByPath{"ok": http.StatusCreated, "down": http.StatusServiceUnavailable}}
+	sender.Client = &http.Client{Transport: answerByPath{"ok": http.StatusCreated, "down": http.StatusServiceUnavailable, "down2": http.StatusServiceUnavailable}}
 	return channelUsers{
 		both: newU("both@example.com", true, "ok"), chatOnly: newU("chat@example.com", true, ""),
 		downOnly: newU("down@example.com", false, "down"), none: newU("none@example.com", false, ""),
+		chatAndDown: newU("chat-down@example.com", true, "down2"),
 		c: notify.Channels{
 			DB: db, Bot: &telegram.Bot{Token: "123456:made-up-token-for-tests-only-0123", BaseURL: blocked.URL},
 			Push: sender, Logger: slog.New(slog.DiscardHandler),
@@ -155,6 +157,10 @@ func TestSendToEveryChannel(t *testing.T) {
 	}
 	if has, err := u.c.Send(t.Context(), u.downOnly, n, now); !has || err == nil || notify.Blocked(err) {
 		t.Errorf("a device down alone = %v, %v; want an error to retry", has, err)
+	}
+	// The device may take it later: an error to retry, not Blocked.
+	if has, err := u.c.Send(t.Context(), u.chatAndDown, n, now); !has || err == nil || notify.Blocked(err) {
+		t.Errorf("blocked chat and a device down = %v, %v; want an error to retry", has, err)
 	}
 	if has, err := u.c.Send(t.Context(), u.none, n, now); has || err != nil {
 		t.Errorf("no channel = %v, %v", has, err)

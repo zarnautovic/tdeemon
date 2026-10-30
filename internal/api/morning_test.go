@@ -261,3 +261,28 @@ func TestGetMorning(t *testing.T) {
 		t.Errorf("with a token: %d, want 403", rec.Code)
 	}
 }
+
+// A morning of before is its own date, across a change of the clocks and
+// with a day that starts after 10:00; it says nothing of a proposal,
+// whose state then is not kept, while today's does.
+func TestGetMorningOfBefore(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	// Zagreb's clocks went back on Oct 25.
+	in.clock.Set(time.Date(2026, 10, 27, 9, 30, 0, 0, time.UTC))
+	now := in.clock.Now()
+	if rec := in.do(t, http.MethodPatch, "/api/v1/me", `{"day_start_hour": 12}`, []*http.Cookie{session}, nil); rec.Code != http.StatusOK {
+		t.Fatalf("settings: %d %s", rec.Code, rec.Body.String())
+	}
+	waitingProposal(t, in.db, in.user.ID, day.DateOf(now), now)
+	if got := getMorning(t, in, session, ""); !strings.Contains(got.Short, "promjena plana čeka") {
+		t.Errorf("today's says no proposal: %+v", got)
+	}
+	for _, d := range []string{"2026-10-24", "2026-10-25", "2026-10-26"} {
+		got := getMorning(t, in, session, "?date="+d)
+		if got.Date != d || strings.Contains(got.Short, "promjena plana") || strings.Contains(got.Text, "Plan:") {
+			t.Errorf("%s: %+v", d, got)
+		}
+	}
+}

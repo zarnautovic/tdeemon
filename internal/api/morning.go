@@ -455,7 +455,9 @@ type morningOutput struct {
 // getMorning writes the morning summary of a date as it reads now: what
 // a tap on the morning's notification opens. Today's is of now; one of
 // before is of 10:00 that morning, as the job wrote it, with what was
-// logged since.
+// logged since, and without the line of a proposal that waited: the
+// proposals keep no state of before, so one made since, or answered,
+// would read as waiting then.
 func (s *sessions) getMorning(ctx context.Context, in *morningInput) (*morningOutput, error) {
 	p, err := requireSession(ctx)
 	if err != nil {
@@ -482,6 +484,9 @@ func (s *sessions) getMorning(ctx context.Context, in *morningInput) (*morningOu
 	m, err := s.morningOf(ctx, p.User, at)
 	if err != nil {
 		return nil, internalError("reading the morning summary failed", err)
+	}
+	if at != now {
+		m.waits = day.Date{}
 	}
 	n := morningNote(m, p.User.Locale)
 	out := &morningOutput{CacheControl: "no-store"}

@@ -323,7 +323,9 @@ browser's push service (Apple's, Google's, Mozilla's or Microsoft's)
 takes them to the device, installed as an app on iOS. Nothing needs
 setting up: the instance's key (VAPID) is derived from
 `TDEEMON_SECRET_KEY`, and a new secret key makes every device subscribe
-again. The server must reach the push services over HTTPS.
+again. The server must reach the push services over HTTPS. Until the
+web app's settings turn them on, a device subscribes through the API
+(`PUT /api/v1/push/subscriptions`).
 
 A device shows the summary in a line (yesterday's kcal against the
 target, the weight, the sleep); a tap opens the whole in the app. An
