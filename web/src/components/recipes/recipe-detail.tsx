@@ -67,6 +67,30 @@ export function RecipeDetail({ food, recipe }: { food: Food; recipe: RecipeBody 
   const portionGrams = recipe.portions === undefined ? undefined : recipe.weight / recipe.portions
   const grams = (n: number) => t.unit.g(f.number(n))
 
+  // takeNew saves the recipe again, its ingredients taking their foods' values
+  // now; a retry from the status does as much.
+  function takeNew() {
+    again.mutate(
+      { body: recipeInput(food) },
+      {
+        onSuccess: (answer) => {
+          const p = answer.food.recipe?.portion
+          sayChange(
+            {
+              title: t.recipes.savedPer(
+                answer.food.name,
+                t.unit.kcal(f.number(p?.kcal ?? answer.food.nutrients.kcal)),
+                p ? t.recipes.perPortion : t.recipes.per100g,
+              ),
+              lines: answer.warnings.map((w) => warningOf(w, t)),
+            },
+            { last: { action: 'recipe.save', entity: answer.food.id }, date: 'today' },
+          )
+        },
+      },
+    )
+  }
+
   return (
     <article aria-labelledby={`food-${food.id}`} className="space-y-4">
       <header className="flex items-start gap-3">
@@ -203,36 +227,11 @@ export function RecipeDetail({ food, recipe }: { food: Food; recipe: RecipeBody 
           <p className="min-w-0 flex-1 basis-48">
             {t.recipes.changed(f.list(changed.map((i) => i.name)))}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={again.isPending}
-            onClick={() => {
-              again.mutate(
-                { body: recipeInput(food) },
-                {
-                  onSuccess: (answer) => {
-                    const p = answer.food.recipe?.portion
-                    sayChange(
-                      {
-                        title: t.recipes.savedPer(
-                          answer.food.name,
-                          t.unit.kcal(f.number(p?.kcal ?? answer.food.nutrients.kcal)),
-                          p ? t.recipes.perPortion : t.recipes.per100g,
-                        ),
-                        lines: answer.warnings.map((w) => warningOf(w, t)),
-                      },
-                      { last: { action: 'recipe.save', entity: answer.food.id }, date: 'today' },
-                    )
-                  },
-                },
-              )
-            }}
-          >
+          <Button variant="outline" size="sm" disabled={again.isPending} onClick={takeNew}>
             <RefreshCw aria-hidden />
             {t.recipes.takeNew}
           </Button>
-          <SaveStatus change={again} />
+          <SaveStatus change={again} onRetry={takeNew} />
         </div>
       )}
       <section aria-labelledby={`${id}-items`} className={cn(card, 'space-y-2')}>

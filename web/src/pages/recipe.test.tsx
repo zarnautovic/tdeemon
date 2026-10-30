@@ -531,3 +531,26 @@ test('a recipe that failed to save says why', async () => {
     'The server did not take this recipe: what went wrong',
   )
 })
+
+test('a recipe whose save failed is sent again from its status, and then said and left', async () => {
+  let tries = 0
+  const server = recipeServer(curry, {
+    'POST /api/v1/recipes': async (request) => {
+      tries++
+      const body: unknown = await request.json()
+      server.sent.push({ path: '/api/v1/recipes', body })
+      return tries === 1 ? problem(500) : Response.json({ food: curry, warnings: [] })
+    },
+  })
+  const router = renderAt(`/foods/${curryId}?edit=true`)
+
+  await screen.findByLabelText('Amount: Chicken breast')
+  fireEvent.click(screen.getByRole('button', { name: 'Save the recipe' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Try again' }))
+
+  expect(await screen.findByText('Saved: Chicken curry')).toBeDefined()
+  await waitFor(() => {
+    expect(router.state.location.search).toEqual({})
+  })
+  expect(server.sent).toHaveLength(2)
+})

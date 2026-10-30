@@ -176,6 +176,8 @@ function Form({
     onSaved(answer.food)
   }
 
+  const resend = useRef<() => void>(undefined)
+
   function submit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     const items = itemsOf(entries, notes, f.parse)
@@ -205,14 +207,19 @@ function Form({
       ...(pot === undefined ? {} : { pot_g: pot }),
       ...(note.trim() === '' ? {} : { note: note.trim() }),
     }
-    if (food === undefined) {
-      create.mutate({ body: fields }, { onSuccess: saved })
-    } else {
-      correct.mutate(
-        { body: { id: food.id, ...fields, ...(food.archived ? { archived: true } : {}) } },
-        { onSuccess: saved },
-      )
-    }
+    // Sent again from the status as it was sent, with what follows a save.
+    resend.current =
+      food === undefined
+        ? () => {
+            create.mutate({ body: fields }, { onSuccess: saved })
+          }
+        : () => {
+            correct.mutate(
+              { body: { id: food.id, ...fields, ...(food.archived ? { archived: true } : {}) } },
+              { onSuccess: saved },
+            )
+          }
+    resend.current()
   }
 
   function move(key: string, by: number) {
@@ -392,9 +399,9 @@ function Form({
             </p>
           ) : // Of the one the form sends: a new recipe, or one corrected.
           food === undefined ? (
-            <SaveStatus change={create} />
+            <SaveStatus change={create} onRetry={() => resend.current?.()} />
           ) : (
-            <SaveStatus change={correct} />
+            <SaveStatus change={correct} onRetry={() => resend.current?.()} />
           )}
           <Button type="submit" className="h-13 w-full text-base" disabled={save.isPending}>
             {t.recipes.save}

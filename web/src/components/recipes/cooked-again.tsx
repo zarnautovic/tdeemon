@@ -1,5 +1,5 @@
 import { Link, useSearch } from '@tanstack/react-router'
-import { useId, useState, type RefObject } from 'react'
+import { useId, useRef, useState, type RefObject } from 'react'
 
 import { detailOf, statusOf } from '@/api/errors'
 import { recipeInput, useIngredientFoods, useSaveRecipe, type Ingredient } from '@/api/recipes'
@@ -147,6 +147,8 @@ function Pot({
   // Weighed alone, a weight is what it saves.
   const unweighed = start === undefined && yieldG === undefined && !weighing.cantWeigh
 
+  const resend = useRef<() => void>(undefined)
+
   function submit() {
     const notes = new Map<string, string>()
     for (const [key, w] of was) {
@@ -168,35 +170,39 @@ function Pot({
     }
     const { yield_g: _was, portions: _portions, pot_g: _pot, ...kept } = recipeInput(food)
     const pot = potOf(weighing, f.parse, recipe?.pot_g)
-    save.mutate(
-      {
-        body: {
-          ...kept,
-          items,
-          ...(yieldG === undefined ? {} : { yield_g: yieldG }),
-          ...(portionCount === undefined ? {} : { portions: portionCount }),
-          ...(pot === undefined ? {} : { pot_g: pot }),
+    // Sent again from the status as it was sent, with what follows a save.
+    resend.current = () => {
+      save.mutate(
+        {
+          body: {
+            ...kept,
+            items,
+            ...(yieldG === undefined ? {} : { yield_g: yieldG }),
+            ...(portionCount === undefined ? {} : { portions: portionCount }),
+            ...(pot === undefined ? {} : { pot_g: pot }),
+          },
         },
-      },
-      {
-        onSuccess: (answer) => {
-          const r = answer.food.recipe
-          const per = r?.portion
-          sayChange(
-            {
-              title: t.recipes.savedPer(
-                answer.food.name,
-                t.unit.kcal(f.number(per?.kcal ?? answer.food.nutrients.kcal)),
-                per ? t.recipes.perPortion : t.recipes.per100g,
-              ),
-              lines: answer.warnings.map((w) => warningOf(w, t)),
-            },
-            { last: { action: 'recipe.save', entity: answer.food.id }, date: 'today' },
-          )
-          onDone()
+        {
+          onSuccess: (answer) => {
+            const r = answer.food.recipe
+            const per = r?.portion
+            sayChange(
+              {
+                title: t.recipes.savedPer(
+                  answer.food.name,
+                  t.unit.kcal(f.number(per?.kcal ?? answer.food.nutrients.kcal)),
+                  per ? t.recipes.perPortion : t.recipes.per100g,
+                ),
+                lines: answer.warnings.map((w) => warningOf(w, t)),
+              },
+              { last: { action: 'recipe.save', entity: answer.food.id }, date: 'today' },
+            )
+            onDone()
+          },
         },
-      },
-    )
+      )
+    }
+    resend.current()
   }
 
   return (
@@ -290,7 +296,7 @@ function Pot({
             {t.recipes.refused(detailOf(save.error))}
           </p>
         ) : (
-          <SaveStatus change={save} />
+          <SaveStatus change={save} onRetry={() => resend.current?.()} />
         )}
         <Button className="h-13 w-full text-base" disabled={save.isPending} onClick={submit}>
           {start === undefined ? t.recipes.saveWeight : t.recipes.saveCooked}
