@@ -262,9 +262,13 @@ func reviewProposal(ctx context.Context, tx *sql.Tx, userID uuid.UUID, r autopil
 	if err != nil {
 		return proposal.Proposal{}, err
 	}
-	p, _, err := createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), r.Date, now, check)
+	p, checked, err := createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), r.Date, now, check)
 	if err != nil || r.Outcome != autopilot.Applied {
 		return p, err
+	}
+	if checked > 0 {
+		// The TDEE of the check, in this transaction.
+		tdee = checked
 	}
 	// check held the changes a moment ago, in this transaction.
 	return applyIn(ctx, tx, userID, a, p, now, nil, tdee)

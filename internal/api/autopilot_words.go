@@ -70,12 +70,12 @@ var reviewCroatian = reviewPhrases{
 	tooSoon: "prerano nakon promjene", interval: "najviše korak tjedno", noPlan: "nema faze ni cilja", waits: "prijedlog čeka",
 	fewCarbs: "premalo UH", limit: "granica", underweight: "BMI ispod 18,5",
 	losing: "tempo", gaining: "tempo", plan: "plan", newAvg: "Novi prosjek %s kcal dnevno.", kcalDay: "kcal dnevno",
-	tapStep: "Dodirni za razlog ili vraćanje.", answerBy: "Prihvati ili odbij u planu do %s.",
-	pastDrift:   "To je preko granice odstupanja (%s od %s kcal), pa pita prvo. Odgovori do %s.",
+	tapStep: "Dodirni za razlog ili vraćanje.", answerBy: "Prihvati ili odbij u planu do %s",
+	pastDrift:   "To je preko granice odstupanja (%s od %s kcal), pa pita prvo. Odgovori do %s",
 	targetStays: "Cilj ostaje %s kcal dnevno.", stepsFell: "ali koraka je %s %% manje", stepsRose: "ali koraka je %s %% više",
-	needs: "Korak treba %d upisana dana i %d vaganja u zadnjih 7.", nextReview: "Sljedeći pregled %s.",
+	needs: "Korak treba %d upisana dana i %d vaganja u zadnjih 7.", nextReview: "Sljedeći pregled %s",
 	tdeeAbout: "TDEE je oko %s ± %s kcal.", firstAt: "Prvi korak oko %s, ako nastaviš upisivati kao sada.",
-	ifLogging: "Nastavi upisivati i vagati se, pa će ga kalibracija izmjeriti.", firstFrom: "Prvi korak može doći od %s.",
+	ifLogging: "Nastavi upisivati i vagati se, pa će ga kalibracija izmjeriti.", firstFrom: "Prvi korak može doći od %s",
 	setPlan:     "Postavi fazu i cilj kcal u planu, pa će pregled ocjenjivati tempo prema njima.",
 	answerFirst: "Prvo odgovori na prijedlog u planu; pregled ga čeka.",
 	carbsLeft:   "%s bi imali %s g UH, a proteine i masti nikad ne mijenja.", askCoach: "Zamoli trenera da promijeni raspodjelu.",
@@ -129,8 +129,9 @@ func (w reviewWriter) title(r autopilot.Review) string {
 			return w.r.holdIntake
 		case autopilot.ReasonRejected:
 			return w.r.holdRejected
+		default:
+			return w.r.holdPace
 		}
-		return w.r.holdPace
 	case autopilot.Skipped:
 	}
 	return w.r.noStep + ": " + w.why(r)
@@ -158,8 +159,9 @@ func (w reviewWriter) why(r autopilot.Review) string {
 		return w.r.fewCarbs
 	case autopilot.ReasonUnderweight:
 		return w.r.underweight
+	default:
+		return w.r.limit
 	}
-	return w.r.limit
 }
 
 // pace says the measured rate against the plan's.
@@ -207,8 +209,9 @@ func (w reviewWriter) body(r autopilot.Review, next, answer day.Date) string {
 				steps = w.r.stepsRose
 			}
 			return review + ", " + sprintf(steps, w.num(abs(r.StepsChangePct), 0)) + ". " + stays
+		default:
+			return review + ". " + stays
 		}
-		return review + ". " + stays
 	case autopilot.Skipped:
 	}
 	return w.skipBody(r, next)
@@ -243,8 +246,9 @@ func (w reviewWriter) skipBody(r autopilot.Review, next day.Date) string {
 		return w.r.answerFirst + " " + nextReview
 	case autopilot.ReasonFewCarbs:
 		return sprintf(w.r.carbsLeft, w.dayTypeName(r), w.num(r.CarbsG, 0)) + " " + w.r.askCoach
+	default:
+		return sprintf(w.r.limitBody, r.Rule)
 	}
-	return sprintf(w.r.limitBody, r.Rule)
 }
 
 func (w reviewWriter) dayTypeName(r autopilot.Review) string {
@@ -281,10 +285,17 @@ func (w reviewWriter) text(r autopilot.Review, mode autopilot.Mode, next, answer
 		lines = append(lines, d+" kcal")
 	}
 	end := sprintf(w.r.nextReview, w.shortDate(next))
+	if strings.Contains(lines[2], end) {
+		// The body said it.
+		end = ""
+	}
 	if r.Outcome == autopilot.Applied {
 		end += " " + w.r.takeBack
 	}
-	return strings.Join(append(lines, end), "\n")
+	if end = strings.TrimSpace(end); end != "" {
+		lines = append(lines, end)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // reviewNote is the review sr as a notification, in the language of
