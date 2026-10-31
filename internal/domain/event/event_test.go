@@ -12,6 +12,7 @@ func TestActorValidate(t *testing.T) {
 		{Kind: User, Client: "mcp", Model: "claude-opus-5-5"},
 		{Kind: User, Client: "web"},
 		{Kind: Import, Client: "hae"},
+		{Kind: Autopilot, Client: ClientAutopilot},
 	} {
 		if err := a.Validate(); err != nil {
 			t.Errorf("%+v: %v", a, err)

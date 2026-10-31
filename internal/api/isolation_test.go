@@ -14,6 +14,7 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/autopilot"
 	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
@@ -280,9 +281,26 @@ func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time
 // of the name (A, I) sets it apart.
 func isolationWeight(u user.User) float64 { return 80 + float64(u.Name[0]%20)/10 }
 
+// saveIsolationAutopilot gives u settings of the autopilot and a review
+// of a week ago, their weekday and target n's own.
+func saveIsolationAutopilot(t *testing.T, db *store.DB, u user.User, n int, now time.Time) {
+	t.Helper()
+	ctx := t.Context()
+	if err := db.SetAutopilotSettings(ctx, u.ID, isolationActor, autopilot.Settings{Mode: autopilot.Auto, Weekday: time.Weekday(n % 7)}, now); err != nil {
+		t.Fatalf("save %s's autopilot settings: %v", u.Name, err)
+	}
+	if _, err := db.SaveReview(ctx, u.ID, autopilot.Review{
+		Date: day.DateOf(now).AddDays(-7), Outcome: autopilot.Skipped, Reason: autopilot.ReasonFewData,
+		LoggedDays: n % 4, WeighIns: 3, NeedsLoggedDays: 4, NeedsWeighIns: 3, TargetKcal: 2100 + float64(n),
+	}, 0, now, nil); err != nil {
+		t.Fatalf("save %s's review: %v", u.Name, err)
+	}
+}
+
 // saveIsolationPlan gives u a profile, a phase, a target, training
 // weekdays, limits of their own, a toggle of a day's type, a day of a
-// workout, notes for a coach and proposals, applied and pending, whose
+// workout, notes for a coach, settings of the autopilot and a review,
+// proposals, applied and pending, whose
 // notes and rationales name u, so they are text unique to u; and returns
 // the proposals' ids.
 func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) (applied, pending uuid.UUID) {
@@ -326,6 +344,7 @@ func saveIsolationPlan(t *testing.T, db *store.DB, u user.User, now time.Time) (
 	if err := db.SetProfileNotes(ctx, u.ID, isolationActor, "Notes of "+u.Name+": no fish, trains at dawn.", now); err != nil {
 		t.Fatalf("save %s's notes: %v", u.Name, err)
 	}
+	saveIsolationAutopilot(t, db, u, n, now)
 	// A proposal applied, a target from tomorrow, and one pending.
 	tomorrow := today.AddDays(1)
 	step, err := db.CreateProposal(ctx, u.ID, isolationActor, proposal.Draft{
