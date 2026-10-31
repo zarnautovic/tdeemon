@@ -491,3 +491,56 @@ func TestCorrectRecipeOfAFood(t *testing.T) {
 		t.Errorf("CorrectRecipe of a food's id = %v, want ErrNotFound", err)
 	}
 }
+
+func TestSaveRecipeKeepsAPortionsWeight(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	egg := saveFood(t, db, ana, food.Food{
+		ID: uuid.NewV7(), Name: "Egg", Basis: food.PerPortion, Source: food.Estimate, PortionGrams: 50,
+		Nutrients: food.Nutrients{Kcal: 72, Protein: 6.3, Carbs: 0.4, Fat: 4.8},
+	})
+	chicken := saveFood(t, db, ana, chickenBreast())
+	r := recipe.Recipe{
+		Food: food.Food{ID: uuid.NewV7(), Name: "Omelette"},
+		Items: []meal.Item{
+			itemOf(t, egg, meal.Quantity{Portions: 3}),
+			itemOf(t, chicken, meal.Quantity{Amount: 100, Unit: "g"}),
+		},
+		Portions: 2,
+	}
+	got := saveRecipe(t, db, ana, r)
+	if got.Items[0].PortionGrams != 50 {
+		t.Errorf("the egg's portion = %v g, want 50", got.Items[0].PortionGrams)
+	}
+	// Not weighed: 3 eggs of 50 g and 100 g of chicken stand for the dish.
+	if s, ok := got.Food.Serving(recipe.Whole); !ok || math.Abs(s.Amount-250) > 1e-9 {
+		t.Errorf("servings = %+v, want the whole dish of 250 g", got.Food.Servings)
+	}
+	again, err := db.RecipeByID(t.Context(), ana, got.Food.ID)
+	if err != nil || !reflect.DeepEqual(again, got) {
+		t.Errorf("RecipeByID = %+v, %v; want %+v", again, err, got)
+	}
+}
+
+// A recipe's save recorded before its ingredients kept a portion's
+// weight, its items without PortionGrams, is undone all the same.
+func TestUndoRecipeSavedBeforePortionGrams(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := kefir()
+	r := saveRecipe(t, db, ana, curryOf(t, chicken, k), k)
+	changed := r
+	changed.Portions = 8
+	saveRecipe(t, db, ana, changed)
+	exec(t, db, `UPDATE events SET after_state = json_remove(after_state, '$.Items[0].PortionGrams', '$.Items[1].PortionGrams')
+		WHERE user_id = ? AND operation = ?`, ana.String(), string(event.RecipeSave))
+	if e := undo(t, db, ana); e.Action != event.RecipeSave || e.Entity != r.Food.ID.String() {
+		t.Fatalf("undone %s of %s, want the recipe's save", e.Action, e.Entity)
+	}
+	if got, err := db.RecipeByID(t.Context(), ana, r.Food.ID); err != nil || got.Portions != 4 {
+		t.Errorf("after the undo %+v, %v; want 4 portions again", got, err)
+	}
+}

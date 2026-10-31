@@ -155,12 +155,14 @@ brought when the recipe was saved: correcting a food later does not
 change the recipe until it is saved again, and a meal logged keeps what
 it had (decided October 2026). The dish's weight is optional, as a pot
 may be too big for the scale: without it the raw ingredients' weight
-(ml as g) stands for it, which makes a share of the dish exact and its
-grams an approximation; one below 30 % or above three times the raw
-weight is warned of, not refused. Its food has the serving `recipe`, the
-whole dish, and `portion`, the dish divided into the portions the recipe
-says, so "a tenth of the curry" is 0.1 of `recipe`. The empty pot's
-weight is kept for the next weighing. A recipe may be an ingredient of
+(ml as g, and portions by the grams their food said a portion weighs
+when the recipe was saved) stands for it, which makes a share of the
+dish exact and its grams an approximation; one below 30 % or above
+three times the raw weight is warned of, not refused. Its food has the
+serving `recipe`, the whole dish, and `portion`, the dish divided into
+the portions the recipe says, so "a tenth of the curry" is 0.1 of
+`recipe`. The empty pot's weight is kept for the next weighing. A
+recipe may be an ingredient of
 another, never of itself at any depth. Saving it again by its name
 corrects it, as a food's does; the save is one event (`recipe.save`)
 with the recipe whole before and after, and the new foods it brings are

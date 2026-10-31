@@ -125,6 +125,30 @@ func TestMakePortionsOfNoWeight(t *testing.T) {
 	}
 }
 
+func TestMakePortionsOfAKnownWeight(t *testing.T) {
+	t.Parallel()
+
+	weighed := muffin
+	weighed.PortionGrams = 90
+	r := Recipe{
+		Food:  food.Food{ID: uuid.NewV7(), Name: "Trifle"},
+		Items: []meal.Item{item(t, weighed, meal.Quantity{Portions: 2}), item(t, cream, meal.Quantity{Amount: 100, Unit: "ml"})},
+	}
+	got, err := Make(r)
+	if err != nil {
+		t.Fatalf("Make of portions of a known weight, not weighed: %v", err)
+	}
+	// 2 muffins of 90 g and 100 ml of cream.
+	if raw, ok := got.RawWeight(); !ok || !near(raw, 280) {
+		t.Errorf("RawWeight = %v, %v; want 280 g", raw, ok)
+	}
+	// The weight is the one the portion had when the recipe was saved.
+	weighed.PortionGrams = 120
+	if raw, _ := got.RawWeight(); !near(raw, 280) {
+		t.Errorf("RawWeight after the food was corrected = %v, want 280 g as saved", raw)
+	}
+}
+
 func TestTotalOptional(t *testing.T) {
 	t.Parallel()
 

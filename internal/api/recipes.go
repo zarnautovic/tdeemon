@@ -123,9 +123,11 @@ func (s *sessions) recipeFoodBody(ctx context.Context, p auth.Principal, r *reci
 			return foodBody{}, err
 		}
 		// A recipe as an ingredient reweighed brings as much, but weighs
-		// another amount: the raw weight it adds changes.
+		// another amount: the raw weight it adds changes, as it does for a
+		// portion whose weight was corrected.
 		now, err := meal.FromFood(f, it.Quantity, it.Note)
 		changed[i] = err != nil || math.Abs(now.Amount-it.Amount) > 1e-9 || now.Unit != it.Unit ||
+			(now.Unit == "portion" && now.PortionGrams != it.PortionGrams) ||
 			!reflect.DeepEqual(now.Nutrients.Rounded(), it.Nutrients.Rounded())
 	}
 	b := newFoodBody(&r.Food)

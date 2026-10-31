@@ -345,3 +345,36 @@ func TestRecipeIngredientReweighed(t *testing.T) {
 		t.Errorf("get_food of the trifle: %s, want the pudding marked changed", rec.Body.String())
 	}
 }
+
+// A food by the portion whose portion's weight is known adds it, in
+// portions, to a recipe not weighed; the weight corrected since, the
+// ingredient is marked changed.
+func TestRecipeOfPortionsOfAKnownWeight(t *testing.T) {
+	t.Parallel()
+
+	in, session := signedIn(t)
+	cookies := []*http.Cookie{session}
+	egg, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, food.Food{
+		ID: uuid.NewV7(), Name: "Egg", Basis: food.PerPortion, Source: food.Estimate, PortionGrams: 50,
+		Nutrients: food.Nutrients{Kcal: 72, Protein: 6.3, Carbs: 0.4, Fat: 4.8},
+	}, in.clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"name": "Omelette", "items": [{"food_id": %q, "portions": 3}], "portions": 1}`, egg.ID)
+	rec := in.do(t, http.MethodPost, "/api/v1/recipes", body, cookies, nil)
+	a := decodeRecipe(t, rec.Body.Bytes())
+	if r := a.Food.Recipe; rec.Code != http.StatusOK || r == nil || r.Weight != 150 || len(r.Items) != 1 || r.Items[0].Changed {
+		t.Fatalf("POST: %d %s, want a dish of 150 g", rec.Code, rec.Body.String())
+	}
+
+	egg.PortionGrams = 60
+	if _, err := in.db.SaveFood(t.Context(), in.user.ID, isolationActor, egg, in.clock.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec = in.do(t, http.MethodGet, "/api/v1/foods/"+a.Food.ID, "", cookies, nil)
+	f := decodeRecipe(t, []byte(`{"food": `+rec.Body.String()+`}`))
+	if r := f.Food.Recipe; r == nil || r.Weight != 150 || len(r.Items) != 1 || !r.Items[0].Changed {
+		t.Errorf("get_food: %s, want the dish of 150 g as saved, the egg marked changed", rec.Body.String())
+	}
+}

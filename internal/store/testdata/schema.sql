@@ -399,7 +399,7 @@ CREATE TABLE recipe_items (
     polyols REAL CHECK (polyols >= 0),
     alcohol REAL CHECK (alcohol >= 0),
     source TEXT NOT NULL CHECK (source IN ('label', 'estimate', 'user', 'dish', 'recipe', 'off')),
-    note TEXT NOT NULL DEFAULT '',
+    note TEXT NOT NULL DEFAULT '', portion_grams REAL CHECK (portion_grams > 0),
     PRIMARY KEY (user_id, recipe_id, position),
     FOREIGN KEY (user_id, recipe_id) REFERENCES recipes (user_id, food_id) ON DELETE CASCADE,
     -- Foods are archived, never deleted, while a recipe uses them.
