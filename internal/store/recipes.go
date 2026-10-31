@@ -268,12 +268,12 @@ func writeRecipe(ctx context.Context, tx *sql.Tx, userID uuid.UUID, r recipe.Rec
 		q := it.Quantity
 		if _, err := tx.ExecContext(ctx, `INSERT INTO recipe_items (recipe_id, user_id, position, food_id, name, brand,
 			quantity_amount, quantity_unit, quantity_servings, quantity_serving, quantity_portions, amount, unit,
-			kcal, protein, carbs, fat, fiber, saturated_fat, sugars, salt, polyols, alcohol, source, note)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			kcal, protein, carbs, fat, fiber, saturated_fat, sugars, salt, polyols, alcohol, source, note, portion_grams)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			id, uid, i, it.FoodID.String(), it.Name, it.Brand,
 			q.Amount, q.Unit, q.Servings, q.Serving, q.Portions, it.Amount, it.Unit,
 			n.Kcal, n.Protein, n.Carbs, n.Fat, nullable(*o[0]), nullable(*o[1]), nullable(*o[2]), nullable(*o[3]),
-			nullable(*o[4]), nullable(*o[5]), string(it.Source), it.Note); err != nil {
+			nullable(*o[4]), nullable(*o[5]), string(it.Source), it.Note, positive(it.PortionGrams)); err != nil {
 			return err
 		}
 	}
@@ -325,7 +325,7 @@ func recipeInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (recipe.R
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT food_id, name, brand, quantity_amount, quantity_unit, quantity_servings,
 		quantity_serving, quantity_portions, amount, unit, kcal, protein, carbs, fat,
-		fiber, saturated_fat, sugars, salt, polyols, alcohol, source, note
+		fiber, saturated_fat, sugars, salt, polyols, alcohol, source, note, portion_grams
 		FROM recipe_items WHERE user_id = ? AND recipe_id = ? ORDER BY position`, userID.String(), id.String())
 	if err != nil {
 		return recipe.Recipe{}, err
@@ -335,12 +335,14 @@ func recipeInTx(ctx context.Context, tx *sql.Tx, userID, id uuid.UUID) (recipe.R
 		var it meal.Item
 		var foodID, source string
 		var opt [6]sql.NullFloat64
+		var portionGrams sql.NullFloat64
 		q, n := &it.Quantity, &it.Nutrients
 		if err := rows.Scan(&foodID, &it.Name, &it.Brand, &q.Amount, &q.Unit, &q.Servings, &q.Serving, &q.Portions,
 			&it.Amount, &it.Unit, &n.Kcal, &n.Protein, &n.Carbs, &n.Fat,
-			&opt[0], &opt[1], &opt[2], &opt[3], &opt[4], &opt[5], &source, &it.Note); err != nil {
+			&opt[0], &opt[1], &opt[2], &opt[3], &opt[4], &opt[5], &source, &it.Note, &portionGrams); err != nil {
 			return recipe.Recipe{}, err
 		}
+		it.PortionGrams = portionGrams.Float64
 		if it.FoodID, err = uuid.Parse(foodID); err != nil {
 			return recipe.Recipe{}, fmt.Errorf("ingredient food id %q: %w", foodID, err)
 		}

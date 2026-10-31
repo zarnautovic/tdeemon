@@ -491,3 +491,34 @@ func TestCorrectRecipeOfAFood(t *testing.T) {
 		t.Errorf("CorrectRecipe of a food's id = %v, want ErrNotFound", err)
 	}
 }
+
+func TestSaveRecipeKeepsAPortionsWeight(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	egg := saveFood(t, db, ana, food.Food{
+		ID: uuid.NewV7(), Name: "Egg", Basis: food.PerPortion, Source: food.Estimate, PortionGrams: 50,
+		Nutrients: food.Nutrients{Kcal: 72, Protein: 6.3, Carbs: 0.4, Fat: 4.8},
+	})
+	chicken := saveFood(t, db, ana, chickenBreast())
+	r := recipe.Recipe{
+		Food: food.Food{ID: uuid.NewV7(), Name: "Omelette"},
+		Items: []meal.Item{
+			itemOf(t, egg, meal.Quantity{Portions: 3}),
+			itemOf(t, chicken, meal.Quantity{Amount: 100, Unit: "g"}),
+		},
+		Portions: 2,
+	}
+	got := saveRecipe(t, db, ana, r)
+	if got.Items[0].PortionGrams != 50 {
+		t.Errorf("the egg's portion = %v g, want 50", got.Items[0].PortionGrams)
+	}
+	// Not weighed: 3 eggs of 50 g and 100 g of chicken stand for the dish.
+	if s, ok := got.Food.Serving(recipe.Whole); !ok || math.Abs(s.Amount-250) > 1e-9 {
+		t.Errorf("servings = %+v, want the whole dish of 250 g", got.Food.Servings)
+	}
+	again, err := db.RecipeByID(t.Context(), ana, got.Food.ID)
+	if err != nil || !reflect.DeepEqual(again, got) {
+		t.Errorf("RecipeByID = %+v, %v; want %+v", again, err, got)
+	}
+}

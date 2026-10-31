@@ -50,9 +50,12 @@ function entry(food: Food, amount: string, unit: string): FoodEntry {
 test('an ingredient weighs as the server weighs it', () => {
   expect(entryGrams(entry(rice, '2', 'serving:cup'), parse)).toBe(360)
   expect(entryGrams(entry(rice, '', 'g'), parse)).toBe(0)
-  // A food by the portion adds its grams only when given in grams.
-  expect(entryGrams(entry(egg, '2', 'portion'), parse)).toBeUndefined()
+  // A food by the portion adds its grams, or its portions of the grams
+  // one weighs; none when it does not say.
+  expect(entryGrams(entry(egg, '2', 'portion'), parse)).toBe(110)
   expect(entryGrams(entry(egg, '110', 'g'), parse)).toBe(110)
+  const { portion_grams: _grams, ...unweighed } = egg
+  expect(entryGrams(entry(unweighed, '2', 'portion'), parse)).toBeUndefined()
 })
 
 test('a dish comes to its ingredients, weighed or not, in portions or not', () => {
@@ -69,8 +72,10 @@ test('a dish comes to its ingredients, weighed or not, in portions or not', () =
   expect(raw.per100?.kcal).toBe(350)
   expect(dishWrong(raw, 1)).toBeUndefined()
 
-  // Without a weight, an egg in portions leaves the dish without grams.
-  const eggs = dishOf([entry(egg, '2', 'portion')], parse, undefined, undefined)
+  // Without a weight, an egg in portions of no known grams leaves the
+  // dish without grams.
+  const { portion_grams: _g, ...unweighed } = egg
+  const eggs = dishOf([entry(unweighed, '2', 'portion')], parse, undefined, undefined)
   expect(eggs.weight).toBeUndefined()
   expect(dishWrong(eggs, 1)).toBe('noRaw')
   expect(dishWrong(dishOf([entry(rice, '10001', 'g')], parse, undefined, undefined), 1)).toBe(

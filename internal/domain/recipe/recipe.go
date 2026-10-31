@@ -135,8 +135,9 @@ func optionals(n *food.Nutrients) [6]**float64 {
 
 // RawWeight returns the weight of the raw ingredients in grams, and
 // whether it is known: an amount in g, or in ml taken as g, and a food
-// per portion by the grams it was given in. An ingredient of portions
-// alone has no weight to add.
+// per portion by the grams it was given in, or its portions of the
+// weight a portion had when the recipe was saved. Portions of a food
+// that did not say what one weighs have no weight to add.
 func (r Recipe) RawWeight() (float64, bool) {
 	var g float64
 	for i := range r.Items {
@@ -146,6 +147,8 @@ func (r Recipe) RawWeight() (float64, bool) {
 			g += it.Amount
 		case it.Quantity.Unit == "g":
 			g += it.Quantity.Amount
+		case it.Unit == "portion" && it.PortionGrams > 0:
+			g += it.Amount * it.PortionGrams
 		default:
 			return 0, false
 		}

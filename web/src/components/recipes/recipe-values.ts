@@ -40,9 +40,9 @@ function times(v: Values, k: number): Values {
 
 // entryGrams is how many grams an ingredient adds to the raw weight, as
 // the server weighs it (recipe.RawWeight): its grams or millilitres
-// (taken as grams), or a serving's; of a food by the portion, only when
-// given in grams. Undefined when it adds none it knows; 0 while its
-// amount is not a number yet.
+// (taken as grams), or a serving's; of a food by the portion, its grams,
+// or its portions of the grams one weighs when the food says. Undefined
+// when it adds none it knows; 0 while its amount is not a number yet.
 export function entryGrams(
   entry: FoodEntry,
   parse: (s: string) => number | undefined,
@@ -50,9 +50,6 @@ export function entryGrams(
   const n = entryAmount(entry, parse)
   if (n === undefined) {
     return 0
-  }
-  if (entry.food.basis === 'portion') {
-    return entry.unit === 'g' ? n : undefined
   }
   const grams = entry.unit === 'ml' || entry.unit === 'g' ? 1 : unitGrams(entry.food, entry.unit)
   return grams === undefined ? undefined : n * grams
