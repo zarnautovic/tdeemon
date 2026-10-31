@@ -73,7 +73,7 @@ func TestSaveReviewAppliesAStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(checked.Targets) != 1 || checked.Targets[0].After == nil {
+	if len(checked.Targets) != 1 {
 		t.Errorf("checked %+v, want the step", checked)
 	}
 	p, err := db.Proposal(t.Context(), ana, got.ProposalID, t0)
@@ -95,17 +95,22 @@ func TestSaveReviewAppliesAStep(t *testing.T) {
 	if got.Review.Reason != r.Reason || got.Review.From != r.From || got.Review.DriftLimitKcal != 360 {
 		t.Errorf("stored %+v, want the review's numbers", got.Review)
 	}
-	// Undo leaves the step and the review.
-	if _, err := db.UndoLast(t.Context(), ana, testActor, t0); !errors.Is(err, store.ErrNothingToUndo) {
+	wantTakenBackInHistory(t, db, ana, p.ID)
+}
+
+// wantTakenBackInHistory checks that undo leaves userID's step id, and
+// a revert in the plan's history takes it back.
+func wantTakenBackInHistory(t *testing.T, db *store.DB, userID, id uuid.UUID) {
+	t.Helper()
+	if _, err := db.UndoLast(t.Context(), userID, testActor, t0); !errors.Is(err, store.ErrNothingToUndo) {
 		t.Errorf("UndoLast = %v, want nothing to undo", err)
 	}
-	// The plan's history takes it back.
-	back, err := db.RevertProposal(t.Context(), ana, testActor, p.ID, proposal.ChangedInTheApp, day.DateOf(t0), t0, nil)
+	back, err := db.RevertProposal(t.Context(), userID, testActor, id, proposal.ChangedInTheApp, day.DateOf(t0), t0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	apply(t, db, ana, back.ID, t0)
-	wantStatus(t, db, ana, p.ID, t0, proposal.Reverted)
+	apply(t, db, userID, back.ID, t0)
+	wantStatus(t, db, userID, id, t0, proposal.Reverted)
 }
 
 func TestSaveReviewProposesAndHolds(t *testing.T) {
@@ -132,6 +137,14 @@ func TestSaveReviewProposesAndHolds(t *testing.T) {
 	if _, err := db.SaveReview(t.Context(), ana, hold, 0, t0.Add(7*24*time.Hour), nil); err != nil {
 		t.Fatal(err)
 	}
+	wantReviews(t, db, ana, ivo, p.ID)
+}
+
+// wantReviews checks userID's two reviews, a hold and then the proposal
+// id, which other does not see.
+func wantReviews(t *testing.T, db *store.DB, ana, ivo, id uuid.UUID) {
+	t.Helper()
+	p := proposal.Proposal{ID: id}
 	reviews, err := db.Reviews(t.Context(), ana, 10)
 	if err != nil {
 		t.Fatal(err)

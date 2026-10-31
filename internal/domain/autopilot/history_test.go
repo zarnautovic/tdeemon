@@ -29,16 +29,26 @@ func TestRevisionsOf(t *testing.T) {
 	faster.RatePctWeek = -0.7
 	ps := []proposal.Proposal{
 		// Newest first, as the store lists them.
-		{Status: proposal.Applied, By: auto, DecidedBy: user, DecidedAt: at(29, 9), TDEE: 2500,
-			Changes: proposal.Changes{Targets: []proposal.TargetChange{{Before: &lower, After: &before}}}},
-		{Status: proposal.Rejected, By: auto, DecidedBy: user, DecidedAt: at(28, 9),
-			Changes: proposal.Changes{Targets: []proposal.TargetChange{{Before: &before, After: &lower}}}},
-		{Status: proposal.Reverted, By: auto, DecidedBy: auto, DecidedAt: at(22, 2), TDEE: 2486,
-			Changes: proposal.Changes{Targets: []proposal.TargetChange{{Before: &before, After: &lower}}}},
-		{Status: proposal.Applied, By: user, DecidedBy: user, DecidedAt: at(14, 9),
-			Changes: proposal.Changes{Phases: []proposal.PhaseChange{{Before: &cutPh, After: &faster}}}},
-		{Status: proposal.Applied, By: user, DecidedBy: user, DecidedAt: at(10, 9),
-			Changes: proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: plan.Weekdays(0b1)}}},
+		{
+			Status: proposal.Applied, By: auto, DecidedBy: user, DecidedAt: at(29, 9), TDEE: 2500,
+			Changes: proposal.Changes{Targets: []proposal.TargetChange{{Before: &lower, After: &before}}},
+		},
+		{
+			Status: proposal.Rejected, By: auto, DecidedBy: user, DecidedAt: at(28, 9),
+			Changes: proposal.Changes{Targets: []proposal.TargetChange{{Before: &before, After: &lower}}},
+		},
+		{
+			Status: proposal.Reverted, By: auto, DecidedBy: auto, DecidedAt: at(22, 2), TDEE: 2486,
+			Changes: proposal.Changes{Targets: []proposal.TargetChange{{Before: &before, After: &lower}}},
+		},
+		{
+			Status: proposal.Applied, By: user, DecidedBy: user, DecidedAt: at(14, 9),
+			Changes: proposal.Changes{Phases: []proposal.PhaseChange{{Before: &cutPh, After: &faster}}},
+		},
+		{
+			Status: proposal.Applied, By: user, DecidedBy: user, DecidedAt: at(10, 9),
+			Changes: proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: plan.Weekdays(0b1)}},
+		},
 		{Status: proposal.Pending, By: user, Changes: proposal.Changes{Targets: []proposal.TargetChange{{After: &lower}}}},
 	}
 	got := RevisionsOf(ps, cal, training)
