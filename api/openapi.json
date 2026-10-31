@@ -5,7 +5,7 @@
         "additionalProperties": false,
         "properties": {
           "client": {
-            "description": "What it came through: mcp, web, telegram.",
+            "description": "What it came through: mcp, web, telegram, or autopilot for the autopilot's own.",
             "type": "string"
           },
           "model": {
@@ -26,6 +26,62 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "AutopilotBody": {
+        "additionalProperties": false,
+        "properties": {
+          "drift": {
+            "$ref": "#/components/schemas/DriftBody"
+          },
+          "first_step": {
+            "description": "The first review that may step, after the waits and the day calibration expects an estimate; absent without a phase.",
+            "format": "date",
+            "type": "string"
+          },
+          "last": {
+            "$ref": "#/components/schemas/ReviewBody",
+            "description": "The last review; absent before the first."
+          },
+          "mode": {
+            "description": "propose: every step is a proposal; autopilot: a step within the limits applies by itself, past the drift limit it is proposed.",
+            "enum": [
+              "propose",
+              "autopilot"
+            ],
+            "type": "string"
+          },
+          "next": {
+            "description": "The next review.",
+            "format": "date",
+            "type": "string"
+          },
+          "step_kcal": {
+            "description": "The largest step the limits allow now, kcal a day of the weekly average; 0 without a target.",
+            "format": "double",
+            "type": "number"
+          },
+          "weekday": {
+            "description": "The review's day of the week.",
+            "enum": [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "weekday",
+          "next",
+          "step_kcal",
+          "drift"
+        ],
         "type": "object"
       },
       "BarcodeOutputBody": {
@@ -661,6 +717,52 @@
         },
         "required": [
           "day"
+        ],
+        "type": "object"
+      },
+      "DriftBody": {
+        "additionalProperties": false,
+        "properties": {
+          "agreed_kcal": {
+            "description": "The weekly average of the target in force; absent without one.",
+            "format": "double",
+            "type": "number"
+          },
+          "agreed_on": {
+            "description": "The day of the last kcal target the user agreed to: the phase's start, or a change they applied.",
+            "format": "date",
+            "type": "string"
+          },
+          "base_from": {
+            "description": "The day it was taken.",
+            "format": "date",
+            "type": "string"
+          },
+          "base_kcal": {
+            "description": "The TDEE the limit is a share of: the one trusted when the user agreed to the target, else the one at the first step since.",
+            "format": "double",
+            "type": "number"
+          },
+          "limit_kcal": {
+            "description": "The limit in kcal; absent until there is a base, from the first step.",
+            "format": "double",
+            "type": "number"
+          },
+          "limit_pct": {
+            "description": "Its limit, in % of the base TDEE (the user's drift_pct).",
+            "format": "double",
+            "type": "number"
+          },
+          "used_kcal": {
+            "description": "The net change of the weekly average by its steps since, a minus being down.",
+            "format": "double",
+            "type": "number"
+          }
+        },
+        "required": [
+          "used_kcal",
+          "limit_pct",
+          "agreed_on"
         ],
         "type": "object"
       },
@@ -2526,9 +2628,47 @@
         ],
         "type": "object"
       },
+      "PlanAutopilotBody": {
+        "additionalProperties": false,
+        "properties": {
+          "drift_kcal": {
+            "description": "The net change of the weekly average by its steps since the last target the user agreed to.",
+            "format": "double",
+            "type": "number"
+          },
+          "drift_limit_kcal": {
+            "description": "Its limit; absent until its first step.",
+            "format": "double",
+            "type": "number"
+          },
+          "mode": {
+            "description": "propose: its steps are proposals; autopilot: a step within the user's limits applies by itself.",
+            "enum": [
+              "propose",
+              "autopilot"
+            ],
+            "type": "string"
+          },
+          "next": {
+            "description": "The next weekly review.",
+            "format": "date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "next",
+          "drift_kcal"
+        ],
+        "type": "object"
+      },
       "PlanBody": {
         "additionalProperties": false,
         "properties": {
+          "autopilot": {
+            "$ref": "#/components/schemas/PlanAutopilotBody",
+            "description": "The autopilot, which only the user changes, in the app: its mode, its drift and the next review."
+          },
           "limits": {
             "additionalProperties": {
               "format": "double",
@@ -2594,7 +2734,8 @@
           "training_weekdays",
           "targets",
           "limits",
-          "revisions"
+          "revisions",
+          "autopilot"
         ],
         "type": "object"
       },
@@ -2705,6 +2846,10 @@
           "changes": {
             "$ref": "#/components/schemas/ChangesBody"
           },
+          "check_in": {
+            "$ref": "#/components/schemas/ReviewBody",
+            "description": "The autopilot's weekly review that made it, for a proposal or a step of the autopilot's (by.client autopilot, rationale autopilot): its numbers, which the app says it by."
+          },
           "created_at": {
             "format": "date-time",
             "type": "string"
@@ -2728,7 +2873,7 @@
             "type": "string"
           },
           "rationale": {
-            "description": "Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there).",
+            "description": "Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there), autopilot (the autopilot's, with check_in).",
             "type": "string"
           },
           "reverted_by": {
@@ -3318,6 +3463,214 @@
         ],
         "type": "object"
       },
+      "ReviewBody": {
+        "additionalProperties": false,
+        "properties": {
+          "after_kcal": {
+            "description": "The weekly average after the step, or as it stays.",
+            "format": "double",
+            "type": "number"
+          },
+          "answer": {
+            "description": "The user's answer to its proposal, once given.",
+            "enum": [
+              "accepted",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "bmi": {
+            "description": "The BMI by the trend weight, 0 without a height.",
+            "format": "double",
+            "type": "number"
+          },
+          "carbs_floor_g": {
+            "description": "The carbs a step down may not go under.",
+            "format": "double",
+            "type": "number"
+          },
+          "carbs_g": {
+            "description": "For few_carbs: the carbs a step down would leave.",
+            "format": "double",
+            "type": "number"
+          },
+          "date": {
+            "description": "The review's day.",
+            "format": "date",
+            "type": "string"
+          },
+          "day_type": {
+            "description": "The type of day with those carbs; absent for an unsplit target.",
+            "enum": [
+              "training",
+              "rest"
+            ],
+            "type": "string"
+          },
+          "drift_kcal": {
+            "description": "The drift as the review leaves it.",
+            "format": "double",
+            "type": "number"
+          },
+          "drift_limit_kcal": {
+            "description": "Its limit; absent until there is a base.",
+            "format": "double",
+            "type": "number"
+          },
+          "expected": {
+            "description": "About when calibration expects a first estimate.",
+            "format": "date",
+            "type": "string"
+          },
+          "from": {
+            "description": "The first review that may step, for a wait.",
+            "format": "date",
+            "type": "string"
+          },
+          "gap_kcal": {
+            "description": "The change of the weekly average the verdict asked for.",
+            "format": "double",
+            "type": "number"
+          },
+          "intake_kcal": {
+            "description": "The window's average intake.",
+            "format": "double",
+            "type": "number"
+          },
+          "logged_days": {
+            "description": "The logged days of the last 7, an excluded day not counted.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "measured_pct_week": {
+            "description": "The measured rate, % of the trend weight a week.",
+            "format": "double",
+            "type": "number"
+          },
+          "needs_logged_days": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "needs_weigh_ins": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outcome": {
+            "description": "applied: a step it took; proposed: a proposal that waits; hold: the target stays; skipped: no step, for reason.",
+            "enum": [
+              "applied",
+              "proposed",
+              "hold",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "past_drift": {
+            "description": "Whether it proposes only because the step would take the drift past its limit.",
+            "type": "boolean"
+          },
+          "proposal_id": {
+            "description": "The proposal it made or applied.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why (DESIGN.md §8).",
+            "enum": [
+              "cut_slow",
+              "cut_fast",
+              "bulk_slow",
+              "bulk_fast",
+              "maintain_loss",
+              "maintain_gain",
+              "bulk_fat",
+              "lean_loss",
+              "underweight",
+              "on_target",
+              "intake",
+              "steps_guard",
+              "rejected",
+              "no_plan",
+              "not_trusted",
+              "first_wait",
+              "interval",
+              "few_data",
+              "pending",
+              "few_carbs",
+              "limit"
+            ],
+            "type": "string"
+          },
+          "rule": {
+            "description": "The limit's rule, for limit.",
+            "type": "string"
+          },
+          "step_kcal": {
+            "description": "The step applied or proposed, kcal a day of the weekly average, a minus being down; 0 for none.",
+            "format": "double",
+            "type": "number"
+          },
+          "steps_change_pct": {
+            "description": "How the last 7 days' steps differ from the weeks before, in %.",
+            "format": "double",
+            "type": "number"
+          },
+          "target_kcal": {
+            "description": "The weekly average of the target before.",
+            "format": "double",
+            "type": "number"
+          },
+          "target_pct_week": {
+            "description": "The phase's rate.",
+            "format": "double",
+            "type": "number"
+          },
+          "tdee_half_width": {
+            "description": "Half its 80 % interval.",
+            "format": "double",
+            "type": "number"
+          },
+          "tdee_kcal": {
+            "description": "The TDEE, 0 for none.",
+            "format": "double",
+            "type": "number"
+          },
+          "tolerance_pct_week": {
+            "format": "double",
+            "type": "number"
+          },
+          "weigh_ins": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "date",
+          "outcome",
+          "reason",
+          "step_kcal",
+          "gap_kcal",
+          "past_drift",
+          "measured_pct_week",
+          "target_pct_week",
+          "tolerance_pct_week",
+          "tdee_kcal",
+          "tdee_half_width",
+          "intake_kcal",
+          "target_kcal",
+          "after_kcal",
+          "logged_days",
+          "weigh_ins",
+          "needs_logged_days",
+          "needs_weigh_ins",
+          "steps_change_pct",
+          "carbs_g",
+          "carbs_floor_g",
+          "bmi",
+          "drift_kcal"
+        ],
+        "type": "object"
+      },
       "RevokeTokensOutputBody": {
         "additionalProperties": false,
         "properties": {
@@ -3399,6 +3752,33 @@
           "user",
           "expires_at"
         ],
+        "type": "object"
+      },
+      "SetAutopilotInputBody": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "description": "Absent: as it is.",
+            "enum": [
+              "propose",
+              "autopilot"
+            ],
+            "type": "string"
+          },
+          "weekday": {
+            "description": "Absent: as it is.",
+            "enum": [
+              "sunday",
+              "monday",
+              "tuesday",
+              "wednesday",
+              "thursday",
+              "friday",
+              "saturday"
+            ],
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "SetLimitsInputBody": {
@@ -5030,6 +5410,212 @@
         "summary": "Get who the request acts for",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/autopilot": {
+      "get": {
+        "description": "Needs a web session. The autopilot's settings, the next review and the first that may step, the step and the drift its limits allow, and its last review.",
+        "operationId": "get-autopilot",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutopilotBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get your autopilot",
+        "tags": [
+          "plan"
+        ]
+      },
+      "put": {
+        "description": "Needs a web session, never an API token: how far the autopilot may go is the user's, as the limits are. Sets the mode and the review's weekday; what is left out stays. Undo leaves it.",
+        "operationId": "set-autopilot",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetAutopilotInputBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutopilotBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "408": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Timeout"
+          },
+          "413": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Change your autopilot",
+        "tags": [
+          "plan"
         ]
       }
     },

@@ -233,7 +233,8 @@ func telegramBot(cfg config.Config) *telegram.Bot {
 	return &telegram.Bot{Token: cfg.TelegramBotToken, BaseURL: cfg.TelegramAPIURL}
 }
 
-// jobs are the scheduler's: the morning summary and the watchdog, sent to
+// jobs are the scheduler's: the autopilot's weekly review, the morning
+// summary and the watchdog, sent to
 // each user's Telegram chat (with a bot) and devices (by Web Push); none
 // with neither.
 func jobs(apiCfg api.Config, bot *telegram.Bot) []scheduler.Job {
@@ -241,7 +242,8 @@ func jobs(apiCfg api.Config, bot *telegram.Bot) []scheduler.Job {
 		return nil
 	}
 	channels := notify.Channels{DB: apiCfg.DB, Bot: bot, Push: apiCfg.Push, Logger: apiCfg.Logger}
-	return []scheduler.Job{api.MorningSummaryJob(apiCfg, bot), watchdog.Job(channels, apiCfg.Logger)}
+	// The weekly review comes first: a day's morning summary says it.
+	return []scheduler.Job{api.AutopilotReviewJob(apiCfg, bot), api.MorningSummaryJob(apiCfg, bot), watchdog.Job(channels, apiCfg.Logger)}
 }
 
 // listen sets the bot's commands in Telegram's menu and answers them
