@@ -17,7 +17,9 @@ lower.
 ## Planned highlights
 
 - One container, one SQLite file, multi-user (household or friends).
-- MCP server: use Claude, ChatGPT, a local model or any MCP client.
+- MCP server: any MCP client, with any model (Claude Code, Codex,
+  Hermes, a local model), and coaching sessions that read the numbers
+  as tdeemon computes them.
 - Built-in chat with your own API key, photo logging, PWA.
 - Apple Health import (Health Auto Export), later native HealthKit.
 - Adaptive calibration with confidence intervals; AI changes plans only
@@ -456,25 +458,71 @@ sheet says when the client first calls with it.
 
 ### MCP
 
-An AI client reaches the tools at `<TDEEMON_BASE_URL>/mcp` (MCP over
-Streamable HTTP), with an API token as a Bearer token: one with `tools`
-for every tool, or `read` for those that only read. Each tool is the
-operation of the API above, with its validation and its answers, and a
-meal or a change made through MCP is the client `mcp`'s. The server
-tells every client how to log (its MCP instructions), so a client's own
-skill, if any, shrinks to a few lines. Claude Code, for one:
+Any MCP client that takes tools reaches tdeemon, with any model: a
+client from Anthropic or OpenAI, an open model such as DeepSeek, or a
+local one. The address is `<TDEEMON_BASE_URL>/mcp` (MCP over Streamable
+HTTP), with an API token as a Bearer token: one with `tools` for every
+tool, or `read` for those that only read. Each tool is the operation of
+the API above, with its validation and its answers, and a meal or a
+change made through MCP is the client `mcp`'s. The server tells every
+client how to log (its MCP instructions), so a client's own skill, if
+any, shrinks to a few lines.
 
-```sh
-claude mcp add --transport http tdeemon https://tdeemon.example.com/mcp \
-  --header "Authorization: Bearer tdm_…"
-```
+The app's Connect gives the token, the address being the instance's
+(`TDEEMON_BASE_URL`, which `GET /api/v1/info` says as `base_url`), and
+the commands for Claude Code and Claude Desktop. For a few clients:
 
-The app's Connect gives this command with the token in it, the address
-being the instance's (`TDEEMON_BASE_URL`, which `GET /api/v1/info` says
-as `base_url`), and Claude Desktop's configuration, through
-[mcp-remote](https://www.npmjs.com/package/mcp-remote), which passes the
-header on. ChatGPT's connectors sign in with OAuth rather than a
-header, which tdeemon does not offer yet.
+- **Claude Code:**
+
+  ```sh
+  claude mcp add --transport http tdeemon https://tdeemon.example.com/mcp \
+    --header "Authorization: Bearer tdm_…"
+  ```
+
+- **Claude Desktop:** its configuration, through
+  [mcp-remote](https://www.npmjs.com/package/mcp-remote), which passes
+  the header on (the app's Connect gives it).
+- **Codex:** the token in an environment variable of the shell Codex
+  runs in, then
+
+  ```sh
+  export TDEEMON_TOKEN=tdm_…
+  codex mcp add tdeemon --url https://tdeemon.example.com/mcp \
+    --bearer-token-env-var TDEEMON_TOKEN
+  ```
+
+- **Hermes Agent:** in its `config.yaml`, the token in its environment
+  (`.env`):
+
+  ```yaml
+  mcp_servers:
+    tdeemon:
+      url: https://tdeemon.example.com/mcp
+      headers:
+        Authorization: Bearer ${MCP_TDEEMON_API_KEY}
+  ```
+
+  Hermes finds a server's tools by searching them and does not pass the
+  server's instructions to its model: its own skill names the tools it
+  should use, `get_coaching_guide` for a coaching session among them.
+
+ChatGPT's and claude.ai's connectors sign in with OAuth rather than a
+header, which tdeemon does not offer; whether they would work, on a
+phone above all, is not checked yet. The built-in chat (planned) is the
+way in from a phone.
+
+#### Coaching sessions
+
+Ask in words, in any client: "do a monthly review", "my weight has
+stalled", "plan a bulk from January". The model calls
+`get_coaching_guide` first, which answers the session's steps and
+[how tdeemon reads the numbers](docs/methodology.md), and follows them:
+a monthly review, a plateau check or a new phase. A change of the plan
+is a proposal, applied only after your yes. A client that shows MCP
+prompts lists the same sessions as commands (in Claude Code,
+`/mcp__tdeemon__monthly_review`, `…plateau_check`, `…new_phase`, with
+what you want from it after them), and serves the methodology as the
+resource `tdeemon://methodology`.
 
 ### Import from Apple Health
 
