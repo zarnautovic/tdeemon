@@ -130,7 +130,6 @@ only the warning on energy availability.
 | Autopilot, step | min(100 kcal, 5 %) of the weekly average | min(200 kcal, 10 %) | convention | MacroFactor |
 | Autopilot, interval | 7 days; the first change 14 days or more after a phase starts or changes | | convention | MacroFactor; Nuckols 2024 |
 | Autopilot, data | at least 4 logged days and at least 3 weigh-ins in the last 7 days | | convention | MacroFactor |
-| Autopilot, carbs | no step down below 130 g of carbs on either type of day | | convention | IOM 2005 |
 | Autopilot, drift | 15 % of the TDEE | 25 % | convention | Frankenfield et al. 2005; Müller et al. 2016 |
 
 The protein a phase starts with, between the floor and the ceiling:

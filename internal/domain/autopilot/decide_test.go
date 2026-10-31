@@ -40,7 +40,7 @@ type user struct {
 	loggedDays, weighIns int
 	revisions            []Revision
 	waiting              Waiting
-	rejected             *float64
+	rejected             *Rejected
 	estimate             func(*calibration.Estimate)
 }
 
@@ -73,7 +73,7 @@ func (u *user) review(today day.Date) Review {
 		Levels:  lv,
 		History: HistoryOf(u.revisions, u.phase),
 		Phases:  []plan.Phase{u.phase}, Targets: []plan.Target{u.target},
-		Waiting: u.waiting, RejectedGapKcal: u.rejected,
+		Waiting: u.waiting, Rejected: u.rejected,
 	})
 }
 
@@ -347,7 +347,7 @@ func TestAfterARejectionTheGapMustGrowByAStep(t *testing.T) {
 	if r.Outcome != Proposed {
 		t.Fatalf("%s %s, want a proposal", r.Outcome, r.Reason)
 	}
-	u.rejected = new(r.GapKcal)
+	u.rejected = &Rejected{Reason: r.Reason, GapKcal: r.GapKcal}
 	if r := u.review(today.AddDays(7)); r.Outcome != Hold || r.Reason != ReasonRejected {
 		t.Errorf("the gap as it was: %s %s, want a hold for the rejection", r.Outcome, r.Reason)
 	}
@@ -376,7 +376,9 @@ func TestReviewsThatTakeNoStep(t *testing.T) {
 		{"its own proposal waits", func(u *user) { u.waiting = WaitsOwn }, Applied, ReasonCutSlow},
 		{"not trusted", func(u *user) { u.estimate = func(e *calibration.Estimate) { e.Trusted = false } }, Skipped, ReasonNotTrusted},
 		{"no estimate", func(u *user) { u.estimate = func(e *calibration.Estimate) { e.Measured = false } }, Skipped, ReasonNotTrusted},
-		{"before the phase", func(u *user) { u.estimate = func(e *calibration.Estimate) { e.BeforePhase = true } }, Skipped, ReasonFirstWait},
+		{"before the phase", func(u *user) {
+			u.estimate = func(e *calibration.Estimate) { e.BeforePhase = true; e.OwnFrom = start.AddDays(14) }
+		}, Skipped, ReasonFirstWait},
 		{"on target", func(u *user) { u.measured = -0.5 }, Hold, ReasonOnTarget},
 		{"steps explain it", func(u *user) {
 			u.estimate = func(e *calibration.Estimate) { e.Body.StepsRecent = 4000 }
@@ -433,6 +435,7 @@ func TestRepeats(t *testing.T) {
 		{"the same hold", hold, hold, true},
 		{"a hold at another pace", Review{Outcome: Hold, Reason: ReasonOnTarget, MeasuredPctWeek: -0.43, TargetKcal: 2179}, hold, false},
 		{"the same data", few, few, true},
+		{"steps that changed more", Review{Outcome: Hold, Reason: ReasonStepsGuard, StepsChangePct: -40}, Review{Outcome: Hold, Reason: ReasonStepsGuard, StepsChangePct: -25}, false},
 		{"other data", Review{Outcome: Skipped, Reason: ReasonFewData, LoggedDays: 2, WeighIns: 4}, few, false},
 		{"no plan again", Review{Outcome: Skipped, Reason: ReasonNoPlan}, Review{Outcome: Skipped, Reason: ReasonNoPlan}, true},
 		{"another reason", Review{Outcome: Skipped, Reason: ReasonNoPlan}, few, false},
@@ -548,7 +551,7 @@ func TestARejectedMaintenanceHolds(t *testing.T) {
 	u := newUser(t, Auto, cut())
 	u.kg, u.measured = 59, -0.4
 	r := u.review(start.AddDays(35))
-	u.rejected = new(r.GapKcal)
+	u.rejected = &Rejected{Reason: r.Reason, GapKcal: r.GapKcal}
 	if r := u.review(start.AddDays(42)); r.Outcome != Hold || r.Reason != ReasonRejected {
 		t.Errorf("%s %s, want a hold for the rejection", r.Outcome, r.Reason)
 	}
@@ -573,5 +576,76 @@ func TestStepReasons(t *testing.T) {
 		if got := stepReason(tc.t, tc.action, tc.step); got != tc.want {
 			t.Errorf("stepReason(%s, %s, %v) = %s, want %s", tc.t, tc.action, tc.step, got, tc.want)
 		}
+	}
+}
+
+func TestBeforeThePhaseTheFirstStepComesAfterItsOwnEstimate(t *testing.T) {
+	t.Parallel()
+
+	u := newUser(t, Auto, cut())
+	// The estimate is the one from before the phase up to Monday the
+	// 5th of October; the review of that day reads the 4th's, so the
+	// first review that may step is the next Monday.
+	u.estimate = func(e *calibration.Estimate) { e.BeforePhase, e.OwnFrom = true, start.AddDays(28) }
+	r := u.review(start.AddDays(28))
+	if r.Outcome != Skipped || r.Reason != ReasonFirstWait || r.From != start.AddDays(35) {
+		t.Errorf("%s %s from %s, want first_wait from %s", r.Outcome, r.Reason, r.From, start.AddDays(35))
+	}
+}
+
+func TestUnderweightOnAPhaseThatDoesNotLoseProposesTheTDEE(t *testing.T) {
+	t.Parallel()
+
+	u := newUser(t, Auto, plan.Phase{Type: plan.Maintain, Start: start})
+	// Maintenance whose target loses 0.4 % a week at a BMI of 18.2.
+	u.kg, u.measured = 59, -0.4
+	r := u.review(start.AddDays(35))
+	if r.Outcome != Proposed || r.Reason != ReasonUnderweight || len(r.Changes.Phases) != 0 || len(r.Changes.Targets) != 1 || r.StepKcal <= 0 {
+		t.Errorf("%s %s, changes %+v, step %v; want a proposal of the target alone, up", r.Outcome, r.Reason, r.Changes, r.StepKcal)
+	}
+}
+
+func TestARejectedStepDoesNotHoldMaintenance(t *testing.T) {
+	t.Parallel()
+
+	u := newUser(t, Propose, cut())
+	u.rejected = &Rejected{Reason: ReasonCutSlow, GapKcal: -300}
+	u.kg, u.measured = 59, -0.4
+	if r := u.review(start.AddDays(35)); r.Outcome != Proposed || r.Reason != ReasonUnderweight {
+		t.Errorf("%s %s, want maintenance proposed", r.Outcome, r.Reason)
+	}
+}
+
+func TestMaintenanceOfAPhaseThatStartsToday(t *testing.T) {
+	t.Parallel()
+
+	u := newUser(t, Auto, cut())
+	u.kg, u.measured = 59, -0.4
+	r := u.review(start)
+	ph := r.Changes.Phases
+	if r.Outcome != Proposed || len(ph) != 1 || ph[0].Start != start || ph[0].After.Type != plan.Maintain {
+		t.Errorf("%s, phases %+v; want the phase of today made maintenance", r.Outcome, ph)
+	}
+}
+
+func TestAProposalLeavesTheDrift(t *testing.T) {
+	t.Parallel()
+
+	u := newUser(t, Propose, cut())
+	u.revisions = []Revision{{Day: start.AddDays(14), By: ByAutopilot, SetsKcal: true, DeltaKcal: -100, TDEE: 2486}}
+	if r := u.review(start.AddDays(21)); r.Outcome != Proposed || r.DriftKcal != -100 {
+		t.Errorf("%s, drift %v; want a proposal and the drift as it was, -100", r.Outcome, r.DriftKcal)
+	}
+}
+
+func TestTooFewCarbsOfAnUnsplitTarget(t *testing.T) {
+	t.Parallel()
+
+	u := newUser(t, Auto, cut())
+	d := plan.DayTarget{Kcal: 1900, Protein: 180, Fat: 70}
+	u.target.Training, u.target.Rest = d, d
+	r := u.review(start.AddDays(14))
+	if r.Outcome != Skipped || r.Reason != ReasonFewCarbs || r.DayType != "" {
+		t.Errorf("%s %s on %q, want few_carbs of no type of day", r.Outcome, r.Reason, r.DayType)
 	}
 }

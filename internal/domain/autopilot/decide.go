@@ -111,8 +111,9 @@ type Input struct {
 	// verdict on the phase (calibration.Judge).
 	Estimate calibration.Estimate
 	Verdict  calibration.Verdict
-	// Expected is the day calibration expects a first estimate, the zero
-	// Date for none (calibration.Expected).
+	// Expected is the first day a review could read a first estimate:
+	// the day after calibration.Expected's last day of its window, the
+	// zero Date for none.
 	Expected day.Date
 	// State is what the limits read today (calibration.StateOf); Decide
 	// fills in the autopilot's part from History.
@@ -124,10 +125,16 @@ type Input struct {
 	Phases  []plan.Phase
 	Targets []plan.Target
 	Waiting Waiting
-	// RejectedGapKcal is the gap of the autopilot's last proposal the
-	// user rejected, with no change of the plan applied since; nil for
-	// none.
-	RejectedGapKcal *float64
+	// Rejected is the autopilot's last proposal the user rejected, with
+	// no change of the plan applied since; nil for none.
+	Rejected *Rejected
+}
+
+// Rejected is a proposal of the autopilot's the user rejected: why it
+// was made, and the gap the verdict asked for then.
+type Rejected struct {
+	Reason  Reason
+	GapKcal float64
 }
 
 // Review is a weekly review: what it did, why, and the numbers it went
@@ -189,11 +196,15 @@ func Decide(in Input) Review {
 		return r.skip(ReasonPending)
 	case v.Rate == calibration.RateNone:
 		if slices.Contains(v.Reasons, calibration.ReasonBeforePhase) {
-			r.From = NextOn(later(in.Estimate.OwnFrom, in.History.WaitsUntil(user)), in.Settings.Weekday)
+			// OwnFrom is the last day of an estimate from before the phase,
+			// and a review reads the day before its own.
+			r.From = NextOn(later(in.Estimate.OwnFrom.AddDays(2), in.History.WaitsUntil(user)), in.Settings.Weekday)
 			return r.skip(ReasonFirstWait)
 		}
 		return r.skip(ReasonNotTrusted)
-	case v.Action == calibration.ActionMaintain:
+	case v.Action == calibration.ActionMaintain || slices.Contains(v.Guards, calibration.GuardUnderweight):
+		// A loss under way below a BMI of 18.5: no step, and a proposal
+		// to stop it, as the limits allow no step during it.
 		return r.maintain(in, st)
 	}
 	step := math.Trunc(v.StepKcal)
@@ -201,7 +212,7 @@ func Decide(in Input) Review {
 		return r.hold(v)
 	}
 	r.Reason = stepReason(st.Phase.Type, v.Action, step)
-	if g := in.RejectedGapKcal; g != nil && sameSign(*g, v.GapKcal) && math.Abs(v.GapKcal) < math.Abs(*g)+math.Abs(step)-limits.Epsilon {
+	if stillRejected(in.Rejected, v.GapKcal, step) {
 		r.Outcome, r.Reason = Hold, ReasonRejected
 		return r
 	}
@@ -301,26 +312,28 @@ func (r Review) step(in Input, st limits.State, after plan.Target, step float64)
 	return r
 }
 
-// maintain proposes maintenance for a loss under way below a BMI of
-// 18.5: the phase ends yesterday and a maintenance phase starts today,
-// with the target raised by the verdict's gap to the TDEE, held to the
-// limits as any plan's change.
+// maintain proposes to stop a loss under way below a BMI of 18.5: a
+// phase that loses ends yesterday and a maintenance phase starts today,
+// and the target is raised by the verdict's gap, to the TDEE at least;
+// held to the limits as any plan's change. A rejected proposal of it
+// comes again only for a larger gap.
 func (r Review) maintain(in Input, st limits.State) Review {
 	r.Reason = ReasonUnderweight
-	if g := in.RejectedGapKcal; g != nil && math.Abs(in.Verdict.GapKcal) < math.Abs(*g)+limits.Epsilon {
+	if g := in.Rejected; g != nil && g.Reason == ReasonUnderweight && in.Verdict.GapKcal < g.GapKcal+limits.Epsilon {
 		r.Outcome = Hold
 		r.Reason = ReasonRejected
 		return r
 	}
-	cur := *st.Phase
-	m := plan.Phase{Type: plan.Maintain, Start: in.Today, End: cur.End}
 	var c proposal.Changes
-	if cur.Start.Before(in.Today) {
-		ended := cur
-		ended.End = in.Today.AddDays(-1)
-		c.Phases = append(c.Phases, proposal.PhaseChange{Start: cur.Start, After: &ended})
+	if cur := *st.Phase; cur.RatePctWeek < 0 {
+		m := plan.Phase{Type: plan.Maintain, Start: in.Today, End: cur.End}
+		if cur.Start.Before(in.Today) {
+			ended := cur
+			ended.End = in.Today.AddDays(-1)
+			c.Phases = append(c.Phases, proposal.PhaseChange{Start: cur.Start, After: &ended})
+		}
+		c.Phases = append(c.Phases, proposal.PhaseChange{Start: in.Today, After: &m})
 	}
-	c.Phases = append(c.Phases, proposal.PhaseChange{Start: in.Today, After: &m})
 	if gap := math.Trunc(in.Verdict.GapKcal); gap > 0 {
 		after := st.Target.ShiftKcal(gap)
 		after.EffectiveFrom = in.Today
@@ -334,6 +347,9 @@ func (r Review) maintain(in Input, st limits.State) Review {
 			r.StepKcal, r.AfterKcal = 0, r.TargetKcal
 			return r.skip(ReasonLimit)
 		}
+	}
+	if len(c.Phases) == 0 && len(c.Targets) == 0 {
+		return r.skip(ReasonUnderweight)
 	}
 	r.Outcome, r.Changes = Proposed, c
 	return r
@@ -429,6 +445,13 @@ func trustedTDEE(e calibration.Estimate) float64 {
 	return 0
 }
 
+// stillRejected reports whether g, a rejected step's proposal, holds a
+// step of step for gap: the gap the same way, grown by less than a step.
+func stillRejected(g *Rejected, gap, step float64) bool {
+	return g != nil && g.Reason != ReasonUnderweight && sameSign(g.GapKcal, gap) &&
+		math.Abs(gap) < math.Abs(g.GapKcal)+math.Abs(step)-limits.Epsilon
+}
+
 func sameSign(a, b float64) bool { return a > 0 && b > 0 || a < 0 && b < 0 }
 
 func later(a, b day.Date) day.Date {
@@ -440,14 +463,16 @@ func later(a, b day.Date) day.Date {
 
 // Repeats reports whether r says what last said, so its message would
 // say nothing new: the same hold or skip for the same reason, and for a
-// hold of the pace or too little data, the same numbers. A step or a
+// hold of the pace, the intake or the steps, or too little data, the
+// same numbers. A step or a
 // proposal always says something new.
 func (r Review) Repeats(last Review) bool {
 	if r.Outcome != last.Outcome || r.Reason != last.Reason || r.Outcome == Applied || r.Outcome == Proposed {
 		return false
 	}
-	if r.Reason == ReasonOnTarget || r.Reason == ReasonIntake {
-		return round2(r.MeasuredPctWeek) == round2(last.MeasuredPctWeek) && r.TargetKcal == last.TargetKcal
+	if r.Reason == ReasonOnTarget || r.Reason == ReasonIntake || r.Reason == ReasonStepsGuard {
+		return round2(r.MeasuredPctWeek) == round2(last.MeasuredPctWeek) && r.TargetKcal == last.TargetKcal &&
+			math.Round(r.IntakeKcal) == math.Round(last.IntakeKcal) && math.Round(r.StepsChangePct) == math.Round(last.StepsChangePct)
 	}
 	if r.Reason == ReasonFewData {
 		return r.LoggedDays == last.LoggedDays && r.WeighIns == last.WeighIns
@@ -458,9 +483,9 @@ func (r Review) Repeats(last Review) bool {
 func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // FirstStep returns the first review on or after today, on weekday, that
-// may take a step: after the waits of l, and on or after the day
-// calibration expects an estimate when it trusts none yet (expected,
-// the zero Date for none). The data of the days to come it cannot know.
+// may take a step: after the waits of l, and on or after expected when
+// calibration trusts no TDEE yet: the first day a review could read a
+// first estimate (Input.Expected), the zero Date for none. The data of the days to come it cannot know.
 func FirstStep(today day.Date, weekday time.Weekday, h History, l limits.Limits, trusted bool, expected day.Date) day.Date {
 	d := later(today, h.WaitsUntil(l))
 	if !trusted && !expected.IsZero() {
