@@ -76,7 +76,7 @@ Jučer (dan treninga, izuzet iz kalibracije): 1800 kcal · P 121 g · UH 150 g �
 Kalibracija: još nema pouzdane procjene`,
 		},
 	} {
-		if got := morningText(today, tc.td, tc.yd, tc.sum, day.Date{}, "hr"); got != tc.want {
+		if got := morningText(today, tc.td, tc.yd, tc.sum, day.Date{}, nil, "hr"); got != tc.want {
 			t.Errorf("%s:\n%s\nwant\n%s", tc.name, got, tc.want)
 		}
 	}
@@ -145,7 +145,7 @@ Activity yesterday: steps 8000
 Calibration: rate −1.05 %/wk, target −0.70 %/wk, below plan; proposed: +120 kcal/day
 Recovery: short sleep (average 6.2 h)`
 	for _, locale := range []string{"en", "de"} {
-		if got := morningText(today, td, yd, sum, day.Date{}, locale); got != want {
+		if got := morningText(today, td, yd, sum, day.Date{}, nil, locale); got != want {
 			t.Errorf("%s:\n%s\nwant\n%s", locale, got, want)
 		}
 	}
@@ -164,7 +164,7 @@ func TestMorningTextSaysAProposalWaits(t *testing.T) {
 		"hr": "Kalibracija: još nema pouzdane procjene\nPlan: prijedlog promjene čeka tvoj odgovor, do 30. 10.",
 		"en": "Calibration: no estimate to trust yet\nPlan: a proposed change waits for your answer, until Oct 30",
 	} {
-		if got := morningText(today, dayBody{}, yd, sum, waits, locale); !strings.HasSuffix(got, want) {
+		if got := morningText(today, dayBody{}, yd, sum, waits, nil, locale); !strings.HasSuffix(got, want) {
 			t.Errorf("%s:\n%s\nwant it to end\n%s", locale, got, want)
 		}
 	}

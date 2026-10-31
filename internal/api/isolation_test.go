@@ -14,8 +14,8 @@ import (
 	"uuid"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
-	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/autopilot"
+	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/event"
 	"github.com/zarnautovic/tdeemon/internal/domain/food"
@@ -1014,6 +1014,17 @@ func isolationCases() map[string]isolationCase {
 		"get-limits": read("/api/v1/limits", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20))}
 		}),
+		"get-autopilot": read("/api/v1/autopilot", false, func(e isolationEnv) []string {
+			n := int(e.other.user.Name[0] % 20)
+			return []string{`"weekday":"` + strings.ToLower(time.Weekday(n%7).String()) + `"`, fmt.Sprintf(`"target_kcal":%d`, 2100+n)}
+		}),
+		"set-autopilot": func(t *testing.T, e isolationEnv) {
+			rec := e.in.do(t, http.MethodPut, "/api/v1/autopilot", `{"mode":"propose"}`, []*http.Cookie{e.other.session}, nil)
+			n := int(e.other.user.Name[0] % 20)
+			if want := `"weekday":"` + strings.ToLower(time.Weekday(n%7).String()) + `"`; rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("the other's autopilot: %d %s", rec.Code, rec.Body.String())
+			}
+		},
 		"set-profile": func(t *testing.T, e isolationEnv) {
 			rec := e.in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"male","birth_date":"1985-01-20","height_cm":181}`, []*http.Cookie{e.other.session}, nil)
 			if rec.Code != http.StatusOK {

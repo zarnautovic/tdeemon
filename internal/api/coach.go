@@ -39,6 +39,15 @@ type planBody struct {
 	Pending          *proposalBody      `json:"pending,omitempty" doc:"The proposal that waits for the user's consent; absent when none does."`
 	PendingPreview   *previewBody       `json:"pending_preview,omitempty" doc:"What the pending proposal would come to, by the data and the limits now, as propose_changes previews it; with what the limits would refuse, if they changed since."`
 	Revisions        []proposalBody     `json:"revisions" nullable:"false" doc:"The plan's latest revisions, the proposals applied (reverted ones too), newest first, up to 10."`
+	Autopilot        planAutopilotBody  `json:"autopilot" doc:"The autopilot, which only the user changes, in the app: its mode, its drift and the next review."`
+}
+
+// planAutopilotBody is the autopilot as a coach reads it.
+type planAutopilotBody struct {
+	Mode           string   `json:"mode" enum:"propose,autopilot" doc:"propose: its steps are proposals; autopilot: a step within the user's limits applies by itself."`
+	Next           string   `json:"next" format:"date" doc:"The next weekly review."`
+	DriftKcal      float64  `json:"drift_kcal" doc:"The net change of the weekly average by its steps since the last target the user agreed to."`
+	DriftLimitKcal *float64 `json:"drift_limit_kcal,omitempty" doc:"Its limit; absent until its first step."`
 }
 
 // targetPeriodBody is a target, from its first day to the day before the
@@ -80,7 +89,7 @@ type outcomeBody struct {
 type proposalBody struct {
 	ID         string      `json:"id" format:"uuid"`
 	Status     string      `json:"status" enum:"pending,applied,rejected,expired,superseded,reverted" doc:"pending waits for the user's consent, for a week; superseded is one the plan changed under, or a newer one replaced; reverted is an applied one a later one took back."`
-	Rationale  string      `json:"rationale" doc:"Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there)."`
+	Rationale  string      `json:"rationale" doc:"Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there), autopilot (the autopilot's, with check_in)."`
 	By         actorBody   `json:"by" doc:"Who proposed it."`
 	Window     *windowBody `json:"window,omitempty" doc:"The days it was drawn from."`
 	Changes    changesBody `json:"changes"`
@@ -90,12 +99,13 @@ type proposalBody struct {
 	DecidedBy  *actorBody  `json:"decided_by,omitempty" doc:"Who applied it, rejected it, or changed the plan under it."`
 	Reverts    *string     `json:"reverts,omitempty" format:"uuid" doc:"The applied proposal it takes back."`
 	RevertedBy *string     `json:"reverted_by,omitempty" format:"uuid" doc:"The proposal that took it back."`
+	CheckIn    *reviewBody `json:"check_in,omitempty" doc:"The autopilot's weekly review that made it, for a proposal or a step of the autopilot's (by.client autopilot, rationale autopilot): its numbers, which the app says it by."`
 }
 
 // actorBody is who made a proposal or decided it: the client, and the
 // model that acted for the user.
 type actorBody struct {
-	Client string `json:"client" doc:"What it came through: mcp, web, telegram."`
+	Client string `json:"client" doc:"What it came through: mcp, web, telegram, or autopilot for the autopilot's own."`
 	Model  string `json:"model,omitempty" doc:"The AI model that acted for the user."`
 }
 
@@ -183,6 +193,14 @@ func (s *sessions) getPlan(ctx context.Context, _ *struct{}) (*planOutput, error
 	for i := range revisions {
 		b.Revisions = append(b.Revisions, newProposalBody(revisions[i], loc))
 	}
+	if err := s.withCheckIns(ctx, p.User.ID, b.Pending, b.Revisions); err != nil {
+		return nil, internalError("reading the plan failed", err)
+	}
+	ap, err := s.autopilot(ctx, p, now)
+	if err != nil {
+		return nil, internalError("reading the plan failed", err)
+	}
+	b.Autopilot = planAutopilotBody{Mode: ap.Mode, Next: ap.Next, DriftKcal: ap.Drift.UsedKcal, DriftLimitKcal: ap.Drift.LimitKcal}
 	return &planOutput{CacheControl: "no-store", Body: b}, nil
 }
 

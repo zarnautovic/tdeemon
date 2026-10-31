@@ -164,6 +164,9 @@ type Notification struct {
 	URL string `json:"url"`
 	// Tag replaces a notification of the same tag still on the device.
 	Tag string `json:"tag,omitempty"`
+	// Silent shows it without a sound or a vibration: news that asks
+	// nothing of the user.
+	Silent bool `json:"silent,omitempty"`
 }
 
 // Sender sends messages, signed by its VAPID key.
