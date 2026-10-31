@@ -87,8 +87,10 @@ the limits with their sources in [limits.md](limits.md).
   holds. `step_kcal` is the step toward it the autopilot's limits allow.
 - **The intake, not the target:** the verdict is about the target.
   `intake_kcal` is what was eaten, `target_kcal` the target's weekly
-  average. A rate that misses while the intake missed the target is the
-  intake's: the advice is to eat to the target, not to change it.
+  average. When the action is `hold` and the intake missed the target,
+  the rate missed by the intake: the advice is to eat to the target, not
+  to change it. When the action changes the target, the target is off
+  too, whatever was eaten: say both.
 - **Guards** turn or hold the action, the first that trips taking it:
   - `underweight`: a loss under way below a BMI of 18.5 proposes
     maintenance, never a deeper cut.
@@ -142,7 +144,8 @@ the limits with their sources in [limits.md](limits.md).
 
 - Weeks, not days: a judgement needs the trend over two weeks or more.
 - Adherence first: compare `intake_kcal` with `target_kcal` before
-  blaming the TDEE or the target.
+  blaming the TDEE or the target, and take the verdict's action for what
+  the target needs.
 - A wide interval is no finding: wait for the data, or say what would
   narrow it (more weigh-ins, more days logged).
 - The TDEE falls as the weight falls and with a long deficit; a step of

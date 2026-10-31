@@ -15,8 +15,9 @@ real, then weigh the options. Take the steps in order.
    data will tell.
 3. **Adherence:** the intake against the target over the window and
    week by week, the days not logged or excluded, and the weekends. A
-   stall whose intake missed the target is the intake's: say so, and
-   change no target.
+   stall whose intake missed a target the verdict holds (`hold`) is the
+   intake's: say so, and change no target. An action that changes the
+   target asks for that too.
 4. **Activity:** the steps of the last weeks against those before (the
    guard `activity`, the flag `no_steps`). Fewer steps explain a slower
    loss.

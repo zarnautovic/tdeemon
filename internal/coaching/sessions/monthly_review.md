@@ -22,8 +22,9 @@ should change. Take the steps in order.
 6. **Recovery**, if measured: sleep, resting heart rate and HRV against
    their usual range.
 7. **Conclusion:** what goes well and what to change. An intake that
-   missed the target asks for eating to the target, not for another
-   target. Propose a change only when the data ask for it and the
+   missed a target the verdict holds (`hold`) asks for eating to the
+   target, not for another target; an action that changes the target
+   asks for both. Propose a change only when the data ask for it and the
    autopilot does not already take it: `propose_changes` with the
    rationale and the window analysed, show its preview, and ask.
    `apply_proposal` only after the user's yes to it.

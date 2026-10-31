@@ -8,6 +8,9 @@
 !cmd/
 !internal/
 !web/
+# The pages of the documentation the binary serves (docs/docs.go).
+!docs/docs.go
+!docs/methodology.md
 
 # Within them: dependencies are installed and the web app is built inside
 # the image, and no data or secrets go in, at any depth (a server started

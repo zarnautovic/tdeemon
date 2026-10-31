@@ -22,9 +22,10 @@ or after the current one. Take the steps in order.
    floor, the rest carbs; training and rest days split as the user
    wants. The preview says what the targets come to: check the rate
    there, and adjust.
-6. **Its place:** a phase after the current starts when the current
-   ends. To replace the current one, end it and start the new one today:
-   a phase that has started keeps its type. A long cut may want a diet
+6. **Its place:** a phase after the current starts the day after the
+   current one's last day (a phase's end is its last day). To replace
+   the current one, end it yesterday and start the new one today: a
+   phase that has started keeps its type. A long cut may want a diet
    break before the next.
 7. `propose_changes` with the phase, the targets, the training weekdays
    when they change, the rationale and the window analysed: show its
