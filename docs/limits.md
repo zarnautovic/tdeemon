@@ -130,6 +130,7 @@ only the warning on energy availability.
 | Autopilot, step | min(100 kcal, 5 %) of the weekly average | min(200 kcal, 10 %) | convention | MacroFactor |
 | Autopilot, interval | 7 days; the first change 14 days or more after a phase starts or changes | | convention | MacroFactor; Nuckols 2024 |
 | Autopilot, data | at least 4 logged days and at least 3 weigh-ins in the last 7 days | | convention | MacroFactor |
+| Autopilot, carbs | no step down below 130 g of carbs on either type of day | | convention | IOM 2005 |
 | Autopilot, drift | 15 % of the TDEE | 25 % | convention | Frankenfield et al. 2005; Müller et al. 2016 |
 
 The protein a phase starts with, between the floor and the ceiling:
@@ -217,17 +218,30 @@ The protein a phase starts with, between the floor and the ceiling:
 - **Autopilot, drift:** the autopilot's net change of the weekly
   average (a step up and a step down cancel), from the last kcal target
   the user agreed to (the phase's start, or an applied proposal that
-  set the kcal), as a share of the TDEE then: the measured one, else the
-  equation's estimate. Past the user's limit the autopilot applies
-  nothing more and proposes instead; the user may raise the limit, in a
-  web session, up to 25 %. The autopilot's own proposals meet its step,
-  interval and data, not its drift, and applying one sets a new base.
+  set the kcal), as a share of the TDEE then: the one calibration
+  trusted when the user agreed to the target, else the one at the
+  autopilot's first step since, frozen until the next agreed target: no
+  step comes before calibration trusts the TDEE, and a base that moved
+  each week would move the limit under the user. Taking a step back in
+  the plan's history is a target the user sets, so the drift starts
+  again at 0, and so does the wait of 14 days. Past the user's limit the
+  autopilot applies nothing more and proposes instead; the user may
+  raise the limit, in a web session, up to 25 %. The autopilot's own
+  proposals meet its step, interval and data, not its drift, and
+  applying one sets a new base.
   The bounds start from the error of the estimate: the best equation
   for the resting rate is within 10 % of the measured rate for most
   people (Frankenfield et al.), and the TDEE adapts to a diet (Müller et
   al.). The TDEE's expected fall, about 22 to 24 kcal a day for each kg
   lost once the weight has settled (Hall et al. 2011), is modelled
   apart and is not drift.
+- **Autopilot, carbs:** a step only moves the carbs, as protein and fat
+  keep their grams, so a step down that would leave either type of day
+  under 130 g of carbs (`limits.CarbsRDA`, the threshold of the warning
+  `low_carbs` below) is not taken: the review says so, with the carbs it
+  would leave, and leaves the split of protein and fat to the coach. It
+  is the autopilot's own rule, not a limit: a coach's proposal and the
+  user's own change only get the warning.
 
 ## The names of the limits
 
