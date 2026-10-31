@@ -23,6 +23,7 @@ import (
 
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/coaching"
 	"github.com/zarnautovic/tdeemon/internal/domain/clientid"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/meal"
@@ -255,6 +256,13 @@ func answerCases() map[string]answerCase {
 			p := proposeStep(t, in, session, saveCoach(t, in), 1900)
 			in.do(t, http.MethodPost, "/api/v1/proposals/"+p.ID+"/apply", "", []*http.Cookie{session}, nil)
 			in.do(t, http.MethodPost, "/api/v1/proposals/"+p.ID+"/revert", `{"rationale": "Back."}`, []*http.Cookie{session}, nil)
+		},
+		"get-coaching-guide": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			for _, name := range coaching.Names() {
+				in.do(t, http.MethodGet, "/api/v1/coaching/"+name, "", []*http.Cookie{session}, nil)
+			}
+			in.do(t, http.MethodGet, "/api/v1/coaching/weekly_review", "", []*http.Cookie{session}, nil)
 		},
 		"get-plan": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

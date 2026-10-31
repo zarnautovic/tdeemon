@@ -993,6 +993,8 @@ func isolationCases() map[string]isolationCase {
 		"apply-proposal":           isolateProposal("apply", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
 		"reject-proposal":          isolateProposal("reject", "", func(p party) uuid.UUID { return p.pending }, http.StatusOK),
 		"revert-proposal":          isolateProposal("revert", `{"rationale": "Back."}`, func(p party) uuid.UUID { return p.applied }, http.StatusCreated),
+		// A session's guide is text, the same for every user.
+		"get-coaching-guide": read("/api/v1/coaching/monthly_review", true, nil),
 		"get-plan": read("/api/v1/plan", true, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + " trains on weekends now.", e.other.user.Name + "'s trend fell slower than the cut's rate."}
 		}),

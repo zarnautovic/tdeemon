@@ -168,6 +168,17 @@ func (s *sessions) tools() []tool {
 		}, s.getPlan).
 			briefly("The plan, for a coach: phases, the last year's targets with what each came to (intake vs target, measured TDEE, " +
 				"rate vs planned), the limits a change must keep, the pending proposal, the latest revisions. Explain it; do not compute it again."),
+		newTool("get_coaching_guide", readScopes, huma.Operation{
+			OperationID: "get-coaching-guide",
+			Method:      http.MethodGet,
+			Path:        Prefix + "/coaching/{session}",
+			Summary:     "Get a coaching session's guide",
+			Description: "The steps of a coaching session the user asks for (a monthly review, a plateau check, a new phase): " +
+				"which tools to call, what to check and how to propose a change, then how tdeemon's numbers come about " +
+				"(docs/methodology.md), so a model of any client reads them alike. Text, the same for every user.",
+			Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity},
+		}, s.getCoachingGuide).
+			briefly("A coaching session's steps (a review, a stall, a new phase) and how the numbers come about: follow it."),
 		newTool("propose_changes", []auth.Scope{auth.ScopeTools}, huma.Operation{
 			OperationID:   "propose-changes",
 			Method:        http.MethodPost,

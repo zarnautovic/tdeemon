@@ -94,6 +94,9 @@ func mcpIsolationCases() map[string]mcpIsolationCase {
 		"get_plan": mcpWorks("get_plan", nil, func(e isolationEnv) []string {
 			return []string{e.other.user.Name + " trains on weekends now."}
 		}),
+		"get_coaching_guide": mcpWorks("get_coaching_guide", func(isolationEnv) map[string]any {
+			return map[string]any{"session": "plateau_check"}
+		}, nil),
 		"get_history": mcpWorks("get_history", nil, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"weight_kg":%v`, isolationWeight(e.other.user))}
 		}),

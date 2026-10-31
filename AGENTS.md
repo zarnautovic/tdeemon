@@ -28,6 +28,7 @@ run each week by the scheduler with its message to Telegram and by push
 and its line in the morning summary, its settings in the API,
 the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
+`get_coaching_guide`,
 `find_foods`, `get_food`, `lookup_barcode`, `upsert_food`,
 `upsert_recipe`, `log_meal`, `update_meal`,
 `delete_meal`, `log_metric`, `delete_metric`, `checkin`,
@@ -156,7 +157,7 @@ both themes and languages, exist.
 | `internal/scheduler` | the jobs of each user's day (the autopilot's weekly review, the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
-| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the devices' push subscriptions and a test push, the list of foods, a new food, a new recipe, a food's use, the recent meals and the recent changes (web session only), the imports (API token only), and the tools, a barcode's food (the user's, or Open Food Facts' product) among them, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
+| `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the devices' push subscriptions and a test push, the list of foods, a new food, a new recipe, a food's use, the recent meals and the recent changes (web session only), the imports (API token only), and the tools, a barcode's food (the user's, or Open Food Facts' product) among them, the history, the plan, its proposals, the notes and a coaching session's guide among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |
 | `internal/server` | the HTTP server and graceful shutdown |
 | `internal/webui` | serves the built web app (build tag `webui`) |
 | `web/` | the React app (Vite, TypeScript 7, TanStack, Tailwind); its text in each language is in `web/src/i18n`, its end-to-end tests in `web/e2e` |
