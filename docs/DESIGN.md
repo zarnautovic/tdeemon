@@ -832,8 +832,10 @@ a reason:
 - a hold when the pace is on the plan (`on_target`), when the target
   gives the pace and the intake missed it (`intake`), or when the steps
   explain the pace (`steps_guard`);
-- a proposal of maintenance, never a step, for a loss under way below a
-  BMI of 18.5 (`underweight`), held to the limits as any plan's change;
+- a proposal to stop a loss under way below a BMI of 18.5, never a step
+  (`underweight`): a phase that loses ends and maintenance starts, and
+  the target rises to the TDEE at least, held to the limits as any
+  plan's change;
 - no step without a phase and a target (`no_plan`), before calibration
   trusts the TDEE (`not_trusted`), in a phase's first days or 14 days
   from a target the user set (`first_wait`), within 7 days of the last
@@ -856,7 +858,8 @@ keeps as it applies. The review's day is the user's weekday (Monday by
 default), and the first that may step (`autopilot.FirstStep`) the first
 such day after the waits and the day calibration expects an estimate.
 A review that holds or skips for the same reason as the last one, with
-the same numbers for a hold of the pace or too little data, repeats it
+the same numbers for a hold (the pace, the intake, the steps) or too
+little data, repeats it
 (`Review.Repeats`), and sends no message.
 
 ### Guardrails live in code, not in prompts
