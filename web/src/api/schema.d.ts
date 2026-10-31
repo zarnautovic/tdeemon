@@ -983,7 +983,7 @@ export interface components {
             open_food_facts?: components["schemas"]["OpenFoodFactsBody"];
         };
         ChangeBody: {
-            /** @description What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status. */
+            /** @description What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status, autopilot.set (the autopilot's settings). */
             action: string;
             /** @description Of food.archive: true when it archived the food, false when it brought it back in use. */
             archived?: boolean;
@@ -994,7 +994,7 @@ export interface components {
             at: string;
             /** @description A food's brand, beside its name. */
             brand?: string;
-            /** @description What it came through: web, api, mcp. */
+            /** @description What it came through: web, api, mcp, or autopilot for the autopilot's own step or proposal, which undo never takes back. */
             client: string;
             /** @description The days (YYYY-MM-DD) it was of, as undo's answer says them: a meal's before and after it, a check-in's, a measurement's or a day's; none for a food, the notes or the plan. */
             days: string[];
