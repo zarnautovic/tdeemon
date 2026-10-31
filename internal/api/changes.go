@@ -17,10 +17,10 @@ import (
 // says in the user's language, never a sentence of the server's.
 type changeBody struct {
 	ID     string    `json:"id" format:"uuid" doc:"The change's own id, its event's."`
-	Action string    `json:"action" doc:"What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status."`
+	Action string    `json:"action" doc:"What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status, autopilot.set (the autopilot's settings)."`
 	Entity string    `json:"entity" doc:"What it changed, as undo's last names it: a food's, a meal's or a proposal's id, a day (YYYY-MM-DD), a day and a metric (2026-10-21/weight), profile, limits, plan or notes."`
 	At     time.Time `json:"at" doc:"When the change was made."`
-	Client string    `json:"client" doc:"What it came through: web, api, mcp."`
+	Client string    `json:"client" doc:"What it came through: web, api, mcp, or autopilot for the autopilot's own step or proposal, which undo never takes back."`
 	Model  string    `json:"model,omitempty" doc:"The AI model that made it for the user, when one said so."`
 	Days   []string  `json:"days" nullable:"false" doc:"The days (YYYY-MM-DD) it was of, as undo's answer says them: a meal's before and after it, a check-in's, a measurement's or a day's; none for a food, the notes or the plan."`
 	Name   string    `json:"name,omitempty" doc:"A meal's description, or a food's or a recipe's name: as the change left it (as it was, for a meal deleted; as it is now, for a food archived or brought back)."`

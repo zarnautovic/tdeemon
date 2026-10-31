@@ -238,10 +238,25 @@ func TestAutopilotSettingsInTheApp(t *testing.T) {
 	if next, err := day.ParseDate(got.Next); err != nil || next.Weekday() != time.Saturday {
 		t.Errorf("next %q, want a Saturday", got.Next)
 	}
+	wantNextAfterToday(t, in, session)
 	if rec := in.do(t, http.MethodPut, "/api/v1/autopilot", `{"weekday":"someday"}`, session, nil); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("an unknown weekday: %d %s", rec.Code, rec.Body.String())
 	}
 	wantCoachReadsOnly(t, in, session[0])
+}
+
+// wantNextAfterToday checks that a review day set to today, past its
+// time, is next week's: today's review will not run.
+func wantNextAfterToday(t *testing.T, in *instance, session []*http.Cookie) {
+	t.Helper()
+	today := userToday(t, in)
+	in.clock.Set(time.Date(today.Year, today.Month, today.Day, 20, 0, 0, 0, time.UTC))
+	weekday := strings.ToLower(today.Weekday().String())
+	var got struct{ Next string }
+	rec := in.do(t, http.MethodPut, "/api/v1/autopilot", `{"weekday":"`+weekday+`"}`, session, nil)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.Next != today.AddDays(7).String() {
+		t.Errorf("next %q after today's time, want %s", got.Next, today.AddDays(7))
+	}
 }
 
 // wantCoachReadsOnly checks that a coach's token reads the autopilot's

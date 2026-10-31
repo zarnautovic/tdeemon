@@ -234,13 +234,6 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 	return cs, nil
 }
 
-// check returns a check of a proposal's changes against the limits of p's
-// user at now, which refuses a violation. It reads the state in the
-// store's transaction (store.ProposalCheck), so a change of the limits,
-// the profile or the data meanwhile cannot slip past it, and keeps it in
-// *cs, and what it found in *found. It returns the TDEE calibration
-// trusts, which an applied proposal keeps as the base of the autopilot's
-// drift.
 // trustedTDEE returns the TDEE calibration trusts, 0 for none.
 func (cs coachState) trustedTDEE() float64 {
 	if cs.state.TDEETrusted && cs.state.TDEE > 0 {
@@ -249,6 +242,13 @@ func (cs coachState) trustedTDEE() float64 {
 	return 0
 }
 
+// check returns a check of a proposal's changes against the limits of p's
+// user at now, which refuses a violation. It reads the state in the
+// store's transaction (store.ProposalCheck), so a change of the limits,
+// the profile or the data meanwhile cannot slip past it, and keeps it in
+// *cs, and what it found in *found. It returns the TDEE calibration
+// trusts, which an applied proposal keeps as the base of the autopilot's
+// drift.
 func (s *sessions) check(ctx context.Context, p auth.Principal, now time.Time, cs *coachState, found *[]proposal.Checked) store.ProposalCheck {
 	return func(c proposal.Changes) (float64, error) {
 		var err error

@@ -32,6 +32,14 @@ import (
 // and as many proposals of a coach's.
 const reviewProposals = 500
 
+// The review's job, due at 09:00 on the user's clock and up to 5 hours
+// later.
+const (
+	reviewJob    = "autopilot_review"
+	reviewAt     = 9 * time.Hour
+	reviewWithin = 5 * time.Hour
+)
+
 // errReviewChanged reports a review whose decision the data or the plan
 // changed between the review and its write: the job tries again.
 var errReviewChanged = errors.New("the review's decision changed before it was stored")
@@ -55,8 +63,8 @@ func AutopilotReviewJob(cfg Config, bot *telegram.Bot) scheduler.Job {
 	s := &sessions{db: cfg.DB, logger: cfg.Logger, now: cfg.Now, instance: cfg.Limits}
 	channels := notify.Channels{DB: cfg.DB, Bot: bot, Push: cfg.Push, Logger: cfg.Logger}
 	return scheduler.Job{
-		Name: "autopilot_review",
-		Due:  scheduler.DailyAt(9*time.Hour, 5*time.Hour),
+		Name: reviewJob,
+		Due:  scheduler.DailyAt(reviewAt, reviewWithin),
 		Run: func(ctx context.Context, u user.User, occurrence string, now time.Time) error {
 			d, err := day.ParseDate(occurrence)
 			if err != nil {
@@ -177,16 +185,7 @@ func (s *sessions) runReview(ctx context.Context, u user.User, today day.Date, n
 		return store.StoredReview{}, nil, fmt.Errorf("review of %s on %s", today, in.Today)
 	}
 	r := autopilot.Decide(in)
-	stored, err := s.db.SaveReview(ctx, u.ID, r, trusted(in.Estimate), now, func(proposal.Changes) (float64, error) {
-		again, err := s.reviewInput(ctx, p, settings, now)
-		if err != nil {
-			return 0, err
-		}
-		if a := autopilot.Decide(again); a.Outcome != r.Outcome || !reflect.DeepEqual(a.Changes, r.Changes) {
-			return 0, errReviewChanged
-		}
-		return trusted(again.Estimate), nil
-	})
+	stored, err := s.db.SaveReview(ctx, u.ID, r, trusted(in.Estimate), now, s.recheck(ctx, p, settings, r, now))
 	if err != nil {
 		return store.StoredReview{}, nil, err
 	}
@@ -195,6 +194,22 @@ func (s *sessions) runReview(ctx context.Context, u user.User, today day.Date, n
 		last = &before[0]
 	}
 	return stored, last, nil
+}
+
+// recheck is the check of the review r of p's user, in the transaction
+// that stores it: the review decided again, which must come out the
+// same (errReviewChanged); it returns the TDEE trusted then.
+func (s *sessions) recheck(ctx context.Context, p auth.Principal, settings autopilot.Settings, r autopilot.Review, now time.Time) store.ProposalCheck {
+	return func(proposal.Changes) (float64, error) {
+		again, err := s.reviewInput(ctx, p, settings, now)
+		if err != nil {
+			return 0, err
+		}
+		if a := autopilot.Decide(again); a.Outcome != r.Outcome || !reflect.DeepEqual(a.Changes, r.Changes) {
+			return 0, errReviewChanged
+		}
+		return trusted(again.Estimate), nil
+	}
 }
 
 // trusted returns the TDEE of e when calibration trusts it on the
@@ -406,8 +421,20 @@ func (s *sessions) autopilot(ctx context.Context, p auth.Principal, now time.Tim
 	}
 	lim := limits.Effective(in.Levels.User, in.Levels.Instance)
 	next := autopilot.NextOn(in.Today, settings.Weekday)
-	if len(reviews) > 0 && reviews[0].Review.Date == next {
-		next = autopilot.NextOn(next.AddDays(1), settings.Weekday)
+	if next == in.Today {
+		// Today's review is past when it ran, or its time went by.
+		cal, err := day.NewCalendar(p.User.TimeZone, p.User.DayStartHour)
+		if err != nil {
+			return autopilotBody{}, err
+		}
+		ran, err := s.db.JobRan(ctx, p.User.ID, reviewJob, next.String())
+		if err != nil {
+			return autopilotBody{}, err
+		}
+		end := time.Date(next.Year, next.Month, next.Day, 0, 0, 0, 0, cal.Location).Add(reviewAt + reviewWithin)
+		if ran || len(reviews) > 0 && reviews[0].Review.Date == next || !now.Before(end) {
+			next = autopilot.NextOn(next.AddDays(1), settings.Weekday)
+		}
 	}
 	b := autopilotBody{
 		Mode: string(settings.Mode), Weekday: weekdayName(settings.Weekday), Next: next.String(),
