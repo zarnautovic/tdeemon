@@ -15,6 +15,8 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/api"
 	"github.com/zarnautovic/tdeemon/internal/domain/autopilot"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
 	"github.com/zarnautovic/tdeemon/internal/store"
@@ -68,12 +70,23 @@ func reviewUser(t *testing.T, db *store.DB, email, locale string, mode autopilot
 		t.Fatal(err)
 	}
 	if withPlan {
-		saveSummaryHistory(t, db, u, now)
+		saveReviewPlan(t, db, u, now)
 	}
 	if err := db.SetAutopilotSettings(t.Context(), u.ID, isolationActor, autopilot.Settings{Mode: mode, Weekday: now.Weekday()}, now); err != nil {
 		t.Fatal(err)
 	}
 	return u
+}
+
+// saveReviewPlan gives u a profile, of a man of 180 cm, and the history
+// of saveSummaryHistory.
+func saveReviewPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
+	t.Helper()
+	pr := profile.Profile{Sex: profile.Male, BirthDate: day.Date{Year: 1990, Month: time.May, Day: 1}, HeightCm: 180}
+	if err := db.SetProfile(t.Context(), u.ID, isolationActor, pr, day.DateOf(now), now); err != nil {
+		t.Fatal(err)
+	}
+	saveSummaryHistory(t, db, u, now)
 }
 
 func TestAutopilotReviewJobTakesAStep(t *testing.T) {
@@ -84,7 +97,7 @@ func TestAutopilotReviewJobTakesAStep(t *testing.T) {
 	zagreb, _ := time.LoadLocation("Europe/Zagreb")
 	now := time.Date(2026, 10, 26, 9, 5, 0, 0, zagreb) // a Monday
 	ana := reviewUser(t, db, "ana@example.com", "en", autopilot.Auto, true, now)
-	job := api.AutopilotReviewJob(api.Config{DB: db, Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}, bot)
+	job := api.AutopilotReviewJob(api.Config{DB: db, Limits: limits.Instance(), Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}, bot)
 	if _, due := job.Due(ana, now.Add(-10*time.Minute)); due {
 		t.Error("due before 09:00")
 	}
@@ -136,7 +149,7 @@ func TestAutopilotReviewJobProposesAndWaitsForItsDay(t *testing.T) {
 	zagreb, _ := time.LoadLocation("Europe/Zagreb")
 	now := time.Date(2026, 10, 26, 9, 5, 0, 0, zagreb)
 	ivo := reviewUser(t, db, "ivo@example.com", "hr", autopilot.Propose, true, now)
-	job := api.AutopilotReviewJob(api.Config{DB: db, Logger: slog.New(slog.DiscardHandler)}, bot)
+	job := api.AutopilotReviewJob(api.Config{DB: db, Limits: limits.Instance(), Logger: slog.New(slog.DiscardHandler)}, bot)
 	// Not its weekday: nothing.
 	if err := job.Run(t.Context(), ivo, "2026-10-27", now.Add(24*time.Hour)); err != nil {
 		t.Fatal(err)
@@ -165,7 +178,7 @@ func TestAutopilotReviewJobSaysARepeatOnce(t *testing.T) {
 	zagreb, _ := time.LoadLocation("Europe/Zagreb")
 	now := time.Date(2026, 10, 26, 9, 5, 0, 0, zagreb)
 	ana := reviewUser(t, db, "ana@example.com", "en", autopilot.Auto, false, now)
-	job := api.AutopilotReviewJob(api.Config{DB: db, Logger: slog.New(slog.DiscardHandler)}, bot)
+	job := api.AutopilotReviewJob(api.Config{DB: db, Limits: limits.Instance(), Logger: slog.New(slog.DiscardHandler)}, bot)
 	for week := range 2 {
 		at := now.AddDate(0, 0, 7*week)
 		if err := job.Run(t.Context(), ana, day.DateOf(at).String(), at); err != nil {
@@ -235,11 +248,11 @@ func TestThePlanGivesTheStepsReview(t *testing.T) {
 	in := newInstance(t, "http://localhost", "")
 	session := []*http.Cookie{sessionOf(t, in)}
 	now := in.clock.Now()
-	saveSummaryHistory(t, in.db, in.user, now)
+	saveReviewPlan(t, in.db, in.user, now)
 	if err := in.db.SetAutopilotSettings(t.Context(), in.user.ID, isolationActor, autopilot.Settings{Mode: autopilot.Auto, Weekday: userToday(t, in).Weekday()}, now); err != nil {
 		t.Fatal(err)
 	}
-	job := api.AutopilotReviewJob(api.Config{DB: in.db, Logger: slog.New(slog.DiscardHandler)}, nil)
+	job := api.AutopilotReviewJob(api.Config{DB: in.db, Limits: limits.Instance(), Logger: slog.New(slog.DiscardHandler)}, nil)
 	if err := job.Run(t.Context(), in.user, userToday(t, in).String(), now); err != nil {
 		t.Fatal(err)
 	}

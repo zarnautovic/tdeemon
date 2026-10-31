@@ -115,7 +115,7 @@ func (s *sessions) reviewInput(ctx context.Context, p auth.Principal, settings a
 		return autopilot.Input{}, err
 	}
 	if st.Phase != nil {
-		in.History = autopilot.HistoryOf(autopilot.RevisionsOf(ps, cal, st.TrainingDays), *st.Phase)
+		in.History = autopilot.HistoryOf(autopilot.RevisionsOf(ps, cal, st.TrainingDays, cs.targets), *st.Phase)
 	}
 	if in.Rejected, err = s.rejected(ctx, p.User.ID, ps); err != nil {
 		return autopilot.Input{}, err
