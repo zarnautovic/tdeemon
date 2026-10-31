@@ -288,22 +288,22 @@ func TestJobs(t *testing.T) {
 	if bot := telegramBot(config.Config{}); bot != nil {
 		t.Errorf("a bot without a token = %v", bot)
 	}
-	if js := jobs(api.Config{}, nil); len(js) != 0 {
-		t.Errorf("jobs without a bot = %v", js)
+	if js := jobs(api.Config{}, nil); len(js) != 1 || js[0].Name != "autopilot_review" {
+		t.Errorf("jobs without a bot = %v, want the weekly review alone", js)
 	}
 	bot := telegramBot(config.Config{TelegramBotToken: testBotToken, TelegramAPIURL: "http://localhost"})
 	if bot == nil || bot.Token != testBotToken || bot.BaseURL != "http://localhost" {
 		t.Fatalf("the bot = %+v", bot)
 	}
 	js := jobs(api.Config{}, bot)
-	if len(js) != 2 || js[0].Name != "morning_summary" || js[1].Name != "watchdog" {
+	if len(js) != 3 || js[0].Name != "autopilot_review" || js[1].Name != "morning_summary" || js[2].Name != "watchdog" {
 		t.Errorf("jobs with a bot = %v", js)
 	}
 	sender, err := push.NewSender([]byte(strings.Repeat("k", 32)), "https://tdeemon.example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if js := jobs(api.Config{Push: sender}, nil); len(js) != 2 {
+	if js := jobs(api.Config{Push: sender}, nil); len(js) != 3 {
 		t.Errorf("jobs with push alone = %v", js)
 	}
 }
