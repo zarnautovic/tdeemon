@@ -9,6 +9,7 @@ export type RowPath =
   | '/plan/profile'
   | '/plan/limits'
   | '/plan/notes'
+  | '/plan/autopilot'
   | '/settings/appearance'
   | '/settings/account'
   | '/settings/devices'

@@ -5,7 +5,8 @@ import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
 import type { components } from '@/api/schema'
 import { sessionQuery } from '@/api/session'
-import { useRationale, useWho } from '@/components/plan/change-words'
+import { Rationale } from '@/components/autopilot/rationale'
+import { useWho } from '@/components/plan/change-words'
 import { ProposalChanges, type Proposal } from '@/components/plan/proposal-changes'
 import { useLimitWords, useViolationText, violationsOf } from '@/components/plan/proposal-text'
 import { Button } from '@/components/ui/button'
@@ -46,7 +47,6 @@ export function Revisions({
   const violation = useViolationText()
   const limit = useLimitWords()
   const who = useWho()
-  const rationale = useRationale()
   // The revision the user is asked about, and the one being taken back.
   const [asking, setAsking] = useState<string | undefined>(undefined)
   const [failed, setFailed] = useState<{ id: string; error: unknown } | undefined>(undefined)
@@ -91,7 +91,7 @@ export function Revisions({
   }
 
   return (
-    <section aria-labelledby={id} className="space-y-3">
+    <section aria-labelledby={id} id="plan-history" className="scroll-mt-4 space-y-3">
       <h2 id={id} className="text-h3">
         {r.title}
       </h2>
@@ -106,7 +106,7 @@ export function Revisions({
               )}
               {rev.status === 'reverted' && ` · ${r.reverted}`}
             </p>
-            <p className="whitespace-pre-line">{rationale(rev.rationale)}</p>
+            <Rationale proposal={rev} brief />
             <ProposalChanges changes={rev.changes} targets={targets} />
             {failed?.id === rev.id && (
               <p role="alert" className="text-sm text-destructive">

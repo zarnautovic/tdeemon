@@ -335,6 +335,7 @@ const screens: Screen[] = [
     '/plan/profile',
     '/plan/limits',
     '/plan/notes',
+    '/plan/autopilot',
     '/settings/appearance',
     '/settings/account',
     '/settings/devices',

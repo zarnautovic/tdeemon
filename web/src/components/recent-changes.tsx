@@ -79,7 +79,8 @@ function said(change: Change, t: Messages): string {
 }
 
 // RecentChanges is the user's latest changes, in a sheet: what each did
-// and of what, when and through whom (you, your AI coach, a device), and
+// and of what, when and through whom (you, your AI coach, a device, the
+// autopilot), and
 // whether an undo took it back; with Undo on the one undo takes back
 // next, so a change is taken back after its toast is gone too. The toast
 // says how the undo went, and the list follows it.
@@ -137,6 +138,10 @@ function Row({ change, now }: { change: Change; now: string }) {
   let who = t.changes.device
   if (change.client === 'web') {
     who = t.changes.you
+  } else if (change.client === 'autopilot') {
+    // Its steps: undo leaves them (next is never theirs), the plan's
+    // history takes them back.
+    who = t.changes.autopilot
   } else if (models.has(change.client)) {
     who = t.changes.coach
   }

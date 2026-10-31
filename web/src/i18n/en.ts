@@ -127,6 +127,7 @@ export const en = {
     limits: "Couldn't load the limits of your plan.",
     notes: "Couldn't load the notes for your AI coach.",
     keys: "Couldn't load your access keys.",
+    autopilot: "Couldn't load the autopilot.",
   },
   // A thin bar over what a page shows when asking for it again failed:
   // the server out of reach (offline) or failing, and how old it is.
@@ -639,6 +640,7 @@ export const en = {
       'target.delete': 'A target deleted',
       'plan.weekdays': 'The training days changed',
       'proposal.create': 'A change of the plan proposed',
+      'autopilot.set': 'The autopilot changed',
     } as Record<string, string>,
     other: 'A change',
     // Who made it: the user in the app, their AI coach, or a device with
@@ -646,6 +648,9 @@ export const en = {
     you: 'you',
     coach: 'your AI coach',
     device: 'a device',
+    // The autopilot, whose steps undo leaves: the plan's history takes
+    // them back.
+    autopilot: 'Autopilot',
     // When and by whom: "21:14 · you", "Oct 21, 21:14 · you" of a day
     // before.
     by: (when: string, who: string) => `${when} · ${who}`,
@@ -1499,6 +1504,9 @@ export const en = {
     rationales: {
       'changed in the app': 'Changed in the app.',
       'taken back in the app': 'Taken back in the app.',
+      // The autopilot's weekly review, said from its numbers where they
+      // came (useReviewWords); this where they did not.
+      autopilot: "The autopilot's weekly review.",
     },
     // The user, as who changed the plan.
     byUser: 'you',
@@ -1604,6 +1612,193 @@ export const en = {
         `Low energy for your lean mass (${value} kcal/kg, at least ${threshold} advised). Over time it can tire you and slow recovery.`,
       low_carbs: (value: string, threshold: string) =>
         `Few carbs (${value} g, at least ${threshold} g advised). Fine if you choose it, but training may feel harder.`,
+    },
+  },
+  // The autopilot: a weekly review of the pace that moves the kcal target
+  // in small steps, by itself or asking first.
+  autopilot: {
+    name: 'Autopilot',
+    review: 'Weekly review',
+    hint: 'A weekly review of your pace that moves your kcal target in small steps.',
+    // Its mode, as a badge.
+    on: 'On',
+    asks: 'Asks first',
+    settings: 'Settings',
+    settingsLabel: 'Autopilot settings',
+    modeLegend: 'When the review finds a step',
+    modes: { propose: 'Ask me first', autopilot: 'Autopilot' },
+    modeHints: {
+      propose:
+        'Each week the autopilot reviews your pace and suggests a step. Nothing changes until you accept it; a suggestion waits 7 days.',
+      autopilot:
+        'Each week the autopilot reviews your pace and takes a small step by itself, within your limits, and tells you. Past your drift limit it asks you instead.',
+    },
+    turnOn: 'Turn on the autopilot?',
+    turnOnText: (step: string, drift: string) =>
+      `It will change your kcal target by itself, and tell you each time. At most ${step} kcal a day in a week, and ${drift} kcal in all. You can take any step back in the plan's history.`,
+    // Before the drift has a base, its limit in kcal is not known yet.
+    turnOnTextNoBase: (step: string, pct: string) =>
+      `It will change your kcal target by itself, and tell you each time. At most ${step} kcal a day in a week, and ${pct} of your TDEE in all, from the first step. You can take any step back in the plan's history.`,
+    turnOnYes: 'Turn on',
+    turnOnNo: 'Not now',
+    saved: { propose: 'The autopilot asks first', autopilot: 'Autopilot on' },
+    savedDay: 'Review day changed',
+    day: 'Review day',
+    dayHint: (next: string) => `In the morning, before your morning summary. Next review: ${next}.`,
+    firstStep: (date: string) => `The first step can come from ${date}.`,
+    // Every week on a day: "Saturdays".
+    every: {
+      monday: 'Mondays',
+      tuesday: 'Tuesdays',
+      wednesday: 'Wednesdays',
+      thursday: 'Thursdays',
+      friday: 'Fridays',
+      saturday: 'Saturdays',
+      sunday: 'Sundays',
+    },
+    drift: 'Drift',
+    driftValue: (used: string, limit: string) => `${used} of ${limit} kcal`,
+    driftUsed: (used: string) => `${used} kcal`,
+    driftLeft: (left: string) => `${left} kcal left`,
+    driftFull: 'Limit reached: the next step is proposed',
+    driftNoBase: 'Its limit in kcal is set from the first step.',
+    driftHint: (kcal: string, date: string) =>
+      `What the autopilot moved your target since you agreed to ${kcal} kcal a day on ${date}. Accepting or setting a target starts it again at 0.`,
+    driftHintNoTarget:
+      'What the autopilot moved your target since the one you agreed to. Accepting or setting a target starts it again at 0.',
+    mayTitle: 'What it may change',
+    mayStep: (step: string, pct: string) =>
+      `Your kcal target, by at most ${step} kcal a day in a week (${pct} of it at most)`,
+    mayCarbs: 'Training and rest days by the same kcal, so only carbs move: 100 kcal is 25 g',
+    mayDrift: (kcal: string, pct: string) =>
+      `In all, at most ${kcal} kcal from the target you last agreed to (${pct} of your TDEE)`,
+    mayDriftNoBase: (pct: string) =>
+      `In all, at most ${pct} of your TDEE from the target you last agreed to, from the first step`,
+    neverTitle: 'What it never changes',
+    never: [
+      'Your phase, its pace or its goal',
+      'Protein, fat, or the split between training and rest days',
+      'Your training days or your limits',
+      'A loss deeper while your BMI is under 18.5: it proposes maintenance instead',
+    ],
+    waitsTitle: 'When it waits',
+    waitsData: (logged: number, weighIns: number) =>
+      `${String(logged)} logged ${plural('en', logged, { one: 'day', other: 'days' })} and ${String(weighIns)} ${plural('en', weighIns, { one: 'weigh-in', other: 'weigh-ins' })} in the last 7 days`,
+    waitsTrust: 'A TDEE that calibration trusts',
+    waitsDays: (first: number, interval: number) =>
+      `${String(first)} ${plural('en', first, { one: 'day', other: 'days' })} into a phase, or from a target you set; ${String(interval)} ${plural('en', interval, { one: 'day', other: 'days' })} since its last step`,
+    waitsPending: 'No other proposal waiting for your answer',
+    undoNote:
+      "Undo (⌘Z) doesn't take back a step. Take it back in the plan's history, as any change of the plan.",
+    limitsRow: 'Step and drift limits',
+    limitsSummary: (step: string, drift: string) => `Step ${step} kcal · drift ${drift} of TDEE`,
+    // The row in "You and limits": the mode, the day, and the drift.
+    rowDrift: (used: string, limit: string) => `drift ${used} of ${limit} kcal`,
+    rowDriftNoBase: (used: string) => `drift ${used} kcal`,
+    next: 'Next review',
+    last: 'Last review',
+    lastOn: (date: string) => `Last review · ${date}`,
+    nextOn: (weekday: string, date: string) => `${weekday}, ${date}`,
+    step: 'Step',
+    stepUpTo: (kcal: string) => `up to ${kcal} kcal`,
+    stepIfAccepted: 'a day, if you accept',
+    stepNone: 'none without a target',
+    waitsAbove: 'It waits for your answer, above.',
+    numbers: 'The numbers',
+    accepted: 'You accepted it.',
+    rejected: 'You rejected it. The target stays; the next review looks again.',
+    takeBack: "Take it back in the plan's history.",
+    pastDriftTitle: 'Past your drift limit',
+    pastDrift: (drift: string, limit: string) =>
+      `On autopilot this step would apply by itself, but it takes the drift to ${drift} kcal. That is past your limit of ${limit} kcal. Accepting it makes it a target you agreed to, and the drift starts again at 0.`,
+    pastDriftNoLimit: (drift: string) =>
+      `On autopilot this step would apply by itself, but it takes the drift to ${drift} kcal, past your limit. Accepting it makes it a target you agreed to, and the drift starts again at 0.`,
+    // The day's line on the review's day, and its link's word.
+    line: (what: string) => `Autopilot: ${what}`,
+    why: 'Why',
+    // The day's line of a proposal of its own that waits.
+    nudge: (what: string) => `The autopilot suggests: ${what}`,
+    // What a review says, from its numbers: what it decided, a line of it
+    // for the day, and why.
+    say: {
+      lowered: (kcal: string) => `Lowered your target by ${kcal} kcal a day`,
+      raised: (kcal: string) => `Raised your target by ${kcal} kcal a day`,
+      suggestsLower: (kcal: string) => `Suggests lowering your target by ${kcal} kcal a day`,
+      suggestsRaise: (kcal: string) => `Suggests raising your target by ${kcal} kcal a day`,
+      maintenance: 'Suggests maintenance',
+      stepLine: (kcal: string) => `target ${kcal} kcal a day, from today`,
+      holds: {
+        on_target: 'Holding: your pace is on plan',
+        intake: 'Holding: the target fits, the intake missed it',
+        steps_guard: 'Holding: your steps explain the pace',
+        rejected: 'Holding: the target you chose stays',
+      },
+      holdLines: {
+        on_target: 'holding, pace on plan',
+        intake: 'holding, the target fits',
+        steps_guard: 'holding, your steps explain it',
+        rejected: 'holding, the target you chose',
+      },
+      noStep: (why: string) => `No step: ${why}`,
+      noStepLine: (why: string) => `no step, ${why}`,
+      // Why no step came, in a few words.
+      fewLogged: (n: number, of: number) => `${String(n)} of ${String(of)} logged days`,
+      fewWeighIns: (n: number, of: number) => `${String(n)} of ${String(of)} weigh-ins`,
+      skips: {
+        not_trusted: 'TDEE not trusted yet',
+        first_wait: 'the phase or target is new',
+        interval: 'a step a week at most',
+        no_plan: 'no phase or target',
+        pending: 'a proposal waits',
+        few_carbs: 'too few carbs',
+        limit: 'a limit',
+        underweight: 'BMI under 18.5',
+      },
+      // Why, in the review's numbers.
+      paceLost: (pct: string, plan: string, from: string, to: string) =>
+        `You lost ${pct} a week; the plan is ${plan} (${from} to ${to}).`,
+      paceGained: (pct: string, plan: string, from: string, to: string) =>
+        `You gained ${pct} a week; the plan is ${plan} (${from} to ${to}).`,
+      paceMoved: (pct: string, plan: string, from: string, to: string) =>
+        `Your weight moved ${pct} a week; the plan is ${plan} (${from} to ${to}).`,
+      energy: (tdee: string, pm: string, intake: string, target: string) =>
+        `Your TDEE is ${tdee} ± ${pm} kcal; you ate ${intake} kcal a day against a target of ${target}.`,
+      intakeOnly: (intake: string, target: string) =>
+        `You ate ${intake} kcal a day against a target of ${target}.`,
+      intake:
+        "The target fits your TDEE and the plan's pace. The week's intake missed it, and no step of the target corrects that.",
+      stepsFell: (pct: string) =>
+        `Your steps fell ${pct} from the weeks before. That explains the pace, not your metabolism, so the target holds.`,
+      stepsRose: (pct: string) =>
+        `Your steps rose ${pct} from the weeks before. That explains the pace, not your metabolism, so the target holds.`,
+      rejected:
+        'You rejected its last step. The target stays as you chose until the gap grows by a step.',
+      bulkFat:
+        'Your body fat rose beyond its error while lean mass stayed flat. A smaller surplus, never below your TDEE.',
+      leanLoss: (pct: string) =>
+        `You lost ${pct} a week, and lean mass with it beyond its error. A step up keeps more of it.`,
+      underweight: (bmi: string) =>
+        `Your BMI is ${bmi}, under 18.5. The autopilot never takes a loss further there, so it proposes maintenance.`,
+      fewData: (logged: number, weighIns: number, hadLogged: number, hadWeighIns: number) =>
+        `A step needs ${String(logged)} logged ${plural('en', logged, { one: 'day', other: 'days' })} and ${String(weighIns)} ${plural('en', weighIns, { one: 'weigh-in', other: 'weigh-ins' })} in the last 7 days. This week had ${String(hadLogged)} and ${String(hadWeighIns)}.`,
+      tdeeAbout: (tdee: string, pm: string) => `Your TDEE is about ${tdee} ± ${pm} kcal.`,
+      trustedAbout: (date: string) =>
+        `A step waits until calibration trusts it: about ${date}, if you keep logging as now.`,
+      trustedLater: 'A step waits until calibration trusts it. Keep logging and weighing in.',
+      firstWait: 'A new phase or target moves water as much as fat at first.',
+      firstFrom: (date: string) => `The first step can come from ${date}.`,
+      interval: 'The autopilot takes one step a week at most.',
+      nextFrom: (date: string) => `The next can come from ${date}.`,
+      pending:
+        "A proposal waits for your answer. The review waits too, so two changes don't meet in your plan.",
+      fewCarbs: (days: string, g: string, floor: string) =>
+        `${days}: ${g} g carbs after a step down, under ${floor} g. The autopilot never changes protein or fat.`,
+      askCoach: 'Ask your AI coach to change the split.',
+      noPlan: 'The autopilot needs a phase and a kcal target to judge your pace against.',
+      limit: (rule: string) =>
+        `The step would break a limit: ${rule}. Your AI coach can look at the plan.`,
+      stepCarbs: (kcal: string, g: string, from: string, to: string) =>
+        `Each type of day moves ${kcal} kcal, all carbs (${g} g): ${from} → ${to} kcal a day on average.`,
     },
   },
   notFound: {

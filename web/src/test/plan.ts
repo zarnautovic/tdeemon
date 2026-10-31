@@ -13,6 +13,57 @@ export function planBody(
     targets: [],
     limits: limitsBody().effective,
     revisions: [],
+    autopilot: { mode: 'propose', next: '2026-10-26', drift_kcal: 0 },
+    ...over,
+  }
+}
+
+// autopilotBody is the autopilot of a user on a cut, asking first, its
+// review on Mondays and none yet, as GET /api/v1/autopilot answers it;
+// over is laid over it.
+export function autopilotBody(
+  over: Partial<components['schemas']['AutopilotBody']> = {},
+): components['schemas']['AutopilotBody'] {
+  return {
+    mode: 'propose',
+    weekday: 'monday',
+    next: '2026-10-26',
+    step_kcal: 100,
+    drift: { used_kcal: 0, limit_pct: 15, agreed_on: '2026-09-28', agreed_kcal: 2300 },
+    ...over,
+  }
+}
+
+// review is a weekly review of today's, a step of 100 kcal down on a cut
+// too slow, applied; over is laid over it.
+export function review(
+  over: Partial<components['schemas']['ReviewBody']> = {},
+): components['schemas']['ReviewBody'] {
+  return {
+    date: '2026-10-23',
+    outcome: 'applied',
+    reason: 'cut_slow',
+    step_kcal: -100,
+    gap_kcal: -180,
+    past_drift: false,
+    measured_pct_week: -0.31,
+    target_pct_week: -0.5,
+    tolerance_pct_week: 0.1,
+    tdee_kcal: 2600,
+    tdee_half_width: 120,
+    intake_kcal: 2140,
+    target_kcal: 2179,
+    after_kcal: 2079,
+    logged_days: 6,
+    weigh_ins: 5,
+    needs_logged_days: 4,
+    needs_weigh_ins: 3,
+    steps_change_pct: -3,
+    carbs_g: 0,
+    carbs_floor_g: 130,
+    bmi: 25.9,
+    drift_kcal: -200,
+    drift_limit_kcal: 390,
     ...over,
   }
 }

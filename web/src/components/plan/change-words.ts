@@ -65,10 +65,13 @@ export function kcalShift(
 
 // useWho says who proposed or made a change of the plan: the maker of
 // the model that acted, with the model; the AI coach, for a model not
-// named; or the user, in the app.
+// named; the autopilot, the server's own; or the user, in the app.
 export function useWho(): (by: Actor) => string {
   const t = useMessages()
   return (by) => {
+    if (by.client === 'autopilot') {
+      return t.autopilot.name
+    }
     const model = by.model ?? ''
     if (model !== '') {
       const maker = makers.find(([name]) => name.test(model))?.[1] ?? t.plan.pending.coach

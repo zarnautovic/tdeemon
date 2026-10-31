@@ -50,6 +50,19 @@ test("a push's note is the server's, and anything else the app's name", () => {
   ).toEqual({ title: 'tdeemon', body: '', url: '/' })
 })
 
+// A weekly review that holds, or takes no step, asks nothing: it comes
+// without a sound or a vibration.
+test('a silent note shows silent, and only one the server says is', () => {
+  const quiet = noteOf(data({ title: 'Holding', body: '', url: '/plan', silent: true }))
+  expect(quiet.silent).toBe(true)
+  expect(showOptions(quiet)).toMatchObject({ silent: true, data: { url: '/plan' } })
+  for (const silent of [false, 'true', 1]) {
+    const loud = noteOf(data({ title: 'Target -100 kcal a day', url: '/plan', silent }))
+    expect(loud).not.toHaveProperty('silent')
+    expect(showOptions(loud)).not.toHaveProperty('silent')
+  }
+})
+
 test('a note shows with its page, for a tap', () => {
   expect(showOptions({ title: 't', body: 'b', url: '/settings', tag: 'test' })).toEqual({
     body: 'b',
@@ -59,6 +72,7 @@ test('a note shows with its page, for a tap', () => {
     data: { url: '/settings' },
   })
   expect(showOptions({ title: 't', body: 'b', url: '/' })).not.toHaveProperty('tag')
+  expect(showOptions({ title: 't', body: 'b', url: '/' })).not.toHaveProperty('silent')
   const origin = 'https://tdeemon.example.com'
   expect(urlOf({ url: '/settings/devices' }, origin)).toBe('/settings/devices')
   expect(urlOf({ url: '/?summary=2026-10-30' }, origin)).toBe('/?summary=2026-10-30')

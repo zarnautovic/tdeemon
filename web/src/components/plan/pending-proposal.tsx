@@ -4,7 +4,8 @@ import { useId, useState } from 'react'
 import { $api } from '@/api/client'
 import { statusOf } from '@/api/errors'
 import type { components } from '@/api/schema'
-import { useRationale, useWho } from '@/components/plan/change-words'
+import { Rationale } from '@/components/autopilot/rationale'
+import { useWho } from '@/components/plan/change-words'
 import { Loosen } from '@/components/plan/loosen'
 import {
   PreviewLines,
@@ -28,7 +29,8 @@ type Plan = components['schemas']['PlanBody']
 // PendingProposal is the proposal of a change of the plan that waits for
 // the user's answer, as a model made it in a chat that did not decide it:
 // who made it and when, how long it waits, why, what it changes against
-// the plan (plan), what the data say beside it, what it would come to by
+// the plan (plan), what the data say beside it (but of the autopilot's,
+// whose weekly review is the data's, said as its rationale), what it would come to by
 // the data now, and the buttons to accept or reject it. An accepted one
 // changes the plan, so every answer the app holds is read again. One that
 // changes the user's limits is accepted only here, and one that loosens a
@@ -50,7 +52,6 @@ export function PendingProposal({
   const limit = useLimitWords()
   const date = useDate()
   const who = useWho()
-  const rationale = useRationale()
   // When the card came, for how long ago it was made and how long it
   // waits: a proposal waits days, so a minute does not matter.
   const [now] = useState(Date.now)
@@ -106,7 +107,7 @@ export function PendingProposal({
           {p.expiresIn(daysLeft)}
         </span>
       </header>
-      <p className="whitespace-pre-line">{rationale(proposal.rationale)}</p>
+      <Rationale proposal={proposal} />
       {proposal.window !== undefined && (
         <p className="text-sm text-muted-foreground">
           {p.window(date(proposal.window.from), date(proposal.window.to))}
@@ -116,7 +117,8 @@ export function PendingProposal({
       {proposal.changes.limits.length > 0 && (
         <p className="text-sm text-muted-foreground">{p.limitsHere}</p>
       )}
-      <ProposalData proposal={proposal} plan={plan} />
+      {/* The autopilot's own proposal is the data's already, said above. */}
+      {proposal.by.client !== 'autopilot' && <ProposalData proposal={proposal} plan={plan} />}
       {preview !== undefined && <PreviewLines preview={preview} />}
       {failed && (
         <div role="alert" className="space-y-1 text-sm text-destructive">

@@ -15,7 +15,7 @@ import { addDays } from '@/i18n/format'
 // hero and its TDEE, the phase, a proposal that waits, the first steps),
 // the history of the day's week (the week, a day before's TDEE), and of
 // today what its chips offer (the day before, the foods logged most and
-// the meals of before) and, before a plan, the first steps' access keys.
+// the meals of before) and its weekly review (the autopilot's line) and, before a plan, the first steps' access keys.
 // Each is the query of the part that shows it, asked as that part is: so
 // it is asked once, the part shown hidden until the page is ready.
 export function useDayReady(date: string | undefined, day: Day | undefined): boolean {
@@ -39,6 +39,7 @@ export function useDayReady(date: string | undefined, day: Day | undefined): boo
     ...dayQuery(day === undefined ? '' : addDays(day.date, -1)),
     enabled: chips,
   })
+  const autopilot = $api.useQuery('get', '/api/v1/autopilot', undefined, { enabled: chips })
   const frequent = useFrequentFoods(chips)
   const recent = useRecentMeals(chips)
   // Before a plan, today has the first steps in its hero's place.
@@ -50,5 +51,7 @@ export function useDayReady(date: string | undefined, day: Day | undefined): boo
     plan.data.pending === undefined
   const keys = $api.useQuery('get', '/api/v1/tokens', undefined, { enabled: steps })
 
-  return ![me, summary, plan, history, yesterday, frequent, recent, keys].some((q) => q.isLoading)
+  return ![me, summary, plan, history, yesterday, autopilot, frequent, recent, keys].some(
+    (q) => q.isLoading,
+  )
 }
