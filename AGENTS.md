@@ -14,7 +14,7 @@ API. It is early: the skeleton, the database layer, users, sign-in
 meals, recipes, metrics and the plan (profile, phases, targets, limits) in the
 domain and the database with an event log and undo, the proposals of
 changes of the plan and their life in the domain and the database, the
-API for the profile, the limits, the settings, the notes for a coach,
+API for the profile, the limits, the autopilot, the settings, the notes for a coach,
 the devices subscribed to notifications by Web Push (the key, a
 subscription, their list, a delete and a test), the morning summary and
 the watchdog's alarms by push to them, the morning summary of a date
@@ -24,6 +24,8 @@ change of the plan (a proposal applied at once), calibration
 (the measured TDEE and the verdict on a phase), the autopilot's
 weekly review decided in the domain and kept in the database (its
 settings, its steps and proposals, which undo leaves, and its reviews),
+run each week by the scheduler with its message to Telegram and by push
+and its line in the morning summary, its settings in the API,
 the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
 `find_foods`, `get_food`, `lookup_barcode`, `upsert_food`,
@@ -144,7 +146,7 @@ both themes and languages, exist.
 | `internal/notify` | sends a user a notification to each of their channels: their Telegram chat, following a group to its supergroup, and by Web Push each of their devices, a gone one deleted; it fails only when none took it |
 | `internal/push` | Web Push: a message encrypted for a browser's subscription (RFC 8291) and signed by the instance's VAPID key, derived from the secret key, to the push services alone |
 | `internal/watchdog` | the alarms when a user's data stop coming: no metric for 26 h, an ingest token unused for 3 days; to each channel of the user's |
-| `internal/scheduler` | the jobs of each user's day (the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
+| `internal/scheduler` | the jobs of each user's day (the autopilot's weekly review, the morning summary, the watchdog), each occurrence once in the usual case and at least once in any, recorded in the store; and the planner's statistics refreshed daily |
 | `internal/store` | SQLite access and the migrations in `migrations/` |
 | `internal/store/storetest` | a fresh, migrated database file for tests |
 | `internal/api` | the HTTP API (huma), whose spec is `api/openapi.json`: sign-in, sessions, API tokens, the profile and the limits of a plan, the user's own change of it, the settings, the devices' push subscriptions and a test push, the list of foods, a new food, a new recipe, a food's use, the recent meals and the recent changes (web session only), the imports (API token only), and the tools, a barcode's food (the user's, or Open Food Facts' product) among them, the history, the plan, its proposals and the notes among them (`tools.go`, the registry; `mcp.go` serves it at `/mcp`) |

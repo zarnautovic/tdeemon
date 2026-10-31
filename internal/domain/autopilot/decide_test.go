@@ -401,8 +401,8 @@ func TestNoPlanTakesNoStep(t *testing.T) {
 	t.Parallel()
 
 	r := Decide(Input{Today: start, Settings: DefaultSettings(), Levels: limits.Levels{Instance: limits.Instance(), User: limits.UserDefaults()}})
-	if r.Outcome != Skipped || r.Reason != ReasonNoPlan {
-		t.Errorf("%s %s, want skipped for no plan", r.Outcome, r.Reason)
+	if r.Outcome != Skipped || r.Reason != ReasonNoPlan || r.BMI != 0 {
+		t.Errorf("%s %s, BMI %v; want skipped for no plan, and no BMI without a height", r.Outcome, r.Reason, r.BMI)
 	}
 }
 
