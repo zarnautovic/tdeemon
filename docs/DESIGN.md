@@ -702,9 +702,9 @@ The replacement:
   whether it is
   trusted (a TDEE from before the phase may be: it is a TDEE all the
   same), and of the last 7 days the fat-free mass, the active energy and
-  the days logged and weighed. The autopilot's own history is the
-  autopilot's, the days since the phase last changed with it: until it
-  counts them, they are 0, and its wait for a first step holds.
+  the days logged and weighed. The autopilot's own history, its waits and
+  its drift, is the autopilot's (`internal/domain/autopilot`, below):
+  without it they are 0, and the wait for a first step holds.
 - **Split targets:** a change moves the weekly average and keeps the
   difference between training and rest days as it is; the split itself
   is the plan's, which the coach changes (§8).
@@ -814,6 +814,53 @@ own, applied at once (below).
   drift ([limits.md](limits.md)) apply automatically and are reported;
   past the drift limit, the autopilot proposes instead.
 - A plan change never applies without consent.
+
+**The weekly review** (the user sees "Weekly review"; the code says
+check-in too) is decided by a pure function, `autopilot.Decide`, from
+calibration's verdict, the plan, the limits and the autopilot's history.
+A step is the only change it makes itself: the target in force shifted
+by the verdict's step (`plan.Target.ShiftKcal`, both types of day by the
+same kcal, so only the carbs move), which `Validate` holds as
+`ByAutopilot`, or as `ByAutopilotProposal` for a step it proposes. Each
+review has one outcome, `applied`, `proposed`, `hold` or `skipped`, and
+a reason:
+
+- a step down or up as the verdict's action asks (`cut_slow`,
+  `cut_fast`, `bulk_slow`, `bulk_fast`, `maintain_loss`,
+  `maintain_gain`, `bulk_fat`, the surplus shrunk but never below the
+  TDEE, and `lean_loss`, a step up, protein staying the coach's);
+- a hold when the pace is on the plan (`on_target`), when the target
+  gives the pace and the intake missed it (`intake`), or when the steps
+  explain the pace (`steps_guard`);
+- a proposal to stop a loss under way below a BMI of 18.5, never a step
+  (`underweight`): a phase that loses ends and maintenance starts, and
+  the target rises to the TDEE at least, held to the limits as any
+  plan's change;
+- no step without a phase and a target (`no_plan`), before calibration
+  trusts the TDEE (`not_trusted`), in a phase's first days or 14 days
+  from a target the user set (`first_wait`), within 7 days of the last
+  step (`interval`), with too few logged days or weigh-ins (`few_data`),
+  while a proposal of the user's or a coach's waits (`pending`; one of
+  the autopilot's own it supersedes), when a step down would leave a
+  type of day under 130 g of carbs (`few_carbs`, limits.md), or when
+  another limit refuses it (`limit`, with the rule);
+- after the user rejects an autopilot proposal, a hold (`rejected`)
+  until the gap the verdict asks for has grown by a step since.
+
+The autopilot's history comes from the applied revisions of the current
+phase (`autopilot.HistoryOf`): the wait of 14 days runs from the phase's
+start, a change of its type or rate, or a kcal target the user set (a
+revert included); the interval of 7 days from its last step, or its own
+proposal the user accepted; and the drift is the net sum of its steps
+since the last target the user agreed to, a share of the TDEE trusted
+then, else of the TDEE at its first step since, which each revision
+keeps as it applies. The review's day is the user's weekday (Monday by
+default), and the first that may step (`autopilot.FirstStep`) the first
+such day after the waits and the day calibration expects an estimate.
+A review that holds or skips for the same reason as the last one, with
+the same numbers for a hold (the pace, the intake, the steps) or too
+little data, repeats it
+(`Review.Repeats`), and sends no message.
 
 ### Guardrails live in code, not in prompts
 
