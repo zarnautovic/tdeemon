@@ -522,3 +522,25 @@ func TestSaveRecipeKeepsAPortionsWeight(t *testing.T) {
 		t.Errorf("RecipeByID = %+v, %v; want %+v", again, err, got)
 	}
 }
+
+// A recipe's save recorded before its ingredients kept a portion's
+// weight, its items without PortionGrams, is undone all the same.
+func TestUndoRecipeSavedBeforePortionGrams(t *testing.T) {
+	t.Parallel()
+
+	db, ana, _ := withTwoUsers(t)
+	chicken := saveFood(t, db, ana, chickenBreast())
+	k := kefir()
+	r := saveRecipe(t, db, ana, curryOf(t, chicken, k), k)
+	changed := r
+	changed.Portions = 8
+	saveRecipe(t, db, ana, changed)
+	exec(t, db, `UPDATE events SET after_state = json_remove(after_state, '$.Items[0].PortionGrams', '$.Items[1].PortionGrams')
+		WHERE user_id = ? AND operation = ?`, ana.String(), string(event.RecipeSave))
+	if e := undo(t, db, ana); e.Action != event.RecipeSave || e.Entity != r.Food.ID.String() {
+		t.Fatalf("undone %s of %s, want the recipe's save", e.Action, e.Entity)
+	}
+	if got, err := db.RecipeByID(t.Context(), ana, r.Food.ID); err != nil || got.Portions != 4 {
+		t.Errorf("after the undo %+v, %v; want 4 portions again", got, err)
+	}
+}

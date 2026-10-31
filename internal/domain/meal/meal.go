@@ -87,8 +87,9 @@ type Item struct {
 	// PortionGrams is the weight in grams of a portion of the item's
 	// food when the item was made, for a food per portion that says it,
 	// or 0. A recipe's ingredients keep it, so one in portions adds its
-	// weight to the raw ingredients'; a meal's items do not.
-	PortionGrams float64
+	// weight to the raw ingredients'; a meal's items do not. Left out of
+	// the JSON when 0, as the events recorded before it have it.
+	PortionGrams float64 `json:",omitempty"`
 	// SentFood is SentFood of the new food a client sent with the item,
 	// when it sent one rather than a food of the user's: the item is told
 	// by it, not by FoodID, so a retry is known however the food is
