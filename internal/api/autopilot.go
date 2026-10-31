@@ -120,8 +120,8 @@ func (s *sessions) reviewInput(ctx context.Context, p auth.Principal, settings a
 	if in.Rejected, err = s.rejected(ctx, p.User.ID, ps); err != nil {
 		return autopilot.Input{}, err
 	}
-	for _, pr := range ps {
-		if pr.Status == proposal.Pending {
+	for i := range ps {
+		if pr := &ps[i]; pr.Status == proposal.Pending {
 			in.Waiting = autopilot.WaitsOther
 			if pr.By.Kind == event.Autopilot {
 				in.Waiting = autopilot.WaitsOwn
@@ -135,8 +135,8 @@ func (s *sessions) reviewInput(ctx context.Context, p auth.Principal, settings a
 // rejected returns the autopilot's last proposal the user rejected, of
 // ps (newest first), when no proposal was applied since; nil for none.
 func (s *sessions) rejected(ctx context.Context, userID uuid.UUID, ps []proposal.Proposal) (*autopilot.Rejected, error) {
-	for _, p := range ps {
-		switch {
+	for i := range ps {
+		switch p := &ps[i]; {
 		case p.Status == proposal.Applied || p.Status == proposal.Reverted:
 			return nil, nil
 		case p.Status == proposal.Rejected && p.By.Kind == event.Autopilot:
@@ -404,31 +404,31 @@ func (s *sessions) autopilot(ctx context.Context, p auth.Principal, now time.Tim
 	if err != nil {
 		return autopilotBody{}, err
 	}
-	user := limits.Effective(in.Levels.User, in.Levels.Instance)
+	lim := limits.Effective(in.Levels.User, in.Levels.Instance)
 	next := autopilot.NextOn(in.Today, settings.Weekday)
 	if len(reviews) > 0 && reviews[0].Review.Date == next {
 		next = autopilot.NextOn(next.AddDays(1), settings.Weekday)
 	}
 	b := autopilotBody{
 		Mode: string(settings.Mode), Weekday: weekdayName(settings.Weekday), Next: next.String(),
-		Drift: driftBody{UsedKcal: round2(in.History.DriftKcal), LimitPct: user.DriftPct},
+		Drift: driftBody{UsedKcal: round2(in.History.DriftKcal), LimitPct: lim.DriftPct},
 	}
 	if len(reviews) > 0 {
 		b.Last = new(newReviewBody(reviews[0]))
 	}
 	if st := in.State; st.Target != nil {
 		avg := st.Target.WeeklyAverage(st.TrainingDays.Count()).Kcal
-		b.StepKcal = round2(user.Step(avg))
+		b.StepKcal = round2(lim.Step(avg))
 		b.Drift.AgreedKcal = new(round2(avg - in.History.DriftKcal))
 	}
 	if in.State.Phase != nil {
 		h := in.History
 		b.Drift.AgreedOn = h.AgreedOn.String()
-		b.FirstStep = new(autopilot.FirstStep(next, settings.Weekday, h, user, trusted(in.Estimate) > 0, in.Expected).String())
+		b.FirstStep = new(autopilot.FirstStep(next, settings.Weekday, h, lim, trusted(in.Estimate) > 0, in.Expected).String())
 		if h.BaseTDEE > 0 {
 			b.Drift.BaseKcal = new(round2(h.BaseTDEE))
 			b.Drift.BaseFrom = new(h.BaseFrom.String())
-			b.Drift.LimitKcal = new(round2(user.DriftPct / 100 * h.BaseTDEE))
+			b.Drift.LimitKcal = new(round2(lim.DriftPct / 100 * h.BaseTDEE))
 		}
 	} else {
 		b.Drift.AgreedOn = in.Today.String()
@@ -471,13 +471,21 @@ func (s *sessions) withCheckIns(ctx context.Context, userID uuid.UUID, pending *
 			continue
 		}
 		c := newReviewBody(r)
-		switch {
-		case b.Status == string(proposal.Rejected):
-			c.Answer = "rejected"
-		case b.DecidedBy != nil && b.DecidedBy.Client != event.ClientAutopilot && (b.Status == string(proposal.Applied) || b.Status == string(proposal.Reverted)):
-			c.Answer = "accepted"
-		}
+		c.Answer = answerOf(b)
 		b.CheckIn = &c
 	}
 	return nil
+}
+
+// answerOf is the user's answer to the autopilot's proposal b: rejected,
+// accepted (applied by someone else than the autopilot), or none.
+func answerOf(b *proposalBody) string {
+	switch {
+	case b.Status == string(proposal.Rejected):
+		return "rejected"
+	case b.DecidedBy != nil && b.DecidedBy.Client != event.ClientAutopilot &&
+		(b.Status == string(proposal.Applied) || b.Status == string(proposal.Reverted)):
+		return "accepted"
+	}
+	return ""
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/zarnautovic/tdeemon/internal/domain/profile"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
+	"github.com/zarnautovic/tdeemon/internal/scheduler"
 	"github.com/zarnautovic/tdeemon/internal/store"
 	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 	"github.com/zarnautovic/tdeemon/internal/telegram"
@@ -89,6 +90,30 @@ func saveReviewPlan(t *testing.T, db *store.DB, u user.User, now time.Time) {
 	saveSummaryHistory(t, db, u, now)
 }
 
+// wantDueAtNine checks that job is due for u at 09:00 of now's day, not
+// before, and returns the occurrence.
+func wantDueAtNine(t *testing.T, job scheduler.Job, u user.User, now time.Time) string {
+	t.Helper()
+	if _, due := job.Due(u, now.Add(-10*time.Minute)); due {
+		t.Error("due before 09:00")
+	}
+	occurrence, due := job.Due(u, now)
+	if !due || occurrence != day.DateOf(now).String() {
+		t.Fatalf("Due at 09:05 = %q, %v", occurrence, due)
+	}
+	return occurrence
+}
+
+// wantIn checks that text has each of wants.
+func wantIn(t *testing.T, text string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %q in\n%s", want, text)
+		}
+	}
+}
+
 func TestAutopilotReviewJobTakesAStep(t *testing.T) {
 	t.Parallel()
 
@@ -98,13 +123,7 @@ func TestAutopilotReviewJobTakesAStep(t *testing.T) {
 	now := time.Date(2026, 10, 26, 9, 5, 0, 0, zagreb) // a Monday
 	ana := reviewUser(t, db, "ana@example.com", "en", autopilot.Auto, true, now)
 	job := api.AutopilotReviewJob(api.Config{DB: db, Limits: limits.Instance(), Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return now }}, bot)
-	if _, due := job.Due(ana, now.Add(-10*time.Minute)); due {
-		t.Error("due before 09:00")
-	}
-	occurrence, due := job.Due(ana, now)
-	if !due || occurrence != "2026-10-26" {
-		t.Fatalf("Due at 09:05 = %q, %v", occurrence, due)
-	}
+	occurrence := wantDueAtNine(t, job, ana, now)
 	if err := job.Run(t.Context(), ana, occurrence, now); err != nil {
 		t.Fatal(err)
 	}
@@ -119,11 +138,8 @@ func TestAutopilotReviewJobTakesAStep(t *testing.T) {
 	if len(sent) != 1 {
 		t.Fatalf("sent %q, want one message", sent)
 	}
-	for _, want := range []string{"Autopilot · weekly review, Monday Oct 26", "Target −100 kcal a day", "New average 2300 kcal a day", "Drift: −100 of", "Take it back in the plan: /plan"} {
-		if !strings.Contains(sent[0], want) {
-			t.Errorf("no %q in\n%s", want, sent[0])
-		}
-	}
+	wantIn(t, sent[0], "Autopilot · weekly review, Monday Oct 26", "Target −100 kcal a day", "New average 2300 kcal a day",
+		"Drift: −100 of", "Take it back in the plan: /plan")
 	// A run again, as after a crash, changes and sends nothing.
 	if err := job.Run(t.Context(), ana, occurrence, now); err != nil {
 		t.Fatal(err)
@@ -225,17 +241,23 @@ func TestAutopilotSettingsInTheApp(t *testing.T) {
 	if rec := in.do(t, http.MethodPut, "/api/v1/autopilot", `{"weekday":"someday"}`, session, nil); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("an unknown weekday: %d %s", rec.Code, rec.Body.String())
 	}
-	token, _ := in.createToken(t, session[0], `{"name":"coach","scopes":["read","tools"]}`)
+	wantCoachReadsOnly(t, in, session[0])
+}
+
+// wantCoachReadsOnly checks that a coach's token reads the autopilot's
+// mode in the plan, and neither reads nor changes its settings.
+func wantCoachReadsOnly(t *testing.T, in *instance, session *http.Cookie) {
+	t.Helper()
+	token, _ := in.createToken(t, session, `{"name":"coach","scopes":["read","tools"]}`)
 	for _, m := range []string{http.MethodGet, http.MethodPut} {
 		if rec := in.do(t, m, "/api/v1/autopilot", `{"mode":"propose"}`, nil, bearer(token.Token)); rec.Code != http.StatusForbidden && rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s with a token: %d, want it refused", m, rec.Code)
 		}
 	}
-	// The coach reads the mode in the plan.
 	var plan struct {
 		Autopilot struct{ Mode, Next string }
 	}
-	rec = in.do(t, http.MethodGet, "/api/v1/plan", "", nil, bearer(token.Token))
+	rec := in.do(t, http.MethodGet, "/api/v1/plan", "", nil, bearer(token.Token))
 	if err := json.Unmarshal(rec.Body.Bytes(), &plan); rec.Code != http.StatusOK || err != nil || plan.Autopilot.Mode != "autopilot" {
 		t.Errorf("the plan's autopilot %+v: %d %s", plan.Autopilot, rec.Code, rec.Body.String())
 	}
@@ -279,16 +301,21 @@ func TestThePlanGivesTheStepsReview(t *testing.T) {
 		r.CheckIn.Reason != "cut_slow" || r.CheckIn.StepKcal != -100 || plan.Autopilot.DriftKcal != -100 {
 		t.Errorf("the step %+v, drift %v", r, plan.Autopilot.DriftKcal)
 	}
+	wantLastApplied(t, in, session)
+}
+
+// wantLastApplied checks that the autopilot's last review is the step,
+// and undo leaves it.
+func wantLastApplied(t *testing.T, in *instance, session []*http.Cookie) {
+	t.Helper()
 	var ap struct {
 		Last *struct{ Outcome string } `json:"last"`
 	}
-	rec = in.do(t, http.MethodGet, "/api/v1/autopilot", "", session, nil)
+	rec := in.do(t, http.MethodGet, "/api/v1/autopilot", "", session, nil)
 	if err := json.Unmarshal(rec.Body.Bytes(), &ap); err != nil || ap.Last == nil || ap.Last.Outcome != "applied" {
 		t.Errorf("the autopilot's last review: %s", rec.Body.String())
 	}
-	// Undo leaves the step.
 	if rec := in.do(t, http.MethodPost, "/api/v1/undo", "", session, nil); rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "target") {
 		t.Errorf("undo took the step back: %s", rec.Body.String())
 	}
-	_ = store.ErrReviewed
 }
