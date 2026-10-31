@@ -1660,7 +1660,7 @@ export const en = {
     driftValue: (used: string, limit: string) => `${used} of ${limit} kcal`,
     driftUsed: (used: string) => `${used} kcal`,
     driftLeft: (left: string) => `${left} kcal left`,
-    driftFull: 'Limit reached: the next step is proposed',
+    driftFull: 'At the limit: a next step the same way would be proposed',
     driftNoBase: 'Its limit in kcal is set from the first step.',
     driftHint: (kcal: string, date: string) =>
       `What the autopilot moved your target since you agreed to ${kcal} kcal a day on ${date}. Accepting or setting a target starts it again at 0.`,
@@ -1783,8 +1783,9 @@ export const en = {
         `A step needs ${String(logged)} logged ${plural('en', logged, { one: 'day', other: 'days' })} and ${String(weighIns)} ${plural('en', weighIns, { one: 'weigh-in', other: 'weigh-ins' })} in the last 7 days. This week had ${String(hadLogged)} and ${String(hadWeighIns)}.`,
       tdeeAbout: (tdee: string, pm: string) => `Your TDEE is about ${tdee} ± ${pm} kcal.`,
       trustedAbout: (date: string) =>
-        `A step waits until calibration trusts it: about ${date}, if you keep logging as now.`,
-      trustedLater: 'A step waits until calibration trusts it. Keep logging and weighing in.',
+        `A step waits until calibration trusts your TDEE: about ${date}, if you keep logging as now.`,
+      trustedLater:
+        'A step waits until calibration trusts your TDEE. Keep logging and weighing in.',
       firstWait: 'A new phase or target moves water as much as fat at first.',
       firstFrom: (date: string) => `The first step can come from ${date}.`,
       interval: 'The autopilot takes one step a week at most.',

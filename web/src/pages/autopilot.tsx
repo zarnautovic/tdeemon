@@ -74,15 +74,21 @@ function Settings({ autopilot, holds }: { autopilot: Autopilot; holds: Record<st
   // Whether turning it on is asked about, before it is.
   const [asking, setAsking] = useState(false)
   const notNow = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (asking) {
-      notNow.current?.focus()
-    }
-  }, [asking])
+  // The mode's group, whose radio of the mode now (refocus) takes the
+  // focus back once the question is gone, so it does not fall to the
+  // page.
+  const modes = useRef<HTMLDivElement>(null)
+  const refocus = useRef<Autopilot['mode'] | undefined>(undefined)
+  const close = (to: Autopilot['mode']) => {
+    refocus.current = to
+    setAsking(false)
+  }
   const save = $api.useMutation('put', '/api/v1/autopilot', {
     onSuccess: async (answer, sent) => {
       queryClient.setQueryData($api.queryOptions('get', '/api/v1/autopilot').queryKey, answer)
-      setAsking(false)
+      if (sent.body.mode === 'autopilot') {
+        close('autopilot')
+      }
       // Undo leaves it: the toast says it, without an Undo.
       sayChange({ title: sent.body.mode === undefined ? a.savedDay : a.saved[answer.mode] })
       // The plan says the mode, the next review and the drift too.
@@ -98,15 +104,29 @@ function Settings({ autopilot, holds }: { autopilot: Autopilot; holds: Record<st
   const driftPct = holds.drift_pct ?? autopilot.drift.limit_pct
   const limitKcal = autopilot.drift.limit_kcal
   const pct = (n: number) => f.percent(n, 0)
-  const on = autopilot.mode === 'autopilot'
-  // The day chosen shows at once, while it is on its way.
-  const weekday = (save.isPending ? save.variables.body.weekday : undefined) ?? autopilot.weekday
+  // The mode and the day chosen show at once, while they are on their
+  // way.
+  const sending = save.isPending ? save.variables.body : undefined
+  const mode = sending?.mode ?? autopilot.mode
+  const weekday = sending?.weekday ?? autopilot.weekday
+  const on = mode === 'autopilot'
   const weekdayName = new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' })
-  const shown = asking ? 'autopilot' : autopilot.mode
+  const shown = asking ? 'autopilot' : mode
+  // The step it would take now, as the API has it, else the limits'.
+  const turnOnStep = autopilot.step_kcal > 0 ? autopilot.step_kcal : step
+  useEffect(() => {
+    if (asking) {
+      notNow.current?.focus()
+    } else if (refocus.current !== undefined) {
+      const radios = modes.current?.querySelectorAll<HTMLInputElement>('input[type=radio]')
+      radios?.[refocus.current === 'propose' ? 0 : 1]?.focus()
+      refocus.current = undefined
+    }
+  }, [asking])
 
   return (
     <>
-      <div className={card}>
+      <div ref={modes} className={card}>
         <SegmentedControl
           legend={a.modeLegend}
           options={[
@@ -115,13 +135,16 @@ function Settings({ autopilot, holds }: { autopilot: Autopilot; holds: Record<st
           ]}
           value={shown}
           describedBy={`${id}-hint`}
-          onChange={(mode) => {
-            if (mode === 'autopilot') {
+          onChange={(chosen) => {
+            if (chosen === 'autopilot') {
               save.reset()
               setAsking(true)
             } else {
               setAsking(false)
-              send({ mode: 'propose' })
+              // Cancelling the question changes nothing.
+              if (autopilot.mode !== 'propose') {
+                send({ mode: 'propose' })
+              }
             }
           }}
         >
@@ -139,8 +162,8 @@ function Settings({ autopilot, holds }: { autopilot: Autopilot; holds: Record<st
             </p>
             <p>
               {limitKcal === undefined
-                ? a.turnOnTextNoBase(f.number(step), pct(driftPct))
-                : a.turnOnText(f.number(step), f.number(limitKcal))}
+                ? a.turnOnTextNoBase(f.number(turnOnStep), pct(driftPct))
+                : a.turnOnText(f.number(turnOnStep), f.number(limitKcal))}
             </p>
             <div className="flex gap-2">
               <Button
@@ -156,7 +179,7 @@ function Settings({ autopilot, holds }: { autopilot: Autopilot; holds: Record<st
                 variant="ghost"
                 disabled={save.isPending}
                 onClick={() => {
-                  setAsking(false)
+                  close(autopilot.mode)
                 }}
               >
                 {a.turnOnNo}

@@ -194,6 +194,25 @@ test('before a drift base, the card says the limit comes with the first step, an
   expect(card.queryByText(/^Last review/)).toBeNull()
 })
 
+test('a review that waited says when a first step comes in its why, not twice', async () => {
+  serve(
+    cut,
+    autopilotBody({
+      mode: 'autopilot',
+      weekday: 'friday',
+      next: '2026-10-30',
+      first_step: '2026-11-13',
+      last: review({ outcome: 'skipped', reason: 'first_wait', step_kcal: 0, from: '2026-11-13' }),
+    }),
+  )
+  renderAt('/plan')
+  const card = within(await screen.findByRole('region', { name: 'Autopilot' }))
+  card.getByText(
+    'A new phase or target moves water as much as fat at first. The first step can come from Nov 13.',
+  )
+  expect(card.queryByText('The first step can come from Nov 13.')).toBeNull()
+})
+
 test('an autopilot that did not come is said as the plan has it', async () => {
   serve(cut, undefined)
   renderAt('/plan')
@@ -259,7 +278,7 @@ test('today says a hold plainly, and a proposal of its own as the autopilot sugg
   expect(screen.queryByRole('link', { name: /^Autopilot: / })).toBeNull()
 })
 
-test('the recent changes list a step as by Autopilot, without Undo', async () => {
+test('the recent changes list a step as by Autopilot, and the change of its settings as yours', async () => {
   fakeServer({
     ...signedIn(),
     'GET /api/v1/changes': () =>

@@ -80,12 +80,12 @@ test('a review says each reason in its words, from its numbers', () => {
         expected: '2026-11-18',
       },
       'No step: TDEE not trusted yet',
-      'Your TDEE is about 2,600 ± 310 kcal. A step waits until calibration trusts it: about Nov 18, if you keep logging as now.',
+      'Your TDEE is about 2,600 ± 310 kcal. A step waits until calibration trusts your TDEE: about Nov 18, if you keep logging as now.',
     ],
     [
       { outcome: 'skipped', reason: 'not_trusted', step_kcal: 0, tdee_kcal: 0 },
       'No step: TDEE not trusted yet',
-      'A step waits until calibration trusts it. Keep logging and weighing in.',
+      'A step waits until calibration trusts your TDEE. Keep logging and weighing in.',
     ],
     [
       { outcome: 'skipped', reason: 'first_wait', step_kcal: 0, from: '2026-11-06' },

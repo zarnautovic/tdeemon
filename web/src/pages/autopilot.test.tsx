@@ -78,6 +78,10 @@ test('turning the autopilot on asks first, with its bounds in numbers, and says 
   expect(await screen.findByText('Autopilot on')).toBeTruthy()
   expect(sent).toEqual([{ mode: 'autopilot' }])
   expect(screen.queryByRole('region', { name: 'Turn on the autopilot?' })).toBeNull()
+  // The focus goes back to the mode, not to the page.
+  await waitFor(() => {
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Autopilot' }))
+  })
   // Its drift, now it counts.
   await screen.findByRole('heading', { name: 'Drift' })
   screen.getByText('0 kcal')
@@ -89,6 +93,8 @@ test('turning the autopilot on asks first, with its bounds in numbers, and says 
 test('turning it on with a drift base says its limit in kcal, and Not now keeps it asking', async () => {
   const { sent } = autopilotServer(
     autopilotBody({
+      // The step it would take now, the API's, under the limits'.
+      step_kcal: 80,
       drift: {
         used_kcal: 0,
         limit_pct: 15,
@@ -103,12 +109,13 @@ test('turning it on with a drift base says its limit in kcal, and Not now keeps 
   renderAt('/plan/autopilot')
   fireEvent.click(await screen.findByRole('radio', { name: 'Autopilot' }))
   const ask = within(await screen.findByRole('region', { name: 'Turn on the autopilot?' }))
-  ask.getByText(/At most 100 kcal a day in a week, and 390 kcal in all\./)
+  ask.getByText(/At most 80 kcal a day in a week, and 390 kcal in all\./)
   screen.getByText(/^Each week the autopilot reviews your pace and takes a small step/)
 
   fireEvent.click(ask.getByRole('button', { name: 'Not now' }))
   expect(screen.queryByRole('region', { name: 'Turn on the autopilot?' })).toBeNull()
   expect(screen.getByRole('radio', { name: 'Ask me first' })).toHaveProperty('checked', true)
+  expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Ask me first' }))
   expect(sent).toEqual([])
   screen.getByText('In all, at most 390 kcal from the target you last agreed to (15% of your TDEE)')
 })
@@ -134,7 +141,7 @@ test('turning it off applies at once, and the drift goes', async () => {
   drift.getByText('-300 of 390 kcal')
   drift.getByText('90 kcal left')
   // A step of 100 more would pass it.
-  drift.getByText('Limit reached: the next step is proposed')
+  drift.getByText('At the limit: a next step the same way would be proposed')
   drift.getByText(
     'What the autopilot moved your target since you agreed to 2,279 kcal a day on Sep 28. Accepting or setting a target starts it again at 0.',
   )
@@ -218,4 +225,16 @@ test('an autopilot that did not load says so, with a way to ask again', async ()
   server.fail(false)
   fireEvent.click(again)
   expect(await screen.findByRole('radio', { name: 'Ask me first' })).toBeTruthy()
+})
+
+test('the question cancelled by asking first again sends nothing', async () => {
+  const { sent } = autopilotServer()
+  renderAt('/plan/autopilot')
+  fireEvent.click(await screen.findByRole('radio', { name: 'Autopilot' }))
+  await screen.findByRole('region', { name: 'Turn on the autopilot?' })
+  fireEvent.click(screen.getByRole('radio', { name: 'Ask me first' }))
+  expect(screen.queryByRole('region', { name: 'Turn on the autopilot?' })).toBeNull()
+  expect(screen.getByRole('radio', { name: 'Ask me first' })).toHaveProperty('checked', true)
+  expect(screen.queryByText('The autopilot asks first')).toBeNull()
+  expect(sent).toEqual([])
 })

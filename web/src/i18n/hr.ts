@@ -1493,7 +1493,7 @@ export const hr: Messages = {
     driftValue: (used: string, limit: string) => `${used} od ${limit} kcal`,
     driftUsed: (used: string) => `${used} kcal`,
     driftLeft: (left: string) => `ostalo ${left} kcal`,
-    driftFull: 'Granica dosegnuta: sljedeći korak bit će prijedlog',
+    driftFull: 'Na granici: sljedeći korak u istom smjeru bit će prijedlog',
     driftNoBase: 'Granica u kcal postavlja se od prvog koraka.',
     driftHint: (kcal: string, date: string) =>
       `Koliko je autopilot pomaknuo cilj od dogovorenih ${kcal} kcal dnevno, ${date}. Prihvaćen ili postavljen cilj vraća ga na 0.`,
@@ -1559,7 +1559,7 @@ export const hr: Messages = {
       holds: {
         on_target: 'Bez promjene: tempo je u planu',
         intake: 'Bez promjene: cilj odgovara, unos nije',
-        steps_guard: 'Bez promjene: sporiji tempo objašnjavaju koraci',
+        steps_guard: 'Bez promjene: tempo objašnjavaju koraci',
         rejected: 'Bez promjene: cilj ostaje tvoj',
       },
       holdLines: {
@@ -1607,11 +1607,11 @@ export const hr: Messages = {
       underweight: (bmi: string) =>
         `BMI ti je ${bmi}, ispod 18,5. Tu autopilot nikad ne nastavlja gubitak, pa predlaže održavanje.`,
       fewData: (logged: number, weighIns: number, hadLogged: number, hadWeighIns: number) =>
-        `Korak treba ${String(logged)} ${plural('hr', logged, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} i ${String(weighIns)} vaganja u zadnjih 7 dana. Ovaj tjedan: ${String(hadLogged)} i ${String(hadWeighIns)}.`,
+        `Korak treba ${String(logged)} ${plural('hr', logged, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} i ${String(weighIns)} ${plural('hr', weighIns, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })} u zadnjih 7 dana. Ovaj tjedan: ${String(hadLogged)} i ${String(hadWeighIns)}.`,
       tdeeAbout: (tdee: string, pm: string) => `TDEE je oko ${tdee} ± ${pm} kcal.`,
       trustedAbout: (date: string) =>
-        `Korak čeka da mu kalibracija vjeruje: oko ${date}, ako nastaviš upisivati kao sada.`,
-      trustedLater: 'Korak čeka da mu kalibracija vjeruje. Nastavi upisivati i vagati se.',
+        `Korak čeka da kalibracija vjeruje TDEE-u: oko ${date}, ako nastaviš upisivati kao sada.`,
+      trustedLater: 'Korak čeka da kalibracija vjeruje TDEE-u. Nastavi upisivati i vagati se.',
       firstWait: 'Nova faza ili cilj u početku miče vodu koliko i mast.',
       firstFrom: (date: string) => `Prvi korak može doći od ${date}.`,
       interval: 'Autopilot radi najviše jedan korak tjedno.',

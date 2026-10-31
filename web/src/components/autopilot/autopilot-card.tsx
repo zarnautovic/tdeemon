@@ -59,7 +59,10 @@ export function AutopilotCard({
     plan.pending?.id === last.proposal_id
   // The first step, when the next review cannot take it yet: the server
   // says when, after its waits and calibration's.
-  const first = ap?.first_step !== undefined && ap.first_step > next ? ap.first_step : undefined
+  // A review that waited for it says when already, in its why.
+  const said = last?.reason === 'first_wait' || last?.reason === 'not_trusted'
+  const first =
+    !said && ap?.first_step !== undefined && ap.first_step > next ? ap.first_step : undefined
 
   return (
     <section aria-labelledby={id} className="space-y-3 rounded-lg border bg-card p-4 lg:p-5">
