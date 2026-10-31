@@ -454,7 +454,8 @@ server gives codes and names, and the app the words.
      log at once what is clear, ask one question only when the food or
      the amount is not, "estimate" logs nothing, show the breakdown the
      tool answers, and never work out a logged total or what remains,
-     which the tools give.
+     which the tools give. It serves the coaching sessions as its prompts
+     and the methodology as its resource too (§8).
    - **Later:** a minimal built-in OAuth 2.1 authorisation server (PKCE,
      dynamic client registration) so Claude and ChatGPT custom
      connectors work.
@@ -991,11 +992,27 @@ The coach gets enough to reason with, without raw dumps:
 
 ### MCP extras
 
-- **Prompts as ready-made sessions** ("Monthly review", "Plateau check",
-  "Plan a new phase"). They show up as slash commands in clients and
-  load the right context.
-- **The methodology as an MCP resource**, i.e. how TDEE and verdicts are
-  computed, so the coach understands the numbers it reads.
+- **Coaching sessions** (decided on 31 October 2026): a monthly review,
+  a plateau check and a new phase, each a list of steps
+  (`internal/coaching/sessions`): which tools to call, what to check
+  first (adherence, the water after a change, what the autopilot already
+  does) and that a change is proposed and applied only after the user's
+  yes. The model calls the tools itself; the session gathers no data.
+  The steps are written for any model, a small open one too.
+- **The methodology** ([methodology.md](methodology.md)): how the trend
+  weight, the measured TDEE, the verdict and the autopilot come about,
+  so a coach reads the numbers right. The binary serves the page as it
+  is written (`docs/docs.go`).
+- **One text, three ways in.** Every MCP client takes tools, few show
+  prompts or read resources by themselves, so a session reaches a model
+  first as a tool: `get_coaching_guide(session)` answers its steps and
+  the methodology, and the instructions send a review, a stall or a new
+  phase to it, so the user only asks in words. The same text is MCP's
+  prompts too (with an optional `about`, what the user wants from it),
+  which clients such as Claude Code show as commands, and the
+  methodology its resource (`tdeemon://methodology`). Only the tool's
+  brief goes with each request; the text comes when a session starts.
+  The built-in chat (§6) will take the same sessions.
 - **Tool annotations:** `readOnlyHint` on reads and `destructiveHint` on
   `apply_proposal`, so clients ask before writes; `revert_proposal` only
   proposes.

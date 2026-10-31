@@ -19,7 +19,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/zarnautovic/tdeemon/docs"
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/coaching"
 )
 
 // mcpInstructions is the policy of logging the server gives every MCP
@@ -165,7 +167,50 @@ func (m *mcpServer) serverFor(p auth.Principal) *mcp.Server {
 			})
 		}
 	}
+	addCoaching(s)
 	return s
+}
+
+// methodologyURI is the methodology's address as an MCP resource.
+const methodologyURI = "tdeemon://methodology"
+
+// addCoaching adds the coaching sessions to s as its prompts, which a
+// client shows as commands, and the methodology as its resource
+// (DESIGN.md §8). They are the text get_coaching_guide answers, for the
+// clients that show prompts; every token MCP takes opens that tool.
+func addCoaching(s *mcp.Server) {
+	for _, session := range coaching.Sessions() {
+		s.AddPrompt(&mcp.Prompt{
+			Name: session.Name, Title: session.Title, Description: session.Description,
+			Arguments: []*mcp.PromptArgument{{
+				Name: "about", Title: "About", Description: "What the user wants from the session, in their words.",
+			}},
+		}, func(_ context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
+			return sessionPrompt(session, req.Params.Arguments["about"]), nil
+		})
+	}
+	s.AddResource(&mcp.Resource{
+		URI: methodologyURI, Name: "methodology", Title: "How tdeemon reads the numbers", MIMEType: "text/markdown",
+		Description: "How the trend weight, the measured TDEE, the verdict on a phase and the autopilot come about.",
+		Size:        int64(len(docs.Methodology)),
+	}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{Contents: []*mcp.ResourceContents{{URI: methodologyURI, MIMEType: "text/markdown", Text: docs.Methodology}}}, nil
+	})
+}
+
+// sessionPrompt is the user's message that starts session, with what
+// the user wants from it, when they said.
+func sessionPrompt(session coaching.Session, about string) *mcp.GetPromptResult {
+	var text strings.Builder
+	text.WriteString("Run tdeemon's " + session.Title + " with me: follow these steps.\n\n")
+	text.WriteString(session.Guide())
+	if about = strings.TrimSpace(about); about != "" {
+		text.WriteString("\nWhat I want from it: " + about + "\n")
+	}
+	return &mcp.GetPromptResult{
+		Description: session.Description,
+		Messages:    []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: text.String()}}},
+	}
 }
 
 // call runs t's operation for p with args, and answers what it answered:

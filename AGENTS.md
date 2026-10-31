@@ -34,7 +34,8 @@ the tool registry with
 `delete_meal`, `log_metric`, `delete_metric`, `checkin`,
 `update_profile_notes`, `propose_changes`, `apply_proposal`,
 `reject_proposal`, `revert_proposal` and `undo_last`, the MCP server
-that serves them at `/mcp`, the API contract and the web app's frame
+that serves them at `/mcp`, with the coaching sessions as its prompts
+and the methodology as its resource, the API contract and the web app's frame
 (installed as an app, a PWA whose shell opens without a network and
 whose new version a toast offers; signing in, under the product's mark
 and what it is, and out, its
