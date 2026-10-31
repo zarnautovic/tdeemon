@@ -1,9 +1,17 @@
 package api
 
 import (
+	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
+	"uuid"
+
+	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/limits"
+	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
+	"github.com/zarnautovic/tdeemon/internal/store/storetest"
 
 	"github.com/zarnautovic/tdeemon/internal/domain/autopilot"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
@@ -96,5 +104,55 @@ func TestTheMorningLineOfAReview(t *testing.T) {
 	m := morningData{review: &r, reviewToday: true}
 	if got := morningShort(m, "en"); !strings.Contains(got, "Autopilot: target −100 kcal a day") {
 		t.Errorf("morningShort = %q, want the review's title", got)
+	}
+}
+
+func TestReviewTextsSayEachDateOnce(t *testing.T) {
+	t.Parallel()
+
+	settings := autopilot.Settings{Mode: autopilot.Auto, Weekday: time.Monday}
+	for _, outcome := range []autopilot.Outcome{autopilot.Applied, autopilot.Proposed, autopilot.Skipped} {
+		r := reviewOf(outcome, autopilot.ReasonFewData)
+		for _, locale := range []string{"en", "hr"} {
+			n := reviewNote(store.StoredReview{Review: r}, settings, locale)
+			all := n.Text + "\n" + n.Push.Body
+			if strings.Contains(all, "..") {
+				t.Errorf("%s %s: a double dot in\n%s", outcome, locale, all)
+			}
+			if c := strings.Count(n.Text, map[string]string{"en": "Next review", "hr": "Sljedeći pregled"}[locale]); c > 1 {
+				t.Errorf("%s %s: the next review %d times in\n%s", outcome, locale, c, n.Text)
+			}
+		}
+	}
+}
+
+func TestTheReviewIsCheckedAgainInItsTransaction(t *testing.T) {
+	t.Parallel()
+
+	db := storetest.Open(t)
+	now := time.Date(2026, 10, 26, 9, 5, 0, 0, time.UTC)
+	u := user.User{
+		ID: uuid.NewV7(), Email: "ana@example.com", Name: "Ana", Role: user.RoleUser, Locale: "en",
+		TimeZone: "UTC", DayStartHour: 4, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := db.CreateUser(t.Context(), u, ""); err != nil {
+		t.Fatal(err)
+	}
+	s := &sessions{db: db, logger: slog.New(slog.DiscardHandler), now: func() time.Time { return now }, instance: limits.Instance()}
+	p := auth.Principal{User: u}
+	settings := autopilot.DefaultSettings()
+	in, err := s.reviewInput(t.Context(), p, settings, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	same := autopilot.Decide(in)
+	if _, err := s.recheck(t.Context(), p, settings, same, now)(proposal.Changes{}); err != nil {
+		t.Errorf("the same decision = %v, want it to pass", err)
+	}
+	// A step decided on data that changed since: no plan now.
+	other := same
+	other.Outcome = autopilot.Applied
+	if _, err := s.recheck(t.Context(), p, settings, other, now)(proposal.Changes{}); !errors.Is(err, errReviewChanged) {
+		t.Errorf("another decision = %v, want errReviewChanged", err)
 	}
 }
