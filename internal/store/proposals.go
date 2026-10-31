@@ -31,8 +31,10 @@ var ErrInvalidProposal = errors.New("invalid proposal")
 // written: its error is returned as it is, and nothing is written. The
 // transaction holds the one write connection, so what the check reads
 // through the store's reads (the limits, the profile, the data) no write
-// changes until it ends. nil checks nothing.
-type ProposalCheck func(proposal.Changes) error
+// changes until it ends. It returns the TDEE calibration trusts, 0 for
+// none, which a proposal applied keeps as the base of the autopilot's
+// drift from the target it sets. nil checks nothing.
+type ProposalCheck func(proposal.Changes) (tdee float64, err error)
 
 // ProposalClosedError reports a proposal that waits no more: Status says
 // what became of it.
@@ -167,6 +169,7 @@ func (s changesState) changes() (proposal.Changes, error) {
 // proposalState is a proposal's row, and the state its events record.
 type proposalState struct {
 	Status        string          `json:"status"`
+	Actor         string          `json:"actor"`
 	Client        string          `json:"client"`
 	Model         string          `json:"model"`
 	Rationale     string          `json:"rationale"`
@@ -181,16 +184,17 @@ type proposalState struct {
 	DecidedClient *string         `json:"decided_client"`
 	DecidedModel  *string         `json:"decided_model"`
 	RevertedBy    *string         `json:"reverted_by"`
+	TDEE          *float64        `json:"tdee"`
 }
 
-const proposalColumns = `id, status, client, model, rationale, window_from, window_to, changes, reverts,
-	created_at, expires_at, decided_at, decided_actor, decided_client, decided_model, reverted_by`
+const proposalColumns = `id, status, actor, client, model, rationale, window_from, window_to, changes, reverts,
+	created_at, expires_at, decided_at, decided_actor, decided_client, decided_model, reverted_by, tdee`
 
 func scanProposal(row interface{ Scan(...any) error }) (string, proposalState, error) {
 	var id, changes string
 	var s proposalState
-	if err := row.Scan(&id, &s.Status, &s.Client, &s.Model, &s.Rationale, &s.WindowFrom, &s.WindowTo, &changes, &s.Reverts,
-		&s.CreatedAt, &s.ExpiresAt, &s.DecidedAt, &s.DecidedActor, &s.DecidedClient, &s.DecidedModel, &s.RevertedBy); err != nil {
+	if err := row.Scan(&id, &s.Status, &s.Actor, &s.Client, &s.Model, &s.Rationale, &s.WindowFrom, &s.WindowTo, &changes, &s.Reverts,
+		&s.CreatedAt, &s.ExpiresAt, &s.DecidedAt, &s.DecidedActor, &s.DecidedClient, &s.DecidedModel, &s.RevertedBy, &s.TDEE); err != nil {
 		return "", proposalState{}, err
 	}
 	s.Changes = json.RawMessage(changes)
@@ -202,7 +206,10 @@ func scanProposal(row interface{ Scan(...any) error }) (string, proposalState, e
 func (s proposalState) proposal(id string, now time.Time) (proposal.Proposal, error) {
 	p := proposal.Proposal{
 		Status: proposal.Status(s.Status), Rationale: s.Rationale,
-		By: event.Actor{Kind: event.User, Client: s.Client, Model: s.Model},
+		By: event.Actor{Kind: event.ActorKind(s.Actor), Client: s.Client, Model: s.Model},
+	}
+	if s.TDEE != nil {
+		p.TDEE = *s.TDEE
 	}
 	var err error
 	if p.ID, err = uuid.Parse(id); err != nil {
@@ -384,7 +391,7 @@ func (db *DB) CreateProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 		if err != nil {
 			return err
 		}
-		p, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now, check)
+		p, _, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now, check)
 		return err
 	})
 	if err != nil {
@@ -413,12 +420,13 @@ func (db *DB) ChangePlan(ctx context.Context, userID uuid.UUID, a event.Actor, d
 		if err != nil {
 			return err
 		}
-		if p, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now, check); err != nil {
+		var tdee float64
+		if p, tdee, err = createProposalIn(ctx, tx, userID, a, d, c, uuid.Nil(), today, now, check); err != nil {
 			return err
 		}
 		// check held the changes to the limits a moment ago, in this
 		// transaction: nothing has changed since.
-		p, err = applyIn(ctx, tx, userID, a, p, now, nil)
+		p, err = applyIn(ctx, tx, userID, a, p, now, nil, tdee)
 		return err
 	})
 	if err != nil {
@@ -467,7 +475,7 @@ func (db *DB) RevertProposal(ctx context.Context, userID uuid.UUID, a event.Acto
 		if err := changedSince(c, back); err != nil {
 			return fmt.Errorf("%w: %w", ErrInvalidProposal, err)
 		}
-		p, err = createProposalIn(ctx, tx, userID, a, d, c, id, today, now, check)
+		p, _, err = createProposalIn(ctx, tx, userID, a, d, c, id, today, now, check)
 		return err
 	})
 	if err != nil {
@@ -525,35 +533,37 @@ func changedSince(c, back proposal.Changes) error {
 // with c, its changes with the plan before each, and reverts, the
 // proposal it takes back or uuid.Nil, and returns it; ErrInvalidProposal
 // for changes that break their rules or leave a timeline that overlaps,
-// or check's error. It supersedes the user's pending proposals.
+// or check's error, with the TDEE check returned. It supersedes the
+// user's pending proposals.
 func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, d proposal.Draft, c proposal.Changes,
 	reverts uuid.UUID, today day.Date, now time.Time, check ProposalCheck,
-) (proposal.Proposal, error) {
+) (proposal.Proposal, float64, error) {
 	phases, err := phasesIn(ctx, tx, userID)
 	if err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
 	user, err := limitsOf(ctx, tx, userID)
 	if err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
 	if err := c.Validate(today, phases, user.limits()); err != nil {
-		return proposal.Proposal{}, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
+		return proposal.Proposal{}, 0, fmt.Errorf("%w: %w", ErrInvalidProposal, err)
 	}
 	if err := plan.ValidateTimeline(c.Timeline(phases)); err != nil {
-		return proposal.Proposal{}, fmt.Errorf("%w: the phases it leaves: %w", ErrInvalidProposal, err)
+		return proposal.Proposal{}, 0, fmt.Errorf("%w: the phases it leaves: %w", ErrInvalidProposal, err)
 	}
+	var tdee float64
 	if check != nil {
-		if err := check(c); err != nil {
-			return proposal.Proposal{}, err
+		if tdee, err = check(c); err != nil {
+			return proposal.Proposal{}, 0, err
 		}
 	}
 	if err := supersedeProposals(ctx, tx, userID, a, now); err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
 	changes, err := json.Marshal(changesStateOf(c))
 	if err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
 	id := uuid.NewV7()
 	var from, to, revertsID any
@@ -563,20 +573,30 @@ func createProposalIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event
 	if reverts != uuid.Nil() {
 		revertsID = reverts.String()
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO proposals (user_id, id, status, client, model, rationale,
-		window_from, window_to, changes, reverts, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		userID.String(), id.String(), string(proposal.Pending), a.Client, a.Model, d.Rationale,
+	if _, err := tx.ExecContext(ctx, `INSERT INTO proposals (user_id, id, status, actor, client, model, rationale,
+		window_from, window_to, changes, reverts, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		userID.String(), id.String(), string(proposal.Pending), string(proposerKind(a)), a.Client, a.Model, d.Rationale,
 		from, to, string(changes), revertsID, formatTime(now), formatTime(now.Add(proposal.TTL))); err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
 	after, err := proposalOf(ctx, tx, userID, id)
 	if err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
 	if _, err := record(ctx, tx, userID, a, event.ProposalCreate, id.String(), nil, after, now); err != nil {
-		return proposal.Proposal{}, err
+		return proposal.Proposal{}, 0, err
 	}
-	return after.proposal(id.String(), now)
+	p, err := after.proposal(id.String(), now)
+	return p, tdee, err
+}
+
+// proposerKind returns who a proposes as: the autopilot, or the user, for
+// whom a coach acts too.
+func proposerKind(a event.Actor) event.ActorKind {
+	if a.Kind == event.Autopilot {
+		return event.Autopilot
+	}
+	return event.User
 }
 
 // planBefore returns c, in the order of each change's day and of the
@@ -733,7 +753,7 @@ func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor
 			}
 			return err
 		}
-		if p, err = applyIn(ctx, tx, userID, a, p, now, check); err != nil {
+		if p, err = applyIn(ctx, tx, userID, a, p, now, check, 0); err != nil {
 			return err
 		}
 		return nil
@@ -748,10 +768,21 @@ func (db *DB) ApplyProposal(ctx context.Context, userID uuid.UUID, a event.Actor
 }
 
 // applyIn applies userID's pending proposal p in tx, as a's consent,
-// once check passes its changes, and returns it as it then is.
-func applyIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, p proposal.Proposal, now time.Time, check ProposalCheck) (proposal.Proposal, error) {
+// once check passes its changes, and returns it as it then is. It keeps
+// the TDEE check returns, or tdee without a check, as the one the plan
+// was agreed on.
+func applyIn(ctx context.Context, tx *sql.Tx, userID uuid.UUID, a event.Actor, p proposal.Proposal, now time.Time,
+	check ProposalCheck, tdee float64,
+) (proposal.Proposal, error) {
 	if check != nil {
-		if err := check(p.Changes); err != nil {
+		var err error
+		if tdee, err = check(p.Changes); err != nil {
+			return proposal.Proposal{}, err
+		}
+	}
+	if tdee > 0 {
+		if _, err := tx.ExecContext(ctx, "UPDATE proposals SET tdee = ? WHERE user_id = ? AND id = ?",
+			tdee, userID.String(), p.ID.String()); err != nil {
 			return proposal.Proposal{}, err
 		}
 	}
