@@ -281,6 +281,22 @@ func saveIsolationMetrics(t *testing.T, db *store.DB, u user.User, now time.Time
 // of the name (A, I) sets it apart.
 func isolationWeight(u user.User) float64 { return 80 + float64(u.Name[0]%20)/10 }
 
+// otherWeekday is the other's review weekday, as the API says it.
+func otherWeekday(e isolationEnv) string {
+	n := int(e.other.user.Name[0] % 20)
+	return `"weekday":"` + strings.ToLower(time.Weekday(n%7).String()) + `"`
+}
+
+// isolateSetAutopilot changes the other's autopilot, which answers with
+// their own weekday.
+func isolateSetAutopilot(t *testing.T, e isolationEnv) {
+	t.Helper()
+	rec := e.in.do(t, http.MethodPut, "/api/v1/autopilot", `{"mode":"propose"}`, []*http.Cookie{e.other.session}, nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), otherWeekday(e)) {
+		t.Errorf("the other's autopilot: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // saveIsolationAutopilot gives u settings of the autopilot and a review
 // of a week ago, their weekday and target n's own.
 func saveIsolationAutopilot(t *testing.T, db *store.DB, u user.User, n int, now time.Time) {
@@ -1022,6 +1038,10 @@ func isolationCases() map[string]isolationCase {
 		"get-limits": read("/api/v1/limits", false, func(e isolationEnv) []string {
 			return []string{fmt.Sprintf(`"protein_floor_grams":%d`, 100+int(e.other.user.Name[0]%20))}
 		}),
+		"get-autopilot": read("/api/v1/autopilot", false, func(e isolationEnv) []string {
+			return []string{otherWeekday(e), fmt.Sprintf(`"target_kcal":%d`, 2100+int(e.other.user.Name[0]%20))}
+		}),
+		"set-autopilot": isolateSetAutopilot,
 		"set-profile": func(t *testing.T, e isolationEnv) {
 			rec := e.in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"male","birth_date":"1985-01-20","height_cm":181}`, []*http.Cookie{e.other.session}, nil)
 			if rec.Code != http.StatusOK {

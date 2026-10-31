@@ -13,6 +13,7 @@ export function planBody(
     targets: [],
     limits: limitsBody().effective,
     revisions: [],
+    autopilot: { mode: 'propose', next: '2026-10-26', drift_kcal: 0 },
     ...over,
   }
 }

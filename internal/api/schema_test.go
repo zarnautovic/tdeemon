@@ -142,6 +142,7 @@ func answerCases() map[string]answerCase {
 		"get-session":      get("/api/v1/auth/session"),
 		"whoami":           get("/api/v1/auth/whoami"),
 		"get-limits":       get("/api/v1/limits"),
+		"get-autopilot":    get("/api/v1/autopilot"),
 		"ingest-hae": func(t *testing.T, in *instance, _ *http.Cookie) {
 			t.Helper()
 			in.do(t, http.MethodPost, "/api/v1/ingest/hae", haeBody, nil, ingestToken(t, in, `"ingest"`))
@@ -408,6 +409,10 @@ func answerCases() map[string]answerCase {
 		"set-profile": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()
 			in.do(t, http.MethodPut, "/api/v1/profile", `{"sex":"male","birth_date":"1985-01-20","height_cm":181}`, []*http.Cookie{session}, nil)
+		},
+		"set-autopilot": func(t *testing.T, in *instance, session *http.Cookie) {
+			t.Helper()
+			in.do(t, http.MethodPut, "/api/v1/autopilot", `{"mode":"autopilot","weekday":"saturday"}`, []*http.Cookie{session}, nil)
 		},
 		"set-limits": func(t *testing.T, in *instance, session *http.Cookie) {
 			t.Helper()

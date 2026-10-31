@@ -46,14 +46,19 @@ func TestRevisionsOf(t *testing.T) {
 			Changes: proposal.Changes{Phases: []proposal.PhaseChange{{Before: &cutPh, After: &faster}}},
 		},
 		{
+			Status: proposal.Applied, By: auto, DecidedBy: auto, DecidedAt: at(12, 9),
+			Changes: proposal.Changes{Targets: []proposal.TargetChange{{From: start.AddDays(5), After: &lower}}},
+		},
+		{
 			Status: proposal.Applied, By: user, DecidedBy: user, DecidedAt: at(10, 9),
 			Changes: proposal.Changes{TrainingWeekdays: &proposal.WeekdaysChange{After: plan.Weekdays(0b1)}},
 		},
 		{Status: proposal.Pending, By: user, Changes: proposal.Changes{Targets: []proposal.TargetChange{{After: &lower}}}},
 	}
-	got := RevisionsOf(ps, cal, training)
+	got := RevisionsOf(ps, cal, training, []plan.Target{baseTarget})
 	want := []Revision{
 		{Day: day.Date{Year: 2026, Month: 9, Day: 10}, By: ByUser},
+		{Day: day.Date{Year: 2026, Month: 9, Day: 12}, By: ByAutopilot, SetsKcal: true, DeltaKcal: -100},
 		{Day: day.Date{Year: 2026, Month: 9, Day: 14}, By: ByUser, ChangesPhase: true},
 		{Day: day.Date{Year: 2026, Month: 9, Day: 21}, By: ByAutopilot, SetsKcal: true, DeltaKcal: -100, TDEE: 2486},
 		{Day: day.Date{Year: 2026, Month: 9, Day: 29}, By: ByAccepted, SetsKcal: true, DeltaKcal: 100, TDEE: 2500},

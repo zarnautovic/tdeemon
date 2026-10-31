@@ -1040,9 +1040,29 @@ the first spec.
   summary as it is now, `/pomoc` (`/help`) lists them; only a chat in
   `telegram_chats` is answered, and a command writes nothing. The
   adapter with the agent loop (§6) will take the bot's other messages.
+- **Weekly review** (`internal/api/autopilot.go`), the scheduler's job
+  at 09:00 on the user's clock (up to 5 hours later after a server was
+  down), before the morning summary, on the user's review weekday: it
+  decides the review (§8) from the same reads as a proposal's check,
+  and stores it with its step or proposal in one transaction, which
+  takes the decision again and refuses one that came out otherwise, so
+  nothing that changed meanwhile slips past the limits; a day reviewed
+  already is left as it is. Its message goes to every channel: the whole
+  review to Telegram, its outcome and numbers to each device (`/plan`,
+  tag `autopilot`, so each replaces the last), a hold or no step
+  without a sound (`silent`) and at a low urgency; a review that
+  repeats the last one sends none, and one whose message fails is not
+  sent again, as the plan says it. `GET /autopilot` gives the settings,
+  the next review and the first that may step, the step and the drift;
+  `PUT` changes the mode and the weekday, a web session's alone; and
+  `get_plan` gives a coach the mode, the drift and the next review. A
+  proposal or step of the autopilot's carries its review (`check_in`),
+  which the app says in the user's language, as it says the rationale
+  `autopilot`.
 - **Morning summary:** a deterministic template (sleep, yesterday vs
-  target, weight trend, calibration line, a proposal of the plan that
-  waits for an answer, recovery flags), the
+  target, weight trend, calibration line, the autopilot's last review
+  of the week, a proposal of the plan that waits for an answer,
+  recovery flags; on the review's day, the short form says it too), the
   scheduler's job at 10:00 on the user's clock, sent whole to their
   Telegram chat and in a line to each device by Web Push
   (`internal/api/morning.go`, from the same reads as `get_day` and

@@ -104,6 +104,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/autopilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get your autopilot
+         * @description Needs a web session. The autopilot's settings, the next review and the first that may step, the step and the drift its limits allow, and its last review.
+         */
+        get: operations["get-autopilot"];
+        /**
+         * Change your autopilot
+         * @description Needs a web session, never an API token: how far the autopilot may go is the user's, as the limits are. Sets the mode and the review's weekday; what is left out stays. Undo leaves it.
+         */
+        put: operations["set-autopilot"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/barcodes/{code}": {
         parameters: {
             query?: never;
@@ -909,7 +933,7 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         ActorBody: {
-            /** @description What it came through: mcp, web, telegram. */
+            /** @description What it came through: mcp, web, telegram, or autopilot for the autopilot's own. */
             client: string;
             /** @description The AI model that acted for the user. */
             model?: string;
@@ -917,6 +941,36 @@ export interface components {
         ApplyBody: {
             /** @description Loosening a limit takes this: the user saw that the proposal allows a plan the limit refused. */
             confirm?: boolean;
+        };
+        AutopilotBody: {
+            drift: components["schemas"]["DriftBody"];
+            /**
+             * Format: date
+             * @description The first review that may step, after the waits and the day calibration expects an estimate; absent without a phase.
+             */
+            first_step?: string;
+            /** @description The last review; absent before the first. */
+            last?: components["schemas"]["ReviewBody"];
+            /**
+             * @description propose: every step is a proposal; autopilot: a step within the limits applies by itself, past the drift limit it is proposed.
+             * @enum {string}
+             */
+            mode: "propose" | "autopilot";
+            /**
+             * Format: date
+             * @description The next review.
+             */
+            next: string;
+            /**
+             * Format: double
+             * @description The largest step the limits allow now, kcal a day of the weekly average; 0 without a target.
+             */
+            step_kcal: number;
+            /**
+             * @description The review's day of the week.
+             * @enum {string}
+             */
+            weekday: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
         };
         BarcodeOutputBody: {
             /** @description The barcode as a food keeps it: a UPC-A as its EAN-13, a 0 before it. */
@@ -929,7 +983,7 @@ export interface components {
             open_food_facts?: components["schemas"]["OpenFoodFactsBody"];
         };
         ChangeBody: {
-            /** @description What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status. */
+            /** @description What the change did: food.save, food.archive, recipe.save, meal.create, meal.replace, meal.delete, day.exclude, day.include, day.training, day.checkin, metric.set, metric.delete, metrics.merge, notes.set, or a change of the plan: profile.set, limits.set, phase.set, phase.delete, target.set, target.delete, plan.weekdays, proposal.create, proposal.status, autopilot.set (the autopilot's settings). */
             action: string;
             /** @description Of food.archive: true when it archived the food, false when it brought it back in use. */
             archived?: boolean;
@@ -940,7 +994,7 @@ export interface components {
             at: string;
             /** @description A food's brand, beside its name. */
             brand?: string;
-            /** @description What it came through: web, api, mcp. */
+            /** @description What it came through: web, api, mcp, or autopilot for the autopilot's own step or proposal, which undo never takes back. */
             client: string;
             /** @description The days (YYYY-MM-DD) it was of, as undo's answer says them: a meal's before and after it, a check-in's, a measurement's or a day's; none for a food, the notes or the plan. */
             days: string[];
@@ -1192,6 +1246,43 @@ export interface components {
         DeleteMealOutputBody: {
             /** @description The meal's day, without the meal. */
             day: components["schemas"]["DaySummary"];
+        };
+        DriftBody: {
+            /**
+             * Format: double
+             * @description The weekly average of the target in force; absent without one.
+             */
+            agreed_kcal?: number;
+            /**
+             * Format: date
+             * @description The day of the last kcal target the user agreed to: the phase's start, or a change they applied.
+             */
+            agreed_on: string;
+            /**
+             * Format: date
+             * @description The day it was taken.
+             */
+            base_from?: string;
+            /**
+             * Format: double
+             * @description The TDEE the limit is a share of: the one trusted when the user agreed to the target, else the one at the first step since.
+             */
+            base_kcal?: number;
+            /**
+             * Format: double
+             * @description The limit in kcal; absent until there is a base, from the first step.
+             */
+            limit_kcal?: number;
+            /**
+             * Format: double
+             * @description Its limit, in % of the base TDEE (the user's drift_pct).
+             */
+            limit_pct: number;
+            /**
+             * Format: double
+             * @description The net change of the weekly average by its steps since, a minus being down.
+             */
+            used_kcal: number;
         };
         EatenBody: {
             /** Format: date-time */
@@ -2005,7 +2096,31 @@ export interface components {
             /** @enum {string} */
             type?: "cut" | "maintain" | "bulk" | "recomp";
         };
+        PlanAutopilotBody: {
+            /**
+             * Format: double
+             * @description The net change of the weekly average by its steps since the last target the user agreed to.
+             */
+            drift_kcal: number;
+            /**
+             * Format: double
+             * @description Its limit; absent until its first step.
+             */
+            drift_limit_kcal?: number;
+            /**
+             * @description propose: its steps are proposals; autopilot: a step within the user's limits applies by itself.
+             * @enum {string}
+             */
+            mode: "propose" | "autopilot";
+            /**
+             * Format: date
+             * @description The next weekly review.
+             */
+            next: string;
+        };
         PlanBody: {
+            /** @description The autopilot, which only the user changes, in the app: its mode, its drift and the next review. */
+            autopilot: components["schemas"]["PlanAutopilotBody"];
             /** @description The limits a change of the plan must keep, by name: for each, the stricter of the user's and the instance's (docs/limits.md). The server refuses a change past them; a proposal may change the user's, up to the instance's, which the user accepts in the app. */
             limits: {
                 [key: string]: number;
@@ -2082,6 +2197,8 @@ export interface components {
             /** @description Who proposed it. */
             by: components["schemas"]["ActorBody"];
             changes: components["schemas"]["ChangesBody"];
+            /** @description The autopilot's weekly review that made it, for a proposal or a step of the autopilot's (by.client autopilot, rationale autopilot): its numbers, which the app says it by. */
+            check_in?: components["schemas"]["ReviewBody"];
             /** Format: date-time */
             created_at: string;
             /**
@@ -2098,7 +2215,7 @@ export interface components {
             expires_at: string;
             /** Format: uuid */
             id: string;
-            /** @description Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there). */
+            /** @description Why it was proposed: the proposer's words, or a code of the app, which it says in the user's language: changed in the app (the user's own change there), taken back in the app (a revision the user took back there), autopilot (the autopilot's, with check_in). */
             rationale: string;
             /**
              * Format: uuid
@@ -2345,6 +2462,140 @@ export interface components {
             model?: string;
             rationale: string;
         };
+        ReviewBody: {
+            /**
+             * Format: double
+             * @description The weekly average after the step, or as it stays.
+             */
+            after_kcal: number;
+            /**
+             * @description The user's answer to its proposal, once given.
+             * @enum {string}
+             */
+            answer?: "accepted" | "rejected";
+            /**
+             * Format: double
+             * @description The BMI by the trend weight, 0 without a height.
+             */
+            bmi: number;
+            /**
+             * Format: double
+             * @description The carbs a step down may not go under.
+             */
+            carbs_floor_g: number;
+            /**
+             * Format: double
+             * @description For few_carbs: the carbs a step down would leave.
+             */
+            carbs_g: number;
+            /**
+             * Format: date
+             * @description The review's day.
+             */
+            date: string;
+            /**
+             * @description The type of day with those carbs; absent for an unsplit target.
+             * @enum {string}
+             */
+            day_type?: "training" | "rest";
+            /**
+             * Format: double
+             * @description The drift as the review leaves it.
+             */
+            drift_kcal: number;
+            /**
+             * Format: double
+             * @description Its limit; absent until there is a base.
+             */
+            drift_limit_kcal?: number;
+            /**
+             * Format: date
+             * @description About when calibration expects a first estimate.
+             */
+            expected?: string;
+            /**
+             * Format: date
+             * @description The first review that may step, for a wait.
+             */
+            from?: string;
+            /**
+             * Format: double
+             * @description The change of the weekly average the verdict asked for.
+             */
+            gap_kcal: number;
+            /**
+             * Format: double
+             * @description The window's average intake.
+             */
+            intake_kcal: number;
+            /**
+             * Format: int64
+             * @description The logged days of the last 7, an excluded day not counted.
+             */
+            logged_days: number;
+            /**
+             * Format: double
+             * @description The measured rate, % of the trend weight a week.
+             */
+            measured_pct_week: number;
+            /** Format: int64 */
+            needs_logged_days: number;
+            /** Format: int64 */
+            needs_weigh_ins: number;
+            /**
+             * @description applied: a step it took; proposed: a proposal that waits; hold: the target stays; skipped: no step, for reason.
+             * @enum {string}
+             */
+            outcome: "applied" | "proposed" | "hold" | "skipped";
+            /** @description Whether it proposes only because the step would take the drift past its limit. */
+            past_drift: boolean;
+            /**
+             * Format: uuid
+             * @description The proposal it made or applied.
+             */
+            proposal_id?: string;
+            /**
+             * @description Why (DESIGN.md §8).
+             * @enum {string}
+             */
+            reason: "cut_slow" | "cut_fast" | "bulk_slow" | "bulk_fast" | "maintain_loss" | "maintain_gain" | "bulk_fat" | "lean_loss" | "underweight" | "on_target" | "intake" | "steps_guard" | "rejected" | "no_plan" | "not_trusted" | "first_wait" | "interval" | "few_data" | "pending" | "few_carbs" | "limit";
+            /** @description The limit's rule, for limit. */
+            rule?: string;
+            /**
+             * Format: double
+             * @description The step applied or proposed, kcal a day of the weekly average, a minus being down; 0 for none.
+             */
+            step_kcal: number;
+            /**
+             * Format: double
+             * @description How the last 7 days' steps differ from the weeks before, in %.
+             */
+            steps_change_pct: number;
+            /**
+             * Format: double
+             * @description The weekly average of the target before.
+             */
+            target_kcal: number;
+            /**
+             * Format: double
+             * @description The phase's rate.
+             */
+            target_pct_week: number;
+            /**
+             * Format: double
+             * @description Half its 80 % interval.
+             */
+            tdee_half_width: number;
+            /**
+             * Format: double
+             * @description The TDEE, 0 for none.
+             */
+            tdee_kcal: number;
+            /** Format: double */
+            tolerance_pct_week: number;
+            /** Format: int64 */
+            weigh_ins: number;
+        };
         RevokeTokensOutputBody: {
             /**
              * Format: int64
@@ -2378,6 +2629,18 @@ export interface components {
              */
             expires_at: string;
             user: components["schemas"]["UserBody"];
+        };
+        SetAutopilotInputBody: {
+            /**
+             * @description Absent: as it is.
+             * @enum {string}
+             */
+            mode?: "propose" | "autopilot";
+            /**
+             * @description Absent: as it is.
+             * @enum {string}
+             */
+            weekday?: "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
         };
         SetLimitsInputBody: {
             /** @description Loosening a limit takes this: the user saw that the change allows a plan the limit refused. */
@@ -3267,6 +3530,178 @@ export interface operations {
             };
             /** @description Unauthorized */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "get-autopilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutopilotBody"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "set-autopilot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetAutopilotInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AutopilotBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Timeout */
+            408: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };

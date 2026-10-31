@@ -14,6 +14,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/zarnautovic/tdeemon/internal/auth"
+	"github.com/zarnautovic/tdeemon/internal/domain/autopilot"
 	"github.com/zarnautovic/tdeemon/internal/domain/day"
 	"github.com/zarnautovic/tdeemon/internal/domain/proposal"
 	"github.com/zarnautovic/tdeemon/internal/domain/user"
@@ -74,6 +75,10 @@ type morningData struct {
 	td, yd dayBody
 	sum    summaryBody
 	waits  day.Date
+	// review is the autopilot's last weekly review of the last 7 days,
+	// nil for none, and reviewToday whether it is today's.
+	review      *autopilot.Review
+	reviewToday bool
 }
 
 // morning reads what the morning summary of u shows at now, and writes it
@@ -83,7 +88,7 @@ func (s *sessions) morning(ctx context.Context, u user.User, now time.Time) (str
 	if err != nil {
 		return "", err
 	}
-	return morningText(m.date, m.td, m.yd, m.sum, m.waits, u.Locale), nil
+	return morningText(m.date, m.td, m.yd, m.sum, m.waits, m.review, u.Locale), nil
 }
 
 // morningOf reads what the morning summary of u shows at now. Last
@@ -114,6 +119,14 @@ func (s *sessions) morningOf(ctx context.Context, u user.User, now time.Time) (m
 	if len(pending) > 0 && pending[0].Status == proposal.Pending {
 		m.waits = day.DateOf(pending[0].ExpiresAt.In(cal.Location))
 	}
+	reviews, err := s.db.Reviews(ctx, u.ID, 1)
+	if err != nil {
+		return morningData{}, err
+	}
+	if len(reviews) > 0 && today.AddDays(-7).Before(reviews[0].Review.Date) && !today.Before(reviews[0].Review.Date) {
+		m.review = &reviews[0].Review
+		m.reviewToday = reviews[0].Review.Date == today
+	}
 	return m, nil
 }
 
@@ -124,7 +137,7 @@ func (s *sessions) morningOf(ctx context.Context, u user.User, now time.Time) (m
 func morningNote(m morningData, locale string) notify.Note {
 	w := writer{phrasesOf(locale)}
 	return notify.Note{
-		Text: morningText(m.date, m.td, m.yd, m.sum, m.waits, locale),
+		Text: morningText(m.date, m.td, m.yd, m.sum, m.waits, m.review, locale),
 		Push: push.Notification{
 			Title: w.title, Body: morningShort(m, locale), URL: "/?summary=" + m.date.String(), Tag: "morning",
 		},
@@ -157,22 +170,26 @@ func morningShort(m morningData, locale string) string {
 	if !m.waits.IsZero() {
 		parts = append(parts, w.proposalWaits)
 	}
+	if m.review != nil && m.reviewToday {
+		parts = append(parts, "Autopilot: "+lowerFirst(newReviewWriter(locale).title(*m.review)))
+	}
 	return strings.Join(parts, " · ")
 }
 
 // morningText is the morning summary of today, from today so far (last
 // night's sleep and this morning's weighing), yesterday, the summary and
 // waits, the day a proposal of the plan waits for the user's answer until
-// (the zero Date for none): a line for each part that has something to
+// (the zero Date for none), and review, the autopilot's last weekly
+// review (nil for none): a line for each part that has something to
 // say, in the language of locale (English, or Croatian for hr). A value
 // that did not come is left out, and nothing is guessed: the sleep is
 // only the night that ended today.
-func morningText(today day.Date, td, yd dayBody, sum summaryBody, waits day.Date, locale string) string {
+func morningText(today day.Date, td, yd dayBody, sum summaryBody, waits day.Date, review *autopilot.Review, locale string) string {
 	w := writer{phrasesOf(locale)}
 	lines := []string{w.title + ", " + w.date(today)}
 	for _, l := range []string{
 		w.sleepLine(td), w.weightLine(td, sum, today), w.yesterdayLine(yd), w.activityLine(yd),
-		w.calibrationLine(sum.Verdict), w.planLine(waits), w.recoveryLine(sum.Recovery),
+		w.calibrationLine(sum.Verdict), autopilotLine(review, locale), w.planLine(waits), w.recoveryLine(sum.Recovery),
 	} {
 		if l != "" {
 			lines = append(lines, l)
@@ -381,6 +398,15 @@ func (w writer) action(v verdictBody) string {
 		return w.toMaintenance
 	}
 	return ""
+}
+
+// autopilotLine is the line of the autopilot's last review, none for
+// nil.
+func autopilotLine(r *autopilot.Review, locale string) string {
+	if r == nil {
+		return ""
+	}
+	return reviewLine(*r, locale)
 }
 
 // recoveryLine names what recovery flags, with its average.

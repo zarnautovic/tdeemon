@@ -178,6 +178,12 @@ type coachState struct {
 	levels  limits.Levels
 	phases  []plan.Phase
 	targets []plan.Target
+	// estimate is calibration's on yesterday, with its params, and
+	// expected the first day a review could read a first estimate, the
+	// zero Date for none: what the autopilot's review reads too.
+	estimate calibration.Estimate
+	params   calibration.Params
+	expected day.Date
 }
 
 func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Time) (coachState, error) {
@@ -214,10 +220,26 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 	if kg, _ := calibration.TrendAt(calibration.Trend(data.calDays, data.params.TrendAlpha), today); kg > 0 {
 		st.TrendKg = kg
 	}
-	return coachState{
+	cs := coachState{
 		state:  st,
 		levels: limits.Levels{Instance: s.instance, User: user}, phases: data.phases, targets: data.targets,
-	}, nil
+		estimate: e, params: data.params,
+	}
+	if !e.Measured {
+		// The day after the window's last whose estimate it foresees.
+		if on := calibration.Expected(data.calDays, data.phases, yesterday, data.params); !on.IsZero() {
+			cs.expected = on.AddDays(1)
+		}
+	}
+	return cs, nil
+}
+
+// trustedTDEE returns the TDEE calibration trusts, 0 for none.
+func (cs coachState) trustedTDEE() float64 {
+	if cs.state.TDEETrusted && cs.state.TDEE > 0 {
+		return cs.state.TDEE
+	}
+	return 0
 }
 
 // check returns a check of a proposal's changes against the limits of p's
@@ -227,14 +249,6 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 // *cs, and what it found in *found. It returns the TDEE calibration
 // trusts, which an applied proposal keeps as the base of the autopilot's
 // drift.
-// trustedTDEE returns the TDEE calibration trusts, 0 for none.
-func (cs coachState) trustedTDEE() float64 {
-	if cs.state.TDEETrusted && cs.state.TDEE > 0 {
-		return cs.state.TDEE
-	}
-	return 0
-}
-
 func (s *sessions) check(ctx context.Context, p auth.Principal, now time.Time, cs *coachState, found *[]proposal.Checked) store.ProposalCheck {
 	return func(c proposal.Changes) (float64, error) {
 		var err error

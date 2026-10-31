@@ -157,9 +157,10 @@ func (h History) WaitsUntil(l limits.Limits) day.Date {
 // reads from ps, a user's proposals in any order, in the order they were
 // applied: those applied, and those reverted since, each on the user's
 // day of cal it was applied, with what it changed of the target's weekly
-// average (training being the training weekdays, or those it set) and of
-// the phases, and who applied it.
-func RevisionsOf(ps []proposal.Proposal, cal day.Calendar, training plan.Weekdays) []Revision {
+// average (training being the training weekdays, or those it set; a new
+// target is held to the one in force the day before it, of targets, the
+// timeline) and of the phases, and who applied it.
+func RevisionsOf(ps []proposal.Proposal, cal day.Calendar, training plan.Weekdays, targets []plan.Target) []Revision {
 	applied := make([]*proposal.Proposal, 0, len(ps))
 	for i := range ps {
 		if ps[i].Status == proposal.Applied || ps[i].Status == proposal.Reverted {
@@ -169,13 +170,14 @@ func RevisionsOf(ps []proposal.Proposal, cal day.Calendar, training plan.Weekday
 	slices.SortStableFunc(applied, func(a, b *proposal.Proposal) int { return a.DecidedAt.Compare(b.DecidedAt) })
 	out := make([]Revision, 0, len(applied))
 	for _, p := range applied {
-		out = append(out, revisionOf(p, cal, training))
+		out = append(out, revisionOf(p, cal, training, targets))
 	}
 	return out
 }
 
-// revisionOf returns the revision p, an applied proposal, is.
-func revisionOf(p *proposal.Proposal, cal day.Calendar, training plan.Weekdays) Revision {
+// revisionOf returns the revision p, an applied proposal, is, targets
+// being the timeline of the targets.
+func revisionOf(p *proposal.Proposal, cal day.Calendar, training plan.Weekdays, targets []plan.Target) Revision {
 	r := Revision{Day: cal.DayOf(p.DecidedAt), TDEE: p.TDEE}
 	switch {
 	case p.By.Kind == event.Autopilot && p.DecidedBy.Kind == event.Autopilot:
@@ -194,7 +196,15 @@ func revisionOf(p *proposal.Proposal, cal day.Calendar, training plan.Weekdays) 
 		return t.WeeklyAverage(n.Count()).Kcal
 	}
 	for _, ch := range p.Changes.Targets {
-		if before, after := avg(ch.Before), avg(ch.After); before != after {
+		before := ch.Before
+		if before == nil {
+			// A new target from a day: the one in force the day before,
+			// which no change since moved, as the past keeps its targets.
+			if t, ok := plan.TargetOn(targets, ch.From.AddDays(-1)); ok {
+				before = &t
+			}
+		}
+		if before, after := avg(before), avg(ch.After); before != after {
 			r.SetsKcal, r.DeltaKcal = true, r.DeltaKcal+after-before
 		}
 	}

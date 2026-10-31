@@ -236,7 +236,9 @@ func newReview(in Input, st limits.State, user limits.Limits) Review {
 		LoggedDays: st.Autopilot.LoggedDays, WeighIns: st.Autopilot.WeighIns,
 		NeedsLoggedDays: int(user.LoggedDays), NeedsWeighIns: int(user.WeighIns),
 		DriftKcal: in.History.DriftKcal, Expected: in.Expected,
-		BMI: st.Profile.BMI(st.TrendKg),
+	}
+	if st.Profile.HeightCm > 0 && st.TrendKg > 0 {
+		r.BMI = st.Profile.BMI(st.TrendKg)
 	}
 	if in.Estimate.Measured {
 		r.TDEE, r.HalfWidth = in.Estimate.TDEE, in.Estimate.HalfWidth
