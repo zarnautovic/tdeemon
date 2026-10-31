@@ -93,7 +93,7 @@ func TestMCPListsTheTools(t *testing.T) {
 			if strings.Contains(string(schema), "$ref") || !strings.Contains(string(schema), `"type":"object"`) {
 				t.Errorf("%s's input schema: %s", tl.Name, schema)
 			}
-			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "find_foods", "get_food", "lookup_barcode"}, tl.Name)
+			readOnly := slices.Contains([]string{"get_profile", "get_day", "get_summary", "get_history", "get_plan", "get_coaching_guide", "find_foods", "get_food", "lookup_barcode"}, tl.Name)
 			destructive := slices.Contains([]string{"upsert_food", "upsert_recipe", "update_meal", "delete_meal", "log_metric", "delete_metric", "checkin", "undo_last", "update_profile_notes", "apply_proposal"}, tl.Name)
 			// lookup_barcode asks Open Food Facts.
 			outside := tl.Name == "lookup_barcode"
@@ -106,12 +106,12 @@ func TestMCPListsTheTools(t *testing.T) {
 		return out
 	}
 	all := names(`"tools"`)
-	for _, want := range []string{"apply_proposal", "checkin", "delete_meal", "find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "lookup_barcode", "propose_changes", "reject_proposal", "revert_proposal", "update_profile_notes", "upsert_food", "upsert_recipe"} {
+	for _, want := range []string{"apply_proposal", "checkin", "delete_meal", "find_foods", "get_coaching_guide", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "log_meal", "lookup_barcode", "propose_changes", "reject_proposal", "revert_proposal", "update_profile_notes", "upsert_food", "upsert_recipe"} {
 		if !slices.Contains(all, want) {
 			t.Errorf("the tools %v lack %s", all, want)
 		}
 	}
-	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "lookup_barcode"}) {
+	if read := names(`"read"`); !slices.Equal(read, []string{"find_foods", "get_coaching_guide", "get_day", "get_food", "get_history", "get_plan", "get_profile", "get_summary", "lookup_barcode"}) {
 		t.Errorf("a read token's tools = %v", read)
 	}
 }
@@ -262,11 +262,11 @@ func TestMCPSchemasCarryWhatAModelUses(t *testing.T) {
 // history and notes, then for an item's quantities and a search again,
 // then for the coach's plan, then for its proposals, then for the limits
 // they change, then for a food's barcodes and their lookup, then for
-// recipes.
+// recipes, then for the coaching sessions' guide.
 func TestMCPFitsItsBudget(t *testing.T) {
 	t.Parallel()
 
-	const budget = 24500
+	const budget = 24750
 	in, session := signedIn(t)
 	cs := mcpSession(t, in, mcpToken(t, in, session, `"tools"`))
 	res, err := cs.ListTools(t.Context(), nil)
@@ -512,8 +512,8 @@ func TestMCPInstructions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(got) + len(list); n > 29000 {
-		t.Errorf("the instructions and the tools are %d bytes, want at most 29000", n)
+	if n := len(got) + len(list); n > 29500 {
+		t.Errorf("the instructions and the tools are %d bytes, want at most 29500", n)
 	}
 	known := map[string]bool{}
 	for _, tl := range res.Tools {

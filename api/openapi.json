@@ -362,6 +362,29 @@
         },
         "type": "object"
       },
+      "CoachingGuideBody": {
+        "additionalProperties": false,
+        "properties": {
+          "guide": {
+            "description": "What to do, in Markdown: the session's steps, then how tdeemon's numbers come about (docs/methodology.md).",
+            "type": "string"
+          },
+          "session": {
+            "description": "The session's name.",
+            "type": "string"
+          },
+          "title": {
+            "description": "Its name to a person.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session",
+          "title",
+          "guide"
+        ],
+        "type": "object"
+      },
       "CreateTokenInputBody": {
         "additionalProperties": false,
         "properties": {
@@ -5827,6 +5850,102 @@
         "summary": "List your recent changes",
         "tags": [
           "changes"
+        ]
+      }
+    },
+    "/api/v1/coaching/{session}": {
+      "get": {
+        "description": "The steps of a coaching session the user asks for (a monthly review, a plateau check, a new phase): which tools to call, what to check and how to propose a change, then how tdeemon's numbers come about (docs/methodology.md), so a model of any client reads them alike. Text, the same for every user.",
+        "operationId": "get-coaching-guide",
+        "parameters": [
+          {
+            "description": "Which session.",
+            "in": "path",
+            "name": "session",
+            "required": true,
+            "schema": {
+              "description": "Which session.",
+              "enum": [
+                "monthly_review",
+                "plateau_check",
+                "new_phase"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachingGuideBody"
+                }
+              }
+            },
+            "description": "OK",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get a coaching session's guide",
+        "tags": [
+          "tools"
         ]
       }
     },
