@@ -160,44 +160,48 @@ func (h History) WaitsUntil(l limits.Limits) day.Date {
 // average (training being the training weekdays, or those it set) and of
 // the phases, and who applied it.
 func RevisionsOf(ps []proposal.Proposal, cal day.Calendar, training plan.Weekdays) []Revision {
-	applied := make([]proposal.Proposal, 0, len(ps))
-	for _, p := range ps {
-		if p.Status == proposal.Applied || p.Status == proposal.Reverted {
-			applied = append(applied, p)
+	applied := make([]*proposal.Proposal, 0, len(ps))
+	for i := range ps {
+		if ps[i].Status == proposal.Applied || ps[i].Status == proposal.Reverted {
+			applied = append(applied, &ps[i])
 		}
 	}
-	slices.SortStableFunc(applied, func(a, b proposal.Proposal) int { return a.DecidedAt.Compare(b.DecidedAt) })
+	slices.SortStableFunc(applied, func(a, b *proposal.Proposal) int { return a.DecidedAt.Compare(b.DecidedAt) })
 	out := make([]Revision, 0, len(applied))
 	for _, p := range applied {
-		r := Revision{Day: cal.DayOf(p.DecidedAt), TDEE: p.TDEE}
-		switch {
-		case p.By.Kind == event.Autopilot && p.DecidedBy.Kind == event.Autopilot:
-			r.By = ByAutopilot
-		case p.By.Kind == event.Autopilot:
-			r.By = ByAccepted
-		}
-		n := training
-		if w := p.Changes.TrainingWeekdays; w != nil {
-			n = w.After
-		}
-		for _, ch := range p.Changes.Targets {
-			var before, after float64
-			if ch.Before != nil {
-				before = ch.Before.WeeklyAverage(n.Count()).Kcal
-			}
-			if ch.After != nil {
-				after = ch.After.WeeklyAverage(n.Count()).Kcal
-			}
-			if before != after {
-				r.SetsKcal, r.DeltaKcal = true, r.DeltaKcal+after-before
-			}
-		}
-		for _, ch := range p.Changes.Phases {
-			if ch.After != nil && (ch.Before == nil || ch.Before.Type != ch.After.Type || ch.Before.RatePctWeek != ch.After.RatePctWeek) {
-				r.ChangesPhase = true
-			}
-		}
-		out = append(out, r)
+		out = append(out, revisionOf(p, cal, training))
 	}
 	return out
+}
+
+// revisionOf returns the revision p, an applied proposal, is.
+func revisionOf(p *proposal.Proposal, cal day.Calendar, training plan.Weekdays) Revision {
+	r := Revision{Day: cal.DayOf(p.DecidedAt), TDEE: p.TDEE}
+	switch {
+	case p.By.Kind == event.Autopilot && p.DecidedBy.Kind == event.Autopilot:
+		r.By = ByAutopilot
+	case p.By.Kind == event.Autopilot:
+		r.By = ByAccepted
+	}
+	n := training
+	if w := p.Changes.TrainingWeekdays; w != nil {
+		n = w.After
+	}
+	avg := func(t *plan.Target) float64 {
+		if t == nil {
+			return 0
+		}
+		return t.WeeklyAverage(n.Count()).Kcal
+	}
+	for _, ch := range p.Changes.Targets {
+		if before, after := avg(ch.Before), avg(ch.After); before != after {
+			r.SetsKcal, r.DeltaKcal = true, r.DeltaKcal+after-before
+		}
+	}
+	for _, ch := range p.Changes.Phases {
+		if ch.After != nil && (ch.Before == nil || ch.Before.Type != ch.After.Type || ch.Before.RatePctWeek != ch.After.RatePctWeek) {
+			r.ChangesPhase = true
+		}
+	}
+	return r
 }
