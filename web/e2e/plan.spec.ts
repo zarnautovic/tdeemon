@@ -215,3 +215,45 @@ test('the next phase is planned in the app', async ({ page }) => {
   expect((await page.request.put('/api/v1/profile', { data: {} })).ok()).toBe(true)
   expect((await page.request.delete('/api/v1/days/today/metrics/weight')).ok()).toBe(true)
 })
+
+test('the autopilot is turned on after its question, its day changed, and off again', async ({
+  page,
+}) => {
+  await signIn(page)
+  try {
+    await toPlanRow(page, 'Autopilot')
+
+    const mode = page.getByRole('group', { name: 'When the review finds a step' })
+    await mode.getByText('Autopilot', { exact: true }).click()
+    const ask = page.getByRole('region', { name: 'Turn on the autopilot?' })
+    await expect(ask.getByText(/^It will change your kcal target by itself/)).toBeVisible()
+    await ask.getByRole('button', { name: 'Turn on' }).click()
+    await expect(page.getByText('Autopilot on', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Drift' })).toBeVisible()
+    await page.reload()
+    await expect(mode.getByRole('radio', { name: 'Autopilot' })).toBeChecked()
+
+    const day = page.getByRole('region', { name: 'Review day' })
+    await day.getByText('Sat', { exact: true }).click()
+    await expect(page.getByText('Review day changed', { exact: true })).toBeVisible()
+    await expect(day.getByText(/Next review: Sat, /)).toBeVisible()
+
+    // Back to Mondays, and off, which asks nothing.
+    await day.getByText('Mon', { exact: true }).click()
+    await expect(day.getByText(/Next review: Mon, /)).toBeVisible()
+    await mode.getByText('Ask me first', { exact: true }).click()
+    await expect(page.getByText('The autopilot asks first', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Drift' })).toBeHidden()
+    await page.reload()
+    await expect(mode.getByRole('radio', { name: 'Ask me first' })).toBeChecked()
+  } finally {
+    // As it was, for the other tests, whatever failed above.
+    expect(
+      (
+        await page.request.put('/api/v1/autopilot', {
+          data: { mode: 'propose', weekday: 'monday' },
+        })
+      ).ok(),
+    ).toBe(true)
+  }
+})

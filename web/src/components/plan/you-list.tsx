@@ -1,6 +1,7 @@
-import { NotebookPen, ShieldCheck, UserRound } from 'lucide-react'
+import { Gauge, NotebookPen, ShieldCheck, UserRound } from 'lucide-react'
 
 import { $api } from '@/api/client'
+import { weekdayOf } from '@/components/autopilot/weekday'
 import { ListGroup } from '@/components/list-group'
 import { ListRow } from '@/components/list-row'
 import { useLimitWords } from '@/components/plan/proposal-text'
@@ -10,7 +11,8 @@ import { useMessages } from '@/i18n/messages'
 // YouList is what a plan rests on of the user's, each a row to its page
 // with its value in short: the profile (or what a plan still needs of
 // it), the limits (how fast a loss may go, and the least protein, as they
-// hold) and the notes for a coach (their first line).
+// hold), the autopilot (whether it asks first, its day, and in autopilot
+// its drift) and the notes for a coach (their first line).
 export function YouList() {
   const t = useMessages()
   const f = useFormat()
@@ -20,6 +22,8 @@ export function YouList() {
   const profile = me.data?.profile
   const notes = me.data?.notes.trim().split('\n')[0]
   const holds = limits.data?.effective
+  const plan = $api.useQuery('get', '/api/v1/plan')
+  const autopilot = plan.data?.autopilot
 
   let profileSummary
   if (profile !== undefined) {
@@ -53,6 +57,29 @@ export function YouList() {
                 limit.value('cut_rate', holds.cut_rate),
                 limit.value('protein_floor', holds.protein_floor),
               )
+        }
+      />
+      <ListRow
+        icon={Gauge}
+        title={t.autopilot.name}
+        to="/plan/autopilot"
+        summary={
+          autopilot === undefined
+            ? undefined
+            : [
+                autopilot.mode === 'autopilot' ? t.autopilot.on : t.autopilot.asks,
+                t.autopilot.every[weekdayOf(autopilot.next)],
+                ...(autopilot.mode === 'autopilot'
+                  ? [
+                      autopilot.drift_limit_kcal === undefined
+                        ? t.autopilot.rowDriftNoBase(f.signed(autopilot.drift_kcal))
+                        : t.autopilot.rowDrift(
+                            f.signed(autopilot.drift_kcal),
+                            f.number(autopilot.drift_limit_kcal),
+                          ),
+                    ]
+                  : []),
+              ].join(' · ')
         }
       />
       <ListRow

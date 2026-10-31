@@ -22,6 +22,9 @@ export interface Note {
   body: string
   url: string
   tag?: string | undefined
+  // Silent shows it without a sound or a vibration: news that asks
+  // nothing of the user, such as a weekly review that holds.
+  silent?: boolean | undefined
 }
 
 // noteOf reads a push's data; a push the server did not send (none, not
@@ -39,7 +42,8 @@ export function noteOf(data: { json: () => unknown } | null): Note {
     // A path of the app's; the tap reads it again (urlOf).
     const url = 'url' in v && typeof v.url === 'string' && v.url.startsWith('/') ? v.url : '/'
     const tag = 'tag' in v && typeof v.tag === 'string' && v.tag !== '' ? v.tag : undefined
-    return { title: v.title, body, url, tag }
+    const silent = 'silent' in v && v.silent === true
+    return { title: v.title, body, url, tag, ...(silent && { silent }) }
   }
   return { title: 'tdeemon', body: '', url: '/' }
 }
@@ -48,6 +52,7 @@ export function noteOf(data: { json: () => unknown } | null): Note {
 export interface ShowOptions {
   body: string
   tag?: string
+  silent?: boolean
   icon: string
   badge: string
   data: { url: string }
@@ -58,6 +63,7 @@ export function showOptions(n: Note): ShowOptions {
   return {
     body: n.body,
     ...(n.tag !== undefined && { tag: n.tag }),
+    ...(n.silent === true && { silent: true }),
     icon: '/pwa-192.png',
     badge: '/pwa-192.png',
     data: { url: n.url },

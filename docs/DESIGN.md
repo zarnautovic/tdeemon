@@ -863,6 +863,15 @@ the same numbers for a hold (the pace, the intake, the steps) or too
 little data, repeats it
 (`Review.Repeats`), and sends no message.
 
+In the web app the autopilot has its settings under the plan's "You and
+limits" (`/plan/autopilot`, a web session's alone: turning it on asks
+first, with its bounds in numbers, turning it off does not), a card on
+the plan (its mode, its last review, the next one, the drift or the
+step), its steps in the plan's history by Autopilot, taken back there
+(undo does not), its proposals in the proposal's card, and a line on
+the day of the review. The app says a review from its numbers in the
+user's language, never a sentence of the server's.
+
 ### Guardrails live in code, not in prompts
 
 The server cannot trust the model. MCP means *any* client and *any*

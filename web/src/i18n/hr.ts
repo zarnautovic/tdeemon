@@ -111,6 +111,7 @@ export const hr: Messages = {
     limits: 'Granice plana nisu se učitale.',
     notes: 'Bilješke za AI trenera nisu se učitale.',
     keys: 'Pristupni ključevi nisu se učitali.',
+    autopilot: 'Autopilot se nije učitao.',
   },
   stale: {
     offline: (when: string) => `Nema veze · podaci od ${when}`,
@@ -559,11 +560,13 @@ export const hr: Messages = {
       'target.delete': 'Cilj obrisan',
       'plan.weekdays': 'Dani treninga promijenjeni',
       'proposal.create': 'Predložena promjena plana',
+      'autopilot.set': 'Autopilot promijenjen',
     },
     other: 'Promjena',
     you: 'ti',
     coach: 'AI trener',
     device: 'uređaj',
+    autopilot: 'Autopilot',
     by: (when: string, who: string) => `${when} · ${who}`,
     at: (day: string, time: string) => `${day} u ${time}`,
     undone: 'Poništeno',
@@ -1341,6 +1344,7 @@ export const hr: Messages = {
     rationales: {
       'changed in the app': 'Promijenjeno u aplikaciji.',
       'taken back in the app': 'Vraćeno u aplikaciji.',
+      autopilot: 'Tjedni pregled autopilota.',
     },
     byUser: 'ti',
     nudge: {
@@ -1446,6 +1450,181 @@ export const hr: Messages = {
         `Malo energije za tvoju nemasnu masu (${value} kcal/kg, preporuka barem ${threshold}). Na duže može umarati i usporiti oporavak.`,
       low_carbs: (value: string, threshold: string) =>
         `Malo ugljikohidrata (${value} g, preporuka barem ${threshold} g). U redu ako to biraš, ali trening može biti teži.`,
+    },
+  },
+  autopilot: {
+    name: 'Autopilot',
+    review: 'Tjedni pregled',
+    hint: 'Tjedni pregled tempa koji u malim koracima pomiče tvoj cilj kcal.',
+    on: 'Uključen',
+    asks: 'Pita prvo',
+    settings: 'Postavke',
+    settingsLabel: 'Postavke autopilota',
+    modeLegend: 'Kad pregled nađe korak',
+    modes: { propose: 'Pitaj me prvo', autopilot: 'Autopilot' },
+    modeHints: {
+      propose:
+        'Svaki tjedan autopilot pregleda tvoj tempo i predloži korak. Ništa se ne mijenja dok ga ne prihvatiš; prijedlog čeka 7 dana.',
+      autopilot:
+        'Svaki tjedan autopilot pregleda tvoj tempo i sam napravi mali korak, unutar tvojih granica, i javi ti. Preko granice odstupanja umjesto toga te pita.',
+    },
+    turnOn: 'Uključiti autopilot?',
+    turnOnText: (step: string, drift: string) =>
+      `Sam će mijenjati tvoj cilj kcal i javiti ti svaki put. Najviše ${step} kcal dnevno u tjednu, i ukupno ${drift} kcal. Svaki korak možeš vratiti u povijesti plana.`,
+    turnOnTextNoBase: (step: string, pct: string) =>
+      `Sam će mijenjati tvoj cilj kcal i javiti ti svaki put. Najviše ${step} kcal dnevno u tjednu, i ukupno ${pct} tvog TDEE-a, od prvog koraka. Svaki korak možeš vratiti u povijesti plana.`,
+    turnOnYes: 'Uključi',
+    turnOnNo: 'Ne sada',
+    saved: { propose: 'Autopilot pita prvo', autopilot: 'Autopilot uključen' },
+    savedDay: 'Dan pregleda promijenjen',
+    day: 'Dan pregleda',
+    dayHint: (next: string) => `Ujutro, prije jutarnjeg sažetka. Sljedeći pregled: ${next}.`,
+    firstStep: (date: string) => `Prvi korak može doći od ${date}.`,
+    every: {
+      monday: 'ponedjeljkom',
+      tuesday: 'utorkom',
+      wednesday: 'srijedom',
+      thursday: 'četvrtkom',
+      friday: 'petkom',
+      saturday: 'subotom',
+      sunday: 'nedjeljom',
+    },
+    drift: 'Odstupanje',
+    driftValue: (used: string, limit: string) => `${used} od ${limit} kcal`,
+    driftUsed: (used: string) => `${used} kcal`,
+    driftLeft: (left: string) => `ostalo ${left} kcal`,
+    driftFull: 'Na granici: sljedeći korak u istom smjeru bit će prijedlog',
+    driftNoBase: 'Granica u kcal postavlja se od prvog koraka.',
+    driftHint: (kcal: string, date: string) =>
+      `Koliko je autopilot pomaknuo cilj od dogovorenih ${kcal} kcal dnevno, ${date}. Prihvaćen ili postavljen cilj vraća ga na 0.`,
+    driftHintNoTarget:
+      'Koliko je autopilot pomaknuo cilj od zadnjeg dogovorenog. Prihvaćen ili postavljen cilj vraća ga na 0.',
+    mayTitle: 'Što smije mijenjati',
+    mayStep: (step: string, pct: string) =>
+      `Tvoj cilj kcal, najviše ${step} kcal dnevno u tjednu (najviše ${pct} cilja)`,
+    mayCarbs:
+      'Dane treninga i odmora za isto kcal, pa se mijenjaju samo ugljikohidrati: 100 kcal je 25 g',
+    mayDrift: (kcal: string, pct: string) =>
+      `Ukupno najviše ${kcal} kcal od zadnjeg dogovorenog cilja (${pct} tvog TDEE-a)`,
+    mayDriftNoBase: (pct: string) =>
+      `Ukupno najviše ${pct} tvog TDEE-a od zadnjeg dogovorenog cilja, od prvog koraka`,
+    neverTitle: 'Što nikad ne mijenja',
+    never: [
+      'Tvoju fazu, njen tempo ni cilj',
+      'Proteine, masti ni razliku između dana treninga i odmora',
+      'Tvoje dane treninga ni tvoje granice',
+      'Dublji gubitak dok ti je BMI ispod 18,5: tada predlaže održavanje',
+    ],
+    waitsTitle: 'Kada čeka',
+    waitsData: (logged: number, weighIns: number) =>
+      `${String(logged)} ${plural('hr', logged, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} i ${String(weighIns)} ${plural('hr', weighIns, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })} u zadnjih 7 dana`,
+    waitsTrust: 'TDEE kojem kalibracija vjeruje',
+    waitsDays: (first: number, interval: number) =>
+      `${String(first)} ${plural('hr', first, { one: 'dan', few: 'dana', other: 'dana' })} od početka faze ili novog cilja; ${String(interval)} ${plural('hr', interval, { one: 'dan', few: 'dana', other: 'dana' })} od zadnjeg koraka`,
+    waitsPending: 'Da nijedan drugi prijedlog ne čeka tvoj odgovor',
+    undoNote: 'Poništi (⌘Z) ne vraća korak. Vrati ga u povijesti plana, kao svaku promjenu plana.',
+    limitsRow: 'Granice koraka i odstupanja',
+    limitsSummary: (step: string, drift: string) =>
+      `Korak ${step} kcal · odstupanje ${drift} TDEE-a`,
+    rowDrift: (used: string, limit: string) => `odstupanje ${used} od ${limit} kcal`,
+    rowDriftNoBase: (used: string) => `odstupanje ${used} kcal`,
+    next: 'Sljedeći pregled',
+    last: 'Zadnji pregled',
+    lastOn: (date: string) => `Zadnji pregled · ${date}`,
+    nextOn: (weekday: string, date: string) => `${weekday}, ${date}`,
+    step: 'Korak',
+    stepUpTo: (kcal: string) => `do ${kcal} kcal`,
+    stepIfAccepted: 'dnevno, ako prihvatiš',
+    stepNone: 'nema ga bez cilja',
+    waitsAbove: 'Čeka tvoj odgovor, gore.',
+    numbers: 'Brojke',
+    accepted: 'Prihvaćen.',
+    rejected: 'Odbijen. Cilj ostaje; sljedeći pregled gleda ponovno.',
+    takeBack: 'Vrati ga u povijesti plana.',
+    pastDriftTitle: 'Preko granice odstupanja',
+    pastDrift: (drift: string, limit: string) =>
+      `Na autopilotu bi se ovaj korak primijenio sam, ali odstupanje bi bilo ${drift} kcal. To je preko tvoje granice od ${limit} kcal. Prihvaćen postaje dogovoreni cilj, a odstupanje kreće od 0.`,
+    pastDriftNoLimit: (drift: string) =>
+      `Na autopilotu bi se ovaj korak primijenio sam, ali odstupanje bi bilo ${drift} kcal, preko tvoje granice. Prihvaćen postaje dogovoreni cilj, a odstupanje kreće od 0.`,
+    line: (what: string) => `Autopilot: ${what}`,
+    why: 'Zašto',
+    nudge: (what: string) => `Autopilot predlaže: ${what}`,
+    say: {
+      lowered: (kcal: string) => `Spustio je cilj za ${kcal} kcal dnevno`,
+      raised: (kcal: string) => `Podigao je cilj za ${kcal} kcal dnevno`,
+      suggestsLower: (kcal: string) => `Predlaže spustiti cilj za ${kcal} kcal dnevno`,
+      suggestsRaise: (kcal: string) => `Predlaže podići cilj za ${kcal} kcal dnevno`,
+      maintenance: 'Predlaže održavanje',
+      stepLine: (kcal: string) => `cilj ${kcal} kcal dnevno, od danas`,
+      holds: {
+        on_target: 'Bez promjene: tempo je u planu',
+        intake: 'Bez promjene: cilj odgovara, unos nije',
+        steps_guard: 'Bez promjene: tempo objašnjavaju koraci',
+        rejected: 'Bez promjene: cilj ostaje tvoj',
+      },
+      holdLines: {
+        on_target: 'bez promjene, tempo u planu',
+        intake: 'bez promjene, cilj odgovara',
+        steps_guard: 'bez promjene, objašnjavaju to koraci',
+        rejected: 'bez promjene, cilj ostaje tvoj',
+      },
+      noStep: (why: string) => `Bez koraka: ${why}`,
+      noStepLine: (why: string) => `bez koraka, ${why}`,
+      fewLogged: (n: number, of: number) =>
+        `${String(n)} od ${String(of)} ${plural('hr', of, { one: 'upisanog dana', few: 'upisana dana', other: 'upisanih dana' })}`,
+      fewWeighIns: (n: number, of: number) => `${String(n)} od ${String(of)} vaganja`,
+      skips: {
+        not_trusted: 'TDEE još nije pouzdan',
+        first_wait: 'faza ili cilj je nov',
+        interval: 'najviše korak tjedno',
+        no_plan: 'nema faze ni cilja',
+        pending: 'prijedlog čeka',
+        few_carbs: 'premalo UH',
+        limit: 'granica',
+        underweight: 'BMI ispod 18,5',
+      },
+      paceLost: (pct: string, plan: string, from: string, to: string) =>
+        `Gubiš ${pct} tjedno; plan je ${plan} (${from} do ${to}).`,
+      paceGained: (pct: string, plan: string, from: string, to: string) =>
+        `Dobivaš ${pct} tjedno; plan je ${plan} (${from} do ${to}).`,
+      paceMoved: (pct: string, plan: string, from: string, to: string) =>
+        `Kilaža se mijenja ${pct} tjedno; plan je ${plan} (${from} do ${to}).`,
+      energy: (tdee: string, pm: string, intake: string, target: string) =>
+        `TDEE je ${tdee} ± ${pm} kcal; unos je bio ${intake} kcal dnevno uz cilj od ${target}.`,
+      intakeOnly: (intake: string, target: string) =>
+        `Unos je bio ${intake} kcal dnevno uz cilj od ${target}.`,
+      intake:
+        'Cilj odgovara tvom TDEE-u i tempu plana. Unos ovog tjedna je promašio, a to ne ispravlja nijedan korak cilja.',
+      stepsFell: (pct: string) =>
+        `Koraka je ${pct} manje nego prethodnih tjedana. To objašnjava tempo, a ne metabolizam, pa cilj ostaje.`,
+      stepsRose: (pct: string) =>
+        `Koraka je ${pct} više nego prethodnih tjedana. To objašnjava tempo, a ne metabolizam, pa cilj ostaje.`,
+      rejected: 'Zadnji korak je odbijen. Cilj ostaje kakav je, dok razlika ne naraste za korak.',
+      bulkFat:
+        'Tjelesna mast je rasla više od pogreške mjerenja, a nemasna masa stoji. Manji suficit, nikad ispod TDEE-a.',
+      leanLoss: (pct: string) =>
+        `Gubiš ${pct} tjedno, a s tim i nemasnu masu, više od pogreške mjerenja. Korak gore čuva više nje.`,
+      underweight: (bmi: string) =>
+        `BMI ti je ${bmi}, ispod 18,5. Tu autopilot nikad ne nastavlja gubitak, pa predlaže održavanje.`,
+      fewData: (logged: number, weighIns: number, hadLogged: number, hadWeighIns: number) =>
+        `Korak treba ${String(logged)} ${plural('hr', logged, { one: 'upisan dan', few: 'upisana dana', other: 'upisanih dana' })} i ${String(weighIns)} ${plural('hr', weighIns, { one: 'vaganje', few: 'vaganja', other: 'vaganja' })} u zadnjih 7 dana. Ovaj tjedan: ${String(hadLogged)} i ${String(hadWeighIns)}.`,
+      tdeeAbout: (tdee: string, pm: string) => `TDEE je oko ${tdee} ± ${pm} kcal.`,
+      trustedAbout: (date: string) =>
+        `Korak čeka da kalibracija vjeruje TDEE-u: oko ${date}, ako nastaviš upisivati kao sada.`,
+      trustedLater: 'Korak čeka da kalibracija vjeruje TDEE-u. Nastavi upisivati i vagati se.',
+      firstWait: 'Nova faza ili cilj u početku miče vodu koliko i mast.',
+      firstFrom: (date: string) => `Prvi korak može doći od ${date}.`,
+      interval: 'Autopilot radi najviše jedan korak tjedno.',
+      nextFrom: (date: string) => `Sljedeći može doći od ${date}.`,
+      pending:
+        'Prijedlog čeka tvoj odgovor. Pregled čeka s njim, da se dvije promjene ne sretnu u planu.',
+      fewCarbs: (days: string, g: string, floor: string) =>
+        `${days}: ${g} g UH nakon koraka dolje, ispod ${floor} g. Autopilot nikad ne mijenja proteine ni masti.`,
+      askCoach: 'Zamoli AI trenera da promijeni raspodjelu.',
+      noPlan: 'Autopilotu trebaju faza i cilj kcal prema kojima ocjenjuje tempo.',
+      limit: (rule: string) => `Korak bi prešao granicu: ${rule}. AI trener može pogledati plan.`,
+      stepCarbs: (kcal: string, g: string, from: string, to: string) =>
+        `Svaki tip dana mijenja se za ${kcal} kcal, sve iz UH (${g} g): prosjek ${from} → ${to} kcal dnevno.`,
     },
   },
   notFound: {

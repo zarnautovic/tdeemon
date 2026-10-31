@@ -6,6 +6,7 @@ import { use, useEffect, useRef, useState } from 'react'
 import { $api } from '@/api/client'
 import { sessionQuery } from '@/api/session'
 import type { Food } from '@/api/types'
+import { AutopilotLine } from '@/components/autopilot/autopilot-line'
 import { BodyToday } from '@/components/day/body-today'
 import { ChangesButton } from '@/components/day/changes-button'
 import { CheckIn } from '@/components/day/check-in'
@@ -366,6 +367,8 @@ export function DayPage() {
           </FirstSteps>
           {/* A proposal that waits, under the day's hero. */}
           {isToday && <ProposalNudge />}
+          {/* This morning's weekly review, on its day. */}
+          {isToday && <AutopilotLine today={day.data.date} />}
           {/* This morning's summary: of the calendar's date, as its
               notification's, not the day's, which may still be yesterday
               for a day that starts late. */}

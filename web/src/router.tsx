@@ -18,6 +18,7 @@ import { AccountPage } from '@/pages/account'
 import { AppError } from '@/pages/app-error'
 import { AppLayout } from '@/pages/app-layout'
 import { AppearancePage } from '@/pages/appearance'
+import { AutopilotPage } from '@/pages/autopilot'
 import { DayPage } from '@/pages/day'
 import { DevicesPage } from '@/pages/devices'
 import { FoodPage } from '@/pages/food'
@@ -215,6 +216,11 @@ const limitsRoute = createRoute({
   path: '/plan/limits',
   component: LimitsPage,
 })
+const autopilotRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/plan/autopilot',
+  component: AutopilotPage,
+})
 const notesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/plan/notes',
@@ -287,6 +293,7 @@ const routeTree = rootRoute.addChildren([
     profileRoute,
     limitsRoute,
     notesRoute,
+    autopilotRoute,
     settingsRoute,
     appearanceRoute,
     accountRoute,

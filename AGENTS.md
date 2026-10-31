@@ -117,10 +117,16 @@ who made it, when it expires and what the data say beside it, marked
 on the plan's section and in a line on the day, the targets by type of
 day and the deficit they plan, edited in a sheet, the history of its
 revisions with a revert, their rationales of the app's own as codes, a
-proposal of the limits accepted there alone,
+proposal of the limits accepted there alone, the autopilot's card (its
+mode, its last weekly review said from its numbers, the next review,
+the drift against its limit or the step it may propose) and its steps
+in the history by Autopilot, its proposals in the proposal's card,
+the review's line on the day of it,
 and, before a plan, how one comes; what it rests on of the user's, each
 a row to its page: the profile, the limits in groups that open, a wrong
-one focused at its field, the notes for a coach) and the settings as a
+one focused at its field, the autopilot's settings (asking before it is
+turned on, the review's weekday, what it may and never changes and when
+it waits), the notes for a coach) and the settings as a
 list (the theme, the account with a time zone found by its name, the
 devices and AI coaches connected in a guided sheet, an access key (a
 token) shown once with the steps to give it (an AI coach's MCP address

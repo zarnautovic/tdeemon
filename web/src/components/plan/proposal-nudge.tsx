@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Sparkles } from 'lucide-react'
+import { Gauge, Sparkles } from 'lucide-react'
 
 import { $api } from '@/api/client'
 import { useGist } from '@/components/plan/change-words'
@@ -20,14 +20,23 @@ export function ProposalNudge() {
   const n = t.plan.nudge
   const what = gist(pending, plan.data.targets)
   const yours = pending.by.client === 'web' && pending.by.model === undefined
+  // The autopilot's own, said as its, with its mark: no AI's sparkles.
+  const auto = pending.by.client === 'autopilot'
+  const Icon = auto ? Gauge : Sparkles
+  let says = n.coach(what)
+  if (auto) {
+    says = t.autopilot.nudge(what)
+  } else if (yours) {
+    says = n.yours(what)
+  }
 
   return (
     <Link
       to="/plan"
       className="flex min-h-11 items-center gap-2 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-small text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <Sparkles aria-hidden className="size-4 shrink-0" />
-      <span className="min-w-0 flex-1 truncate">{yours ? n.yours(what) : n.coach(what)}</span>
+      <Icon aria-hidden className="size-4 shrink-0" />
+      <span className="min-w-0 flex-1 truncate">{says}</span>
       <span className="shrink-0 font-semibold">{n.review}</span>
     </Link>
   )
