@@ -1,0 +1,2941 @@
+diff --git a/.gitignore b/.gitignore
+index 366cf36..870fef8 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -45,3 +45,6 @@ node_modules/
+ /.e2e/
+ /web/test-results/
+ /web/playwright-report/
++
++# The autopilot prototype (scripts/proto-autopilot.sh)
++/.proto/
+diff --git a/scripts/proto-autopilot.sh b/scripts/proto-autopilot.sh
+new file mode 100755
+index 0000000..0b4ac09
+--- /dev/null
++++ b/scripts/proto-autopilot.sh
+@@ -0,0 +1,81 @@
++#!/usr/bin/env bash
++# PROTOTYPE ONLY (branch proto/autopilot, never merged): runs the app for
++# the autopilot's design. The server over a fresh data directory in
++# .proto/, with a made-up user (ana@example.com, only-for-the-prototype),
++# a profile, five weeks of made-up weigh-ins, a cut and its targets from
++# today and two meals; then the Vite dev server on 127.0.0.1:5199, whose
++# app fakes what the autopilot's API would answer (web/src/proto). Open
++# http://127.0.0.1:5199/plan?ap=auto-step and pick a state in the panel
++# at the bottom right.
++#
++#   scripts/proto-autopilot.sh            # Ctrl+C stops both
++set -euo pipefail
++
++root=$(cd "$(dirname "$0")/.." && pwd)
++dir=$root/.proto
++port=18190
++web=5199
++email=ana@example.com
++password=only-for-the-prototype
++
++mkdir -p "$dir"
++rm -rf "$dir/data"
++(cd "$root" && go build -o "$dir/tdeemon" ./cmd/tdeemon)
++
++export TDEEMON_DATA_DIR=$dir/data
++# The app's origin is Vite's, which forwards /api here: the server takes
++# it as its own, so a sign-in is not cross-origin.
++export TDEEMON_BASE_URL=http://127.0.0.1:$web
++export TDEEMON_LISTEN=127.0.0.1:$port
++export TDEEMON_LOG_LEVEL=warn
++export TDEEMON_BACKUP_KEEP=0
++export TDEEMON_OPEN_FOOD_FACTS_URL=off
++TDEEMON_SECRET_KEY=$(head -c 32 /dev/urandom | base64)
++export TDEEMON_SECRET_KEY
++
++up() {
++  for _ in $(seq 100); do
++    curl -fs -o /dev/null "http://127.0.0.1:$port/healthz" && return
++    sleep 0.1
++  done
++  echo "the server did not start" >&2
++  exit 1
++}
++# The first start makes the database; the user is made with it stopped,
++# as scripts/e2e-server.sh does.
++"$dir/tdeemon" &
++server=$!
++up
++kill $server
++wait $server || true
++printf '%s\n' "$password" |
++  "$dir/tdeemon" user create --email "$email" --name Ana --timezone Europe/Zagreb --password-stdin >/dev/null
++"$dir/tdeemon" &
++server=$!
++trap 'kill $server ${vite:-} 2>/dev/null || true' EXIT
++up
++
++api=http://127.0.0.1:$port/api/v1
++jar=$dir/cookies
++call() { # method path body
++  curl -fsS -b "$jar" -c "$jar" -X "$1" -H 'Content-Type: application/json' -d "$3" "$api$2" >/dev/null
++}
++curl -fsS -c "$jar" -H 'Content-Type: application/json' \
++  -d "{\"email\":\"$email\",\"password\":\"$password\"}" "$api/auth/login" >/dev/null
++call PUT /profile '{"sex":"male","birth_date":"1990-06-15","height_cm":180}'
++# Made-up weigh-ins, a slow loss: 84.6 kg five weeks ago to about 83.9.
++for i in $(seq 35 -1 0); do
++  d=$(date -d "-$i days" +%F)
++  kg=$(awk -v i="$i" 'BEGIN { printf "%.1f", 83.9 + i * 0.02 + (i % 3 - 1) * 0.15 }')
++  call PUT "/days/$d/metrics/weight" "{\"value\":$kg}" || true
++done
++today=$(date +%F)
++call POST /plan/changes "{\"phases\":[{\"start\":\"$today\",\"type\":\"cut\",\"rate_pct_week\":-0.5}],\"targets\":[{\"from\":\"$today\",\"training\":{\"kcal\":2250,\"protein\":170,\"fat\":70},\"rest\":{\"kcal\":1950,\"protein\":170,\"fat\":65}}]}"
++call POST /meals '{"description":"Breakfast","items":[{"name":"Oats with skyr and berries","nutrients":{"kcal":520,"protein":38,"carbs":70,"fat":9}}]}'
++call POST /meals '{"description":"Lunch","items":[{"name":"Chicken with rice","nutrients":{"kcal":640,"protein":45,"carbs":70,"fat":15}}]}'
++
++echo "Prototype: http://127.0.0.1:$web/plan?ap=auto-step  ($email / $password)"
++cd "$root/web"
++TDEEMON_DEV_SERVER=http://127.0.0.1:$port npx vite --port "$web" --strictPort --host 127.0.0.1 &
++vite=$!
++wait $server
+diff --git a/web/e2e/proto-shots.ts b/web/e2e/proto-shots.ts
+new file mode 100644
+index 0000000..6316824
+--- /dev/null
++++ b/web/e2e/proto-shots.ts
+@@ -0,0 +1,146 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged): screenshots of
++// the autopilot's prototype into docs/proto-autopilot/, with
++// scripts/proto-autopilot.sh running. Each shot: a state (?ap), a page,
++// a phone or a desktop, light or dark, English or Croatian.
++//
++//   (cd web && node e2e/proto-shots.ts [filter])
++/* oxlint-disable eslint/no-await-in-loop -- one shot after another, in one page, by design */
++import { mkdirSync } from 'node:fs'
++import { chromium, devices, type Page } from '@playwright/test'
++
++const base = 'http://127.0.0.1:5199'
++const out = new URL('../../docs/proto-autopilot/', import.meta.url).pathname
++mkdirSync(out, { recursive: true })
++const filter = process.argv[2] ?? ''
++
++type Action = 'history' | 'turn-on' | 'you' | 'morning' | null
++
++// [name, state, path, what to do before the shot, full page]
++const shots: [string, string, string, Action, boolean][] = [
++  ['plan-step', 'auto-step', '/plan', null, true],
++  ['plan-propose', 'propose', '/plan', null, true],
++  ['plan-hold', 'auto-hold', '/plan', null, false],
++  ['plan-steps-guard', 'auto-steps', '/plan', null, false],
++  ['plan-few-data', 'auto-few-data', '/plan', null, false],
++  ['plan-not-trusted', 'auto-not-trusted', '/plan', null, false],
++  ['plan-first-wait', 'auto-first-wait', '/plan', null, false],
++  ['plan-no-plan', 'auto-no-plan', '/plan', null, false],
++  ['plan-pending-coach', 'auto-pending', '/plan', null, true],
++  ['plan-drift', 'auto-drift', '/plan', null, true],
++  ['plan-underweight', 'auto-underweight', '/plan', null, true],
++  ['plan-bulk-up', 'auto-bulk-up', '/plan', null, false],
++  ['plan-few-carbs', 'auto-few-carbs', '/plan', null, false],
++  ['plan-lean-loss', 'auto-lean-loss', '/plan', null, false],
++  ['history-step', 'auto-step', '/plan', 'history', false],
++  ['settings-autopilot', 'auto-step', '/plan/autopilot', null, true],
++  ['settings-propose', 'propose', '/plan/autopilot', null, true],
++  ['settings-turn-on', 'propose', '/plan/autopilot', 'turn-on', false],
++  ['settings-drift-full', 'auto-drift', '/plan/autopilot', null, false],
++  ['plan-list-row', 'auto-step', '/plan', 'you', false],
++  ['day-step', 'auto-step', '/', null, false],
++  ['day-hold', 'auto-hold', '/', null, false],
++  ['day-few-data', 'auto-few-data', '/', null, false],
++  ['day-proposal', 'propose', '/', null, false],
++  ['day-morning', 'auto-step', '/?summary=TODAY', 'morning', false],
++  ['messages', 'auto-step', '/proto/messages', null, true],
++]
++
++// Which combinations of each: all four of the main ones; one of the rest.
++const main = new Set(['plan-step', 'plan-drift', 'settings-autopilot', 'day-step', 'day-morning'])
++const variants = (name: string): [string, string, string][] => {
++  if (name === 'messages') {
++    return [['desktop', 'light', 'en']]
++  }
++  if (main.has(name)) {
++    return [
++      ['phone', 'light', 'en'],
++      ['phone', 'dark', 'hr'],
++      ['desktop', 'light', 'en'],
++      ['desktop', 'dark', 'en'],
++      ['phone', 'light', 'hr'],
++    ]
++  }
++  return [['phone', 'light', 'en']]
++}
++
++const today = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Zagreb' })
++
++async function setLocale(page: Page, locale: string) {
++  const r = await page.request.patch(`${base}/api/v1/me`, { data: { locale } })
++  if (!r.ok()) {
++    throw new Error(`locale: ${String(r.status())}`)
++  }
++}
++
++const browser = await chromium.launch()
++for (const device of ['phone', 'desktop'] as const) {
++  for (const theme of ['light', 'dark'] as const) {
++    const context = await browser.newContext({
++      ...(device === 'phone'
++        ? devices['Pixel 7']
++        : { viewport: { width: 1440, height: 1000 }, deviceScaleFactor: 1 }),
++      colorScheme: theme,
++      serviceWorkers: 'block',
++    })
++    await context.addInitScript((t) => {
++      localStorage.setItem('tdeemon.theme', t)
++    }, theme)
++    const page = await context.newPage()
++    await page.goto(`${base}/login`)
++    await page.getByLabel(/Email|E-pošta/).fill('ana@example.com')
++    await page.getByLabel(/Password|Lozinka/).fill('only-for-the-prototype')
++    await page.getByRole('button', { name: /Sign in|Prijavi/ }).click()
++    await page.waitForURL(`${base}/`)
++    for (const lang of ['en', 'hr']) {
++      await setLocale(page, lang)
++      for (const [name, state, path, action, full] of shots) {
++        if (!name.includes(filter)) {
++          continue
++        }
++        if (!variants(name).some(([d, t, l]) => d === device && t === theme && l === lang)) {
++          continue
++        }
++        const sep = path.includes('?') ? '&' : '?'
++        await page.goto(`${base}${path.replace('TODAY', today)}${sep}ap=${state}&shot=1`)
++        await page.waitForLoadState('networkidle')
++        await page.waitForTimeout(400)
++        if (action === 'history') {
++          await page.locator('#plan-history').scrollIntoViewIfNeeded()
++        } else if (action === 'turn-on') {
++          await page
++            .getByText(/^Autopilot$/)
++            .last()
++            .click()
++        } else if (action === 'you') {
++          await page
++            .getByRole('link', { name: /Autopilot/ })
++            .last()
++            .scrollIntoViewIfNeeded()
++        }
++        await page.waitForTimeout(300)
++        const file = `${out}${name}-${device}-${theme}-${lang}.png`
++        // A whole page on a phone is shot without its fixed bar of
++        // sections, which would sit in its middle; a screen of the plan
++        // is scrolled to the autopilot.
++        const whole = full && action === null
++        if (whole && device === 'phone') {
++          await page.addStyleTag({ content: 'nav.fixed.bottom-0 { display: none !important }' })
++        }
++        if (!whole && device === 'phone' && action === null && path === '/plan') {
++          const card = page.getByRole('region', { name: 'Autopilot', exact: true })
++          if ((await card.count()) > 0) {
++            await card.evaluate((el) => {
++              el.scrollIntoView({ block: 'start' })
++              window.scrollBy(0, -96)
++            })
++          }
++        }
++        await page.screenshot({ path: file, fullPage: whole })
++        console.log(file)
++      }
++    }
++    await setLocale(page, 'en')
++    await context.close()
++  }
++}
++await browser.close()
+diff --git a/web/src/api/client.ts b/web/src/api/client.ts
+index cea2497..541680e 100644
+--- a/web/src/api/client.ts
++++ b/web/src/api/client.ts
+@@ -1,6 +1,8 @@
+ import createFetchClient from 'openapi-fetch'
+ import createClient from 'openapi-react-query'
+ 
++import { protoMiddleware } from '@/proto/mock'
++
+ import { NoAnswerError } from './errors'
+ import type { paths } from './schema'
+ 
+@@ -23,6 +25,9 @@ fetchClient.use({
+       : new NoAnswerError(error),
+ })
+ 
++// PROTOTYPE ONLY (proto/autopilot): the autopilot's answers, faked.
++fetchClient.use(protoMiddleware)
++
+ // TanStack Query hooks typed by the OpenAPI document, e.g.
+ // $api.useQuery('get', '/api/v1/info').
+ export const $api = createClient(fetchClient)
+diff --git a/web/src/components/autopilot/autopilot-card.tsx b/web/src/components/autopilot/autopilot-card.tsx
+new file mode 100644
+index 0000000..3bcab52
+--- /dev/null
++++ b/web/src/components/autopilot/autopilot-card.tsx
+@@ -0,0 +1,157 @@
++import { Link } from '@tanstack/react-router'
++import { ChevronRight, Gauge } from 'lucide-react'
++import { useId } from 'react'
++
++import { DriftMeter } from '@/components/autopilot/drift-meter'
++import { useApUi, useLang, useReview } from '@/components/autopilot/words'
++import { useDate } from '@/components/plan/proposal-text'
++import { Badge } from '@/components/ui/badge'
++import { buttonVariants } from '@/components/ui/button'
++import { useFormat } from '@/i18n/format'
++import { cn } from '@/lib/utils'
++import { weekdayWords } from '@/proto/copy'
++import { useAutopilot, useScenario } from '@/proto/store'
++
++// The tone of a review's decision: a step's the brand's, a proposal's the
++// warning's (it waits for the user), a hold or no step plain.
++const tones = {
++  applied: 'bg-primary',
++  proposed: 'bg-warning',
++  hold: 'bg-success',
++  skipped: 'bg-muted-foreground',
++} as const
++
++// AutopilotCard is the autopilot on the plan: whether it applies its
++// steps or asks first, its last weekly review (what it decided, and why
++// in the verdict's numbers), when the next comes, and in autopilot how
++// far it has moved the target of the one agreed to, against the limit;
++// with its settings a tap away. A step it applied is taken back in the
++// plan's history, as any change of the plan.
++export function AutopilotCard() {
++  const ap = useAutopilot()
++  const a = useApUi()
++  const lang = useLang()
++  const f = useFormat()
++  const date = useDate()
++  const say = useReview()
++  const id = useId()
++  const last = ap.last
++  const words = last === undefined ? undefined : say(last)
++  const on = ap.mode === 'autopilot'
++  // A proposal of this review's that waits is said whole in its card
++  // above: here, only that it waits.
++  const pending = useScenario().pending
++  const waiting = last?.proposal_id !== undefined && pending?.id === last.proposal_id
++
++  return (
++    <section aria-labelledby={id} className="space-y-3 rounded-lg border bg-card p-4 lg:p-5">
++      <header className="flex items-center justify-between gap-2">
++        <div className="flex min-w-0 items-center gap-2">
++          <span
++            aria-hidden
++            className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary-soft text-primary"
++          >
++            <Gauge strokeWidth={1.75} className="size-4.5" />
++          </span>
++          <h2 id={id} className="text-h3">
++            {a.name}
++          </h2>
++          <Badge tone={on ? 'primary' : 'neutral'}>{on ? a.on : a.asks}</Badge>
++        </div>
++        <Link
++          to="/plan/autopilot"
++          aria-label={a.settings}
++          className={buttonVariants({ variant: 'ghost', size: 'sm', className: '-mr-2' })}
++        >
++          {lang === 'en' ? 'Settings' : 'Postavke'}
++          <ChevronRight aria-hidden />
++        </Link>
++      </header>
++      {last !== undefined && words !== undefined && (
++        <div className="space-y-1.5">
++          <p className="text-small text-muted-foreground">
++            {a.last} · {date(last.date)}
++          </p>
++          <p className="flex items-start gap-2 font-semibold">
++            <span
++              aria-hidden
++              className={cn('mt-2 size-2 shrink-0 rounded-full', tones[last.outcome])}
++            />
++            <span>{words.headline}</span>
++          </p>
++          {waiting && (
++            <p className="text-sm text-muted-foreground">
++              {lang === 'en' ? 'It waits for your answer, above.' : 'Čeka tvoj odgovor, gore.'}
++            </p>
++          )}
++          {!waiting && words.why[0] !== undefined && (
++            <p className="text-sm text-muted-foreground">{words.why[0]}</p>
++          )}
++          {!waiting && words.why.length > 1 && (
++            // The rest of why, a tap away: the decision and its pace say
++            // enough at a glance.
++            <details className="group text-sm text-muted-foreground">
++              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-foreground marker:hidden">
++                <ChevronRight
++                  aria-hidden
++                  className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none"
++                />
++                {lang === 'en' ? 'The numbers' : 'Brojke'}
++              </summary>
++              <div className="space-y-1.5 pb-1">
++                {words.why.slice(1).map((w) => (
++                  <p key={w}>{w}</p>
++                ))}
++              </div>
++            </details>
++          )}
++          {last.answer !== undefined && (
++            <p className="text-sm font-medium">
++              {last.answer === 'accepted' ? a.accepted : a.rejected}
++            </p>
++          )}
++          {last.outcome === 'applied' && (
++            <p className="text-sm">
++              <a
++                href="#plan-history"
++                className="font-medium text-primary underline-offset-2 hover:underline"
++              >
++                {a.takeBackHint}
++              </a>
++            </p>
++          )}
++        </div>
++      )}
++      <dl className="grid grid-cols-2 gap-3">
++        <div className="space-y-0.5 rounded-md bg-surface-2 p-3">
++          <dt className="text-small text-muted-foreground">{a.next}</dt>
++          <dd className="text-h3">{`${f.weekday(ap.next)}, ${date(ap.next)}`}</dd>
++          <dd className="text-caption text-muted-foreground">
++            {weekdayWords(lang, ap.weekday)[1]}
++          </dd>
++        </div>
++        <div className="space-y-1 rounded-md bg-surface-2 p-3">
++          <dt className="text-small text-muted-foreground">
++            {on ? a.drift : lang === 'en' ? 'Step' : 'Korak'}
++          </dt>
++          <dd>
++            {on ? (
++              <DriftMeter drift={ap.drift} step={ap.step_kcal} compact />
++            ) : (
++              <span className="text-h3">
++                {lang === 'en'
++                  ? `up to ${f.number(ap.step_kcal)} kcal`
++                  : `do ${f.number(ap.step_kcal)} kcal`}
++              </span>
++            )}
++          </dd>
++          {!on && (
++            <dd className="text-caption text-muted-foreground">
++              {lang === 'en' ? 'a day, if you accept' : 'dnevno, ako prihvatiš'}
++            </dd>
++          )}
++        </div>
++      </dl>
++    </section>
++  )
++}
+diff --git a/web/src/components/autopilot/autopilot-line.tsx b/web/src/components/autopilot/autopilot-line.tsx
+new file mode 100644
+index 0000000..bbb5c24
+--- /dev/null
++++ b/web/src/components/autopilot/autopilot-line.tsx
+@@ -0,0 +1,41 @@
++import { Link } from '@tanstack/react-router'
++import { Gauge } from 'lucide-react'
++
++import { useApUi, useReview } from '@/components/autopilot/words'
++import { cn } from '@/lib/utils'
++import { useAutopilot } from '@/proto/store'
++
++// AutopilotLine is this morning's weekly review on today, in a line under
++// the day's hero, a link to the plan, where it is said whole: a step
++// applied in the brand's colours (the target above it changed), a hold or
++// no step plain. A proposal it made is the proposal's line (ProposalNudge)
++// instead, which asks for an answer. Only on the review's day: the
++// morning summary and the plan say it after.
++export function AutopilotLine({ today }: { today: string }) {
++  const ap = useAutopilot()
++  const a = useApUi()
++  const say = useReview()
++  const last = ap.last
++  if (last === undefined || last.date !== today || last.outcome === 'proposed') {
++    return null
++  }
++  const applied = last.outcome === 'applied'
++
++  return (
++    <Link
++      to="/plan"
++      className={cn(
++        'flex min-h-11 items-center gap-2 rounded-md border px-3 py-2 text-small outline-none focus-visible:ring-2 focus-visible:ring-ring',
++        applied
++          ? 'border-primary/30 bg-primary-soft text-primary'
++          : 'bg-card text-muted-foreground',
++      )}
++    >
++      <Gauge aria-hidden className="size-4 shrink-0" />
++      <span className="min-w-0 flex-1 truncate">
++        {a.name}: {say(last).line}
++      </span>
++      <span className={cn('shrink-0 font-semibold', !applied && 'text-foreground')}>{a.why}</span>
++    </Link>
++  )
++}
+diff --git a/web/src/components/autopilot/drift-meter.tsx b/web/src/components/autopilot/drift-meter.tsx
+new file mode 100644
+index 0000000..69cab0b
+--- /dev/null
++++ b/web/src/components/autopilot/drift-meter.tsx
+@@ -0,0 +1,52 @@
++import { useApUi } from '@/components/autopilot/words'
++import { useFormat } from '@/i18n/format'
++import { cn } from '@/lib/utils'
++import type { Drift } from '@/proto/types'
++
++// DriftMeter is how far the autopilot moved the target since the last
++// one the user agreed to, against the limit: its net kcal, signed, of the
++// limit, as a bar; in the warning's colour once the next step would pass
++// it, and then said in words, as the next step is proposed instead.
++export function DriftMeter({
++  drift,
++  step,
++  compact = false,
++}: {
++  drift: Drift
++  step: number
++  compact?: boolean
++}) {
++  const f = useFormat()
++  const a = useApUi()
++  const used = Math.abs(drift.used_kcal)
++  const full = used + step > drift.limit_kcal
++
++  return (
++    <div className="space-y-1.5">
++      <div className="flex items-baseline justify-between gap-2">
++        <span className={compact ? 'text-h3' : 'font-semibold'}>
++          {a.driftValue(f.signed(drift.used_kcal), f.number(drift.limit_kcal))}
++        </span>
++        {!compact && (
++          <span className="text-small text-muted-foreground">
++            {a.driftLeft(f.number(Math.max(0, drift.limit_kcal - used)))}
++          </span>
++        )}
++      </div>
++      <progress
++        aria-label={a.drift}
++        aria-valuetext={a.driftValue(f.signed(drift.used_kcal), f.number(drift.limit_kcal))}
++        max={drift.limit_kcal}
++        value={Math.min(used, drift.limit_kcal)}
++        className={cn(
++          'block h-2 w-full appearance-none overflow-hidden rounded-full bg-surface-2 [&::-moz-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-surface-2 [&::-webkit-progress-value]:rounded-full',
++          compact && 'bg-card [&::-webkit-progress-bar]:bg-card',
++          full
++            ? '[&::-moz-progress-bar]:bg-warning [&::-webkit-progress-value]:bg-warning'
++            : '[&::-moz-progress-bar]:bg-primary [&::-webkit-progress-value]:bg-primary',
++        )}
++      />
++      {full && <p className="text-caption text-warning">{a.driftFull}</p>}
++    </div>
++  )
++}
+diff --git a/web/src/components/autopilot/rationale.tsx b/web/src/components/autopilot/rationale.tsx
+new file mode 100644
+index 0000000..5a5d25f
+--- /dev/null
++++ b/web/src/components/autopilot/rationale.tsx
+@@ -0,0 +1,40 @@
++import { useApUi, useLang, useReview } from '@/components/autopilot/words'
++import { useRationale } from '@/components/plan/change-words'
++import { pastDrift } from '@/proto/copy'
++import type { ApProposal } from '@/proto/scenarios'
++import { useAutopilot } from '@/proto/store'
++
++// Rationale is why a change of the plan was made: a coach's words, the
++// app's code in the language, or, for the autopilot's (the code
++// `autopilot`), its weekly review said from its numbers: the decision,
++// then why. One it proposed past its drift limit says so, and what an
++// answer does.
++export function Rationale({ proposal, brief = false }: { proposal: ApProposal; brief?: boolean }) {
++  const rationale = useRationale()
++  const say = useReview()
++  const a = useApUi()
++  const lang = useLang()
++  const ap = useAutopilot()
++  const c = proposal.check_in
++  if (proposal.rationale !== 'autopilot' || c === undefined) {
++    return <p className="whitespace-pre-line">{rationale(proposal.rationale)}</p>
++  }
++  const words = say(c)
++
++  return (
++    <div className="space-y-1">
++      <p className="font-medium">{words.headline}</p>
++      {(brief ? words.why.slice(0, 1) : words.why).map((w) => (
++        <p key={w} className="text-sm text-muted-foreground">
++          {w}
++        </p>
++      ))}
++      {c.past_drift === true && proposal.status === 'pending' && (
++        <div className="mt-2 space-y-0.5 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
++          <p className="font-semibold text-warning">{a.pastDriftTitle}</p>
++          <p>{pastDrift(lang, c, ap)}</p>
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/web/src/components/autopilot/words.ts b/web/src/components/autopilot/words.ts
+new file mode 100644
+index 0000000..f659eec
+--- /dev/null
++++ b/web/src/components/autopilot/words.ts
+@@ -0,0 +1,22 @@
++// PROTOTYPE ONLY (proto/autopilot): the autopilot's words in the app's
++// language (web/src/proto/copy.ts).
++
++import { useLocale } from '@/i18n/locale'
++import { review, uiOf, type Lang } from '@/proto/copy'
++import { useAutopilot } from '@/proto/store'
++import type { CheckIn } from '@/proto/types'
++
++export function useLang(): Lang {
++  return useLocale() === 'hr' ? 'hr' : 'en'
++}
++
++export function useApUi() {
++  return uiOf(useLang())
++}
++
++// useReview says a weekly review in the language.
++export function useReview() {
++  const lang = useLang()
++  const ap = useAutopilot()
++  return (c: CheckIn) => review(lang, c, ap)
++}
+diff --git a/web/src/components/list-row.tsx b/web/src/components/list-row.tsx
+index 2d3b769..d4cc1af 100644
+--- a/web/src/components/list-row.tsx
++++ b/web/src/components/list-row.tsx
+@@ -9,6 +9,7 @@ export type RowPath =
+   | '/plan/profile'
+   | '/plan/limits'
+   | '/plan/notes'
++  | '/plan/autopilot'
+   | '/settings/appearance'
+   | '/settings/account'
+   | '/settings/devices'
+diff --git a/web/src/components/plan/change-words.ts b/web/src/components/plan/change-words.ts
+index 591d76d..7a1dcdb 100644
+--- a/web/src/components/plan/change-words.ts
++++ b/web/src/components/plan/change-words.ts
+@@ -69,6 +69,10 @@ export function kcalShift(
+ export function useWho(): (by: Actor) => string {
+   const t = useMessages()
+   return (by) => {
++    // PROTOTYPE (proto/autopilot): the autopilot, the server's own.
++    if (by.client === 'autopilot') {
++      return 'Autopilot'
++    }
+     const model = by.model ?? ''
+     if (model !== '') {
+       const maker = makers.find(([name]) => name.test(model))?.[1] ?? t.plan.pending.coach
+diff --git a/web/src/components/plan/pending-proposal.tsx b/web/src/components/plan/pending-proposal.tsx
+index 5a66859..bd4dd20 100644
+--- a/web/src/components/plan/pending-proposal.tsx
++++ b/web/src/components/plan/pending-proposal.tsx
+@@ -4,7 +4,8 @@ import { useId, useState } from 'react'
+ import { $api } from '@/api/client'
+ import { statusOf } from '@/api/errors'
+ import type { components } from '@/api/schema'
+-import { useRationale, useWho } from '@/components/plan/change-words'
++import { Rationale } from '@/components/autopilot/rationale'
++import { useWho } from '@/components/plan/change-words'
+ import { Loosen } from '@/components/plan/loosen'
+ import {
+   PreviewLines,
+@@ -50,7 +51,6 @@ export function PendingProposal({
+   const limit = useLimitWords()
+   const date = useDate()
+   const who = useWho()
+-  const rationale = useRationale()
+   // When the card came, for how long ago it was made and how long it
+   // waits: a proposal waits days, so a minute does not matter.
+   const [now] = useState(Date.now)
+@@ -106,7 +106,7 @@ export function PendingProposal({
+           {p.expiresIn(daysLeft)}
+         </span>
+       </header>
+-      <p className="whitespace-pre-line">{rationale(proposal.rationale)}</p>
++      <Rationale proposal={proposal} />
+       {proposal.window !== undefined && (
+         <p className="text-sm text-muted-foreground">
+           {p.window(date(proposal.window.from), date(proposal.window.to))}
+@@ -116,7 +116,9 @@ export function PendingProposal({
+       {proposal.changes.limits.length > 0 && (
+         <p className="text-sm text-muted-foreground">{p.limitsHere}</p>
+       )}
+-      <ProposalData proposal={proposal} plan={plan} />
++      {/* PROTOTYPE (proto/autopilot): the autopilot's own proposal is
++          the data's already, said above. */}
++      {proposal.by.client !== 'autopilot' && <ProposalData proposal={proposal} plan={plan} />}
+       {preview !== undefined && <PreviewLines preview={preview} />}
+       {failed && (
+         <div role="alert" className="space-y-1 text-sm text-destructive">
+diff --git a/web/src/components/plan/proposal-nudge.tsx b/web/src/components/plan/proposal-nudge.tsx
+index febcbf9..d4bb0f3 100644
+--- a/web/src/components/plan/proposal-nudge.tsx
++++ b/web/src/components/plan/proposal-nudge.tsx
+@@ -1,5 +1,5 @@
+ import { Link } from '@tanstack/react-router'
+-import { Sparkles } from 'lucide-react'
++import { Gauge, Sparkles } from 'lucide-react'
+ 
+ import { $api } from '@/api/client'
+ import { useGist } from '@/components/plan/change-words'
+@@ -20,14 +20,24 @@ export function ProposalNudge() {
+   const n = t.plan.nudge
+   const what = gist(pending, plan.data.targets)
+   const yours = pending.by.client === 'web' && pending.by.model === undefined
++  // PROTOTYPE (proto/autopilot): the autopilot's proposal, said as its.
++  const auto = pending.by.client === 'autopilot'
++  const autoSays =
++    n.review === 'Review' ? `The autopilot suggests: ${what}` : `Autopilot predlaže: ${what}`
+ 
+   return (
+     <Link
+       to="/plan"
+       className="flex min-h-11 items-center gap-2 rounded-md border border-primary/30 bg-primary-soft px-3 py-2 text-small text-primary outline-none focus-visible:ring-2 focus-visible:ring-ring"
+     >
+-      <Sparkles aria-hidden className="size-4 shrink-0" />
+-      <span className="min-w-0 flex-1 truncate">{yours ? n.yours(what) : n.coach(what)}</span>
++      {auto ? (
++        <Gauge aria-hidden className="size-4 shrink-0" />
++      ) : (
++        <Sparkles aria-hidden className="size-4 shrink-0" />
++      )}
++      <span className="min-w-0 flex-1 truncate">
++        {auto ? autoSays : yours ? n.yours(what) : n.coach(what)}
++      </span>
+       <span className="shrink-0 font-semibold">{n.review}</span>
+     </Link>
+   )
+diff --git a/web/src/components/plan/revisions.tsx b/web/src/components/plan/revisions.tsx
+index 1eea22c..89378af 100644
+--- a/web/src/components/plan/revisions.tsx
++++ b/web/src/components/plan/revisions.tsx
+@@ -5,7 +5,8 @@ import { $api } from '@/api/client'
+ import { statusOf } from '@/api/errors'
+ import type { components } from '@/api/schema'
+ import { sessionQuery } from '@/api/session'
+-import { useRationale, useWho } from '@/components/plan/change-words'
++import { Rationale } from '@/components/autopilot/rationale'
++import { useWho } from '@/components/plan/change-words'
+ import { ProposalChanges, type Proposal } from '@/components/plan/proposal-changes'
+ import { useLimitWords, useViolationText, violationsOf } from '@/components/plan/proposal-text'
+ import { Button } from '@/components/ui/button'
+@@ -46,7 +47,6 @@ export function Revisions({
+   const violation = useViolationText()
+   const limit = useLimitWords()
+   const who = useWho()
+-  const rationale = useRationale()
+   // The revision the user is asked about, and the one being taken back.
+   const [asking, setAsking] = useState<string | undefined>(undefined)
+   const [failed, setFailed] = useState<{ id: string; error: unknown } | undefined>(undefined)
+@@ -91,7 +91,7 @@ export function Revisions({
+   }
+ 
+   return (
+-    <section aria-labelledby={id} className="space-y-3">
++    <section aria-labelledby={id} id="plan-history" className="scroll-mt-4 space-y-3">
+       <h2 id={id} className="text-h3">
+         {r.title}
+       </h2>
+@@ -106,7 +106,7 @@ export function Revisions({
+               )}
+               {rev.status === 'reverted' && ` · ${r.reverted}`}
+             </p>
+-            <p className="whitespace-pre-line">{rationale(rev.rationale)}</p>
++            <Rationale proposal={rev} brief />
+             <ProposalChanges changes={rev.changes} targets={targets} />
+             {failed?.id === rev.id && (
+               <p role="alert" className="text-sm text-destructive">
+diff --git a/web/src/components/plan/you-list.tsx b/web/src/components/plan/you-list.tsx
+index c21b21e..3f59d12 100644
+--- a/web/src/components/plan/you-list.tsx
++++ b/web/src/components/plan/you-list.tsx
+@@ -1,11 +1,14 @@
+-import { NotebookPen, ShieldCheck, UserRound } from 'lucide-react'
++import { Gauge, NotebookPen, ShieldCheck, UserRound } from 'lucide-react'
+ 
+ import { $api } from '@/api/client'
++import { useApUi, useLang } from '@/components/autopilot/words'
+ import { ListGroup } from '@/components/list-group'
+ import { ListRow } from '@/components/list-row'
+ import { useLimitWords } from '@/components/plan/proposal-text'
+ import { useFormat } from '@/i18n/format'
+ import { useMessages } from '@/i18n/messages'
++import { weekdayWords } from '@/proto/copy'
++import { useAutopilot } from '@/proto/store'
+ 
+ // YouList is what a plan rests on of the user's, each a row to its page
+ // with its value in short: the profile (or what a plan still needs of
+@@ -20,6 +23,11 @@ export function YouList() {
+   const profile = me.data?.profile
+   const notes = me.data?.notes.trim().split('\n')[0]
+   const holds = limits.data?.effective
++  // PROTOTYPE (proto/autopilot): the autopilot's row.
++  const ap = useAutopilot()
++  const a = useApUi()
++  const lang = useLang()
++  const on = ap.mode === 'autopilot'
+ 
+   let profileSummary
+   if (profile !== undefined) {
+@@ -55,6 +63,16 @@ export function YouList() {
+               )
+         }
+       />
++      <ListRow
++        icon={Gauge}
++        title={a.name}
++        to="/plan/autopilot"
++        summary={a.rowSummary(
++          on,
++          weekdayWords(lang, ap.weekday)[1],
++          on ? a.rowDrift(f.signed(ap.drift.used_kcal), f.number(ap.drift.limit_kcal)) : undefined,
++        )}
++      />
+       <ListRow
+         icon={NotebookPen}
+         title={t.settings.notes}
+diff --git a/web/src/pages/autopilot.tsx b/web/src/pages/autopilot.tsx
+new file mode 100644
+index 0000000..de7ac26
+--- /dev/null
++++ b/web/src/pages/autopilot.tsx
+@@ -0,0 +1,222 @@
++import { Ban, Check, Hourglass, ShieldCheck } from 'lucide-react'
++import { useEffect, useId, useRef, useState } from 'react'
++
++import { $api } from '@/api/client'
++import { DriftMeter } from '@/components/autopilot/drift-meter'
++import { useApUi, useLang } from '@/components/autopilot/words'
++import { ListGroup } from '@/components/list-group'
++import { ListRow } from '@/components/list-row'
++import { useDate } from '@/components/plan/proposal-text'
++import { SubPage } from '@/components/sub-page'
++import { Button } from '@/components/ui/button'
++import { ChipGroup } from '@/components/ui/chip-group'
++import { SegmentedControl } from '@/components/ui/segmented'
++import { useFormat } from '@/i18n/format'
++import { sayChange } from '@/lib/toast'
++import { weekdayWords } from '@/proto/copy'
++import { setAutopilot, useAutopilot } from '@/proto/store'
++import type { Autopilot, Weekday } from '@/proto/types'
++
++const week: Weekday[] = [
++  'monday',
++  'tuesday',
++  'wednesday',
++  'thursday',
++  'friday',
++  'saturday',
++  'sunday',
++]
++
++// AutopilotPage is the autopilot's settings, a web session's only (a
++// coach cannot turn it on): whether it applies its weekly step itself or
++// asks first, which turned on asks first, saying what that means; the
++// day of its weekly review; in autopilot the drift so far against the
++// limit; what it may change, what it never changes and when it waits;
++// and its limits, a row to the plan's limits.
++export function AutopilotPage() {
++  const ap = useAutopilot()
++  const a = useApUi()
++  const lang = useLang()
++  const f = useFormat()
++  const date = useDate()
++  const id = useId()
++  const limits = $api.useQuery('get', '/api/v1/limits')
++  const holds = limits.data?.effective
++  // The mode asked about, before it is turned on.
++  const [asking, setAsking] = useState(false)
++  const back = useRef<HTMLButtonElement>(null)
++  useEffect(() => {
++    if (asking) {
++      back.current?.focus()
++    }
++  }, [asking])
++  const stepKcal = holds?.step_kcal ?? 100
++  const stepPct = holds?.step_pct ?? 5
++  const driftPct = holds?.drift_pct ?? ap.drift.limit_pct
++  const save = (mode: Autopilot['mode']) => {
++    setAutopilot({ mode })
++    setAsking(false)
++    sayChange({ title: a.savedMode[mode] })
++  }
++
++  return (
++    <SubPage
++      title={a.name}
++      titleId={id}
++      from="plan"
++      hint={
++        lang === 'en'
++          ? 'A weekly review of your pace that moves your kcal target in small steps.'
++          : 'Tjedni pregled tempa koji u malim koracima pomiče tvoj cilj kcal.'
++      }
++    >
++      <section className="space-y-3 rounded-lg border bg-card p-4 shadow-card">
++        <SegmentedControl
++          legend={lang === 'en' ? 'When the review finds a step' : 'Kad pregled nađe korak'}
++          options={[
++            { value: 'propose', label: a.modes.propose },
++            { value: 'autopilot', label: a.modes.autopilot },
++          ]}
++          value={asking ? 'autopilot' : ap.mode}
++          onChange={(mode) => {
++            if (mode === 'autopilot') {
++              setAsking(true)
++            } else {
++              save('propose')
++            }
++          }}
++        />
++        <p className="text-sm text-muted-foreground" aria-live="polite">
++          {a.modeHint[asking ? 'autopilot' : ap.mode]}
++        </p>
++        {asking && (
++          <div className="space-y-2 rounded-lg border border-primary/40 bg-primary-soft/40 p-3 text-sm">
++            <p id={`${id}-ask`} className="font-semibold">
++              {a.turnOn}
++            </p>
++            <p>
++              {a.turnOnText(
++                f.number(stepKcal),
++                f.number(Math.round((ap.drift.tdee_kcal * driftPct) / 100)),
++              )}
++            </p>
++            <div className="flex gap-2">
++              <Button
++                onClick={() => {
++                  save('autopilot')
++                }}
++              >
++                {a.turnOnYes}
++              </Button>
++              <Button
++                ref={back}
++                variant="ghost"
++                onClick={() => {
++                  setAsking(false)
++                }}
++              >
++                {a.turnOnNo}
++              </Button>
++            </div>
++          </div>
++        )}
++      </section>
++
++      <section
++        aria-labelledby={`${id}-day`}
++        className="space-y-2 rounded-lg border bg-card p-4 shadow-card"
++      >
++        <h2 id={`${id}-day`} className="font-semibold">
++          {a.day}
++        </h2>
++        <ChipGroup
++          legend={a.day}
++          options={week.map((d) => ({ value: d, label: weekdayWords(lang, d)[0] }))}
++          value={ap.weekday}
++          onChange={(weekday) => {
++            setAutopilot({ weekday })
++            sayChange({ title: a.savedDay })
++          }}
++        />
++        <p className="text-sm text-muted-foreground">
++          {a.dayHint(`${f.weekday(ap.next)}, ${date(ap.next)}`)}
++        </p>
++      </section>
++
++      {ap.mode === 'autopilot' && (
++        <section
++          aria-labelledby={`${id}-drift`}
++          className="space-y-2 rounded-lg border bg-card p-4 shadow-card"
++        >
++          <h2 id={`${id}-drift`} className="font-semibold">
++            {a.drift}
++          </h2>
++          <DriftMeter drift={ap.drift} step={ap.step_kcal} />
++          <p className="text-sm text-muted-foreground">
++            {a.driftHint(f.number(ap.drift.base_kcal), date(ap.drift.base_from))}
++          </p>
++        </section>
++      )}
++
++      <section className="space-y-4 rounded-lg border bg-card p-4 shadow-card">
++        <Rules
++          title={a.mayTitle}
++          icon={<Check aria-hidden className="mt-0.5 size-4 shrink-0 text-success" />}
++          items={a.may(
++            f.number(stepKcal),
++            f.percent(stepPct, 0),
++            f.number(Math.round((ap.drift.tdee_kcal * driftPct) / 100)),
++            f.percent(driftPct, 0),
++          )}
++        />
++        <Rules
++          title={a.neverTitle}
++          icon={<Ban aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
++          items={a.never}
++        />
++        <Rules
++          title={a.waitsTitle}
++          icon={<Hourglass aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />}
++          items={a.waits(holds?.logged_days ?? 4, holds?.weigh_ins ?? 3)}
++        />
++        <p className="border-t pt-3 text-sm text-muted-foreground">{a.undoNote}</p>
++      </section>
++
++      <ListGroup>
++        <ListRow
++          icon={ShieldCheck}
++          title={a.limitsRow}
++          to="/plan/limits"
++          summary={a.limitsSummary(f.number(stepKcal), f.percent(driftPct, 0))}
++        />
++      </ListGroup>
++    </SubPage>
++  )
++}
++
++function Rules({
++  title,
++  icon,
++  items,
++}: {
++  title: string
++  icon: React.ReactNode
++  items: readonly string[]
++}) {
++  const id = useId()
++  return (
++    <section aria-labelledby={id} className="space-y-1.5">
++      <h2 id={id} className="font-semibold">
++        {title}
++      </h2>
++      <ul className="space-y-1.5">
++        {items.map((item) => (
++          <li key={item} className="flex gap-2 text-sm">
++            {icon}
++            <span>{item}</span>
++          </li>
++        ))}
++      </ul>
++    </section>
++  )
++}
+diff --git a/web/src/pages/day.tsx b/web/src/pages/day.tsx
+index c43982a..6b717bb 100644
+--- a/web/src/pages/day.tsx
++++ b/web/src/pages/day.tsx
+@@ -6,6 +6,7 @@ import { use, useEffect, useRef, useState } from 'react'
+ import { $api } from '@/api/client'
+ import { sessionQuery } from '@/api/session'
+ import type { Food } from '@/api/types'
++import { AutopilotLine } from '@/components/autopilot/autopilot-line'
+ import { BodyToday } from '@/components/day/body-today'
+ import { ChangesButton } from '@/components/day/changes-button'
+ import { CheckIn } from '@/components/day/check-in'
+@@ -366,6 +367,8 @@ export function DayPage() {
+           </FirstSteps>
+           {/* A proposal that waits, under the day's hero. */}
+           {isToday && <ProposalNudge />}
++          {/* PROTOTYPE (proto/autopilot): this morning's weekly review. */}
++          {isToday && <AutopilotLine today={day.data.date} />}
+           {/* This morning's summary: of the calendar's date, as its
+               notification's, not the day's, which may still be yesterday
+               for a day that starts late. */}
+diff --git a/web/src/pages/plan.tsx b/web/src/pages/plan.tsx
+index 84904c5..df685b6 100644
+--- a/web/src/pages/plan.tsx
++++ b/web/src/pages/plan.tsx
+@@ -1,4 +1,5 @@
+ import { $api } from '@/api/client'
++import { AutopilotCard } from '@/components/autopilot/autopilot-card'
+ import { LoadError } from '@/components/load-error'
+ import { NoPlan } from '@/components/plan/no-plan'
+ import { PendingProposal } from '@/components/plan/pending-proposal'
+@@ -51,6 +52,9 @@ export function PlanPage() {
+             plan={plan.data}
+           />
+         )}
++        {/* PROTOTYPE (proto/autopilot): the autopilot, above the targets
++            it moves. */}
++        <AutopilotCard />
+         {(targets.length > 0 || days.length > 0 || phases.length > 0) && (
+           <TargetsCard plan={plan.data} />
+         )}
+diff --git a/web/src/pages/root-layout.tsx b/web/src/pages/root-layout.tsx
+index 6e489ad..3db5ed2 100644
+--- a/web/src/pages/root-layout.tsx
++++ b/web/src/pages/root-layout.tsx
+@@ -2,6 +2,7 @@ import { Outlet } from '@tanstack/react-router'
+ 
+ import { Toasts } from '@/components/toasts'
+ import { UpdatePrompt } from '@/components/update-prompt'
++import { ProtoPanel } from '@/proto/panel'
+ 
+ // The frame every page renders in, the sign-in page too: the whole
+ // screen, which the app's sections (AppLayout) and the pages outside them
+@@ -13,6 +14,8 @@ export function RootLayout() {
+       <Outlet />
+       <Toasts />
+       <UpdatePrompt />
++      {/* PROTOTYPE (proto/autopilot) */}
++      <ProtoPanel />
+     </div>
+   )
+ }
+diff --git a/web/src/proto/copy.ts b/web/src/proto/copy.ts
+new file mode 100644
+index 0000000..9f1e0fc
+--- /dev/null
++++ b/web/src/proto/copy.ts
+@@ -0,0 +1,544 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged). The autopilot's
++// words in English and Croatian: the app's, the day's line, a push, a
++// Telegram message and the morning summary's line, each from a review's
++// numbers (the rationale's code `autopilot`). In the implementation the
++// app's go to src/i18n/{en,hr}.ts and the messages' to the server's
++// phrases (internal/api/morning.go).
++
++import { plural } from '@/i18n/plural'
++
++import type { Autopilot, CheckIn, Weekday } from './types'
++
++export type Lang = 'en' | 'hr'
++
++// fmt is the numbers and dates of a language, as the app writes them.
++function fmt(lang: Lang) {
++  const n = (x: number, digits = 0) =>
++    new Intl.NumberFormat(lang, { maximumFractionDigits: digits }).format(x)
++  const date = (d: string, o: Intl.DateTimeFormatOptions) =>
++    new Intl.DateTimeFormat(lang, { ...o, timeZone: 'UTC' }).format(new Date(`${d}T00:00:00Z`))
++  return {
++    n,
++    signed: (x: number) =>
++      new Intl.NumberFormat(lang, { maximumFractionDigits: 0, signDisplay: 'exceptZero' }).format(
++        x,
++      ),
++    pct: (x: number) =>
++      new Intl.NumberFormat(lang, {
++        style: 'percent',
++        minimumFractionDigits: 2,
++        maximumFractionDigits: 2,
++      }).format(Math.abs(x) / 100),
++    signedPct: (x: number) =>
++      new Intl.NumberFormat(lang, {
++        style: 'percent',
++        minimumFractionDigits: 2,
++        maximumFractionDigits: 2,
++        signDisplay: 'exceptZero',
++      }).format(x / 100),
++    day: (d: string) => date(d, { weekday: 'short', day: 'numeric', month: 'short' }),
++    long: (d: string) => date(d, { weekday: 'long', day: 'numeric', month: 'long' }),
++  }
++}
++
++const weekdays: Record<Lang, Record<Weekday, [string, string]>> = {
++  // [the chip's, a sentence's: "every Monday"]
++  en: {
++    monday: ['Mon', 'Mondays'],
++    tuesday: ['Tue', 'Tuesdays'],
++    wednesday: ['Wed', 'Wednesdays'],
++    thursday: ['Thu', 'Thursdays'],
++    friday: ['Fri', 'Fridays'],
++    saturday: ['Sat', 'Saturdays'],
++    sunday: ['Sun', 'Sundays'],
++  },
++  hr: {
++    monday: ['pon', 'ponedjeljkom'],
++    tuesday: ['uto', 'utorkom'],
++    wednesday: ['sri', 'srijedom'],
++    thursday: ['čet', 'četvrtkom'],
++    friday: ['pet', 'petkom'],
++    saturday: ['sub', 'subotom'],
++    sunday: ['ned', 'nedjeljom'],
++  },
++}
++
++const ui = {
++  en: {
++    name: 'Autopilot',
++    review: 'Weekly review',
++    on: 'On',
++    asks: 'Asks first',
++    modes: { propose: 'Ask me first', autopilot: 'Autopilot' },
++    modeHint: {
++      propose:
++        'Each week the autopilot reviews your pace and suggests a step. Nothing changes until you accept it; a suggestion waits 7 days.',
++      autopilot:
++        'Each week the autopilot reviews your pace and takes a small step by itself, within your limits, and tells you. Past your drift limit it asks you instead.',
++    },
++    turnOn: 'Turn on the autopilot?',
++    turnOnText: (step: string, drift: string) =>
++      `It will change your kcal target by itself, by at most ${step} kcal a day a week and ${drift} kcal in all, and tell you each time. You can take any step back in the plan's history.`,
++    turnOnYes: 'Turn on',
++    turnOnNo: 'Not now',
++    mayTitle: 'What it may change',
++    may: (step: string, pct: string, drift: string, dpct: string) => [
++      `Your kcal target, by at most ${step} kcal a day in a week (${pct} of it at most)`,
++      'Training and rest days by the same kcal, so only carbs move: 100 kcal is 25 g',
++      `In all, at most ${drift} kcal from the target you last agreed to (${dpct} of your TDEE)`,
++    ],
++    neverTitle: 'What it never changes',
++    never: [
++      'Your phase, its pace or its goal',
++      'Protein, fat, or the split between training and rest days',
++      'Your training days or your limits',
++      'A loss deeper while your BMI is under 18.5: it proposes maintenance instead',
++    ],
++    waitsTitle: 'When it waits',
++    waits: (logged: number, weighed: number) => [
++      `${String(logged)} logged days and ${String(weighed)} weigh-ins in the last 7 days`,
++      'A TDEE that calibration trusts',
++      '14 days into a phase, or from a target you set; 7 days since its last step',
++      'No other proposal waiting for your answer',
++    ],
++    undoNote:
++      'Undo (⌘Z) doesn’t take back a step: take it back in the plan’s history, as any change of the plan.',
++    day: 'Review day',
++    dayHint: (next: string) => `In the morning, before your morning summary. Next review: ${next}.`,
++    drift: 'Drift',
++    driftHint: (base: string, from: string) =>
++      `What the autopilot moved your target since you agreed to ${base} kcal a day on ${from}. Accepting or setting a target starts it again at 0.`,
++    driftValue: (used: string, limit: string) => `${used} of ${limit} kcal`,
++    driftLeft: (left: string) => `${left} kcal left`,
++    driftFull: 'Limit reached: the next step is proposed',
++    limitsRow: 'Step and drift limits',
++    limitsSummary: (step: string, drift: string) => `Step ${step} kcal · drift ${drift} of TDEE`,
++    next: 'Next review',
++    last: 'Last review',
++    settings: 'Autopilot settings',
++    rowSummary: (on: boolean, days: string, drift?: string) =>
++      [on ? 'On' : 'Asks first', days, ...(drift === undefined ? [] : [drift])].join(' · '),
++    rowDrift: (used: string, limit: string) => `drift ${used} of ${limit} kcal`,
++    accepted: 'You accepted it.',
++    rejected: 'You rejected it. The target stays; the next review looks again.',
++    takeBackHint: 'Take it back in the plan’s history.',
++    savedMode: { propose: 'The autopilot asks first', autopilot: 'Autopilot on' },
++    savedDay: 'Review day changed',
++    pastDriftTitle: 'Past your drift limit',
++    bySelf: 'Autopilot',
++    why: 'Why',
++    review2: 'Review',
++  },
++  hr: {
++    name: 'Autopilot',
++    review: 'Tjedni pregled',
++    on: 'Uključen',
++    asks: 'Pita prvo',
++    modes: { propose: 'Pitaj me prvo', autopilot: 'Autopilot' },
++    modeHint: {
++      propose:
++        'Svaki tjedan autopilot pregleda tvoj tempo i predloži korak. Ništa se ne mijenja dok ga ne prihvatiš; prijedlog čeka 7 dana.',
++      autopilot:
++        'Svaki tjedan autopilot pregleda tvoj tempo i sam napravi mali korak, unutar tvojih granica, i javi ti. Preko granice odstupanja umjesto toga te pita.',
++    },
++    turnOn: 'Uključiti autopilot?',
++    turnOnText: (step: string, drift: string) =>
++      `Sam će mijenjati tvoj cilj kcal, najviše ${step} kcal dnevno u tjednu i ukupno ${drift} kcal, i javiti ti svaki put. Svaki korak možeš vratiti u povijesti plana.`,
++    turnOnYes: 'Uključi',
++    turnOnNo: 'Ne sada',
++    mayTitle: 'Što smije mijenjati',
++    may: (step: string, pct: string, drift: string, dpct: string) => [
++      `Tvoj cilj kcal, najviše ${step} kcal dnevno u tjednu (najviše ${pct} cilja)`,
++      'Dane treninga i odmora za isto kcal, pa se mijenjaju samo ugljikohidrati: 100 kcal je 25 g',
++      `Ukupno najviše ${drift} kcal od zadnjeg dogovorenog cilja (${dpct} tvog TDEE-a)`,
++    ],
++    neverTitle: 'Što nikad ne mijenja',
++    never: [
++      'Tvoju fazu, njen tempo ni cilj',
++      'Proteine, masti ni razliku između dana treninga i odmora',
++      'Tvoje dane treninga ni tvoje granice',
++      'Dublji gubitak dok ti je BMI ispod 18,5: tada predlaže održavanje',
++    ],
++    waitsTitle: 'Kada čeka',
++    waits: (logged: number, weighed: number) => [
++      `${String(logged)} upisana dana i ${String(weighed)} vaganja u zadnjih 7 dana`,
++      'TDEE kojem kalibracija vjeruje',
++      '14 dana od početka faze ili novog cilja; 7 dana od zadnjeg koraka',
++      'Da nijedan drugi prijedlog ne čeka tvoj odgovor',
++    ],
++    undoNote: 'Poništi (⌘Z) ne vraća korak: vrati ga u povijesti plana, kao svaku promjenu plana.',
++    day: 'Dan pregleda',
++    dayHint: (next: string) => `Ujutro, prije jutarnjeg sažetka. Sljedeći pregled: ${next}.`,
++    drift: 'Odstupanje',
++    driftHint: (base: string, from: string) =>
++      `Koliko je autopilot pomaknuo cilj od dogovorenih ${base} kcal dnevno, ${from}. Prihvaćen ili postavljen cilj vraća ga na 0.`,
++    driftValue: (used: string, limit: string) => `${used} od ${limit} kcal`,
++    driftLeft: (left: string) => `ostalo ${left} kcal`,
++    driftFull: 'Granica dosegnuta: sljedeći korak bit će prijedlog',
++    limitsRow: 'Granice koraka i odstupanja',
++    limitsSummary: (step: string, drift: string) =>
++      `Korak ${step} kcal · odstupanje ${drift} TDEE-a`,
++    next: 'Sljedeći pregled',
++    last: 'Zadnji pregled',
++    settings: 'Postavke autopilota',
++    rowSummary: (on: boolean, days: string, drift?: string) =>
++      [on ? 'Uključen' : 'Pita prvo', days, ...(drift === undefined ? [] : [drift])].join(' · '),
++    rowDrift: (used: string, limit: string) => `odstupanje ${used} od ${limit} kcal`,
++    accepted: 'Prihvaćen.',
++    rejected: 'Odbijen. Cilj ostaje; sljedeći pregled gleda ponovno.',
++    takeBackHint: 'Vrati ga u povijesti plana.',
++    savedMode: { propose: 'Autopilot pita prvo', autopilot: 'Autopilot uključen' },
++    savedDay: 'Dan pregleda promijenjen',
++    pastDriftTitle: 'Preko granice odstupanja',
++    bySelf: 'Autopilot',
++    why: 'Zašto',
++    review2: 'Pogledaj',
++  },
++} as const
++
++export function uiOf(lang: Lang) {
++  return ui[lang]
++}
++
++export function weekdayWords(lang: Lang, d: Weekday) {
++  return weekdays[lang][d]
++}
++
++// Words are what a review says, in a language.
++export interface ReviewWords {
++  // The decision, a sentence: "Lowered your target by 100 kcal a day".
++  headline: string
++  // Why, in the verdict's numbers.
++  why: string[]
++  // The day's line, after "Autopilot: ".
++  line: string
++  // A push: its title and body.
++  push: { title: string; body: string }
++  // Telegram, whole.
++  telegram: string
++  // The morning summary's line, without its "Autopilot: ".
++  morning: string
++}
++
++const steps = (n: number) => Math.abs(n) / 4 // grams of carbs
++
++export function review(lang: Lang, c: CheckIn, ap: Autopilot): ReviewWords {
++  const f = fmt(lang)
++  const en = lang === 'en'
++  const k = (x: number | undefined) => f.n(x ?? 0)
++  const step = Math.abs(c.step_kcal ?? 0)
++  const down = (c.step_kcal ?? 0) < 0
++  const next = f.day(ap.next)
++  const measured = c.measured_pct_week ?? 0
++  const gaining = measured > 0
++  const planned = c.target_pct_week ?? 0
++  const tol = c.tolerance_pct_week ?? 0.1
++  const [lo, hi] = [Math.abs(planned - tol), Math.abs(planned + tol)].toSorted((x, y) => x - y)
++  const range = `${f.pct(lo ?? 0)} ${en ? 'to' : 'do'} ${f.pct(hi ?? 0)}`
++  const tdee = c.tdee_kcal === undefined ? '' : `${k(c.tdee_kcal)} ± ${k(c.tdee_half_width)}`
++  const pace = en
++    ? `You ${gaining ? 'gained' : 'lost'} ${f.pct(measured)} a week; the plan is ${f.pct(planned)} (${range}).`
++    : `${gaining ? 'Dobivaš' : 'Gubiš'} ${f.pct(measured)} tjedno; plan je ${f.pct(planned)} (${range}).`
++  const energy = en
++    ? `Your TDEE is ${tdee} kcal; you ate ${k(c.intake_kcal)} kcal a day against a target of ${k(c.target_kcal)}.`
++    : `TDEE je ${tdee} kcal; unos je bio ${k(c.intake_kcal)} kcal dnevno uz cilj od ${k(c.target_kcal)}.`
++  const shortPace = en
++    ? `${gaining ? 'gaining' : 'losing'} ${f.pct(measured)}/wk, plan ${f.pct(planned)}`
++    : `tempo ${f.signedPct(measured)}/tj, plan ${f.signedPct(planned)}/tj`
++  const newAvg = k(c.after_kcal)
++  const carbs = f.n(steps(step))
++  const driftAfter = ap.drift.used_kcal + (c.step_kcal ?? 0)
++
++  let headline = ''
++  let why: string[] = []
++  let line = ''
++  let title = ''
++  let body = ''
++  let morning = ''
++
++  switch (c.outcome) {
++    case 'applied': {
++      headline = en
++        ? `${down ? 'Lowered' : 'Raised'} your target by ${k(step)} kcal a day`
++        : `${down ? 'Spustio' : 'Podigao'} je cilj za ${k(step)} kcal dnevno`
++      line = en
++        ? `target ${f.signed(c.step_kcal ?? 0)} kcal a day, from today`
++        : `cilj ${f.signed(c.step_kcal ?? 0)} kcal dnevno, od danas`
++      title = en
++        ? `Target ${f.signed(c.step_kcal ?? 0)} kcal a day`
++        : `Cilj ${f.signed(c.step_kcal ?? 0)} kcal dnevno`
++      body = en
++        ? `Weekly review: ${shortPace}. New average ${newAvg} kcal a day. Tap to see why, or take it back.`
++        : `Tjedni pregled: ${shortPace}. Novi prosjek ${newAvg} kcal dnevno. Dodirni za razlog ili vraćanje.`
++      morning = en
++        ? `target ${f.signed(c.step_kcal ?? 0)} kcal/day, to ${newAvg} (${shortPace})`
++        : `cilj ${f.signed(c.step_kcal ?? 0)} kcal/dan, na ${newAvg} (${shortPace})`
++      break
++    }
++    case 'proposed': {
++      if (c.reason === 'underweight') {
++        headline = en ? 'Suggests maintenance' : 'Predlaže održavanje'
++        line = en ? 'suggests maintenance' : 'predlaže održavanje'
++        title = en ? 'Maintenance suggested' : 'Predlaže održavanje'
++        body = en
++          ? `Your BMI is ${f.n(c.bmi ?? 0, 1)}, under 18.5, so the autopilot won’t take the loss further. Accept or reject in the plan.`
++          : `BMI ti je ${f.n(c.bmi ?? 0, 1)}, ispod 18,5, pa autopilot ne nastavlja gubitak. Prihvati ili odbij u planu.`
++        morning = en
++          ? 'suggests maintenance, your BMI is under 18.5'
++          : 'predlaže održavanje, BMI je ispod 18,5'
++      } else {
++        headline = en
++          ? `Suggests ${down ? 'lowering' : 'raising'} your target by ${k(step)} kcal a day`
++          : `Predlaže ${down ? 'spustiti' : 'podići'} cilj za ${k(step)} kcal dnevno`
++        line = en
++          ? `suggests ${f.signed(c.step_kcal ?? 0)} kcal a day`
++          : `predlaže ${f.signed(c.step_kcal ?? 0)} kcal dnevno`
++        title = en
++          ? `Suggests ${f.signed(c.step_kcal ?? 0)} kcal a day`
++          : `Predlaže ${f.signed(c.step_kcal ?? 0)} kcal dnevno`
++        body = c.past_drift
++          ? en
++            ? `Weekly review: ${shortPace}. It’s past your drift limit (${f.signed(driftAfter)} of ${k(ap.drift.limit_kcal)} kcal), so it asks first. Answer by ${f.day(addWeek(c.date))}.`
++            : `Tjedni pregled: ${shortPace}. To je preko granice odstupanja (${f.signed(driftAfter)} od ${k(ap.drift.limit_kcal)} kcal), pa pita prvo. Odgovori do ${f.day(addWeek(c.date))}.`
++          : en
++            ? `Weekly review: ${shortPace}. Accept or reject in the plan by ${f.day(addWeek(c.date))}.`
++            : `Tjedni pregled: ${shortPace}. Prihvati ili odbij u planu do ${f.day(addWeek(c.date))}.`
++        morning = en
++          ? `suggests ${f.signed(c.step_kcal ?? 0)} kcal/day (${shortPace}), waits for your answer`
++          : `predlaže ${f.signed(c.step_kcal ?? 0)} kcal/dan (${shortPace}), čeka tvoj odgovor`
++      }
++      break
++    }
++    case 'hold': {
++      if (c.reason === 'steps_guard') {
++        headline = en
++          ? 'Holding: your steps explain the slower pace'
++          : 'Bez promjene: sporiji tempo objašnjavaju koraci'
++        line = en ? 'holding, your steps explain it' : 'bez promjene, objašnjavaju to koraci'
++        title = en ? 'Holding: steps explain it' : 'Bez promjene: koraci'
++        body = en
++          ? `Weekly review: ${shortPace}, but your steps fell ${f.n(Math.abs(c.steps_change_pct ?? 0))} %. The target stays ${k(c.target_kcal)} kcal.`
++          : `Tjedni pregled: ${shortPace}, ali koraka je ${f.n(Math.abs(c.steps_change_pct ?? 0))} % manje. Cilj ostaje ${k(c.target_kcal)} kcal.`
++        morning = en
++          ? `holding, steps ${f.signed(c.steps_change_pct ?? 0)} % explain the pace`
++          : `bez promjene, koraci ${f.signed(c.steps_change_pct ?? 0)} % objašnjavaju tempo`
++      } else {
++        headline = en ? 'Holding: your pace is on plan' : 'Bez promjene: tempo je u planu'
++        line = en ? 'holding, pace on plan' : 'bez promjene, tempo u planu'
++        title = en ? 'Holding: pace on plan' : 'Bez promjene: tempo u planu'
++        body = en
++          ? `Weekly review: ${shortPace}. The target stays ${k(c.target_kcal)} kcal a day.`
++          : `Tjedni pregled: ${shortPace}. Cilj ostaje ${k(c.target_kcal)} kcal dnevno.`
++        morning = en
++          ? `holding, pace on plan (${shortPace})`
++          : `bez promjene, tempo u planu (${shortPace})`
++      }
++      break
++    }
++    case 'skipped': {
++      const no = en ? 'No step' : 'Bez koraka'
++      const short: Record<string, [string, string]> = {
++        few_data:
++          (c.logged_days ?? 0) < (c.needs_logged_days ?? 4)
++            ? en
++              ? [
++                  `${String(c.logged_days)} of ${String(c.needs_logged_days)} logged days`,
++                  `${String(c.logged_days)}/${String(c.needs_logged_days)} logged days`,
++                ]
++              : [
++                  `${String(c.logged_days)} od ${String(c.needs_logged_days)} upisana dana`,
++                  `${String(c.logged_days)}/${String(c.needs_logged_days)} upisana dana`,
++                ]
++            : en
++              ? [
++                  `${String(c.weigh_ins)} of ${String(c.needs_weigh_ins)} weigh-ins`,
++                  `${String(c.weigh_ins)}/${String(c.needs_weigh_ins)} weigh-ins`,
++                ]
++              : [
++                  `${String(c.weigh_ins)} od ${String(c.needs_weigh_ins)} vaganja`,
++                  `${String(c.weigh_ins)}/${String(c.needs_weigh_ins)} vaganja`,
++                ],
++        not_trusted: en
++          ? ['your TDEE isn’t trusted yet', 'TDEE not trusted yet']
++          : ['TDEE još nije pouzdan', 'TDEE još nije pouzdan'],
++        first_wait: en
++          ? ['the phase is new', 'the phase is new']
++          : ['faza je nova', 'faza je nova'],
++        interval: en
++          ? ['7 days since the last step', '7 days since the last']
++          : ['7 dana od zadnjeg koraka', '7 dana od zadnjeg'],
++        pending: en
++          ? ['a proposal waits for your answer', 'a proposal waits']
++          : ['prijedlog čeka tvoj odgovor', 'prijedlog čeka'],
++        few_carbs: en
++          ? ['too few carbs to lower', 'too few carbs']
++          : ['premalo ugljikohidrata za spuštanje', 'premalo UH'],
++        no_plan: en
++          ? ['no phase or target', 'no phase or target']
++          : ['nema faze ni cilja', 'nema faze ni cilja'],
++      }
++      const [long, brief] = short[c.reason] ?? ['', '']
++      headline = `${no}: ${long}`
++      line = `${en ? 'no step' : 'bez koraka'}, ${brief}`
++      title = `${no}: ${brief}`
++      morning = `${en ? 'no step' : 'bez koraka'}, ${brief}`
++      const nextReview = en ? `Next review ${next}.` : `Sljedeći pregled ${next}.`
++      const bodies: Record<string, string> = {
++        few_data: en
++          ? `A step needs ${String(c.needs_logged_days)} logged days and ${String(c.needs_weigh_ins)} weigh-ins in the last 7. ${nextReview}`
++          : `Korak treba ${String(c.needs_logged_days)} upisana dana i ${String(c.needs_weigh_ins)} vaganja u zadnjih 7. ${nextReview}`,
++        not_trusted: en
++          ? `Your TDEE is about ${tdee} kcal. A first step about ${f.day(c.expected ?? ap.next)}, if you keep logging as now.`
++          : `TDEE je oko ${tdee} kcal. Prvi korak oko ${f.day(c.expected ?? ap.next)}, ako nastaviš upisivati kao sada.`,
++        first_wait: en
++          ? `A phase’s first 14 days move water as much as fat. The first step can come from ${f.day(c.from ?? ap.next)}.`
++          : `Prvih 14 dana faze miče vodu koliko i mast. Prvi korak može doći od ${f.day(c.from ?? ap.next)}.`,
++        pending: en
++          ? `Answer the proposal in your plan first; the review waits for it. ${nextReview}`
++          : `Prvo odgovori na prijedlog u planu; pregled ga čeka. ${nextReview}`,
++        few_carbs: en
++          ? `Rest days have ${f.n(c.carbs_g ?? 0)} g carbs, and it never changes protein or fat. Ask your coach to change the split.`
++          : `Dani odmora imaju ${f.n(c.carbs_g ?? 0)} g UH, a proteine i masti nikad ne mijenja. Zamoli trenera da promijeni raspodjelu.`,
++        no_plan: en
++          ? 'Set a phase and a kcal target in your plan, and the review judges your pace against them.'
++          : 'Postavi fazu i cilj kcal u planu, pa će pregled ocjenjivati tempo prema njima.',
++        interval: nextReview,
++      }
++      body = bodies[c.reason] ?? nextReview
++      break
++    }
++  }
++
++  // Why, in the app: the numbers whole.
++  const reasons: Record<string, string[]> = {
++    cut_slow: [pace, energy],
++    cut_fast: [pace, energy],
++    bulk_slow: [pace, energy],
++    bulk_fast: [pace, energy],
++    bulk_fat: [
++      en
++        ? 'Your body fat rose beyond its error while lean mass stayed flat: a smaller surplus, never below your TDEE.'
++        : 'Tjelesna mast je rasla više od pogreške mjerenja, a nemasna masa stoji: manji suficit, nikad ispod TDEE-a.',
++      energy,
++    ],
++    lean_loss: [
++      en
++        ? `You lost ${f.pct(measured)} a week, and lean mass with it beyond its error. A step up keeps more of it.`
++        : `Gubiš ${f.pct(measured)} tjedno, a s tim i nemasnu masu, više od pogreške mjerenja. Korak gore čuva više nje.`,
++      energy,
++    ],
++    on_target: [pace, energy],
++    steps_guard: [
++      pace,
++      en
++        ? `Your steps fell ${f.n(Math.abs(c.steps_change_pct ?? 0))} % from the weeks before. That explains the slower pace, not your metabolism, so the target holds.`
++        : `Koraka je ${f.n(Math.abs(c.steps_change_pct ?? 0))} % manje nego prethodnih tjedana. To objašnjava sporiji tempo, a ne metabolizam, pa cilj ostaje.`,
++    ],
++    few_data: [
++      en
++        ? `A step needs ${String(c.needs_logged_days)} logged days and ${String(c.needs_weigh_ins)} weigh-ins in the last 7 days. This week had ${String(c.logged_days)} logged days and ${String(c.weigh_ins)} weigh-ins.`
++        : `Korak treba ${String(c.needs_logged_days)} upisana dana i ${String(c.needs_weigh_ins)} vaganja u zadnjih 7 dana. Ovaj tjedan: ${String(c.logged_days)} upisana dana i ${String(c.weigh_ins)} vaganja.`,
++    ],
++    not_trusted: [
++      en
++        ? `Your TDEE is about ${tdee} kcal. A step waits until calibration trusts it (± 200 kcal at most): about ${f.day(c.expected ?? ap.next)}, if you keep logging and weighing in as now.`
++        : `TDEE je oko ${tdee} kcal. Korak čeka da mu kalibracija vjeruje (najviše ± 200 kcal): oko ${f.day(c.expected ?? ap.next)}, ako nastaviš upisivati i vagati se kao sada.`,
++    ],
++    first_wait: [
++      en
++        ? `A phase’s first 14 days move water and glycogen as much as fat. The first step can come from ${f.day(c.from ?? ap.next)}.`
++        : `Prvih 14 dana faze miče vodu i glikogen koliko i mast. Prvi korak može doći od ${f.day(c.from ?? ap.next)}.`,
++    ],
++    pending: [
++      en
++        ? 'A proposal waits for your answer. The review waits too, so two changes don’t meet in your plan.'
++        : 'Prijedlog čeka tvoj odgovor. Pregled čeka s njim, da se dvije promjene ne sretnu u planu.',
++    ],
++    few_carbs: [
++      pace,
++      en
++        ? `Rest days have ${f.n(c.carbs_g ?? 0)} g carbs. A step down takes 25 g, and protein and fat are never the autopilot’s to change. Ask your coach to change the split.`
++        : `Dani odmora imaju ${f.n(c.carbs_g ?? 0)} g UH. Korak dolje uzima 25 g, a proteini i masti nikad nisu autopilotovi. Zamoli trenera da promijeni raspodjelu.`,
++    ],
++    no_plan: [
++      en
++        ? 'The autopilot needs a phase and a kcal target to judge your pace against.'
++        : 'Autopilotu trebaju faza i cilj kcal prema kojima ocjenjuje tempo.',
++    ],
++    underweight: [
++      en
++        ? `Your BMI is ${f.n(c.bmi ?? 0, 1)}, under 18.5. The autopilot never takes a loss further there, so it proposes maintenance at your TDEE, ${tdee} kcal.`
++        : `BMI ti je ${f.n(c.bmi ?? 0, 1)}, ispod 18,5. Tu autopilot nikad ne nastavlja gubitak, pa predlaže održavanje na TDEE-u, ${tdee} kcal.`,
++    ],
++  }
++  why = reasons[c.reason] ?? []
++  if (c.outcome === 'applied' || (c.outcome === 'proposed' && c.reason !== 'underweight')) {
++    why = [
++      ...why,
++      en
++        ? `Both types of day ${down ? 'lose' : 'gain'} ${k(step)} kcal, all of it carbs (${down ? '−' : '+'}${carbs} g): ${k(c.target_kcal)} → ${newAvg} kcal a day on average.`
++        : `Oba tipa dana ${down ? 'gube' : 'dobivaju'} ${k(step)} kcal, sve iz ugljikohidrata (${down ? '−' : '+'}${carbs} g): prosjek ${k(c.target_kcal)} → ${newAvg} kcal dnevno.`,
++    ]
++  }
++
++  const header = en
++    ? `Autopilot · weekly review, ${f.long(c.date)}`
++    : `Autopilot · tjedni pregled, ${f.long(c.date)}`
++  const driftLine =
++    ap.mode === 'autopilot' && c.reason !== 'no_plan'
++      ? en
++        ? `Drift: ${f.signed(c.outcome === 'applied' ? ap.drift.used_kcal : ap.drift.used_kcal)} of ${k(ap.drift.limit_kcal)} kcal.`
++        : `Odstupanje: ${f.signed(ap.drift.used_kcal)} od ${k(ap.drift.limit_kcal)} kcal.`
++      : undefined
++  const tail =
++    c.outcome === 'applied'
++      ? en
++        ? `Next review ${next}. Take it back in the plan: /plan`
++        : `Sljedeći pregled ${next}. Vrati u planu: /plan`
++      : c.outcome === 'proposed'
++        ? en
++          ? `Accept or reject in the plan by ${f.day(addWeek(c.date))}: /plan`
++          : `Prihvati ili odbij u planu do ${f.day(addWeek(c.date))}: /plan`
++        : en
++          ? `Next review ${next}.`
++          : `Sljedeći pregled ${next}.`
++  const telegram = [
++    header,
++    `${headline}.`,
++    ...why,
++    ...(c.past_drift
++      ? [
++          en
++            ? `It would apply this by itself, but that takes the drift to ${f.signed(driftAfter)} kcal, past your limit of ${k(ap.drift.limit_kcal)}.`
++            : `Ovo bi primijenio sam, ali odstupanje bi bilo ${f.signed(driftAfter)} kcal, preko tvoje granice od ${k(ap.drift.limit_kcal)}.`,
++        ]
++      : []),
++    ...(driftLine === undefined ? [] : [driftLine]),
++    tail,
++  ].join('\n')
++
++  return { headline, why, line, push: { title, body }, telegram, morning }
++}
++
++function addWeek(date: string): string {
++  const d = new Date(`${date}T00:00:00Z`)
++  d.setUTCDate(d.getUTCDate() + 7)
++  return d.toISOString().slice(0, 10)
++}
++
++// pastDrift says, on a proposal the autopilot made past its limit, why it
++// asks: what it would have applied, and what an answer does.
++export function pastDrift(lang: Lang, c: CheckIn, ap: Autopilot): string {
++  const f = fmt(lang)
++  const after = ap.drift.used_kcal + (c.step_kcal ?? 0)
++  return lang === 'en'
++    ? `On autopilot this step would apply by itself, but it would take the drift to ${f.signed(after)} kcal, past your limit of ${f.n(ap.drift.limit_kcal)} (${String(ap.drift.limit_pct)} % of your TDEE). Accepting it makes it a target you agreed to: the drift starts again at 0.`
++    : `Na autopilotu bi se ovaj korak primijenio sam, ali odstupanje bi bilo ${f.signed(after)} kcal, preko tvoje granice od ${f.n(ap.drift.limit_kcal)} (${String(ap.drift.limit_pct)} % TDEE-a). Prihvaćen postaje dogovoreni cilj: odstupanje kreće od 0.`
++}
++
++// days is "3 days" in the language, for a hint.
++export function daysWord(lang: Lang, n: number): string {
++  return lang === 'en'
++    ? `${String(n)} ${plural('en', n, { one: 'day', other: 'days' })}`
++    : `${String(n)} ${plural('hr', n, { one: 'dan', few: 'dana', other: 'dana' })}`
++}
+diff --git a/web/src/proto/messages.tsx b/web/src/proto/messages.tsx
+new file mode 100644
+index 0000000..e394743
+--- /dev/null
++++ b/web/src/proto/messages.tsx
+@@ -0,0 +1,78 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged): what each weekly
++// review sends, in English and Croatian, side by side: the push (its
++// title and body, under the app's name, as a phone shows it), the
++// Telegram message, the morning summary's line and the day's line.
++
++import { Bell, Send } from 'lucide-react'
++
++import { review, type Lang } from './copy'
++import { scenarios } from './store'
++
++const langs: Lang[] = ['en', 'hr']
++
++export function MessagesPage() {
++  return (
++    <section className="space-y-6">
++      <header className="space-y-1">
++        <h1 className="text-title">Autopilot: what it sends</h1>
++        <p className="text-small text-muted-foreground">
++          Each state’s weekly review, as a push, a Telegram message, the morning summary’s line and
++          the day’s line. Prototype only; numbers made up.
++        </p>
++      </header>
++      {scenarios.map((s) => {
++        const c = s.autopilot.last
++        if (c === undefined) {
++          return null
++        }
++        return (
++          <article key={s.id} className="space-y-3 rounded-lg border bg-card p-4 shadow-card">
++            <h2 className="text-h3">{s.label}</h2>
++            <div className="grid gap-4 lg:grid-cols-2">
++              {langs.map((lang) => {
++                const w = review(lang, c, s.autopilot)
++                return (
++                  <div key={lang} className="min-w-0 space-y-2">
++                    <p className="text-caption font-semibold text-muted-foreground uppercase">
++                      {lang}
++                    </p>
++                    <div className="flex gap-3 rounded-xl bg-surface-2 p-3">
++                      <Bell aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
++                      <div className="min-w-0">
++                        <p className="text-caption text-muted-foreground">
++                          tdeemon · {lang === 'en' ? 'now' : 'sada'}
++                        </p>
++                        <p className="font-semibold">{w.push.title}</p>
++                        <p className="text-sm">{w.push.body}</p>
++                      </div>
++                    </div>
++                    <div className="flex gap-3 rounded-xl border p-3">
++                      <Send aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
++                      <p className="min-w-0 text-sm whitespace-pre-line">{w.telegram}</p>
++                    </div>
++                    <p className="text-sm">
++                      <span className="text-muted-foreground">
++                        {lang === 'en' ? 'Morning summary' : 'Jutarnji sažetak'}:{' '}
++                      </span>
++                      Autopilot: {w.morning}
++                    </p>
++                    <p className="text-sm">
++                      <span className="text-muted-foreground">
++                        {lang === 'en' ? 'Day' : 'Dan'}:{' '}
++                      </span>
++                      {c.outcome === 'proposed'
++                        ? lang === 'en'
++                          ? '(the proposal’s line) The autopilot suggests: …'
++                          : '(redak prijedloga) Autopilot predlaže: …'
++                        : `Autopilot: ${w.line}`}
++                    </p>
++                  </div>
++                )
++              })}
++            </div>
++          </article>
++        )
++      })}
++    </section>
++  )
++}
+diff --git a/web/src/proto/mock.ts b/web/src/proto/mock.ts
+new file mode 100644
+index 0000000..03fca86
+--- /dev/null
++++ b/web/src/proto/mock.ts
+@@ -0,0 +1,109 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged). Fakes, over the
++// real server's answers, what the autopilot would add to them: the plan
++// of the scenario chosen (its phases, targets, revisions and the proposal
++// that waits, the autopilot's among them), calibration's TDEE and verdict
++// of it, the morning summary's line, and the answers to the prototype's
++// own proposals. Everything else is the server's.
++
++import type { Middleware } from 'openapi-fetch'
++
++import { review } from './copy'
++import { answer, scenario } from './store'
++
++const ours = '00000000-0000-7000-8000-'
++
++async function rewrite(response: Response, edit: (body: Record<string, unknown>) => unknown) {
++  const body: unknown = await response.clone().json()
++  const record: Record<string, unknown> = {}
++  if (typeof body === 'object' && body !== null) {
++    Object.assign(record, body)
++  }
++  return new Response(JSON.stringify(edit(record)), {
++    status: response.status,
++    headers: response.headers,
++  })
++}
++
++function obj(v: unknown): object {
++  return typeof v === 'object' && v !== null ? v : {}
++}
++
++export const protoMiddleware: Middleware = {
++  onRequest({ request, schemaPath }) {
++    const m = /^\/api\/v1\/proposals\/\{id\}\/(apply|reject|revert)$/.exec(schemaPath)
++    const id = new URL(request.url).pathname.split('/')[4] ?? ''
++    const action = m?.[1]
++    if ((action === 'apply' || action === 'reject' || action === 'revert') && id.startsWith(ours)) {
++      const done = answer(id, action)
++      return new Response(JSON.stringify({ proposal: done }), {
++        status: done === undefined ? 409 : 200,
++        headers: { 'Content-Type': 'application/json' },
++      })
++    }
++    return undefined
++  },
++  async onResponse({ request, response, schemaPath }) {
++    if (request.method !== 'GET' || !response.ok) {
++      return undefined
++    }
++    const s = scenario()
++    if (schemaPath === '/api/v1/plan') {
++      return rewrite(response, (b) => {
++        const plan = {
++          ...b,
++          phases: s.phases,
++          targets: s.targets,
++          training_weekdays: s.training_weekdays,
++          revisions: s.revisions,
++          pending: s.pending,
++        }
++        delete (plan as Record<string, unknown>).pending_preview
++        return plan
++      })
++    }
++    if (schemaPath === '/api/v1/summary') {
++      return rewrite(response, (b) => ({
++        ...b,
++        tdee: { ...obj(b.tdee), ...s.tdee },
++        verdict: { ...obj(b.verdict), ...s.verdict },
++      }))
++    }
++    if (schemaPath === '/api/v1/morning') {
++      return rewrite(response, (b) => {
++        const text = String(b.text)
++        const last = s.autopilot.last
++        if (last === undefined) {
++          return b
++        }
++        const hr = text.startsWith('Jutarnji')
++        const words = review(hr ? 'hr' : 'en', last, s.autopilot)
++        // The autopilot's line, after the calibration's: what changed in
++        // the plan this morning, before the rest of the plan's.
++        const lines = text.split('\n')
++        const at = lines.findIndex((l) => l.startsWith(hr ? 'Kalibracija:' : 'Calibration:'))
++        // The calibration's line of the scenario's verdict, as the server
++        // writes it (internal/api/morning.go), for the two to agree.
++        const m = last.measured_pct_week
++        const p = last.target_pct_week
++        if (at >= 0 && m !== undefined && p !== undefined) {
++          const pct = (x: number) =>
++            new Intl.NumberFormat(hr ? 'hr' : 'en', {
++              minimumFractionDigits: 2,
++              maximumFractionDigits: 2,
++              signDisplay: 'exceptZero',
++            }).format(x)
++          const rate = s.verdict?.rate ?? 'none'
++          const said = hr
++            ? { on_target: 'u planu', below: 'ispod plana', above: 'iznad plana', none: '' }
++            : { on_target: 'on plan', below: 'below plan', above: 'above plan', none: '' }
++          lines[at] = hr
++            ? `Kalibracija: tempo ${pct(m)} %/tj, cilj ${pct(p)} %/tj, ${said[rate]}`
++            : `Calibration: rate ${pct(m)} %/wk, target ${pct(p)} %/wk, ${said[rate]}`
++        }
++        lines.splice(at < 0 ? lines.length : at + 1, 0, `Autopilot: ${words.morning}`)
++        return { ...b, text: lines.join('\n') }
++      })
++    }
++    return undefined
++  },
++}
+diff --git a/web/src/proto/panel.tsx b/web/src/proto/panel.tsx
+new file mode 100644
+index 0000000..38baedb
+--- /dev/null
++++ b/web/src/proto/panel.tsx
+@@ -0,0 +1,81 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged): the panel that
++// picks the autopilot's state to look at, and the language; hidden with
++// ?shot (the screenshots').
++
++import { useQueryClient } from '@tanstack/react-query'
++import { Link } from '@tanstack/react-router'
++import { useState } from 'react'
++
++import { fetchClient } from '@/api/client'
++import { setLocale, useLocale } from '@/i18n/locale'
++
++import { choose, scenarios, useScenario } from './store'
++
++// Read as the app loads, before the router tidies the address.
++const shot = new URLSearchParams(globalThis.location.search).has('shot')
++function hidden(): boolean {
++  return shot
++}
++
++export function ProtoPanel() {
++  const s = useScenario()
++  const queryClient = useQueryClient()
++  const locale = useLocale()
++  const [open, setOpen] = useState(true)
++  if (hidden()) {
++    return null
++  }
++  return (
++    <div className="fixed right-2 bottom-20 z-50 max-w-[16rem] rounded-lg border bg-card p-2 text-caption shadow-card lg:bottom-4">
++      <button
++        type="button"
++        className="w-full text-left font-semibold"
++        onClick={() => {
++          setOpen(!open)
++        }}
++      >
++        Prototype: autopilot {open ? '▾' : '▸'}
++      </button>
++      {open && (
++        <div className="mt-1 space-y-1">
++          <select
++            aria-label="State"
++            className="w-full rounded border bg-background p-1"
++            value={s.id}
++            onChange={(e) => {
++              choose(e.target.value)
++              void queryClient.invalidateQueries()
++            }}
++          >
++            {scenarios.map((x) => (
++              <option key={x.id} value={x.id}>
++                {x.label}
++              </option>
++            ))}
++          </select>
++          <div className="flex items-center justify-between gap-2">
++            <button
++              type="button"
++              className="underline"
++              onClick={() => {
++                // The account's language, so the server's text (the
++                // morning summary) follows it too.
++                const next = locale === 'en' ? 'hr' : 'en'
++                void (async () => {
++                  await fetchClient.PATCH('/api/v1/me', { body: { locale: next } })
++                  setLocale(next)
++                  await queryClient.invalidateQueries()
++                })()
++              }}
++            >
++              {locale === 'en' ? 'Hrvatski' : 'English'}
++            </button>
++            <Link to="/proto/messages" className="underline">
++              Messages
++            </Link>
++          </div>
++        </div>
++      )}
++    </div>
++  )
++}
+diff --git a/web/src/proto/scenarios.ts b/web/src/proto/scenarios.ts
+new file mode 100644
+index 0000000..4564f64
+--- /dev/null
++++ b/web/src/proto/scenarios.ts
+@@ -0,0 +1,650 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged). The states of
++// the autopilot the prototype shows, made up and built around today, so
++// the last weekly review is this morning's and its line shows on today.
++
++import type { components } from '@/api/schema'
++import { addDays } from '@/i18n/format'
++
++import type { Autopilot, CheckIn, Drift, Weekday } from './types'
++
++type Proposal = components['schemas']['ProposalBody']
++type Phase = components['schemas']['PhaseBody']
++type Target = components['schemas']['TargetPeriodBody']
++type DayTarget = components['schemas']['DayTargetBody']
++type Verdict = components['schemas']['VerdictBody']
++type Tdee = components['schemas']['TdeeBody']
++
++// ApProposal is a proposal as the API would give one the autopilot made:
++// its review's numbers beside the code `autopilot`.
++export type ApProposal = Proposal & { check_in?: CheckIn }
++
++export interface Scenario {
++  id: string
++  label: string
++  autopilot: Autopilot
++  phases: Phase[]
++  targets: Target[]
++  training_weekdays: Weekday[]
++  revisions: ApProposal[]
++  pending?: ApProposal | undefined
++  verdict?: Partial<Verdict>
++  tdee?: Partial<Tdee>
++}
++
++const weekdayNames: Weekday[] = [
++  'sunday',
++  'monday',
++  'tuesday',
++  'wednesday',
++  'thursday',
++  'friday',
++  'saturday',
++]
++
++export function weekdayOf(date: string): Weekday {
++  return weekdayNames[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? 'monday'
++}
++
++const training: Weekday[] = ['monday', 'wednesday', 'friday']
++
++// day is a type of day's target: its protein and fat stay, the carbs fill
++// the kcal (4 kcal a gram), as a step moves only them.
++function day(kcal: number, protein: number, fat: number): DayTarget {
++  return { kcal, protein, fat, carbs: Math.round(((kcal - protein * 4 - fat * 9) / 4) * 10) / 10 }
++}
++
++function values(t: number, r: number, protein = 170, fat: readonly [number, number] = [70, 65]) {
++  return { training: day(t, protein, fat[0]), rest: day(r, protein, fat[1]) }
++}
++
++// avg is the weekly average over three training days.
++function avg(t: number, r: number): number {
++  return Math.round((3 * t + 4 * r) / 7)
++}
++
++let seq = 0
++function id(): string {
++  seq += 1
++  return `00000000-0000-7000-8000-${String(seq).padStart(12, '0')}`
++}
++
++function at(date: string, hour = 6): string {
++  return `${date}T${String(hour - 1).padStart(2, '0')}:30:00Z`
++}
++
++// A cut's review: the verdict's numbers of a slow loss.
++const slowCut = {
++  phase: 'cut',
++  measured_pct_week: -0.31,
++  target_pct_week: -0.5,
++  tolerance_pct_week: 0.1,
++  tdee_kcal: 2600,
++  tdee_half_width: 120,
++  intake_kcal: 2140,
++  logged_days: 6,
++  weigh_ins: 5,
++  needs_logged_days: 4,
++  needs_weigh_ins: 3,
++} as const satisfies Partial<CheckIn>
++
++// steps builds a plan whose target the autopilot stepped: the user's
++// first target on the phase's start, then each step from its day, and
++// the revisions, newest first.
++function stepped(
++  today: string,
++  start: string,
++  base: [number, number],
++  steps: { ago: number; kcal: number; check?: Partial<CheckIn> }[],
++): { targets: Target[]; revisions: ApProposal[] } {
++  const targets: Target[] = [{ effective_from: start, ...values(base[0], base[1]) }]
++  const revisions: ApProposal[] = [
++    {
++      id: id(),
++      by: { client: 'web' },
++      rationale: 'changed in the app',
++      status: 'applied',
++      created_at: at(start, 9),
++      decided_at: at(start, 9),
++      expires_at: at(addDays(start, 7), 9),
++      changes: {
++        phases: [],
++        targets: [{ from: start, after: values(base[0], base[1]) }],
++        limits: [],
++      },
++    },
++  ]
++  let [t, r] = base
++  for (const s of steps) {
++    const from = addDays(today, -s.ago)
++    const before = values(t, r)
++    const prev = avg(t, r)
++    t += s.kcal
++    r += s.kcal
++    targets.push({ effective_from: from, ...values(t, r) })
++    revisions.unshift({
++      id: id(),
++      by: { client: 'autopilot' },
++      rationale: 'autopilot',
++      status: 'applied',
++      created_at: at(from),
++      decided_at: at(from),
++      expires_at: at(addDays(from, 7)),
++      changes: { phases: [], targets: [{ from, before, after: values(t, r) }], limits: [] },
++      check_in: {
++        ...slowCut,
++        date: from,
++        outcome: 'applied',
++        reason: 'cut_slow',
++        step_kcal: s.kcal,
++        target_kcal: prev,
++        after_kcal: avg(t, r),
++        ...s.check,
++      },
++    })
++  }
++  // Each target runs to the day before the next.
++  for (let i = 0; i < targets.length - 1; i++) {
++    const here = targets[i]
++    const next = targets[i + 1]
++    if (here !== undefined && next !== undefined) {
++      targets[i] = { ...here, to: addDays(next.effective_from, -1) }
++    }
++  }
++  return { targets, revisions }
++}
++
++function drift(used: number, base: [number, number], from: string, tdee = 2600): Drift {
++  return {
++    used_kcal: used,
++    limit_kcal: Math.round((tdee * 15) / 100),
++    limit_pct: 15,
++    base_kcal: avg(base[0], base[1]),
++    base_from: from,
++    tdee_kcal: tdee,
++  }
++}
++
++function cut(start: string): Phase {
++  return { type: 'cut', start, rate_pct_week: -0.5, goal_weight: 80 }
++}
++
++const trustedTdee: Partial<Tdee> = { measured: true, trusted: true, kcal: 2600, half_width: 120 }
++
++function verdictOf(c: Partial<CheckIn>): Partial<Verdict> {
++  const rate =
++    c.measured_pct_week === undefined || c.target_pct_week === undefined
++      ? 'none'
++      : Math.abs(c.measured_pct_week - c.target_pct_week) <= (c.tolerance_pct_week ?? 0.1)
++        ? 'on_target'
++        : c.measured_pct_week < c.target_pct_week
++          ? 'below'
++          : 'above'
++  const v: Partial<Verdict> = {
++    rate,
++    action: rate === 'on_target' || rate === 'none' ? 'hold' : 'lower_kcal',
++  }
++  if (c.measured_pct_week !== undefined) v.measured_pct_week = c.measured_pct_week
++  if (c.target_pct_week !== undefined) v.target_pct_week = c.target_pct_week
++  if (c.tolerance_pct_week !== undefined) v.tolerance_pct_week = c.tolerance_pct_week
++  if (c.intake_kcal !== undefined) v.intake_kcal = c.intake_kcal
++  if (c.target_kcal !== undefined) v.target_kcal = c.target_kcal
++  return v
++}
++
++// lastOf is the review of the newest revision, the autopilot's.
++function lastOf(revisions: ApProposal[]): CheckIn {
++  const c = revisions[0]?.check_in
++  if (c === undefined) {
++    throw new Error('no review')
++  }
++  return c
++}
++
++// build makes every state around today.
++export function build(today: string): Scenario[] {
++  seq = 0
++  const start = addDays(today, -35)
++  const weekday = weekdayOf(today)
++  const next = addDays(today, 7)
++  const base: [number, number] = [2450, 2150]
++  const ap = (mode: Autopilot['mode'], used: number, last: CheckIn): Autopilot => ({
++    mode,
++    weekday,
++    next,
++    step_kcal: 100,
++    drift: drift(used, base, start),
++    last,
++  })
++
++  const scenarios: Scenario[] = []
++
++  // 1. Autopilot: a step down applied this morning.
++  {
++    const p = stepped(today, start, base, [
++      { ago: 14, kcal: -100 },
++      { ago: 0, kcal: -100 },
++    ])
++    const last = lastOf(p.revisions)
++    scenarios.push({
++      id: 'auto-step',
++      label: 'Autopilot · step down applied',
++      autopilot: ap('autopilot', -200, last),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...p,
++      tdee: trustedTdee,
++      verdict: verdictOf(last),
++    })
++  }
++
++  // 2. Propose: the same review, a proposal that waits.
++  {
++    const p = stepped(today, start, base, [{ ago: 14, kcal: -100 }])
++    const check: CheckIn = {
++      ...slowCut,
++      date: today,
++      outcome: 'proposed',
++      reason: 'cut_slow',
++      step_kcal: -100,
++      target_kcal: avg(2350, 2050),
++      after_kcal: avg(2250, 1950),
++    }
++    const pending: ApProposal = {
++      id: id(),
++      by: { client: 'autopilot' },
++      rationale: 'autopilot',
++      status: 'pending',
++      created_at: at(today),
++      expires_at: at(addDays(today, 7)),
++      changes: {
++        phases: [],
++        targets: [{ from: today, before: values(2350, 2050), after: values(2250, 1950) }],
++        limits: [],
++      },
++      check_in: check,
++    }
++    check.proposal_id = pending.id
++    scenarios.push({
++      id: 'propose',
++      label: 'Ask first · a step proposed',
++      autopilot: ap('propose', -100, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...p,
++      pending,
++      tdee: trustedTdee,
++      verdict: verdictOf(check),
++    })
++  }
++
++  // 3. Hold: the pace on plan.
++  const holdPlan = () => stepped(today, start, base, [{ ago: 14, kcal: -100 }])
++  {
++    const check: CheckIn = {
++      ...slowCut,
++      date: today,
++      outcome: 'hold',
++      reason: 'on_target',
++      measured_pct_week: -0.47,
++      intake_kcal: 2160,
++      target_kcal: avg(2350, 2050),
++    }
++    scenarios.push({
++      id: 'auto-hold',
++      label: 'Autopilot · hold, pace on plan',
++      autopilot: ap('autopilot', -100, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...holdPlan(),
++      tdee: trustedTdee,
++      verdict: verdictOf(check),
++    })
++  }
++
++  // 4. Hold: fewer steps explain the slower loss.
++  {
++    const check: CheckIn = {
++      ...slowCut,
++      date: today,
++      outcome: 'hold',
++      reason: 'steps_guard',
++      steps_change_pct: -34,
++      target_kcal: avg(2350, 2050),
++    }
++    scenarios.push({
++      id: 'auto-steps',
++      label: 'Autopilot · hold, steps explain it',
++      autopilot: ap('autopilot', -100, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...holdPlan(),
++      tdee: trustedTdee,
++      verdict: { ...verdictOf(check), action: 'hold', guards: ['neat'] },
++    })
++  }
++
++  // 5. No step: too few logged days.
++  {
++    const check: CheckIn = {
++      ...slowCut,
++      date: today,
++      outcome: 'skipped',
++      reason: 'few_data',
++      logged_days: 3,
++      weigh_ins: 4,
++      target_kcal: avg(2350, 2050),
++    }
++    scenarios.push({
++      id: 'auto-few-data',
++      label: 'Autopilot · no step, 3/4 logged days',
++      autopilot: ap('autopilot', -100, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...holdPlan(),
++      tdee: trustedTdee,
++      verdict: verdictOf(check),
++    })
++  }
++
++  // 6. Before calibration trusts the TDEE: a new user's first weeks.
++  {
++    const s = addDays(today, -20)
++    const p = stepped(today, s, base, [])
++    const check: CheckIn = {
++      date: today,
++      outcome: 'skipped',
++      reason: 'not_trusted',
++      tdee_kcal: 2540,
++      tdee_half_width: 310,
++      expected: addDays(today, 16),
++    }
++    scenarios.push({
++      id: 'auto-not-trusted',
++      label: 'Autopilot · TDEE not trusted yet',
++      autopilot: { ...ap('autopilot', 0, check), drift: drift(0, base, s, 2540) },
++      phases: [cut(s)],
++      training_weekdays: training,
++      ...p,
++      tdee: {
++        measured: true,
++        trusted: false,
++        kcal: 2540,
++        half_width: 310,
++        expected: addDays(today, 16),
++        doubts: ['wide_interval'],
++      },
++      verdict: { rate: 'none', action: 'none', reasons: ['not_trusted'] },
++    })
++  }
++
++  // 7. A new phase: no step in its first 14 days.
++  {
++    const s = addDays(today, -5)
++    const p = stepped(today, s, [2650, 2350], [])
++    const check: CheckIn = {
++      date: today,
++      outcome: 'skipped',
++      reason: 'first_wait',
++      from: addDays(s, 14),
++    }
++    scenarios.push({
++      id: 'auto-first-wait',
++      label: 'Autopilot · new phase, first step later',
++      autopilot: { ...ap('autopilot', 0, check), drift: drift(0, [2650, 2350], s) },
++      phases: [
++        { type: 'cut', start, end: addDays(s, -1), rate_pct_week: -0.5 },
++        { type: 'maintain', start: s, rate_pct_week: 0 },
++      ],
++      training_weekdays: training,
++      ...p,
++      tdee: trustedTdee,
++      verdict: { rate: 'none', action: 'none', reasons: ['before_phase'] },
++    })
++  }
++
++  // 8. No plan.
++  {
++    const check: CheckIn = { date: today, outcome: 'skipped', reason: 'no_plan' }
++    scenarios.push({
++      id: 'auto-no-plan',
++      label: 'Autopilot · no phase or target',
++      autopilot: { ...ap('autopilot', 0, check), drift: drift(0, base, today) },
++      phases: [],
++      targets: [],
++      training_weekdays: training,
++      revisions: [],
++      tdee: trustedTdee,
++      verdict: { rate: 'none', action: 'none', reasons: ['no_phase'] },
++    })
++  }
++
++  // 9. A coach's proposal waits: the review waits for it.
++  {
++    const p = holdPlan()
++    const check: CheckIn = { ...slowCut, date: today, outcome: 'skipped', reason: 'pending' }
++    const pending: ApProposal = {
++      id: id(),
++      by: { client: 'mcp', model: 'claude-opus-5-5' },
++      rationale:
++        'Your loss has slowed for three weeks while you logged well. I suggest a diet break of two weeks at maintenance, then the cut again.',
++      status: 'pending',
++      created_at: at(addDays(today, -1), 20),
++      expires_at: at(addDays(today, 6), 20),
++      changes: {
++        phases: [
++          {
++            start: addDays(today, 2),
++            after: {
++              type: 'maintain',
++              start: addDays(today, 2),
++              rate_pct_week: 0,
++              end: addDays(today, 15),
++            },
++          },
++        ],
++        targets: [],
++        limits: [],
++      },
++    }
++    scenarios.push({
++      id: 'auto-pending',
++      label: 'Autopilot · waits for a coach’s proposal',
++      autopilot: ap('autopilot', -100, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...p,
++      pending,
++      tdee: trustedTdee,
++      verdict: verdictOf({ ...check, target_kcal: avg(2350, 2050) }),
++    })
++  }
++
++  // 10. Past the drift limit: the step it would apply, proposed.
++  {
++    const p = stepped(today, start, base, [
++      { ago: 21, kcal: -100 },
++      { ago: 14, kcal: -100 },
++      { ago: 7, kcal: -100 },
++    ])
++    const check: CheckIn = {
++      ...slowCut,
++      measured_pct_week: -0.28,
++      date: today,
++      outcome: 'proposed',
++      reason: 'cut_slow',
++      past_drift: true,
++      step_kcal: -100,
++      target_kcal: avg(2150, 1850),
++      after_kcal: avg(2050, 1750),
++    }
++    const pending: ApProposal = {
++      id: id(),
++      by: { client: 'autopilot' },
++      rationale: 'autopilot',
++      status: 'pending',
++      created_at: at(today),
++      expires_at: at(addDays(today, 7)),
++      changes: {
++        phases: [],
++        targets: [{ from: today, before: values(2150, 1850), after: values(2050, 1750) }],
++        limits: [],
++      },
++      check_in: check,
++    }
++    check.proposal_id = pending.id
++    scenarios.push({
++      id: 'auto-drift',
++      label: 'Autopilot · past the drift limit, proposes',
++      autopilot: ap('autopilot', -300, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...p,
++      pending,
++      tdee: trustedTdee,
++      verdict: verdictOf(check),
++    })
++  }
++
++  // 11. Underweight while losing: maintenance proposed, never a step.
++  {
++    const p = stepped(today, start, [2050, 1850], [])
++    const check: CheckIn = {
++      date: today,
++      outcome: 'proposed',
++      reason: 'underweight',
++      bmi: 18.4,
++      phase: 'cut',
++      measured_pct_week: -0.45,
++      target_pct_week: -0.5,
++      tolerance_pct_week: 0.1,
++      tdee_kcal: 2150,
++      tdee_half_width: 110,
++    }
++    const pending: ApProposal = {
++      id: id(),
++      by: { client: 'autopilot' },
++      rationale: 'autopilot',
++      status: 'pending',
++      created_at: at(today),
++      expires_at: at(addDays(today, 7)),
++      changes: {
++        phases: [
++          {
++            start: addDays(today, 1),
++            after: { type: 'maintain', start: addDays(today, 1), rate_pct_week: 0 },
++          },
++        ],
++        targets: [
++          {
++            from: addDays(today, 1),
++            before: values(2050, 1850, 130, [60, 55]),
++            after: values(2300, 2050, 130, [60, 55]),
++          },
++        ],
++        limits: [],
++      },
++      check_in: check,
++    }
++    check.proposal_id = pending.id
++    scenarios.push({
++      id: 'auto-underweight',
++      label: 'Autopilot · underweight, maintenance proposed',
++      autopilot: { ...ap('autopilot', 0, check), drift: drift(0, [2050, 1850], start, 2150) },
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...p,
++      pending,
++      tdee: { ...trustedTdee, kcal: 2150, half_width: 110 },
++      verdict: { ...verdictOf(check), action: 'maintain', guards: ['underweight'] },
++    })
++  }
++
++  // 12. A bulk too slow: a step up applied.
++  {
++    const s = start
++    const p = stepped(
++      today,
++      s,
++      [2900, 2700],
++      [
++        {
++          ago: 0,
++          kcal: 100,
++          check: {
++            phase: 'bulk',
++            reason: 'bulk_slow',
++            measured_pct_week: 0.08,
++            target_pct_week: 0.25,
++            tdee_kcal: 2750,
++            tdee_half_width: 130,
++            intake_kcal: 2790,
++          },
++        },
++      ],
++    )
++    const last = lastOf(p.revisions)
++    scenarios.push({
++      id: 'auto-bulk-up',
++      label: 'Autopilot · bulk too slow, step up',
++      autopilot: { ...ap('autopilot', 100, last), drift: drift(100, [2900, 2700], s, 2750) },
++      phases: [{ type: 'bulk', start: s, rate_pct_week: 0.25 }],
++      training_weekdays: training,
++      ...p,
++      tdee: { ...trustedTdee, kcal: 2750, half_width: 130 },
++      verdict: { ...verdictOf(last), action: 'raise_kcal' },
++    })
++  }
++
++  // 13. Too few carbs left for a step down: ask a coach.
++  {
++    const lowCarb = (from: string): Target => ({
++      effective_from: from,
++      training: day(1900, 200, 80),
++      rest: day(1700, 200, 72),
++    })
++    const check: CheckIn = {
++      ...slowCut,
++      date: today,
++      outcome: 'skipped',
++      reason: 'few_carbs',
++      carbs_g: day(1700, 200, 72).carbs,
++      target_kcal: avg(1900, 1700),
++    }
++    scenarios.push({
++      id: 'auto-few-carbs',
++      label: 'Autopilot · too few carbs, ask a coach',
++      autopilot: ap('autopilot', -100, check),
++      phases: [cut(start)],
++      training_weekdays: training,
++      targets: [lowCarb(start)],
++      revisions: [],
++      tdee: trustedTdee,
++      verdict: verdictOf(check),
++    })
++  }
++
++  // 14. Lean mass lost on a cut: a step up.
++  {
++    const p = stepped(today, start, base, [
++      { ago: 14, kcal: -100 },
++      {
++        ago: 0,
++        kcal: 100,
++        check: { reason: 'lean_loss', measured_pct_week: -0.62, intake_kcal: 2120 },
++      },
++    ])
++    const last = lastOf(p.revisions)
++    scenarios.push({
++      id: 'auto-lean-loss',
++      label: 'Autopilot · lean mass lost, step up',
++      autopilot: ap('autopilot', 0, last),
++      phases: [cut(start)],
++      training_weekdays: training,
++      ...p,
++      tdee: trustedTdee,
++      verdict: { ...verdictOf(last), action: 'raise_protein_or_kcal', guards: ['lean_mass'] },
++    })
++  }
++
++  return scenarios
++}
+diff --git a/web/src/proto/store.ts b/web/src/proto/store.ts
+new file mode 100644
+index 0000000..e9077b3
+--- /dev/null
++++ b/web/src/proto/store.ts
+@@ -0,0 +1,194 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged). The state the
++// prototype shows: which of the scenarios (?ap=<id>, kept for the tab),
++// and what the user did to it since (the autonomy and the review day
++// changed, a proposal accepted or rejected, a step taken back), as the
++// server would hold it.
++
++import { useSyncExternalStore } from 'react'
++
++import { addDays } from '@/i18n/format'
++
++import { build, type ApProposal, type Scenario } from './scenarios'
++import type { Autopilot, Weekday } from './types'
++
++const key = 'tdeemon.proto.autopilot'
++
++function today(): string {
++  // Europe/Zagreb, the prototype's user's; close enough for a mock.
++  return new Date().toLocaleDateString('sv', { timeZone: 'Europe/Zagreb' })
++}
++
++export const scenarios = build(today())
++
++function initial(): string {
++  const asked = new URLSearchParams(globalThis.location.search).get('ap')
++  if (asked !== null && scenarios.some((s) => s.id === asked)) {
++    return asked
++  }
++  try {
++    const kept = globalThis.sessionStorage.getItem(key)
++    if (kept !== null && scenarios.some((s) => s.id === kept)) {
++      return kept
++    }
++  } catch {
++    // No storage: the first.
++  }
++  return 'auto-step'
++}
++
++function first(): Scenario {
++  const s = scenarios.find((x) => x.id === initial()) ?? scenarios[0]
++  if (s === undefined) {
++    throw new Error('no scenarios')
++  }
++  return s
++}
++
++let state: Scenario = structuredClone(first())
++const listeners = new Set<() => void>()
++
++function emit(next: Scenario) {
++  state = next
++  try {
++    globalThis.sessionStorage.setItem(key, next.id)
++  } catch {
++    // The tab forgets it.
++  }
++  for (const l of listeners) {
++    l()
++  }
++}
++
++export function scenario(): Scenario {
++  return state
++}
++
++export function choose(id: string) {
++  const s = scenarios.find((x) => x.id === id)
++  if (s !== undefined) {
++    emit(structuredClone(s))
++  }
++}
++
++export function useScenario(): Scenario {
++  return useSyncExternalStore(
++    (l) => {
++      listeners.add(l)
++      return () => listeners.delete(l)
++    },
++    () => state,
++  )
++}
++
++// useAutopilot is what GET /api/v1/autopilot would answer.
++export function useAutopilot(): Autopilot {
++  return useScenario().autopilot
++}
++
++// PUT /api/v1/autopilot: the autonomy and the review day, a web session's.
++export function setAutopilot(change: { mode?: Autopilot['mode']; weekday?: Weekday }) {
++  const ap = { ...state.autopilot, ...change }
++  if (change.weekday !== undefined) {
++    // The next review is the next such day, from tomorrow on.
++    const names = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
++    const from = addDays(today(), 1)
++    let d = from
++    while (names[new Date(`${d}T00:00:00Z`).getUTCDay()] !== change.weekday) {
++      d = addDays(d, 1)
++    }
++    ap.next = d
++  }
++  emit({ ...state, autopilot: ap })
++}
++
++function now(): string {
++  return new Date().toISOString()
++}
++
++// The answers to a proposal of the prototype's, and a step taken back.
++export function answer(id: string, action: 'apply' | 'reject' | 'revert'): ApProposal | undefined {
++  if (action === 'revert') {
++    const rev = state.revisions.find((r) => r.id === id)
++    const ch = rev?.changes.targets[0]
++    if (rev === undefined || ch?.before === undefined) {
++      return undefined
++    }
++    const back: ApProposal = {
++      id: `${id.slice(0, -4)}ffff`,
++      by: { client: 'web' },
++      rationale: 'taken back in the app',
++      status: 'applied',
++      created_at: now(),
++      decided_at: now(),
++      expires_at: now(),
++      reverts: id,
++      changes: {
++        phases: [],
++        targets: [{ from: today(), ...(ch.after && { before: ch.after }), after: ch.before }],
++        limits: [],
++      },
++    }
++    emit({
++      ...state,
++      revisions: [
++        back,
++        ...state.revisions.map((r) => (r.id === id ? { ...r, status: 'reverted' as const } : r)),
++      ],
++      targets: [
++        ...state.targets.filter((t) => t.effective_from < today()),
++        { effective_from: today(), ...ch.before },
++      ],
++    })
++    return back
++  }
++  const p = state.pending
++  if (p?.id !== id) {
++    return undefined
++  }
++  if (action === 'reject') {
++    emit({
++      ...state,
++      pending: undefined,
++      autopilot: {
++        ...state.autopilot,
++        last: state.autopilot.last && { ...state.autopilot.last, answer: 'rejected' },
++      },
++    })
++    return { ...p, status: 'rejected' }
++  }
++  const applied: ApProposal = {
++    ...p,
++    status: 'applied',
++    decided_at: now(),
++    decided_by: { client: 'web' },
++  }
++  const after = p.changes.targets[0]?.after
++  // Accepting a target the autopilot proposed makes it one the user
++  // agreed to: the drift starts again at 0 from it.
++  const avg =
++    after === undefined
++      ? state.autopilot.drift.base_kcal
++      : Math.round((3 * after.training.kcal + 4 * after.rest.kcal) / 7)
++  emit({
++    ...state,
++    pending: undefined,
++    revisions: [applied, ...state.revisions],
++    targets:
++      after === undefined
++        ? state.targets
++        : [
++            ...state.targets.filter((t) => t.effective_from < (p.changes.targets[0]?.from ?? '')),
++            { effective_from: p.changes.targets[0]?.from ?? today(), ...after },
++          ],
++    phases: [
++      ...state.phases,
++      ...p.changes.phases.flatMap((ph) => (ph.after === undefined ? [] : [ph.after])),
++    ],
++    autopilot: {
++      ...state.autopilot,
++      drift: { ...state.autopilot.drift, used_kcal: 0, base_kcal: avg, base_from: today() },
++      last: state.autopilot.last && { ...state.autopilot.last, answer: 'accepted' },
++    },
++  })
++  return applied
++}
+diff --git a/web/src/proto/types.ts b/web/src/proto/types.ts
+new file mode 100644
+index 0000000..10b695d
+--- /dev/null
++++ b/web/src/proto/types.ts
+@@ -0,0 +1,102 @@
++// PROTOTYPE ONLY (branch proto/autopilot, never merged). The fields the
++// autopilot's API would give the web app, as docs/proto-autopilot/
++// DESIGN-autopilot.md proposes them: what GET /api/v1/autopilot answers,
++// and what a proposal or a revision the autopilot made carries
++// (ProposalBody.check_in). The app fakes them (web/src/proto/mock.ts).
++
++import type { components } from '@/api/schema'
++
++export type Weekday = components['schemas']['PlanBody']['training_weekdays'][number]
++
++// Outcome is what a weekly review came to: a step applied (autopilot), a
++// step or a plan change proposed (propose; past the drift limit;
++// underweight), a hold, or no step for a reason.
++export type Outcome = 'applied' | 'proposed' | 'hold' | 'skipped'
++
++// Reason is why: the verdict's action for a step or a proposal, what held
++// it, or what kept it from a step at all.
++export type Reason =
++  // a step down or up, by the verdict's rate or a guard
++  | 'cut_slow'
++  | 'cut_fast'
++  | 'bulk_slow'
++  | 'bulk_fast'
++  | 'bulk_fat'
++  | 'lean_loss'
++  // hold
++  | 'on_target'
++  | 'steps_guard'
++  // no step
++  | 'not_trusted'
++  | 'no_plan'
++  | 'few_data'
++  | 'first_wait'
++  | 'interval'
++  | 'pending'
++  | 'few_carbs'
++  // a proposal instead of a step
++  | 'underweight'
++
++// CheckIn is one weekly review, with the verdict's numbers the app says
++// it in: each language its own way, from the code `autopilot`.
++export interface CheckIn {
++  date: string
++  outcome: Outcome
++  reason: Reason
++  // The step, signed: −100 lowers the weekly average 100 kcal a day.
++  step_kcal?: number
++  // Past the drift limit: the step it would have applied, proposed.
++  past_drift?: boolean
++  proposal_id?: string
++  // The verdict.
++  phase?: 'cut' | 'maintain' | 'bulk' | 'recomp'
++  measured_pct_week?: number
++  target_pct_week?: number
++  tolerance_pct_week?: number
++  tdee_kcal?: number
++  tdee_half_width?: number
++  intake_kcal?: number
++  // The weekly average of the target before the step, and after it.
++  target_kcal?: number
++  after_kcal?: number
++  // The data of the last 7 days, against what a step needs.
++  logged_days?: number
++  weigh_ins?: number
++  needs_logged_days?: number
++  needs_weigh_ins?: number
++  // The steps guard: the last 7 days' steps against the weeks before, %.
++  steps_change_pct?: number
++  // A first step's day (14 days into a phase or from a target agreed);
++  // when calibration expects a TDEE to trust (calibration.Expected).
++  from?: string
++  expected?: string
++  // The rest days' carbs, for a target with too few for a step down.
++  carbs_g?: number
++  // Underweight: the BMI now.
++  bmi?: number
++  // What the user answered its proposal, once they did.
++  answer?: 'accepted' | 'rejected'
++}
++
++// Drift is how far the autopilot moved the weekly average, net, since
++// the last kcal target the user agreed to, against the limit.
++export interface Drift {
++  used_kcal: number
++  limit_kcal: number
++  limit_pct: number
++  base_kcal: number
++  base_from: string
++  tdee_kcal: number
++}
++
++// Autopilot is GET /api/v1/autopilot: the user's autonomy and review day
++// (PUT, a web session only), the next review, the drift, the step its
++// limits allow now, and the last review.
++export interface Autopilot {
++  mode: 'propose' | 'autopilot'
++  weekday: Weekday
++  next: string
++  step_kcal: number
++  drift: Drift
++  last?: CheckIn | undefined
++}
+diff --git a/web/src/router.tsx b/web/src/router.tsx
+index 1761547..d64d217 100644
+--- a/web/src/router.tsx
++++ b/web/src/router.tsx
+@@ -18,6 +18,7 @@ import { AccountPage } from '@/pages/account'
+ import { AppError } from '@/pages/app-error'
+ import { AppLayout } from '@/pages/app-layout'
+ import { AppearancePage } from '@/pages/appearance'
++import { AutopilotPage } from '@/pages/autopilot'
+ import { DayPage } from '@/pages/day'
+ import { DevicesPage } from '@/pages/devices'
+ import { FoodPage } from '@/pages/food'
+@@ -215,6 +216,18 @@ const limitsRoute = createRoute({
+   path: '/plan/limits',
+   component: LimitsPage,
+ })
++// PROTOTYPE (proto/autopilot): the autopilot's settings, and what its
++// messages say.
++const autopilotRoute = createRoute({
++  getParentRoute: () => appRoute,
++  path: '/plan/autopilot',
++  component: AutopilotPage,
++})
++const protoMessagesRoute = createRoute({
++  getParentRoute: () => appRoute,
++  path: '/proto/messages',
++  component: lazyRouteComponent(() => import('@/proto/messages'), 'MessagesPage'),
++})
+ const notesRoute = createRoute({
+   getParentRoute: () => appRoute,
+   path: '/plan/notes',
+@@ -287,6 +300,8 @@ const routeTree = rootRoute.addChildren([
+     profileRoute,
+     limitsRoute,
+     notesRoute,
++    autopilotRoute,
++    protoMessagesRoute,
+     settingsRoute,
+     appearanceRoute,
+     accountRoute,
