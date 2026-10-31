@@ -129,8 +129,9 @@ func (w reviewWriter) title(r autopilot.Review) string {
 			return w.r.holdIntake
 		case autopilot.ReasonRejected:
 			return w.r.holdRejected
+		default:
+			return w.r.holdPace
 		}
-		return w.r.holdPace
 	case autopilot.Skipped:
 	}
 	return w.r.noStep + ": " + w.why(r)
@@ -158,8 +159,9 @@ func (w reviewWriter) why(r autopilot.Review) string {
 		return w.r.fewCarbs
 	case autopilot.ReasonUnderweight:
 		return w.r.underweight
+	default:
+		return w.r.limit
 	}
-	return w.r.limit
 }
 
 // pace says the measured rate against the plan's.
@@ -207,8 +209,9 @@ func (w reviewWriter) body(r autopilot.Review, next, answer day.Date) string {
 				steps = w.r.stepsRose
 			}
 			return review + ", " + sprintf(steps, w.num(abs(r.StepsChangePct), 0)) + ". " + stays
+		default:
+			return review + ". " + stays
 		}
-		return review + ". " + stays
 	case autopilot.Skipped:
 	}
 	return w.skipBody(r, next)
@@ -243,8 +246,9 @@ func (w reviewWriter) skipBody(r autopilot.Review, next day.Date) string {
 		return w.r.answerFirst + " " + nextReview
 	case autopilot.ReasonFewCarbs:
 		return sprintf(w.r.carbsLeft, w.dayTypeName(r), w.num(r.CarbsG, 0)) + " " + w.r.askCoach
+	default:
+		return sprintf(w.r.limitBody, r.Rule)
 	}
-	return sprintf(w.r.limitBody, r.Rule)
 }
 
 func (w reviewWriter) dayTypeName(r autopilot.Review) string {
