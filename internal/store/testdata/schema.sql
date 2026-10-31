@@ -21,6 +21,24 @@ CREATE UNIQUE INDEX api_tokens_token_hash ON api_tokens (token_hash);
 
 CREATE INDEX api_tokens_user_id ON api_tokens (user_id);
 
+CREATE TABLE autopilot_reviews (
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    -- The user's day of the review, YYYY-MM-DD.
+    day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
+    outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'proposed', 'hold', 'skipped')),
+    reason TEXT NOT NULL CHECK (reason <> ''),
+    -- The review's numbers as JSON.
+    review TEXT NOT NULL CHECK (json_valid(review) AND json_type(review) = 'object'),
+    proposal_id TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, day),
+    FOREIGN KEY (user_id, proposal_id) REFERENCES proposals (user_id, id),
+    CHECK ((outcome IN ('applied', 'proposed')) = (proposal_id IS NOT NULL))
+) STRICT;
+
+CREATE INDEX autopilot_reviews_proposal ON autopilot_reviews (user_id, proposal_id)
+WHERE proposal_id IS NOT NULL;
+
 CREATE TABLE days (
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     day TEXT NOT NULL CHECK (day GLOB '[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]'),
@@ -36,7 +54,8 @@ CREATE TABLE "events" (
     id TEXT NOT NULL CHECK (length(id) = 36),
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     at TEXT NOT NULL,
-    actor TEXT NOT NULL CHECK (actor IN ('user', 'import')),
+    -- The user, an import, or the autopilot, whose writes undo leaves.
+    actor TEXT NOT NULL CHECK (actor IN ('user', 'import', 'autopilot')),
     client TEXT NOT NULL CHECK (client <> ''),
     -- The AI model that acted for the user, or ''.
     model TEXT NOT NULL DEFAULT '',
@@ -45,12 +64,13 @@ CREATE TABLE "events" (
         'day.exclude', 'day.include', 'metrics.merge', 'metric.set', 'metric.delete', 'undo',
         'profile.set', 'phase.set', 'phase.delete', 'target.set', 'target.delete',
         'day.training', 'plan.weekdays', 'limits.set', 'notes.set', 'workouts.set',
-        'day.checkin', 'proposal.create', 'proposal.status'
+        'day.checkin', 'proposal.create', 'proposal.status', 'autopilot.set', 'autopilot.review'
     )),
     -- What changed: a food's (a recipe's too), a meal's or a proposal's
     -- id, a day, a day and a metric, a phase's start, a target's first
-    -- day, "profile", "plan", "limits", "notes" or a source of workouts,
-    -- or for an undo the event it took back.
+    -- day, "profile", "plan", "limits", "notes", "autopilot", a review's
+    -- day ("review/YYYY-MM-DD") or a source of workouts, or for an undo
+    -- the event it took back.
     entity TEXT NOT NULL CHECK (entity <> ''),
     -- The entity's state as JSON; NULL where there was none.
     before_state TEXT CHECK (before_state IS NULL OR json_valid(before_state)),
@@ -302,7 +322,9 @@ CREATE TABLE plan_settings (
     -- limit it does not name, or NULL for all, is at its default.
     limits TEXT CHECK (json_valid(limits) AND json_type(limits) = 'object'),
     updated_at TEXT NOT NULL
-) STRICT;
+, autonomy TEXT NOT NULL DEFAULT 'propose'
+CHECK (autonomy IN ('propose', 'autopilot')), review_weekday INTEGER NOT NULL DEFAULT 1
+CHECK (review_weekday BETWEEN 0 AND 6)) STRICT;
 
 CREATE TABLE profile_notes (
     user_id TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
@@ -310,7 +332,7 @@ CREATE TABLE profile_notes (
     updated_at TEXT NOT NULL
 ) STRICT;
 
-CREATE TABLE proposals (
+CREATE TABLE "proposals" (
     -- A UUIDv7 the store makes.
     id TEXT NOT NULL CHECK (length(id) = 36),
     user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -319,8 +341,9 @@ CREATE TABLE proposals (
     status TEXT NOT NULL CHECK (
         status IN ('pending', 'applied', 'rejected', 'superseded', 'reverted')
     ),
-    -- Who proposed it: the client, and the AI model that acted for the
-    -- user, or ''.
+    -- Who proposed it: the user (or a coach for them) or the autopilot,
+    -- the client, and the AI model that acted for the user, or ''.
+    actor TEXT NOT NULL DEFAULT 'user' CHECK (actor IN ('user', 'autopilot')),
     client TEXT NOT NULL CHECK (client <> ''),
     model TEXT NOT NULL DEFAULT '',
     rationale TEXT NOT NULL CHECK (rationale <> ''),
@@ -336,14 +359,18 @@ CREATE TABLE proposals (
     created_at TEXT NOT NULL,
     expires_at TEXT NOT NULL CHECK (expires_at > created_at),
     -- When it stopped pending, and who applied it, rejected it, or
-    -- changed the plan under it: the user or an import, the client, and
-    -- the model, or ''.
+    -- changed the plan under it: the user, an import or the autopilot,
+    -- the client, and the model, or ''.
     decided_at TEXT,
-    decided_actor TEXT CHECK (decided_actor IN ('user', 'import')),
+    decided_actor TEXT CHECK (decided_actor IN ('user', 'import', 'autopilot')),
     decided_client TEXT CHECK (decided_client <> ''),
     decided_model TEXT,
     -- The proposal that took a reverted one back.
     reverted_by TEXT CHECK (length(reverted_by) = 36),
+    -- The TDEE calibration trusted when it was applied, in kcal a day;
+    -- NULL for none, or for a proposal not applied. The autopilot's
+    -- drift from the target it set is a share of it.
+    tdee REAL CHECK (tdee > 0),
     PRIMARY KEY (user_id, id),
     FOREIGN KEY (user_id, reverts) REFERENCES proposals (user_id, id),
     FOREIGN KEY (user_id, reverted_by) REFERENCES proposals (user_id, id),

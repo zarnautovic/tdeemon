@@ -22,7 +22,9 @@ whole and in a line, the list of foods, a
 new food, a new recipe, the recent meals, the history and the plan, the user's own
 change of the plan (a proposal applied at once), calibration
 (the measured TDEE and the verdict on a phase), the autopilot's
-weekly review decided in the domain, the tool registry with
+weekly review decided in the domain and kept in the database (its
+settings, its steps and proposals, which undo leaves, and its reviews),
+the tool registry with
 `get_profile`, `get_day`, `get_summary`, `get_history`, `get_plan`,
 `find_foods`, `get_food`, `lookup_barcode`, `upsert_food`,
 `upsert_recipe`, `log_meal`, `update_meal`,

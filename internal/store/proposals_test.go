@@ -559,7 +559,7 @@ func TestChangePlanRefuses(t *testing.T) {
 	db, ana, _ := withPlans(t)
 	waits := propose(t, db, ana, coachDraft(t), t0)
 	n := countRows(t, db, "events")
-	refuse := func(proposal.Changes) error { return errRefused }
+	refuse := func(proposal.Changes) (float64, error) { return 0, errRefused }
 	d := breakDraft(t)
 	d.Rationale = proposal.ChangedInTheApp
 	if _, err := db.ChangePlan(t.Context(), ana, testActor, d, day.DateOf(t0), t0, refuse); !errors.Is(err, errRefused) {
@@ -888,9 +888,9 @@ func TestProposalChecks(t *testing.T) {
 	db, ana, _ := withPlans(t)
 	ph, _ := planValues(t)
 	var got proposal.Changes
-	check := func(c proposal.Changes) error {
+	check := func(c proposal.Changes) (float64, error) {
 		got = c
-		return errRefused
+		return 0, errRefused
 	}
 	n := countRows(t, db, "events")
 	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0, check); !errors.Is(err, errRefused) {
@@ -927,7 +927,7 @@ func TestAProposalCheckSeesNoWriteBeforeItsCommit(t *testing.T) {
 	l := limits.UserDefaults()
 	l.KcalFloorMale = 1850
 	done := make(chan error, 1)
-	check := func(proposal.Changes) error {
+	check := func(proposal.Changes) (float64, error) {
 		go func() {
 			done <- db.SetUserLimits(context.WithoutCancel(t.Context()), ana, testActor, l, limits.Instance(), t0)
 		}()
@@ -939,7 +939,7 @@ func TestAProposalCheckSeesNoWriteBeforeItsCommit(t *testing.T) {
 		if got, err := db.UserLimits(t.Context(), ana); err != nil || got.KcalFloorMale == 1850 {
 			t.Errorf("the check read %v, %v; want the limits before", got.KcalFloorMale, err)
 		}
-		return nil
+		return 0, nil
 	}
 	if _, err := db.CreateProposal(t.Context(), ana, coachActor, coachDraft(t), day.DateOf(t0), t0, check); err != nil {
 		t.Fatal(err)

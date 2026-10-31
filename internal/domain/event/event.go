@@ -24,7 +24,14 @@ const (
 	// Import is a device or an app sending data on its own (Health Auto
 	// Export): its writes are recorded, but undo leaves them.
 	Import ActorKind = "import"
+	// Autopilot is the server's weekly review: its steps, proposals and
+	// reviews are recorded, but undo leaves them; the plan's history
+	// takes a step back.
+	Autopilot ActorKind = "autopilot"
 )
+
+// ClientAutopilot is the client of the autopilot's writes.
+const ClientAutopilot = "autopilot"
 
 // Limits on an actor's names.
 const (
@@ -46,8 +53,8 @@ type Actor struct {
 // Validate reports an actor of an unknown kind, or without a client.
 func (a Actor) Validate() error {
 	var errs []error
-	if a.Kind != User && a.Kind != Import {
-		errs = append(errs, fmt.Errorf("actor %q: want user or import", a.Kind))
+	if a.Kind != User && a.Kind != Import && a.Kind != Autopilot {
+		errs = append(errs, fmt.Errorf("actor %q: want user, import or autopilot", a.Kind))
 	}
 	errs = append(errs, text.Check("client", a.Client, MaxClientLen, true), text.Check("model", a.Model, MaxModelLen, false))
 	return errors.Join(errs...)
@@ -94,6 +101,10 @@ const (
 	// as an applied one goes back as a revert.
 	ProposalCreate Action = "proposal.create"
 	ProposalStatus Action = "proposal.status"
+	// AutopilotSet changed the user's settings of the autopilot, and
+	// AutopilotReview recorded a weekly review; undo leaves both.
+	AutopilotSet    Action = "autopilot.set"
+	AutopilotReview Action = "autopilot.review"
 	// Undo took another event back; its Entity is that event's id.
 	Undo Action = "undo"
 )
@@ -108,7 +119,8 @@ type Event struct {
 	// proposal's id, a day (YYYY-MM-DD), a day and a metric
 	// ("2026-10-21/weight"), a phase by its start or a target by its
 	// first day (YYYY-MM-DD), "profile", "limits", "plan" (the training
-	// weekdays), "notes" or a source of workouts ("strong"), or for an
+	// weekdays), "notes", "autopilot" (its settings), a review by its day
+	// ("review/2026-11-02") or a source of workouts ("strong"), or for an
 	// undo the event undone, or "nothing" for an undo under a client's id
 	// that found nothing to take back.
 	Entity string

@@ -56,6 +56,11 @@ const MaxRationaleLen = 4000
 // one of its own, "taken back in the app".
 const ChangedInTheApp = "changed in the app"
 
+// Autopilot is the rationale of the autopilot's proposals and steps: a
+// code, as ChangedInTheApp is, which the app says in the user's language
+// from the numbers of the review that made it.
+const Autopilot = "autopilot"
+
 // PhaseChange is a change of the phase that starts on Start: Before is
 // the phase as it is, nil for none, and After as the change leaves it,
 // nil for a delete.
@@ -353,7 +358,7 @@ type Proposal struct {
 	// Status is the status stored; StatusAt tells an expired one.
 	Status Status
 	// By is who proposed it: the user, through a client, and the model
-	// that acted for them, when one did.
+	// that acted for them, when one did; or the autopilot.
 	By        event.Actor
 	Rationale string
 	// Window is the days it was drawn from, nil when none was given.
@@ -372,6 +377,9 @@ type Proposal struct {
 	// RevertedBy is the proposal that took a reverted one back, or
 	// uuid.Nil.
 	RevertedBy uuid.UUID
+	// TDEE is the TDEE calibration trusted when it was applied, 0 for
+	// none: the base of the autopilot's drift from the target it set.
+	TDEE float64
 }
 
 // StatusAt returns p's status at now: a pending proposal past its time is

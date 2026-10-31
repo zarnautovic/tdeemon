@@ -224,20 +224,30 @@ func (s *sessions) coachState(ctx context.Context, p auth.Principal, now time.Ti
 // user at now, which refuses a violation. It reads the state in the
 // store's transaction (store.ProposalCheck), so a change of the limits,
 // the profile or the data meanwhile cannot slip past it, and keeps it in
-// *cs, and what it found in *found.
+// *cs, and what it found in *found. It returns the TDEE calibration
+// trusts, which an applied proposal keeps as the base of the autopilot's
+// drift.
+// trustedTDEE returns the TDEE calibration trusts, 0 for none.
+func (cs coachState) trustedTDEE() float64 {
+	if cs.state.TDEETrusted && cs.state.TDEE > 0 {
+		return cs.state.TDEE
+	}
+	return 0
+}
+
 func (s *sessions) check(ctx context.Context, p auth.Principal, now time.Time, cs *coachState, found *[]proposal.Checked) store.ProposalCheck {
-	return func(c proposal.Changes) error {
+	return func(c proposal.Changes) (float64, error) {
 		var err error
 		if *cs, err = s.coachState(ctx, p, now); err != nil {
-			return err
+			return 0, err
 		}
 		*found = c.Check(cs.state, cs.levels, cs.phases, cs.targets)
 		for _, ck := range *found {
 			if !ck.OK() {
-				return &refusedError{checks: *found}
+				return 0, &refusedError{checks: *found}
 			}
 		}
-		return nil
+		return cs.trustedTDEE(), nil
 	}
 }
 
@@ -314,12 +324,12 @@ func (s *sessions) applyProposal(ctx context.Context, in *applyInput) (*proposal
 	var checks []proposal.Checked
 	confirm := in.Body != nil && in.Body.Confirm
 	check := s.check(ctx, p, now, &cs, &checks)
-	applied, err := s.db.ApplyProposal(ctx, p.User.ID, actorOf(p), id, today, now, func(c proposal.Changes) error {
+	applied, err := s.db.ApplyProposal(ctx, p.User.ID, actorOf(p), id, today, now, func(c proposal.Changes) (float64, error) {
 		if len(c.Limits) > 0 && p.Via != auth.ViaSession {
-			return errLimitsInTheApp
+			return 0, errLimitsInTheApp
 		}
 		if loosened := c.Loosened(); loosened != nil && !confirm {
-			return huma.Error409Conflict("loosening " + strings.Join(loosened, ", ") + " needs confirm: true")
+			return 0, huma.Error409Conflict("loosening " + strings.Join(loosened, ", ") + " needs confirm: true")
 		}
 		return check(c)
 	})

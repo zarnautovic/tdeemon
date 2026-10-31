@@ -41,7 +41,9 @@ type RecentChange struct {
 // RecentChanges returns up to limit (MaxRecentChanges at most) of
 // userID's latest changes, newest first: those the user made, through
 // any client, but the undos, which mark the change each took back
-// (Event.UndoneBy). An import's writes are left out: undo leaves them,
+// (Event.UndoneBy), and the autopilot's steps and proposals, which undo
+// leaves (the plan's history takes a step back), but not its reviews,
+// which change nothing. An import's writes are left out: undo leaves them,
 // and a device sends them often enough to bury the user's own. So are
 // the writes that are part of another change (a meal's new foods):
 // undo takes them back with it, never on their own.
@@ -56,9 +58,10 @@ func (db *DB) RecentChanges(ctx context.Context, userID uuid.UUID, limit int) ([
 			return err
 		}
 		rows, err := tx.QueryContext(ctx, "SELECT "+eventColumns+` FROM events
-			WHERE user_id = ? AND actor = ? AND operation <> ? AND part_of IS NULL
+			WHERE user_id = ? AND actor IN (?, ?) AND operation NOT IN (?, ?) AND part_of IS NULL
 			ORDER BY rowid DESC LIMIT ?`,
-			userID.String(), string(event.User), string(event.Undo), min(limit, MaxRecentChanges))
+			userID.String(), string(event.User), string(event.Autopilot), string(event.Undo), string(event.AutopilotReview),
+			min(limit, MaxRecentChanges))
 		if err != nil {
 			return err
 		}
